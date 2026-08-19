@@ -74,11 +74,40 @@ public sealed class MobileClipboardService : IClipboardService
                 "This shell carries text and the formats listed in ClipboardContent; check what you are asking for.");
         }
 
-        await SetPlatformAsync(content).ConfigureAwait(false);
+        await OnMainThread(() => SetPlatformAsync(content)).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    public Task<ClipboardContent> GetAsync() => GetPlatformAsync();
+    public Task<ClipboardContent> GetAsync() => OnMainThread(GetPlatformAsync);
+
+    /// <summary>
+    /// Run the pasteboard work on the UI thread.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 🔴 <b>`UIPasteboard` is UIKit, and UIKit throws off the main thread</b> —
+    /// <c>UIKitThreadAccessException: you are calling a UIKit method that can only be invoked from the UI
+    /// thread</c>. Measured on a simulator 2026-08-19, the first time these paths ever ran on a device:
+    /// every multi-format read and write failed.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>It bit only the FORMATS path, which is why a compile and the text path both looked fine.</b>
+    /// <see cref="SetTextAsync"/> and <see cref="GetTextAsync"/> go through MAUI's own
+    /// <c>Clipboard.Default</c>, which marshals internally; <see cref="SetAsync"/> and
+    /// <see cref="GetAsync"/> reach the platform pasteboard directly and had nothing doing it for them.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>An async API that must be called from the UI thread is a trap</b>, and the caller cannot see
+    /// it: the signature says "await me", so awaiting it from a background thread — which is what
+    /// `Task.Run` and every library continuation give you — is the natural thing to write. The kit
+    /// marshals rather than documenting a rule nobody will read at the call site.
+    /// </para>
+    /// </remarks>
+    private static Task<T> OnMainThread<T>(Func<Task<T>> work) =>
+        MainThread.IsMainThread ? work() : MainThread.InvokeOnMainThreadAsync(work);
+
+    private static Task OnMainThread(Func<Task> work) =>
+        MainThread.IsMainThread ? work() : MainThread.InvokeOnMainThreadAsync(work);
 
     /// <summary>
     /// Which of <paramref name="content"/>'s byte formats this platform has no expression for. ⚠ The

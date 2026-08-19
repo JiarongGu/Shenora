@@ -82,31 +82,27 @@ sample proves nothing. The suite is held out of the gate deliberately (`[Trait("
   another clipboard listener (a manager tool, RDP/VM sync) or Cloud Clipboard. ⚠ Toggling Windows
   clipboard history OFF is the untried experiment; it changes a user-facing setting, so restore it.
 
-### 📋 THE MOBILE CLIPBOARD HAS NEVER RUN ON A DEVICE
+### 📋 THE MOBILE CLIPBOARD — iOS answered, ANDROID still open
 
-The contract and the Windows shell are proven. The mobile halves compile, and the iOS read-back was
-rewritten in 0.11.0 to enumerate the pasteboard's own types — which makes a device run more valuable,
-not less, because that change is unexercised.
+**iOS is ANSWERED** (2026-08-19, simulator, through the sample's `[CLIPBOARD]` startup probe): text
+round-trips, `text/html` and an app's own `application/x-shenora-probe` both come back off ONE item, and
+`xcrun simctl pbpaste` — a genuinely foreign reader — prints the sentinel. The probe also found a real
+defect on its first run, since fixed: the multi-format paths reached `UIPasteboard` off the main thread
+and threw on every call.
 
-- [ ] **Run the pasteboard paths on a device/simulator, both directions.** What a compile cannot tell
-  us: whether several UTIs on one `UIPasteboard` item are read back as one item, whether Android's
-  `HtmlText` survives a round trip, and whether an app's own media-type string is accepted as a
-  pasteboard type at all. ⚠ **Paste into a FOREIGN app** (Notes, Gmail) — a self round-trip would pass
-  even if the kit invented a private UTI nothing else reads.
-  - ✔ **The foreign reader is solved and needs no human**: `xcrun simctl pbpaste booted` reads the
-    simulator's pasteboard from OUTSIDE the app, and `pbcopy` writes it. Plant a sentinel first, or a
-    stale pasteboard passes the test on its own.
-  - 🔴 **The blocker is TRIGGERING the in-app action, and it is not a permissions problem.** Attempted
-    2026-08-19: `cliclick` at the mapped coordinate, then again with a `return` keypress, changed
-    nothing — the app logged no clipboard activity at all. Accessibility IS granted (System Events
-    returns the Simulator's window position and size over ssh), so synthetic input simply does not reach
-    the WebView's content this way. The donor harness records the same shape — taps landing only a FOCUS
-    on some web controls — so this is the known wall rather than a new one.
-  - **What would get past it**: a page-side trigger rather than a synthetic tap — the sample exposing the
-    clipboard round trip as a startup probe (the way `[CODEC]` and `[ACTIVITY]` already report), so the
-    test is `deploy` + read the log. That also makes it runnable in CI-shaped conditions later.
-  - ⚠ Separately, `dev.mjs mac tap` fails EARLIER than any of this — "could not read the Simulator window
-    geometry" — while the same query through System Events answers fine. A devtools bug, not a kit one.
+- [ ] **ANDROID is unanswered, and it is the half likelier to differ.** Whether `HtmlText` survives a
+  round trip, and whether an app's own media type is carried at all — `ClipData` has no equivalent of
+  iOS's arbitrary UTI, which is why `UnsupportedFormats` answers per-platform in the first place. The
+  probe is already in the sample and prints the same six lines, so this is `dev.mjs android deploy` and
+  reading logcat rather than new work.
+  - ⚠ **Do NOT carry the iOS conclusion across.** Two different pasteboard models; the entry that filed
+    this said so before either had run.
+
+⚠ **A synthetic tap cannot drive the sample's web controls**, which is why this is a startup probe rather
+than a button press. Measured: `cliclick` at the mapped coordinate, then a `return` keypress, both left
+the app silent — with Accessibility granted and the Simulator's window geometry readable over the same
+ssh session. Separately `dev.mjs mac tap` fails earlier still ("could not read the Simulator window
+geometry") while the same System Events query answers fine. A devtools bug, not a kit one.
 
 ### 🎧 BACKGROUND PLAYBACK — how long it survives is unmeasured
 

@@ -539,6 +539,18 @@ public sealed class MainPage : ContentPage
 		CodecProbe.CrossCheck(services.GetRequiredService<Shenora.Modules.Media.IMediaCapability>(),
 			services.GetService<Shenora.Modules.Media.IMediaStreamConversion>(), MauiProgram.Log);
 
+		// The pasteboard round trip, for the same reason the codec probe is here: the answer is a fact
+		// about the PLATFORM, so only running it on one can produce it.
+		// ⚠ Fire-and-forget with a GUARD, never a bare async void — the same rule the media staging above
+		// follows, and the reason is the same: this method is not async, and an unobserved faulting task
+		// on a startup path takes the app down with a stack that names none of this.
+		var clipboardService = services.GetService<Shenora.Core.Shell.IClipboardService>();
+		_ = Task.Run(async () =>
+		{
+			try { await ClipboardProbe.RunAsync(clipboardService, MauiProgram.Log); }
+			catch (Exception ex) { MauiProgram.Log($"[CLIPBOARD] probe failed: {ex.GetType().Name}"); }
+		});
+
 		// The live status surface. Fire-and-forget with a GUARD, never a bare async void — same rule as
 		// the media staging above.
 		if (IslandClaimant == IslandSurface.LiveActivity)

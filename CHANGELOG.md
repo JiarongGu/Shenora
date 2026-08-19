@@ -149,6 +149,22 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- 🔴 **The mobile clipboard's MULTI-FORMAT paths threw on every call, on iOS.** `SetAsync`/`GetAsync`
+  reach `UIPasteboard` directly, and UIKit refuses off the main thread —
+  `UIKitThreadAccessException: you are calling a UIKit method that can only be invoked from the UI
+  thread`. They now marshal.
+  - **Only the formats path was affected, which is why nothing noticed.** `SetTextAsync`/`GetTextAsync`
+    go through MAUI's own `Clipboard.Default`, which marshals internally; the two that reach the platform
+    themselves had nothing doing it for them. A compile cannot see this and the text path hides it.
+  - ⚠ **An async API that must be called from the UI thread is a trap the caller cannot see**: the
+    signature says "await me", so awaiting it from a background thread — what `Task.Run` and every
+    library continuation give you — is the natural thing to write. The kit marshals rather than
+    documenting a rule nobody reads at the call site.
+  - Found by a new `[CLIPBOARD]` startup probe in the MAUI sample, on its FIRST run. With it fixed, iOS
+    answers the questions that filed the task: text round-trips, `text/html` and an app's own
+    `application/…` type both return off one item, and `xcrun simctl pbpaste` — a foreign reader —
+    prints the written sentinel.
+
 🧭 **Found by taking the remote path to a REAL Mac.** Every one of these passed a green gate, and none of
 them could have been found by reading — which is the argument for the trip rather than a note about it.
 
