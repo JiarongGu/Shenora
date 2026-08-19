@@ -1,4 +1,4 @@
-// The diag service: a queue the DEVICE drains, and an operator half that never leaves this box.
+// The inspect service: a queue the DEVICE drains, and an operator half that never leaves this box.
 //
 // 🔴 Why a separate service rather than a route in the app: it runs arbitrary JS in whatever page polls
 // it, which must never be reachable in a product binary — and a diagnostic hosted inside the thing being
@@ -181,7 +181,7 @@ export function createInspectService(options: InspectServiceOptions): { server: 
   const server = http.createServer((req, res) => {
     void handle(req, res).catch(() => {
       // A handler must never take the service down — the whole point is being up when nothing else is.
-      if (!res.headersSent) send(res, 500, { error: 'diag failed' });
+      if (!res.headersSent) send(res, 500, { error: 'inspect failed' });
       else res.end();
     });
   });
@@ -199,7 +199,7 @@ export function createInspectService(options: InspectServiceOptions): { server: 
   };
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const url = new URL(req.url ?? '/', 'http://diag');
+    const url = new URL(req.url ?? '/', 'http://inspect');
     const route = url.pathname;
     const local = isLoopback(req.socket.remoteAddress);
     const peer = plainAddress(req.socket.remoteAddress);

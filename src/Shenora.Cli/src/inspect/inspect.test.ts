@@ -1,4 +1,4 @@
-// The diag service's claims, and one of them is a security boundary.
+// The inspect service's claims, and one of them is a security boundary.
 import { describe, it, expect, afterEach } from 'vitest';
 import http from 'node:http';
 import { createInspectService, InspectState, isLoopback, plainAddress, lanAddresses } from './service.js';

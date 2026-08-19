@@ -11,8 +11,9 @@ const VALUED_FLAGS = new Set(['--port', '--device', '--host', '--app']);
 /**
  * The words that are not flags — an expression to evaluate, or a command to run.
  *
- * ⚠ A valued flag swallows the token after it. Without that, `diag host --port 7699 xcodebuild -version`
- * would run `7699 xcodebuild`, which fails in a way that says nothing about the real mistake.
+ * ⚠ A valued flag swallows the token after it. Without that, `inspect eval --port 7699 location.href`
+ * would evaluate `7699 location.href` — a syntax error whose message says nothing about the real
+ * mistake, which was that the port number was read as part of the expression.
  */
 export function positionals(args: readonly string[]): string[] {
   const out: string[] = [];
@@ -52,7 +53,7 @@ async function ask(args: readonly string[], path: string, body?: unknown): Promi
 
 function noService(args: readonly string[]): false {
   return fail(
-    `no diag service is answering on port ${portOf(args)}.`,
+    `no inspect service is answering on port ${portOf(args)}.`,
     '  Start one in another terminal:  shenora inspect serve',
   );
 }
@@ -63,7 +64,7 @@ export function cmdInspectServe(cfg: DeployConfig | null, args: readonly string[
   const appOrigin = argValue(args, '--app') ?? '';
   const { server } = createInspectService({
     page: () => inspectPage({ appOrigin }),
-    // Resolved lazily and QUIETLY: a diag service is useful with no Mac configured at all, so this
+    // Resolved lazily and QUIETLY: the inspector is useful with no Mac configured at all, so this
     // must not print a refusal at startup for a route nobody may call.
     host: () => (cfg?.remote?.host || process.env.SHENORA_IOS_HOST ? resolveTarget(cfg, args) : null),
   });
@@ -71,13 +72,13 @@ export function cmdInspectServe(cfg: DeployConfig | null, args: readonly string[
   return new Promise<void>((resolve) => {
     server.on('error', (e: NodeJS.ErrnoException) => {
       if (e.code === 'EADDRINUSE') {
-        // ⚠ Named rather than left to crash: what is already listening may be ANOTHER repo's diag
+        // ⚠ Named rather than left to crash: what is already listening may be ANOTHER repo's inspect
         // service. It answers every route validly, so the session looks fine while driving someone
         // else's devices.
         fail(`port ${port} is already in use — something else is listening.`,
-          `  Another diag service, perhaps. Pick another:  shenora inspect serve --port ${port + 1}`);
+          `  Another inspect service, perhaps. Pick another:  shenora inspect serve --port ${port + 1}`);
       } else {
-        fail(`the diag service could not start — ${e.message}`);
+        fail(`the inspect service could not start — ${e.message}`);
       }
       resolve();
     });
@@ -147,7 +148,7 @@ export async function cmdInspectEval(args: readonly string[], expression: string
 
   const queued = (await ask(args, '/api/inspect/actions',
     { kind: 'eval', payload: expression, ...(device ? { device } : {}) })) as { ok?: boolean } | null;
-  if (!queued?.ok) return fail('the diag service refused the action.');
+  if (!queued?.ok) return fail('the inspect service refused the action.');
 
   const deadline = Date.now() + 15_000;
   for (;;) {
