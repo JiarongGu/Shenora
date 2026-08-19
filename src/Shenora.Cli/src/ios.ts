@@ -1102,6 +1102,12 @@ export function describeLogOutcome(status: number, out: string, minutes = 10): S
     : { kind: 'ok', text };
 }
 
+/**
+ * How long a device console stays attached. Startup is what it exists to show, and the sample's probes
+ * are done inside a second — this is generous rather than tuned.
+ */
+const LOG_CONSOLE_SECONDS = 25;
+
 export function cmdLog(cfg: DeployConfig, args: string[]): void {
   const target = resolveTarget(cfg, args);
   if (!target) return;
@@ -1117,11 +1123,20 @@ export function cmdLog(cfg: DeployConfig, args: string[]): void {
     // 🔴 STREAMED, not captured: `--console`'s whole point is watching startup happen live, and a
     // captured run prints nothing until the process exits — which for a console attach is never. A
     // streamed run returns no output to parse, so the status check below is all there is.
-    const r = target.sh(`xcrun devicectl device process launch --console --terminate-existing `
-      + `--device ${q(device.id)} ${q(cfg.bundleId)} 2>&1 | head -${q(lines)}`, { stream: true });
-    // ⚠ `head` closing the pipe is what ENDS the stream, so SIGPIPE (141) is the success path, not a
-    // failure. Treating it as an error here would print a scary message after a run that worked.
-    if (r.status !== 0 && r.status !== 141) {
+    // 🔴 **BOUNDED BY TIME, because `head` does not stop it.** `head -N` closes the pipe after N lines,
+    // and `devicectl --console` does not die of the SIGPIPE — it stays attached to the phone, so the
+    // pipeline never ends and the command hangs until something outside kills it. Measured: this ran for
+    // a full five minutes after printing its 40 lines. A console attach is bounded by how long you want
+    // to watch, not by how much it says.
+    const r = target.sh(`timeout ${LOG_CONSOLE_SECONDS} xcrun devicectl device process launch --console `
+      + `--terminate-existing --device ${q(device.id)} ${q(cfg.bundleId)} 2>&1 | head -${q(lines)}`,
+      { stream: true, timeoutMs: (LOG_CONSOLE_SECONDS + 30) * 1000 });
+
+    // ⚠ THREE statuses mean success here, and getting this wrong prints a scary message after a run that
+    // worked — which it did, every time, before the list was complete. `124` is `timeout` firing, which
+    // is the NORMAL end; `141` is SIGPIPE from `head` closing first, which happens when the app is
+    // chatty; `0` is the app exiting on its own.
+    if (r.status !== 0 && r.status !== 141 && r.status !== 124) {
       fail('could not attach a console to the device.',
         '  Check the app is installed (`shenora ios deploy`), and that the phone is unlocked.');
     }

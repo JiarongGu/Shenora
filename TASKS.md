@@ -104,13 +104,12 @@ not less, because that change is unexercised.
     on a **16.0 s** window, and Android's equivalent dies at ~15.4 s. Too close to ignore before
     promising page-side background audio anywhere.
 
-### 📱 THE REMOTE MAC PATH — the SIGNING half is still unproven
+### 📱 THE REMOTE MAC PATH — what is left after the loop closed
 
-`shenora ios --host` and `shenora inspect` are built (`docs/design/cli-remote.md`). **Driven against a real
-LAN Mac on 2026-08-19**, the unsigned loop works end to end: `doctor` (reports real Xcode/.NET/workload
-versions and finds the connected iPhone) → `devices`/`simulators` → `deploy --simulator` (builds on the
-Mac, boots, installs, launches) → `shot` (a 1206×2622 PNG pulled back here). Five defects came out of
-that hour and are fixed; the CHANGELOG has them.
+`shenora ios --host` and `shenora inspect` are built (`docs/design/cli-remote.md`) and the whole loop was
+driven against a real LAN Mac on **2026-08-19**, ending with the sample signed, installed and launched on
+an iPhone from a Windows box. Nine defects came out of that; the CHANGELOG has them. What follows is what
+that run did NOT settle.
 
 - [ ] 🔴 **NOTHING ON WINDOWS COMPILES THE SAMPLE'S `#if IOS` ARM, and it was broken for FOUR DAYS.**
   Dated from git rather than guessed: `Use()` began taking an `ILogger?` on **2026-08-14** (`71684e6`),

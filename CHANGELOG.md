@@ -187,6 +187,15 @@ them could have been found by reading — which is the argument for the trip rat
     signed-in account read as none. It now counts records inside the list — and the empty-list case is
     pinned too, because the preference key exists either way, so its presence proves nothing.
 
+- **`ios log --device` hung for minutes and then reported a failure it had not had.** Two faults in one
+  command, both found the first time it ran against a phone. `head -N` closes the pipe but
+  `devicectl --console` does not die of the SIGPIPE — it stays attached, so the pipeline never ends and
+  the command runs until something outside kills it (measured: five minutes after printing its forty
+  lines). And the status it exits with when that finally happens is not one the success list knew, so a
+  console attach that had streamed the app's whole startup ended by printing *"could not attach a console
+  to the device"*. It is now bounded by TIME — a console attach is bounded by how long you want to watch,
+  not by how much it says — and the three statuses that mean success are all accepted: `124` (the bound
+  firing, the normal end), `141` (SIGPIPE, when the app is chatty enough to fill `-n` first) and `0`.
 - **A failed DEVICE build printed nothing at all.** `target.gui` cannot stream — its script runs detached
   in the Mac's own login session, so the log exists only as a return value — and the device path never
   printed it. The result was the single line *"the build failed — see the output above"* with nothing
