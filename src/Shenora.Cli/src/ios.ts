@@ -514,10 +514,15 @@ function remoteRoot(cfg: DeployConfig, target: Target): string {
 
   // ⚠ Memoised per host: this is called from findApp, build, publish and the artifact checks, and every
   // miss is a fresh ssh connection at roughly two seconds.
+  //
+  // 🔴 **A FAILURE IS NOT CACHED.** Caching one makes a single transient probe — a dropped connection, a
+  // Mac still waking — permanent for the life of the process: every later call reads the cached empty
+  // and reports "could not read the home directory" about a machine that is now answering perfectly.
+  // Found by the flow tests, where one unscripted probe poisoned every case after it.
   let home = remoteHomes.get(target.label);
-  if (home === undefined) {
+  if (!home) {
     home = target.probe('echo $HOME');
-    remoteHomes.set(target.label, home);
+    if (home) remoteHomes.set(target.label, home);
   }
   // 🔴 An empty probe must NOT become a path. `''` + '/' + basename is `/MyApp` — an absolute path at the
   // filesystem root, which exists nowhere, so every later check answers "not found" and the command
@@ -572,7 +577,7 @@ export function buildDir(cfg: DeployConfig, target: Target): string {
  * correction mid-build is exactly the kind of thing that would make this reject one build in a hundred
  * for no visible reason. It only has to be tight enough to catch "yesterday's leftover".
  */
-function builtBy(target: Target, full: string, builtAfter?: number): boolean {
+export function builtBy(target: Target, full: string, builtAfter?: number): boolean {
   if (builtAfter === undefined) return true;
   const mtime = target.newestMtimeMs(full);
   const allowance = target.isRemote ? 30_000 : 1_000;
@@ -582,7 +587,7 @@ function builtBy(target: Target, full: string, builtAfter?: number): boolean {
 }
 
 /** The built .app, FOUND rather than composed: the bundle name follows the assembly, not the project. */
-function findApp(target: Target, cfg: DeployConfig, rid: string, builtAfter?: number): string | null {
+export function findApp(target: Target, cfg: DeployConfig, rid: string, builtAfter?: number): string | null {
   // `buildDir`, not `path.dirname` — see `projectDir`'s doc: a `project` naming a DIRECTORY resolved to
   // the PARENT, so this looked for the .app one level too high and answered "not built" about a built
   // app. `buildDir` also redirects to the BUILD MACHINE's own tree when `target` is remote — `cfg.root`
@@ -602,7 +607,7 @@ function findApp(target: Target, cfg: DeployConfig, rid: string, builtAfter?: nu
  * ActivityKit call reports success. **A simulator cannot catch this** — it does not enforce code signing.
  * This kit shipped that bug and spent three device round-trips finding it.
  */
-function checkExtensions(target: Target, app: string): { checked: number; problems: string[] } {
+export function checkExtensions(target: Target, app: string): { checked: number; problems: string[] } {
   const plugins = target.join(app, 'PlugIns');
   if (!target.exists(plugins)) return { checked: 0, problems: [] };
   const problems: string[] = [];
@@ -627,7 +632,7 @@ function checkExtensions(target: Target, app: string): { checked: number; proble
 }
 
 
-function build(target: Target, cfg: DeployConfig, rid: string, signing: string, extra: string): boolean {
+export function build(target: Target, cfg: DeployConfig, rid: string, signing: string, extra: string): boolean {
   if (extra) console.log(`shenora: extra build args:${extra}`);
   console.log(`shenora: building ${cfg.project} (${iosTfmOf(cfg)}, ${rid})…`);
   const project = buildProject(cfg, target);
@@ -965,7 +970,7 @@ function stillRunning(target: Target, launchOutput: string, cfg: DeployConfig): 
   return false;
 }
 
-function deployToDevice(target: Target, cfg: DeployConfig, args: string[], extra: string): void {
+export function deployToDevice(target: Target, cfg: DeployConfig, args: string[], extra: string): void {
   const device = resolveDevice(target, argValue(args, '--device'));
   if (!device) return;
 

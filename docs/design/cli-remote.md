@@ -126,3 +126,26 @@ bookkeeping.
 - **No NAT traversal or tunnel.** Same LAN, or it does not work — and it says so.
 - **No streaming from `gui`.** Not a limitation to fix later: the detached session genuinely cannot pipe
   back. The marker file is the answer, not a placeholder for one.
+
+## What is proven here, and what needs hardware
+
+🔴 **The point of this split is that a change to the device loop cannot break silently.** Every defect
+this subsystem has had lived in *which command went where, in what order* — not in whether the Mac obeyed
+it. That half is assertable without a Mac, and `remote/flow.test.ts` asserts it against `FakeTarget`, a
+scriptable stand-in that records how each command was dispatched.
+
+| Proven by the suite, no hardware | Needs a Mac or a phone |
+|---|---|
+| a signing build goes through `gui`, a simulator build does not | whether `codesign` then succeeds |
+| a local Mac never pays for the GUI hand-off | whether Terminal.app is reachable |
+| `dotnet` is handed the PROJECT, never the checkout root | whether the project builds |
+| freshness reads the whole bundle, and unreadable ≠ fresh | the real mtimes |
+| a failed `gui` build PRINTS its log | the log's contents |
+| extensions are checked before install, and a missing profile is named | whether the phone accepts it |
+| `push` deletes what it previously sent, via a file and `xargs` | the bytes arriving |
+| `provision` asks once per bundle id and verifies ON DISK | whether Apple issues the profile |
+
+⚠ **A fake cannot tell you the last mile and must not pretend to.** These tests never claim a build
+succeeds, a signature verifies, or an app launches. They claim the orchestration is right, which is where
+every one of this subsystem's defects actually was — each found once, by hand, against real hardware, and
+none of which would have been found twice.
