@@ -91,20 +91,19 @@ Both platforms have now run the sample's `[CLIPBOARD]` startup probe (2026-08-19
 | iOS | round-trips | present | present (arbitrary UTI) |
 | Android | round-trips | **DROPPED** | refused, by name |
 
-- [ ] 🔴 **Android ACCEPTS `text/html` and then loses it, which is worse than refusing it.** The custom
-  type is refused explicitly and that is honest; HTML passes `UnsupportedFormats`, is written with
-  `ClipData.NewHtmlText`, and comes back with no formats at all. Silent loss on a surface whose whole
-  job is carrying representations.
-  - **The cause is NOT isolated.** Both halves read correctly: the write uses `NewHtmlText`, the read
-    takes `GetItemAt(0).HtmlText`. Candidates, none tested — Android gates clipboard READS on the app
-    having focus (a startup probe may not); the emulator's own clipboard listener was active in logcat
-    during the run and may have replaced the clip; or `HtmlText` needs the clip DESCRIPTION to declare
-    the HTML mime type on this API level.
-  - **Cheapest next step**: have the probe log `PrimaryClip.Description` mime types straight after its
-    own write. That separates "we never wrote HTML" from "something replaced it" from "we cannot read it
-    back", which is three different fixes.
-  - ⚠ Then decide: carry it, or refuse it like the custom type. **Accepting and dropping is the one
-    option that is not defensible** — an adopter cannot tell it happened.
+- [ ] **Android loses `text/html`, the KIT is not at fault, and the remaining question is WHERE.**
+  A control in the probe calls `ClipData.NewHtmlText` directly — no kit code in the path — and the clip
+  it produces declares `mime=[text/plain] htmlText=null`. The kit's write is correct; the platform is
+  not carrying it. The kit's read and a focus-gated read were both eliminated first, by asking the
+  platform what it held immediately after the write.
+  - ⚠ **Measured on an EMULATOR, whose clipboard is bridged to the host and may flatten formats.** That
+    is a real alternative to "this Android version dropped HTML support", and the two have opposite
+    consequences. **Re-run the probe on a real handset before deciding** — it is already in the sample
+    and prints the control line itself.
+  - **Then decide, and only then**: carry it if a device carries it, or add `Html` to Android's
+    `UnsupportedFormats` so it is refused by name like an app's own type. **Accepting and silently
+    dropping is the one option that is not defensible** — an adopter cannot tell it happened. Do not
+    make that change off an emulator result alone.
 
 ### 🎧 BACKGROUND PLAYBACK — how long it survives is unmeasured
 

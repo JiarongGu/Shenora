@@ -59,6 +59,8 @@ internal static class ClipboardProbe
             [CustomType] = Encoding.UTF8.GetBytes("custom-payload"),
         });
 
+        await ControlWrite(log);
+
         log("[CLIPBOARD] CROSS-CHECK: read the pasteboard from OUTSIDE — `xcrun simctl pbpaste booted`, or "
             + "`adb shell service call clipboard` — which is the only reader that proves another app sees it.");
     }
@@ -71,6 +73,11 @@ internal static class ClipboardProbe
         try
         {
             await clipboard.SetAsync(new ClipboardContent { Text = Sentinel, Formats = formats });
+            // 🔴 Ask the PLATFORM what it is holding, immediately after the write and before the kit's own
+            // read. `text/html` came back missing on Android and three different faults produce that:
+            // never written, replaced by something else, or written and not readable back. Only the clip's
+            // own description separates them, and each needs a different fix.
+            await DescribePlatformClip(label, log);
             var read = await clipboard.GetAsync();
 
             log($"[CLIPBOARD] {label,-10} text : "
@@ -88,6 +95,86 @@ internal static class ClipboardProbe
             // type is named rather than swallowed, and it must not take the app down on startup.
             log($"[CLIPBOARD] {label,-10} REFUSED ({name}): {ex.GetType().Name} — {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// A CONTROL: write HTML with the platform API directly, bypassing the kit entirely, and report what
+    /// the clipboard then says it holds.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 This is the one measurement that separates the last two explanations for HTML vanishing on
+    /// Android. If the control's clip declares <c>text/html</c>, the platform call works and the KIT is
+    /// not reaching it; if the control declares only <c>text/plain</c>, then
+    /// <c>ClipData.NewHtmlText</c> no longer describes itself as HTML at this API level and the kit is
+    /// blameless. Same call, no kit in the path — which is what makes it a control rather than a
+    /// second opinion.
+    /// </remarks>
+    private static Task ControlWrite(Action<string> log)
+    {
+#if ANDROID
+        try
+        {
+            var manager = (global::Android.Content.ClipboardManager?)global::Android.App.Application.Context
+                .GetSystemService(global::Android.Content.Context.ClipboardService);
+            if (manager is null) { log("[CLIPBOARD] control   : no ClipboardManager"); return Task.CompletedTask; }
+
+            manager.PrimaryClip = global::Android.Content.ClipData.NewHtmlText(
+                "probe", Sentinel, $"<b>{Sentinel}</b>");
+
+            var clip = manager.PrimaryClip;
+            var description = clip?.Description;
+            var mimes = description is null
+                ? "(none)"
+                : string.Join(", ", Enumerable.Range(0, description.MimeTypeCount)
+                    .Select(i => description.GetMimeType(i)));
+            var item = clip is { ItemCount: > 0 } ? clip.GetItemAt(0) : null;
+            log($"[CLIPBOARD] control   : NewHtmlText direct -> mime=[{mimes}] "
+                + $"htmlText={(item?.HtmlText is null ? "null" : $"{item.HtmlText.Length} chars")}");
+        }
+        catch (Exception ex)
+        {
+            log($"[CLIPBOARD] control   : failed — {ex.GetType().Name}");
+        }
+#else
+        _ = log;
+#endif
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// What the platform clipboard says it is holding, straight from the OS rather than through the kit.
+    /// </summary>
+    /// <remarks>
+    /// ⚠ Deliberately NOT routed through <see cref="IClipboardService"/>. The kit's read is one of the
+    /// suspects, so asking it would be asking the accused — this goes to the platform object directly.
+    /// </remarks>
+    private static Task DescribePlatformClip(string label, Action<string> log)
+    {
+#if ANDROID
+        try
+        {
+            var manager = (global::Android.Content.ClipboardManager?)global::Android.App.Application.Context
+                .GetSystemService(global::Android.Content.Context.ClipboardService);
+            var clip = manager?.PrimaryClip;
+            if (clip is null) { log($"[CLIPBOARD] {label,-10} platform: PrimaryClip is NULL (read denied?)"); return Task.CompletedTask; }
+
+            var description = clip.Description;
+            var mimes = description is null
+                ? "(no description)"
+                : string.Join(", ", Enumerable.Range(0, description.MimeTypeCount)
+                    .Select(i => description.GetMimeType(i)));
+            var item = clip.ItemCount > 0 ? clip.GetItemAt(0) : null;
+            log($"[CLIPBOARD] {label,-10} platform: items={clip.ItemCount} mime=[{mimes}] "
+                + $"htmlText={(item?.HtmlText is null ? "null" : $"{item.HtmlText.Length} chars")}");
+        }
+        catch (Exception ex)
+        {
+            log($"[CLIPBOARD] {label,-10} platform: could not inspect — {ex.GetType().Name}");
+        }
+#else
+        _ = label; _ = log;
+#endif
+        return Task.CompletedTask;
     }
 
     private static string Describe(string? value) =>
