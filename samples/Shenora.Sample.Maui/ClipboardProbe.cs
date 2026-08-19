@@ -73,7 +73,11 @@ internal static class ClipboardProbe
             [CustomType] = Encoding.UTF8.GetBytes("custom-payload"),
         });
 
-        await ControlWrite(log);
+        // ⚠ ONE control, deliberately. Variants of it (two in a row, one on the main thread) were an
+        // EXPERIMENT and the experiment is finished — its record is in TASKS.md, because three
+        // near-identical calls in a probe are something nobody will maintain and everybody will
+        // misread as a claim.
+        await ControlWrite(log, "control", onMainThread: false);
 
         log("[CLIPBOARD] CROSS-CHECK: read the pasteboard from OUTSIDE — `xcrun simctl pbpaste booted`, or "
             + "`adb shell service call clipboard` — which is the only reader that proves another app sees it.");
@@ -123,14 +127,28 @@ internal static class ClipboardProbe
     /// blameless. Same call, no kit in the path — which is what makes it a control rather than a
     /// second opinion.
     /// </remarks>
-    private static Task ControlWrite(Action<string> log)
+    private static async Task ControlWrite(Action<string> log, string label, bool onMainThread)
     {
 #if ANDROID
+        // The whole experiment is this line: identical work, one thread apart.
+        if (onMainThread) { await MainThread.InvokeOnMainThreadAsync(() => ControlBody(log, label)); return; }
+        ControlBody(log, label);
+    }
+
+    private static void ControlBody(Action<string> log, string label)
+    {
+        // 🔴 A SETTLE BETWEEN THE SET AND THE READ-BACK. Four hypotheses died here — platform drops HTML,
+        // the kit is at fault, the writing THREAD matters, the ORDER matters — and each was killed by the
+        // next measurement. What every one of them had in common was reading the clipboard immediately
+        // after writing it. `PrimaryClip` is a cross-process call, so an immediate read is a race with the
+        // service, and a racing instrument explains inconsistent results better than any property of the
+        // write does. If a settled read is stable, every earlier "DROPPED" was this.
+        System.Threading.Thread.Sleep(1200);
         try
         {
             var manager = (global::Android.Content.ClipboardManager?)global::Android.App.Application.Context
                 .GetSystemService(global::Android.Content.Context.ClipboardService);
-            if (manager is null) { log("[CLIPBOARD] control   : no ClipboardManager"); return Task.CompletedTask; }
+            if (manager is null) { log($"[CLIPBOARD] {label,-12}: no ClipboardManager"); return; }
 
             manager.PrimaryClip = global::Android.Content.ClipData.NewHtmlText(
                 "probe", Sentinel, $"<b>{Sentinel}</b>");
@@ -142,17 +160,17 @@ internal static class ClipboardProbe
                 : string.Join(", ", Enumerable.Range(0, description.MimeTypeCount)
                     .Select(i => description.GetMimeType(i)));
             var item = clip is { ItemCount: > 0 } ? clip.GetItemAt(0) : null;
-            log($"[CLIPBOARD] control   : NewHtmlText direct -> mime=[{mimes}] "
-                + $"htmlText={(item?.HtmlText is null ? "null" : $"{item.HtmlText.Length} chars")}");
+            log($"[CLIPBOARD] {label,-12}: NewHtmlText direct -> mime=[{mimes}] "
+                + $"htmlText={(item?.HtmlText is null ? "null" : $"{item.HtmlText.Length} chars")}"
+                + $" main={MainThread.IsMainThread}");
         }
         catch (Exception ex)
         {
-            log($"[CLIPBOARD] control   : failed — {ex.GetType().Name}");
+            log($"[CLIPBOARD] {label,-12}: failed — {ex.GetType().Name}");
         }
 #else
-        _ = log;
+        _ = log; _ = label;
 #endif
-        return Task.CompletedTask;
     }
 
     /// <summary>

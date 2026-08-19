@@ -87,25 +87,27 @@ Both platforms have now run the sample's `[CLIPBOARD]` startup probe (2026-08-19
 | iOS | round-trips | present | present (arbitrary UTI) |
 | Android | round-trips | **DROPPED** | refused, by name |
 
-- [ ] **Android's `text/html` result is INTERMITTENT, and every earlier conclusion here was drawn from
-  single runs.** Counted with `dev.mjs android probes --wait 40`, four trials on one emulator:
+- [ ] **Android `text/html`: NOT REPRODUCIBLE on an emulator, and five explanations are dead.** The kit
+  writes a clip that declares `text/html` (instrumented: `built=[text/html]`). What the clipboard holds
+  afterwards varies run to run, and nothing about the WRITE predicts it.
 
-  | run | kit write | control (platform API direct) |
+  | varied | prediction | result |
   |---|---|---|
-  | 1 | `text/plain` | `text/html` |
-  | 2 | `text/plain` | `text/html` |
-  | 3 | `text/plain` | `text/plain` |
-  | 4 | **`text/html`** | `text/html` |
+  | the platform drops HTML | control fails too | control succeeded 9/10 — **dead** |
+  | the kit is at fault | control always succeeds | control failed 1/10 — **dead** |
+  | the writing THREAD | main thread loses it | main thread WON, background lost — **dead** |
+  | the ORDER of writes | later writes win | 1st html, 2nd plain, 3rd html — **dead** |
+  | racing read-after-write | a settled read is stable | 1.2 s settle: still varies — **dead** |
 
-  - **What that kills.** "Android drops HTML" (run 4 wrote it). "The kit is at fault and the control
-    proves it" (run 3's control failed too). "Focus and timing are eliminated" — that rested on two runs
-    agreeing, which four runs show is not enough to conclude anything here.
-  - **What is left**: both paths produce HTML SOMETIMES on this emulator, at different rates (kit 1/4,
-    control 3/4). A bridged emulator clipboard is the obvious suspect and is untested; so is a race
-    between the write and the read-back.
-  - **Do not theorise further without more trials.** `.claude/knowledge/debugging-method.md` is the
-    procedure — A/B the harness, count, instrument before explaining. Three coherent stories have already
-    been wrong here, each one plausible and each built on a single run.
+  - 🔴 **The prime remaining suspect is the EMULATOR'S CLIPBOARD BRIDGE**, which mirrors the guest
+    clipboard to the Windows host and is the one variable I could not hold still. **The way to test it is
+    to turn that sharing OFF** (Extended Controls → Settings) and repeat: stable results implicate the
+    bridge and clear both the kit and Android.
+  - ⚠ **Until then this says nothing about a handset**, and it is NOT a reason to change the kit — the
+    write is correct and every attempt to "fix" it made things worse. One such attempt shipped briefly:
+    verifying the write by reading it back refused writes that had succeeded, because the read is the
+    unreliable half.
+  - **The instrument is reusable**: `dev.mjs android probes` prints the control line every run.
 
 ### 🎧 BACKGROUND PLAYBACK — how long it survives is unmeasured
 
