@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import http from 'node:http';
 import { createInspectService, InspectState, isLoopback, plainAddress, lanAddresses } from './service.js';
 import { inspectPage } from './page.js';
-import { positionals, cmdInspectEval } from './commands.js';
+import { positionals, cmdInspectEval, warnIfShellRewrote } from './commands.js';
 
 const servers: http.Server[] = [];
 afterEach(() => {
@@ -284,5 +284,41 @@ describe('positionals', () => {
   it('does not read a flag value as a word', () => {
     expect(positionals(['--port', '7699', 'xcodebuild', '-version'])).toEqual(['xcodebuild', '-version']);
     expect(positionals(['location.href', '--device', 'phone'])).toEqual(['location.href']);
+  });
+});
+
+describe('shell-mangled expressions', () => {
+  /**
+   * 🔴 Git Bash rewrites anything path-shaped on its way to argv, so a regex literal arrives mangled:
+   * `k=>/chrome/i.test(k)` becomes `k=>C:/Program Files/Git/chrome/i.test(k)`. The device then reports
+   * "missing ) after argument list" — an error about an expression the user did not write. Nothing can
+   * PREVENT it (the damage precedes this process), so it is named instead.
+   */
+  it('names the shell when a Git path appears inside an expression', () => {
+    const say: string[] = [];
+    const error = console.error;
+    console.error = (...a: unknown[]) => { say.push(a.join(' ')); };
+    try {
+      warnIfShellRewrote('Object.keys(window).filter(k=>C:/Program Files/Git/chrome/i.test(k))');
+    } finally {
+      console.error = error;
+    }
+    expect(say.join('\n')).toContain('your SHELL rewrote');
+    expect(say.join('\n')).toContain('MSYS_NO_PATHCONV=1');
+  });
+
+  it('stays SILENT for an ordinary expression', () => {
+    // The quiet direction: warning on every eval would train people to ignore it, and most expressions
+    // mention no path at all.
+    const say: string[] = [];
+    const error = console.error;
+    console.error = (...a: unknown[]) => { say.push(a.join(' ')); };
+    try {
+      warnIfShellRewrote('location.href');
+      warnIfShellRewrote('[1,2,3].filter(n=>n>1).length');
+    } finally {
+      console.error = error;
+    }
+    expect(say).toEqual([]);
   });
 });

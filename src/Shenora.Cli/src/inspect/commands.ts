@@ -51,6 +51,28 @@ async function ask(args: readonly string[], path: string, body?: unknown): Promi
   }
 }
 
+/**
+ * Say so when the SHELL rewrote the expression before this process ever saw it.
+ *
+ * 🔴 **Git Bash converts anything that looks like a POSIX path into a Windows one**, so a regex literal
+ * is silently rewritten on its way to argv: `k=>/chrome/i.test(k)` arrives as
+ * `k=>C:/Program Files/Git/chrome/i.test(k)`. The device then answers *"missing ) after argument list"* —
+ * an error about YOUR expression, describing text you did not type, with nothing pointing at the cause.
+ * Measured while proving the inspector inside a WebView2 shell.
+ *
+ * ⚠ Nothing here can PREVENT it — the damage is done before `node` starts — so it is reported instead.
+ * The tell is a Git installation path inside an expression, which nobody types on purpose.
+ */
+export function warnIfShellRewrote(expression: string): void {
+  const rewritten = /[A-Za-z]:[\\/](Program Files[\\/])?Git[\\/]/.exec(expression);
+  if (!rewritten) return;
+  console.error('\nshenora: your SHELL rewrote this expression before the CLI saw it —');
+  console.error(`    ${expression}`);
+  console.error('  Git Bash converts anything path-shaped, which mangles a regex literal. Re-run with:');
+  console.error('    MSYS_NO_PATHCONV=1 shenora inspect eval "…"');
+  console.error('  Evaluating it anyway, so you can see what the device makes of it.\n');
+}
+
 function noService(args: readonly string[]): false {
   return fail(
     `no inspect service is answering on port ${portOf(args)}.`,
@@ -140,6 +162,7 @@ export async function cmdInspectReport(args: readonly string[]): Promise<boolean
  */
 export async function cmdInspectEval(args: readonly string[], expression: string): Promise<boolean> {
   if (!expression.trim()) return fail('nothing to evaluate.', '  shenora inspect eval "location.href"');
+  warnIfShellRewrote(expression);
   const device = argValue(args, '--device');
 
   const before = (await ask(args, '/api/inspect/results')) as { latest?: number } | null;
