@@ -233,6 +233,52 @@ switch (sub) {
     break;
   }
 
+  case 'probes': {
+    // 🔴 THE ROUTE FOR WHAT A FAKE CANNOT REACH. The sample's startup probes report facts only a real
+    // platform can produce — codec support, safe-area insets, the pasteboard round trip — and until now
+    // reading them meant a human squinting at logcat. That is not a check: a probe that silently STOPS
+    // running looks exactly like a quiet run, which is how the clipboard probe's own first Android
+    // attempt reported nothing at all and was nearly read as "no problems".
+    //
+    // ⚠ It asserts that each probe RAN, never what it concluded. What `[CLIPBOARD] text/html : DROPPED`
+    // means is a per-platform question under investigation; that the line is ABSENT is unambiguous.
+    const device = target(rest);
+    if (!device) { process.exitCode = 1; break; }
+
+    const expected = ['[CODEC]', '[CLIPBOARD]', '[Shenora.Mobile]'];
+    console.log('android: relaunching and collecting the startup probes…');
+    run(adb, ['-s', device, 'logcat', '-c'], { stdio: 'ignore' });
+    run(adb, ['-s', device, 'shell', 'am', 'force-stop', config.androidPackageId], { stdio: 'ignore' });
+    run(adb, ['-s', device, 'shell', 'monkey', '-p', config.androidPackageId,
+      '-c', 'android.intent.category.LAUNCHER', '1'], { stdio: 'ignore' });
+
+    // The probes wait for the platform to settle before touching the clipboard, so this has to outlast
+    // that — generous rather than tuned, because too short reports a MISSING probe that merely had not
+    // run yet, which is the worst answer this can give.
+    const waitMs = rest.includes('--wait') ? Number(rest[rest.indexOf('--wait') + 1]) * 1000 : 45_000;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+
+    const dump = capture(['-s', device, 'logcat', '-d', '-s', `${config.androidLogTag}:V`]);
+    const lines = dump.split('\n').filter((l) => l.includes('[SHENORA]') || l.includes('SHENORA :'));
+
+    console.log('');
+    for (const line of lines.filter((l) => expected.some((tag) => l.includes(tag)))) {
+      console.log(`  ${line.replace(/^.*SHENORA[ :]+/, '').trimEnd()}`);
+    }
+
+    const missing = expected.filter((tag) => !lines.some((l) => l.includes(tag)));
+    console.log('');
+    if (missing.length > 0) {
+      console.error(`android: these probes did NOT run: ${missing.join(', ')}`);
+      console.error('  A probe that stops running looks exactly like a clean run. Check the app launched');
+      console.error(`  (\`node devtools/dev.mjs android log\`), and that --wait outlasts their settle delay.`);
+      process.exitCode = 1;
+    } else {
+      console.log(`android: all ${expected.length} probe groups reported.`);
+    }
+    break;
+  }
+
   case 'shot': {
     const named = rest.find((a) => !a.startsWith('-')) ?? 'android';
     const device = target(rest);
@@ -358,6 +404,6 @@ switch (sub) {
   }
 
   default:
-    console.error('usage: node devtools/dev.mjs android <devices|connect <host:port>|deploy|run|log|shot [name]|eval <js>|tap <selector>|bench [--runs N]> [--device id]');
+    console.error('usage: node devtools/dev.mjs android <devices|connect <host:port>|deploy|run|log|probes [--wait s]|shot [name]|eval <js>|tap <selector>|bench [--runs N]> [--device id]');
     process.exitCode = sub ? 1 : 0;
 }

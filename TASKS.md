@@ -91,26 +91,25 @@ Both platforms have now run the sample's `[CLIPBOARD]` startup probe (2026-08-19
 | iOS | round-trips | present | present (arbitrary UTI) |
 | Android | round-trips | **DROPPED** | refused, by name |
 
-- [ ] **Android: the kit BUILDS a correct HTML clip and the stored clip is plain text. Mechanism
-  unknown.** Investigated at length on an emulator 2026-08-19; recording the evidence rather than a
-  theory, because three theories have already been wrong here.
-  - **Established, reproducibly:** temporary instrumentation inside the write showed
-    `built=[text/html] storedBack=[text/plain]` — the kit constructs the right clip, and what the
-    platform holds afterwards is plain. A CONTROL in the sample calling `ClipData.NewHtmlText` directly
-    reads back `mime=[text/html] htmlText=30 chars` **in the same run**, so the API works on this image.
-  - **Eliminated:** the kit's arguments (`wantsHtml=True htmlBytes=30`); the kit's READ path (a
-    platform-direct read sees the same plain clip); and focus/timing — the probe's settle delay was
-    raised from 4 s to 12 s and both give byte-identical output.
-  - **The one difference left** is that the kit writes on the MAIN thread (`main=True`, since
-    `SetAsync` marshals for UIKit's sake) while the control writes on a background thread. That is a
-    lead, NOT a conclusion — it has not been tested, and "the obvious remaining difference" has been
-    wrong twice already today.
-  - **Next experiment**, cheap and decisive: make the control write from the main thread too. If it then
-    also stores plain, the marshalling is implicated and iOS and Android want different threads; if it
-    still stores HTML, the difference is somewhere else entirely and this lead dies too.
-  - ⚠ **Do not "fix" this by refusing `text/html` on Android.** That was tried: verifying the write by
-    reading it back turned a working capability into a named refusal, because the read is the unreliable
-    half. Reverted, with the reason recorded at the call site.
+- [ ] **Android's `text/html` result is INTERMITTENT, and every earlier conclusion here was drawn from
+  single runs.** Counted with `dev.mjs android probes --wait 40`, four trials on one emulator:
+
+  | run | kit write | control (platform API direct) |
+  |---|---|---|
+  | 1 | `text/plain` | `text/html` |
+  | 2 | `text/plain` | `text/html` |
+  | 3 | `text/plain` | `text/plain` |
+  | 4 | **`text/html`** | `text/html` |
+
+  - **What that kills.** "Android drops HTML" (run 4 wrote it). "The kit is at fault and the control
+    proves it" (run 3's control failed too). "Focus and timing are eliminated" — that rested on two runs
+    agreeing, which four runs show is not enough to conclude anything here.
+  - **What is left**: both paths produce HTML SOMETIMES on this emulator, at different rates (kit 1/4,
+    control 3/4). A bridged emulator clipboard is the obvious suspect and is untested; so is a race
+    between the write and the read-back.
+  - **Do not theorise further without more trials.** `.claude/knowledge/debugging-method.md` is the
+    procedure — A/B the harness, count, instrument before explaining. Three coherent stories have already
+    been wrong here, each one plausible and each built on a single run.
 
 ### 🎧 BACKGROUND PLAYBACK — how long it survives is unmeasured
 
