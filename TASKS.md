@@ -109,10 +109,17 @@ Both platforms have now run the sample's `[CLIPBOARD]` startup probe (2026-08-19
 
 ### 🎧 BACKGROUND PLAYBACK — how long it survives is unmeasured
 
-- [ ] **Nobody knows past ~45 s** (Android 45 s, iOS 43 s, against a 60 s clip, on an emulator and a
-  simulator — both gentler than a handset, where Android's freezer/Doze arrives sooner). Minutes are
-  unmeasured on both. **A documentation claim to earn, not a defect to fix** — a foreground service is
-  the app's to post, which is the split `IPlaybackSession` documents.
-  - ⚠ It leaves a documented iOS claim in doubt: *"an `<audio>` keeps playing while backgrounded"* rests
-    on a **16.0 s** window, and Android's equivalent dies at ~15.4 s. Too close to ignore before
-    promising page-side background audio anywhere.
+- [ ] **MINUTES are not survived on Android — measured, and it CONTRADICTS the ~45 s on record.**
+  2026-08-20, emulator (Android 16, SDK 36), observed from OUTSIDE the app via `dumpsys audio` because
+  CDP stops answering the moment the webview is backgrounded — the exact state being measured. A looped
+  `<audio>` reported `started` at t+6 s and `stopped` by t+15 s after `KEYCODE_HOME`.
+  - ⚠ **One trial, and this session has been burned by single trials three times.** The number to trust
+    is not 15 s; what IS clear is the ORDER of magnitude — seconds, not minutes — and that is the only
+    part the documentation claim depends on.
+  - **So the claim to publish is the conservative one**: page-side `<audio>` does NOT keep playing when
+    backgrounded on Android. A foreground service is the app's to post, which is the split
+    `IPlaybackSession` already documents. iOS is still unmeasured past its 43 s.
+  - **Next**: narrow with finer polls (3/6/9/12 s) and repeat trials before quoting any figure, and
+    re-check whether the sample's page pauses on `visibilitychange` — that would make this the PAGE's
+    behaviour rather than the platform's, which is a different claim entirely.
+
