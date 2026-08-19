@@ -35,6 +35,13 @@ export function inspectPage(options: PageOptions = {}): string {
            background: transparent; color: inherit; margin: 0 6px 6px 0; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
          background: #b3261e; vertical-align: middle; }
+  input { font: inherit; font-family: ui-monospace, monospace; padding: 7px 9px; border-radius: 8px;
+          border: 1px solid rgba(128,128,128,.4); background: transparent; color: inherit;
+          width: min(100%, 420px); margin: 0 6px 6px 0; }
+  .steps { font-size: 13px; opacity: .8; padding-left: 20px; margin: 6px 0 0; }
+  .steps li { margin: 2px 0; }
+  code { font-family: ui-monospace, monospace; background: rgba(128,128,128,.15); padding: 1px 5px;
+         border-radius: 4px; }
   .dot.on { background: #1a7f37; }
 </style>
 </head>
@@ -44,7 +51,32 @@ export function inspectPage(options: PageOptions = {}): string {
 
 <h2>Remote control</h2>
 <p class="sub"><span class="dot" id="dot"></span><span id="rstat">connecting…</span></p>
-<pre id="rlog">waiting for the diag service…</pre>
+<pre id="rlog">waiting for the inspect service…</pre>
+
+<!-- ── The OPERATOR half. Rendered only on loopback; see the script's note on why that is cosmetic. -->
+<div id="operator" hidden>
+  <h2>Operator — this machine</h2>
+  <p class="sub">You are on loopback, so this half is yours. A phone opening the LAN URL sees none of it.</p>
+
+  <ol class="steps" id="steps">
+    <li>Open the LAN URL printed by <code>shenora inspect serve</code> on the device.</li>
+    <li>It appears under <b>Devices</b> below within a second or two.</li>
+    <li>Run an expression in its page, or a command on the Mac.</li>
+  </ol>
+
+  <h2>Devices</h2>
+  <table id="devices"><tr><td colspan="2">none yet</td></tr></table>
+
+  <h2>Run in the device's page</h2>
+  <input id="expr" type="text" value="location.href" spellcheck="false">
+  <button id="run-eval">Evaluate</button>
+
+  <h2>Run on the Mac (ssh)</h2>
+  <input id="cmd" type="text" value="xcodebuild -version" spellcheck="false">
+  <button id="run-host">Run</button>
+
+  <pre id="out">(nothing run yet)</pre>
+</div>
 
 <h2>This device</h2>
 <table id="env"></table>
@@ -224,6 +256,93 @@ export function inspectPage(options: PageOptions = {}): string {
       })
       .catch(function () { on = false; paint(); })
       .then(function () { setTimeout(poll, 1200); });
+  }
+
+  // ── The OPERATOR half, on this machine only.
+  //
+  // 🔴 Hiding it off-loopback is COSMETIC and must be read that way. The SERVER is the boundary: every
+  // route below answers 404 to a non-loopback peer whatever the page does, and a phone could forge these
+  // requests trivially. This only stops an operator panel appearing on a phone that cannot use it, which
+  // would read as a broken tool rather than as a closed door.
+  var isOperator = location.hostname === '127.0.0.1' || location.hostname === 'localhost'
+    || location.hostname === '::1';
+
+  if (isOperator) {
+    document.getElementById('operator').hidden = false;
+
+    var show = function (label, body) {
+      text('out', label + '\\n\\n' + body);
+    };
+
+    var refreshDevices = function () {
+      fetch('/api/inspect/devices', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : { devices: [] }; })
+        .then(function (d) {
+          var listed = (d.devices || []).map(function (x) {
+            return [x.name + '  ·  ' + x.address, x.polls + ' polls'];
+          });
+          if (listed.length === 0) listed = [['none yet', 'open the LAN URL on the device']];
+          rows('devices', listed);
+        })
+        .catch(function () {});
+    };
+
+    // ⚠ Reads the results cursor BEFORE queueing, exactly as the CLI does: a device polling on a 1.2 s
+    // loop can answer before a later cursor read would have started watching, and the reply is then
+    // invisible. Same bug, same fix, stated in both places because they are separate implementations.
+    document.getElementById('run-eval').addEventListener('click', function () {
+      var expr = document.getElementById('expr').value;
+      show('evaluating on the device…', expr);
+      fetch('/api/inspect/results').then(function (r) { return r.json(); }).then(function (before) {
+        var cursor = before.latest || 0;
+        return fetch('/api/inspect/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: 'eval', payload: expr }),
+        }).then(function () { return waitForResult(cursor, 15000); });
+      }).then(function (hit) {
+        show(hit ? (hit.device + (hit.ok ? '' : '  (threw)')) : 'no device answered within 15s',
+          hit ? hit.value : 'Is one listed under Devices? A closed page cannot answer.');
+      }).catch(function (e) { show('failed', String(e && e.message ? e.message : e)); });
+    });
+
+    var waitForResult = function (cursor, budgetMs) {
+      var deadline = Date.now() + budgetMs;
+      var attempt = function () {
+        return fetch('/api/inspect/results?since=' + cursor, { cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            var hit = (d.results || []).filter(function (x) { return x.kind === 'eval'; })[0];
+            if (hit) return hit;
+            if (Date.now() > deadline) return null;
+            return new Promise(function (r) { setTimeout(r, 400); }).then(attempt);
+          });
+      };
+      return attempt();
+    };
+
+    // 🔴 The ssh route. This is the operator control the service always carried and the page never used
+    // — the capability existed, nothing consulted it, and an unused seam is indistinguishable from a
+    // broken one from the outside.
+    document.getElementById('run-host').addEventListener('click', function () {
+      var command = document.getElementById('cmd').value;
+      show('running on the Mac…', command);
+      fetch('/api/inspect/host', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: command }),
+      }).then(function (r) {
+        // ⚠ No backticks in this file's JS: the whole page is a template literal, so one would end it.
+        if (r.status === 409) return { error: 'no Mac configured — see: shenora ios doctor --host' };
+        return r.json();
+      }).then(function (d) {
+        if (d.error) { show('cannot run', d.error); return; }
+        show((d.host || 'the Mac') + (d.ok ? '' : '  (exit ' + d.status + ')'), d.out || '(no output)');
+      }).catch(function (e) { show('failed', String(e && e.message ? e.message : e)); });
+    });
+
+    refreshDevices();
+    setInterval(refreshDevices, 2000);
   }
 
   paint();

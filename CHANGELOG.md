@@ -87,6 +87,12 @@ at the first list and missed five more breaking changes.
   agent — so the only channel that exists is one the page itself opens. It ships inside nothing, because
   it runs arbitrary JS in whatever page polls it, and a diagnostic hosted inside the app dies with it
   exactly when it is needed.
+  - **The page IS the console when you open it here.** On loopback it shows what to do next, which
+    devices have checked in, and two controls: run an expression in the device's page, or run a command
+    on the Mac over ssh. That last route existed from the start and **nothing called it** — reachable
+    only by hand-written `curl`, which is a capability indistinguishable from a broken one. Opened from
+    the LAN the operator half is absent entirely; the hiding is cosmetic and the SERVER is the boundary,
+    which is checked from a genuinely remote machine rather than asserted.
   - **A failed `inspect eval` now exits non-zero.** It printed `(threw) …` and exited 0, so
     `inspect eval … && next-step` marched on after a failed probe — the same false success this CLI polices
     in builds, arriving through the one command whose entire job is telling you the truth about a device.
