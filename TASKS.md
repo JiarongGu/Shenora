@@ -87,35 +87,27 @@ Both platforms have now run the sample's `[CLIPBOARD]` startup probe (2026-08-19
 | iOS | round-trips | present | present (arbitrary UTI) |
 | Android | round-trips | **DROPPED** | refused, by name |
 
-- [ ] **Android `text/html`: NOT REPRODUCIBLE on an emulator, and five explanations are dead.** The kit
-  writes a clip that declares `text/html` (instrumented: `built=[text/html]`). What the clipboard holds
-  afterwards varies run to run, and nothing about the WRITE predicts it.
+**ANSWERED — the EMULATOR destroys it, and an emulator therefore cannot answer this question at all.**
+Its clipboard bridge pushes the HOST clipboard INTO the guest, overwriting whatever the app just wrote.
+Proven twice: setting the Windows clipboard to `HOST-WINS-9482`, then to `SECOND-PROOF-7731`, and reading
+the guest through the kit's own `READ_CLIPBOARD` each time — the guest returned the host's value both
+times. The bridge is also TEXT-ONLY: the Windows clipboard received the sentinel text from the guest and
+no HTML format at all.
 
-  | varied | prediction | result |
-  |---|---|---|
-  | the platform drops HTML | control fails too | control succeeded 9/10 — **dead** |
-  | the kit is at fault | control always succeeds | control failed 1/10 — **dead** |
-  | the writing THREAD | main thread loses it | main thread WON, background lost — **dead** |
-  | the ORDER of writes | later writes win | 1st html, 2nd plain, 3rd html — **dead** |
-  | racing read-after-write | a settled read is stable | 1.2 s settle: still varies — **dead** |
+That accounts for every observation, including the ones that killed five other explanations. The app
+writes an HTML clip; the bridge mirrors it out as plain text and pushes it back in, replacing the rich
+clip with a text-only one; the read then finds `text/plain`. It is INTERMITTENT because it is a race
+between the read and the bridge's sync, and it hits the kit and a direct platform call identically
+because the bridge does not care who wrote.
 
-  - ✔ **The kit is CLEARED, and this is now evidence rather than inference.** Logging both call sites
-    showed identical arguments — `label`, a 23-char text, `html='<b>SHENORA-CLIPBOARD-PROBE</b>'`,
-    30 chars — into the identical `ClipData.NewHtmlText`. On one run BOTH the kit's write and the direct
-    control returned `text/plain`. Same inputs, same API, different answers between runs: nothing in the
-    kit's path distinguishes it from calling the platform by hand.
-  - ✔ **The read is not racing either.** A second `GetAsync` five seconds later reports the same
-    `(no formats)` while the TEXT is present — consistently. So the HTML is genuinely absent, not merely
-    invisible yet, and the earlier read-race idea is dead too.
-  - 🔴 **The prime remaining suspect is the EMULATOR'S CLIPBOARD BRIDGE**, which mirrors the guest
-    clipboard to the Windows host and is the one variable I could not hold still. **The way to test it is
-    to turn that sharing OFF** (Extended Controls → Settings) and repeat: stable results implicate the
-    bridge and clear both the kit and Android.
-  - ⚠ **Until then this says nothing about a handset**, and it is NOT a reason to change the kit — the
-    write is correct and every attempt to "fix" it made things worse. One such attempt shipped briefly:
-    verifying the write by reading it back refused writes that had succeeded, because the read is the
-    unreliable half.
-  - **The instrument is reusable**: `dev.mjs android probes` prints the control line every run.
+- ⚠ **The kit is cleared and no change is warranted.** Its write was already instrumented as correct
+  (`built=[text/html]`, identical arguments to a direct call). Two attempts to "fix" it from emulator
+  readings would each have broken a working capability.
+- **What is still genuinely unknown** is what a HANDSET does — untestable here, and not worth a guess.
+  Re-run the sample's `[CLIPBOARD]` probe on real hardware if it ever matters; the instrument ships.
+- 🔴 **The general lesson, worth more than the answer**: on an emulator the clipboard is SHARED WITH THE
+  HOST, so any clipboard measurement there is measuring the bridge. That applies to the Windows
+  clipboard suite too.
 
 ### 🎧 BACKGROUND PLAYBACK — how long it survives is unmeasured
 

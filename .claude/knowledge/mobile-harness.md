@@ -343,3 +343,20 @@ identical to a widget that failed. Two more things measured the hard way:
 - **An activity outlives its app**, so a previous run's is still up when the next starts — `simctl
   uninstall` + `install` is the only reset, and a pre-launch screenshot proves it worked.
 
+## An emulator's clipboard is the HOST's — so you cannot measure the clipboard on one
+
+🔴 **The Android emulator's bridge pushes the WINDOWS clipboard into the guest**, overwriting whatever the
+app under test just wrote. Proven 2026-08-20 by setting the host clipboard to two distinctive values in
+turn and reading the guest back through the app each time: the guest returned the host's value both times.
+The bridge is also TEXT-ONLY — the host received the guest's text and no HTML format.
+
+⚠ **This makes an emulator useless for any clipboard question, and the failure LOOKS like a product bug.**
+It cost six hypotheses: a multi-format write kept coming back as plain text, intermittently, and the
+intermittency is a race between the read and the bridge's sync. It hit a direct platform call exactly as
+hard as the kit's, because the bridge does not care who wrote — which is the tell, if you think to
+compare them.
+
+**So: measure the clipboard on HARDWARE, or not at all.** The same warning applies to the Windows
+clipboard suite for the mirror-image reason — a VM or RDP session syncing the host clipboard is another
+writer nobody accounted for.
+
