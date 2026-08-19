@@ -373,6 +373,42 @@ function trackedDocsWithSnippets() {
 
 // The npm package.json version and the README "## Status" headline are derived; `doctor` fails
 // on drift, `doctor --fix` (also run by `pack`) rewrites them.
+/**
+ * Is a JDK reachable? The ANDROID head needs one and says so from deep inside MSBuild.
+ *
+ * 🔴 **This is a PREREQUISITE that hides behind incremental builds.** `verify` builds the whole solution,
+ * so `Shenora.Android` needs a JDK — but only when it actually rebuilds. It therefore stays green for
+ * days on a machine with no `JAVA_HOME` and fails the moment someone touches a mobile source, with
+ * `error XA5300: The Java SDK directory could not be found` from a targets file nobody has opened. Hit
+ * exactly that way on 2026-08-20: verify had passed all day and broke on a one-line comment edit.
+ *
+ * ⚠ Android Studio ships a JDK in `jbr/` and sets NO variable, so the common case is a machine that HAS
+ * one and cannot say where — which is the same reason `@shenora/cli`'s android half hunts for it.
+ */
+function reportJdk() {
+  const fromEnv = process.env.JAVA_HOME;
+  const candidates = [
+    fromEnv,
+    path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Android Studio', 'jbr'),
+    path.join(process.env.ProgramFiles ?? '', 'Android', 'Android Studio', 'jbr'),
+  ].filter(Boolean);
+
+  const found = candidates.find((c) => fs.existsSync(path.join(c, 'bin', 'java.exe'))
+    || fs.existsSync(path.join(c, 'bin', 'java')));
+
+  if (found && fromEnv) { console.log(`  ok      JDK                  ${found}`); return true; }
+  if (found) {
+    console.log(`  ok      JDK                  ${found}  (found, but JAVA_HOME is unset)`);
+    console.log('          Set JAVA_HOME to it, or a mobile-source change makes `verify` fail with');
+    console.log('          `XA5300: The Java SDK directory could not be found` from inside MSBuild.');
+    return true;
+  }
+  console.error('  MISSING JDK                  the Android head cannot build without one');
+  console.error('          It fails as `XA5300` from a targets file, which reads as a broken SDK.');
+  console.error('          Android Studio ships one in `jbr/` and sets no variable; point JAVA_HOME at it.');
+  return false;
+}
+
 function doctor({ fix = false } = {}) {
   let problems = 0;
   const fail = (msg) => { problems++; console.error('  FAIL ' + msg); };
@@ -1030,7 +1066,8 @@ switch (cmd) {
     const versionOk = doctor({ fix: args.includes('--fix') });
     const driftOk = spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'doc-drift.mjs')],
       { stdio: 'inherit', cwd: repo }).status === 0;
-    process.exitCode = versionOk && driftOk ? 0 : 1;
+    const jdkOk = reportJdk();
+    process.exitCode = versionOk && driftOk && jdkOk ? 0 : 1;
     break;
   }
 

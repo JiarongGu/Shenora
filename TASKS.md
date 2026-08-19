@@ -109,17 +109,19 @@ Both platforms have now run the sample's `[CLIPBOARD]` startup probe (2026-08-19
 
 ### 🎧 BACKGROUND PLAYBACK — how long it survives is unmeasured
 
-- [ ] **MINUTES are not survived on Android — measured, and it CONTRADICTS the ~45 s on record.**
-  2026-08-20, emulator (Android 16, SDK 36), observed from OUTSIDE the app via `dumpsys audio` because
-  CDP stops answering the moment the webview is backgrounded — the exact state being measured. A looped
-  `<audio>` reported `started` at t+6 s and `stopped` by t+15 s after `KEYCODE_HOME`.
-  - ⚠ **One trial, and this session has been burned by single trials three times.** The number to trust
-    is not 15 s; what IS clear is the ORDER of magnitude — seconds, not minutes — and that is the only
-    part the documentation claim depends on.
-  - **So the claim to publish is the conservative one**: page-side `<audio>` does NOT keep playing when
-    backgrounded on Android. A foreground service is the app's to post, which is the split
-    `IPlaybackSession` already documents. iOS is still unmeasured past its 43 s.
-  - **Next**: narrow with finer polls (3/6/9/12 s) and repeat trials before quoting any figure, and
-    re-check whether the sample's page pauses on `visibilitychange` — that would make this the PAGE's
-    behaviour rather than the platform's, which is a different claim entirely.
+**ANDROID IS ANSWERED — the page cannot do it, and that is the kit's thesis rather than a gap.** A
+backgrounded `<audio>` advances ~15 s and then pauses mid-clip; the process is suspended and no page code
+prevents it. Now measured three times by two independent instruments: twice from inside the page (the
+`audio t=` timer, ~15.3–15.6 s, recorded on the sample's own handoff block) and once from OUTSIDE via
+`dumpsys audio` on 2026-08-20 — `started` at t+6 s, `stopped` by t+15 s, still stopped at t+300 s.
+The page pausing itself was ELIMINATED by reading: its two `visibilitychange` handlers report and hand
+off, and the only `aud.pause()` is on the handback, which fires when the app returns. So the answer is a
+NATIVE anchor — `IPlaybackSession`/`IMediaPlayer` — which is what the tier exists for.
+
+- [ ] **iOS past 43 s is still unmeasured**, and it is the half the documentation claim rests on: *"an
+  `<audio>` keeps playing while backgrounded"* rests on a 16.0 s window there. Until it is measured the
+  same way, do not promise page-side background audio on iOS either.
+  - **The route is built**: drive the simulator from Windows (`shenora ios deploy --simulator`), and read
+    the survival the way Android was read — the page's own `audio t=` gap, or `xcrun simctl spawn booted
+    log` for the equivalent of `dumpsys`.
 
