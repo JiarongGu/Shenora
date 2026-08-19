@@ -19,7 +19,12 @@ import type { Target } from './target.js';
  * @returns paths relative to the repo root, or null when this is not a git repo (already reported).
  */
 export function filesToPush(root: string): string[] | null {
-  const listed = captureRun('git', ['-C', root, 'ls-files', '-co', '--exclude-standard']);
+  // 🔴 `core.quotePath=false`, or a non-ASCII filename BREAKS THE WHOLE PUSH. git quotes such paths by
+  // default — `café.txt` comes back as `"caf\303\251.txt"` — and `tar -T` then looks for a file by that
+  // literal name, fails to stat it, and exits 2. So one accented character anywhere in an adopter's tree
+  // means nothing can be sent, and the error names a file that plainly exists. Verified both ways.
+  const listed = captureRun('git',
+    ['-C', root, '-c', 'core.quotePath=false', 'ls-files', '-co', '--exclude-standard']);
   if (listed.status !== 0) {
     fail('`shenora ios push` needs a git repository — it uses git only to decide WHICH files to send.',
       '  Without one there is no way to tell your source from your build output.'
@@ -74,7 +79,22 @@ function previousManifest(target: Target, remoteDir: string): string[] {
  */
 function removeStale(target: Target, remoteDir: string, current: string[], stamp: string): number {
   const keep = new Set(current);
-  const stale = previousManifest(target, remoteDir).filter((f) => !keep.has(f));
+  const previous = previousManifest(target, remoteDir);
+
+  // 🔴 **REFUSE TO DELETE INTO A TREE THAT IS NOT THIS PROJECT.** With no manifest yet the previous list
+  // comes from the remote's own git index, which is right for a first push into this project's checkout
+  // and catastrophic if `remote.dir` names a DIFFERENT repository: every file that repo tracks would be
+  // "not in the current list", and therefore deleted. Overlap is the cheap test — two checkouts of the
+  // same project share paths, and two unrelated ones share essentially none.
+  const overlap = previous.filter((f) => keep.has(f)).length;
+  if (previous.length > 0 && overlap === 0) {
+    console.error(`\nshenora: ${remoteDir} does not look like this project — nothing there matches any file`);
+    console.error('  being sent, so no files were removed. Check "remote": { "dir": … }: pushing into an');
+    console.error('  unrelated checkout would otherwise delete what it tracks.');
+    return 0;
+  }
+
+  const stale = previous.filter((f) => !keep.has(f));
   if (stale.length === 0) return 0;
 
   // ⚠ Through a FILE and `xargs`, never an argument list: a rename sweep can stale hundreds of paths and

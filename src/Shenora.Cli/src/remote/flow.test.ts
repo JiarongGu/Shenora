@@ -12,7 +12,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { FakeTarget } from './fake-target.js';
 import { build, findApp, checkExtensions, buildProject, buildDir } from '../ios.js';
-import { pushTree } from './push.js';
+import { pushTree, filesToPush } from './push.js';
 import { provisionBundleIds, installedProfileIds } from './provision.js';
 import type { DeployConfig } from '../config.js';
 
@@ -206,9 +206,12 @@ describe('push', () => {
   it('🔴 deletes what it previously sent and would no longer send', () => {
     // The first version only added, and the Mac's older checkout kept files this kit had since renamed —
     // so IFileLockInspector existed twice and the KIT failed to compile on a tree that is clean here.
+    // ⚠ The manifest must OVERLAP what is being sent, or the guard below refuses to delete at all —
+    // which is the correct answer for an unrelated tree and made the first version of this test wrong.
+    const mine = filesToPush(process.cwd())!;
     const target = new FakeTarget({
       isRemote: true, label: freshLabel(),
-      probes: [{ match: 'shenora-push-manifest', out: 'src/Old.cs\nsrc/Kept.cs\n' }],
+      probes: [{ match: 'shenora-push-manifest', out: `${mine[0]}\nsrc/Old.cs\n` }],
     });
     const t = hush();
     const result = pushTree(target, process.cwd(), '/Users/you/MyRepo');
@@ -221,6 +224,40 @@ describe('push', () => {
     expect(target.via('sh').join('\n')).toContain('rm -f');
     // ...and it recorded what it sent, so the NEXT push knows what to take away.
     expect(target.via('push').join('\n')).toContain('shenora-push-manifest');
+  });
+
+  it('🔴 REFUSES to delete into a tree that is not this project', () => {
+    // The git-index fallback is right for a first push into this project's checkout and catastrophic
+    // against an unrelated one: every file that repo tracks is "not in the current list". Overlap is the
+    // test — two checkouts of one project share paths, two unrelated ones share none.
+    const target = new FakeTarget({
+      isRemote: true,
+      label: freshLabel(),
+      // No manifest; the git index names a completely different project.
+      probes: [{ match: 'ls-files', out: 'their/App.java\ntheir/Main.kt\n' }],
+    });
+    const t = hush();
+    pushTree(target, process.cwd(), '/Users/you/SomeoneElse');
+    const warned = t.err.mock.calls.flat().join('\n');
+    t.restore();
+
+    expect(warned).toContain('does not look like this project');
+    expect(target.via('sh').join('\n')).not.toContain('xargs');   // nothing was deleted
+  });
+
+  it('still deletes when the trees DO overlap', () => {
+    // The other direction, or the guard would simply disable deletion everywhere.
+    const mine = filesToPush(process.cwd())!;
+    const target = new FakeTarget({
+      isRemote: true,
+      label: freshLabel(),
+      probes: [{ match: 'shenora-push-manifest', out: `${mine[0]}\nsrc/Gone.ts\n` }],
+    });
+    const t = hush();
+    pushTree(target, process.cwd(), '/Users/you/MyRepo');
+    t.restore();
+
+    expect(target.via('sh').join('\n')).toContain('xargs');
   });
 
   it('unpacks into a directory it creates first', () => {

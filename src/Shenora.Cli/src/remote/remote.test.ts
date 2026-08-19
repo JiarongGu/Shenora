@@ -9,6 +9,9 @@ import type { DeployConfig } from '../config.js';
 import { buildProject, buildDir, countXcodeAccounts } from '../ios.js';
 import { filesToPush } from './push.js';
 import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 describe('withCwd', () => {
   it('joins with && so a failed cd cannot run the command somewhere else', () => {
@@ -254,6 +257,24 @@ describe('choosing what to push', () => {
     expect(stale).not.toContain('their-file.txt');
     // And a file we are about to write again is never deleted first.
     expect(stale).not.toContain('src/Kept.cs');
+  });
+
+  it('🔴 lists a NON-ASCII filename unquoted, or the whole push fails', () => {
+    // git quotes such paths by default — `café.txt` comes back as `"caf\303\251.txt"` — and `tar -T`
+    // then cannot stat a file by that literal name and exits 2. One accented character anywhere in an
+    // adopter's tree would mean nothing could be sent, with an error naming a file that plainly exists.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shenora-quote-'));
+    try {
+      execFileSync('git', ['init', '-q', dir], { stdio: 'ignore' });
+      fs.writeFileSync(path.join(dir, 'café.txt'), 'x');
+      const files = filesToPush(dir);
+
+      expect(files).toContain('café.txt');
+      // The quoted form is what breaks tar, so its ABSENCE is the actual assertion.
+      expect(files!.some((f) => f.startsWith('"'))).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('reports a non-git directory rather than sending everything', () => {
