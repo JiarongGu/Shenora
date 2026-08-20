@@ -78,6 +78,33 @@ public sealed class SegmentStreamOptions
     public double SegmentSeconds { get; init; } = 6.0;
 
     /// <summary>
+    /// Lengths for the FIRST segments, before <see cref="SegmentSeconds"/> takes over — a short head so
+    /// playback starts sooner.
+    /// <para>
+    /// 🔴 <b>Segment 0 is the whole startup budget.</b> A page cannot play until the init segment arrives,
+    /// that request drives segment 0, and a VOD playlist starts there — the "begin three target durations
+    /// from the end" rule is a LIVE one. So the default six seconds is six seconds of production before the
+    /// first frame. ⚠ <c>EXT-X-TARGETDURATION</c> is an UPPER BOUND, so a short lead-in is ordinary
+    /// playlist, not a trick.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>A ramp rather than short segments throughout</b>, because short segments are not free: one
+    /// request each, and a keyframe every second measurably costs bitrate for the same picture. Empty for a
+    /// uniform stream.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>It is a REQUEST.</b> A copied picture is cut where the SOURCE has keyframes, so a ten-second GOP
+    /// gives a ten-second first segment however short this asks for. Each entry must be a whole multiple of
+    /// the encoders' one-second keyframe interval and no longer than <see cref="SegmentSeconds"/>; both are
+    /// refused at composition time rather than discovered by a seek.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<double> HeadSegmentSeconds { get; init; } = [1.0, 2.0, 4.0];
+
+    /// <summary>The head and the steady length as the engine takes them.</summary>
+    internal SegmentLengths Lengths => new(SegmentSeconds, HeadSegmentSeconds ?? []);
+
+    /// <summary>
     /// The cache ceiling, swept oldest-USED first when a new source is opened — never on the request path.
     /// Defaults to 2 GB, which is a budget for a rebuildable cache on a phone.
     /// </summary>
@@ -195,6 +222,10 @@ internal sealed class SegmentStream : IDisposable
         // At composition time: a non-positive grid is a plan nothing can be built from, and discovering that
         // on the first request would answer 404 for a source that is perfectly fine.
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.SegmentSeconds);
+        // The head ramp too, and for the same reason: a boundary the encoder has no keyframe at produces
+        // segments that PLAY and misbehave only when somebody seeks, so it is refused now rather than found
+        // later. ⚠ Refused, never rounded — a length nobody asked for is its own surprise.
+        if (!options.Lengths.IsUsable(out var badLength)) throw new ArgumentException(badLength, nameof(options));
 
         var stream = new SegmentStream(engine, options, interceptor.RangeDelivery, log);
         var route = interceptor.Use((request, next, cancellationToken) =>
@@ -385,8 +416,13 @@ internal sealed class SegmentStream : IDisposable
         // 🔴 ONE plan object, used by the manifest AND handed to every run for this source. A playlist and a
         // producer that computed boundaries separately would disagree silently: the bytes stay valid, and a
         // seek lands at the wrong moment. Null means the engine will hit the grid, which is then the plan.
-        var plan = _engine.PlanSegments(bytes, _options.SegmentSeconds, cancellationToken)
-                   ?? SegmentPlan.Grid(_options.SegmentSeconds, duration);
+        // ⚠ Three shapes, and the plan SAYS which it is (SegmentBoundaries), because the run reads that to
+        // decide whether it may copy the picture: the engine's own cuts when it will copy, an explicit ramp
+        // when a head was asked for, and a plain grid otherwise.
+        var lengths = _options.Lengths;
+        var plan = _engine.PlanSegments(bytes, lengths, cancellationToken)
+                   ?? (lengths.Head.Count > 0 ? SegmentPlan.EncoderCuts(lengths.StartsFor(duration), duration) : null)
+                   ?? SegmentPlan.Grid(lengths.Seconds, duration);
         var hasPicture = knownPicture ?? _engine.HasPicture(bytes);
 
         lock (_gate)

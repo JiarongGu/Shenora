@@ -45,6 +45,29 @@ where the cuts fall is a `SegmentPlan`:
 - `SegmentPlan.Grid(seconds, total)` — uniform, what a RE-ENCODING run produces (the kit's platform
   encoders emit a keyframe every second, D75).
 - `SegmentPlan.Cuts(starts, total)` — explicit, derived from the source's own keyframes.
+- `SegmentPlan.EncoderCuts(starts, total)` — explicit whole-second boundaries, which is what a HEAD RAMP is.
+
+🔴 **The plan STATES which it is (`SegmentPlan.Origin`), and the run reads that to decide whether it may
+copy.** It used to infer it — "is this a grid?" meant "must I re-encode?" — which held only while every
+non-grid plan came from the source's own keyframes. A ramp is a third shape, and under the old inference a
+run would have copied onto it and slipped every cut to the next source keyframe.
+
+### The head is short, because segment 0 is the whole startup budget
+
+`SegmentStreamOptions.HeadSegmentSeconds` defaults to `1, 2, 4` before the steady length. A page cannot play
+until `init.mp4` arrives, that request drives segment 0, and **a VOD playlist starts at segment 0** — the
+"begin three target durations from the end" rule is a LIVE one. A uniform six-second stream therefore spends
+six seconds producing before the first frame.
+
+⚠ **`EXT-X-TARGETDURATION` is an upper bound**, so a short lead-in is ordinary playlist and the tag still
+states the steady length. ⚠ **A ramp, not short segments throughout**: each segment costs a request, and a
+keyframe every second measurably raises the bitrate the same picture needs. ⚠ **And it is a REQUEST** — a
+copied picture is cut where the source already has keyframes, so a ten-second GOP gives a ten-second first
+segment however short the head asks for; the ramp changes which keyframes are chosen, never where they are.
+
+A head length that is not a whole multiple of the encoders' one-second interval, or one longer than the
+steady length, is refused when the route is built — the same policy a fractional grid gets, for the same
+reason.
 
 `ISegmentEngine.PlanSegments` returns the plan or null for "I will hit your grid", and `SegmentStream`
 hands that same object to the manifest AND to every run — one object, so the playlist and the producer

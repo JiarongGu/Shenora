@@ -3,6 +3,111 @@ using System.Globalization;
 namespace Shenora.Modules.Media;
 
 /// <summary>
+/// How long each segment should be — a short HEAD so playback can start, then a steady length.
+///
+/// <para>
+/// 🔴 <b>The first segment is the entire startup budget for a VOD stream.</b> A page cannot play until the
+/// init segment arrives, that request drives segment 0, and a VOD playlist starts at segment 0 (the
+/// "start three target durations from the end" rule is a LIVE one). So a six-second first segment is six
+/// seconds of production before the first frame, whatever the rest of the stream costs.
+/// </para>
+/// <para>
+/// ⚠ <b>A ramp, not simply short segments throughout.</b> Short segments cost a request each and cost
+/// quality — a keyframe every second measurably raises the bitrate needed for the same picture. Starting
+/// small and settling onto the full length pays that only where it buys something.
+/// </para>
+/// <para>
+/// ⚠ <b>It is a REQUEST, not a promise.</b> A copied picture can only be cut where the source already has a
+/// keyframe, so a source with a ten-second GOP gives a ten-second first segment however short the head asks
+/// for — <see cref="SegmentGrid.KeyFrameStarts(IReadOnlyList{long}, SourceTimeline, SegmentLengths)"/> is
+/// greedy forward and never cuts early.
+/// </para>
+/// </summary>
+/// <param name="Seconds">The steady length, once the head is past.</param>
+/// <param name="Head">
+/// Lengths for the first segments, in order. Empty means a uniform stream. ⚠ Each must be a whole multiple
+/// of <see cref="SegmentGrid.EncoderKeyFrameSeconds"/>, or a RE-ENCODED picture cannot land on it.
+/// </param>
+public sealed record SegmentLengths(double Seconds, IReadOnlyList<double> Head)
+{
+    /// <summary>A uniform stream — no head at all.</summary>
+    public static SegmentLengths Of(double seconds) => new(seconds, []);
+
+    /// <summary>
+    /// Where each segment would begin if every length were delivered exactly — what a RE-ENCODED stream
+    /// gets, since its encoder puts a keyframe on every whole second. Always opens with 0.
+    /// </summary>
+    public IReadOnlyList<double> StartsFor(TimeSpan total)
+    {
+        var starts = new List<double> { 0 };
+        if (total <= TimeSpan.Zero || Seconds <= 0) return starts;
+
+        var at = TargetAt(0);
+        while (at < total.TotalSeconds)
+        {
+            starts.Add(at);
+            at += TargetAt(starts.Count - 1);
+        }
+
+        return starts;
+    }
+
+    /// <summary>How long segment <paramref name="index"/> should aim to be.</summary>
+    public double TargetAt(int index) =>
+        Head is not null && index >= 0 && index < Head.Count ? Head[index] : Seconds;
+
+    /// <summary>
+    /// Is every length one a run could actually deliver? False with a reason, at composition time — the same
+    /// policy <see cref="SegmentGrid.IsUsable"/> applies to the steady length, for the same reason: a
+    /// boundary the encoder has no keyframe at still PLAYS, and only a seek misbehaves.
+    /// </summary>
+    public bool IsUsable(out string reason)
+    {
+        if (!SegmentGrid.IsUsable(Seconds, out reason)) return false;
+
+        foreach (var length in Head ?? [])
+        {
+            if (!SegmentGrid.IsUsable(length, out reason)) return false;
+            if (length <= Seconds) continue;
+            reason = $"A head segment of {length}s is longer than the steady {Seconds}s, so it would delay "
+                   + "playback rather than start it sooner.";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+}
+
+/// <summary>
+/// Where a <see cref="SegmentPlan"/>'s boundaries came from — which is the question "may this run COPY the
+/// picture?" in the only form that cannot be got wrong.
+/// <para>
+/// 🔴 <b>A copied picture and a boundary the source has no keyframe at cannot both hold.</b> Copied frames
+/// keep the ORIGINAL encoder's keyframes; a re-encoded picture lands on whole seconds because the kit's own
+/// encoders emit a keyframe every second. A plan that does not say which it is leaves the run to guess, and
+/// a wrong guess slips every cut to the next source keyframe — segments that play, and a seek that does not.
+/// </para>
+/// </summary>
+public enum SegmentBoundaries
+{
+    /// <summary>Uniform, every boundary a whole multiple of the encoder's keyframe interval. Re-encoded.</summary>
+    Grid,
+
+    /// <summary>
+    /// The SOURCE's own keyframes, of differing length. <b>The only shape a copy may be cut on</b>, and the
+    /// only one a copy can hit exactly.
+    /// </summary>
+    SourceKeyFrames,
+
+    /// <summary>
+    /// Explicit whole-second boundaries — a head ramp. Hittable by an ENCODER and by nothing else, so a run
+    /// handed these re-encodes exactly as it would on a grid.
+    /// </summary>
+    EncoderCuts,
+}
+
+/// <summary>
 /// WHERE THE CUTS ARE: the boundaries a stream's segments actually fall on, in seconds from the start of the
 /// presentation.
 /// <para>
@@ -26,13 +131,26 @@ public sealed class SegmentPlan
 {
     private readonly double[]? _starts;
 
-    private SegmentPlan(double? gridSeconds, double[]? starts, TimeSpan total, int count)
+    private SegmentPlan(SegmentBoundaries origin, double? gridSeconds, double[]? starts, TimeSpan total, int count)
     {
+        Origin = origin;
         GridSeconds = gridSeconds;
         _starts = starts;
         Total = total;
         Count = count;
     }
+
+    /// <summary>
+    /// WHERE these boundaries came from, which decides whether a run may COPY a picture onto them.
+    /// <para>
+    /// 🔴 <b>Stated rather than inferred, because the inference was wrong the moment a third shape
+    /// existed.</b> The run used to read "is this a grid?" as "must I re-encode?", which held only while
+    /// every non-grid plan came from the source's own keyframes. Hand it explicit boundaries from anywhere
+    /// else and it copies onto cuts the source has no keyframe at: every cut SLIPS to the next source
+    /// keyframe, the segments still play, and only a seek shows it.
+    /// </para>
+    /// </summary>
+    public SegmentBoundaries Origin { get; }
 
     /// <summary>
     /// A uniform grid of <paramref name="segmentSeconds"/> covering <paramref name="total"/> — what a
@@ -47,7 +165,35 @@ public sealed class SegmentPlan
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(total, TimeSpan.Zero);
 
         var count = (int)Math.Ceiling(total.TotalSeconds / segmentSeconds);
-        return new SegmentPlan(segmentSeconds, starts: null, total, Math.Max(count, 1));
+        return new SegmentPlan(SegmentBoundaries.Grid, segmentSeconds, starts: null, total, Math.Max(count, 1));
+    }
+
+    /// <summary>
+    /// Explicit boundaries a RE-ENCODER can hit — what a head ramp is, so playback can start on a short
+    /// first segment and settle onto the full length afterwards.
+    /// <para>
+    /// 🔴 <b>Every boundary must be a whole multiple of <see cref="SegmentGrid.EncoderKeyFrameSeconds"/></b>,
+    /// for the same reason a fractional grid is refused: what makes a boundary hittable is that the kit's
+    /// encoders emit a keyframe every second, and one placed anywhere else still PLAYS — only a seek
+    /// misbehaves. Null when any boundary fails that, rather than a rounded plan nobody asked for.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>A COPIED picture cannot use these</b>, which is what <see cref="Origin"/> exists to say: copied
+    /// frames keep the original encoder's keyframes, so a run handed this re-encodes (D76).
+    /// </para>
+    /// </summary>
+    public static SegmentPlan? EncoderCuts(IReadOnlyList<double> startSeconds, TimeSpan total)
+    {
+        ArgumentNullException.ThrowIfNull(startSeconds);
+        if (Shape(startSeconds, total) is not { } starts) return null;
+
+        foreach (var start in starts)
+        {
+            var multiple = start / SegmentGrid.EncoderKeyFrameSeconds;
+            if (Math.Abs(multiple - Math.Round(multiple)) > 1e-9) return null;
+        }
+
+        return new SegmentPlan(SegmentBoundaries.EncoderCuts, null, starts, total, starts.Length);
     }
 
     /// <summary>
@@ -63,6 +209,17 @@ public sealed class SegmentPlan
     public static SegmentPlan? Cuts(IReadOnlyList<double> startSeconds, TimeSpan total)
     {
         ArgumentNullException.ThrowIfNull(startSeconds);
+        return Shape(startSeconds, total) is { } starts
+            ? new SegmentPlan(SegmentBoundaries.SourceKeyFrames, null, starts, total, starts.Length)
+            : null;
+    }
+
+    /// <summary>
+    /// The checks every explicit plan shares: non-empty, starting at zero, ascending, finite, and ending
+    /// inside <paramref name="total"/>. Null when the boundaries are not a plan a stream could serve.
+    /// </summary>
+    private static double[]? Shape(IReadOnlyList<double> startSeconds, TimeSpan total)
+    {
         if (startSeconds.Count == 0 || total <= TimeSpan.Zero) return null;
         if (Math.Abs(startSeconds[0]) > 1e-9) return null;
 
@@ -74,7 +231,7 @@ public sealed class SegmentPlan
             if (i > 0 && starts[i] <= starts[i - 1]) return null;
         }
 
-        return starts[^1] >= total.TotalSeconds ? null : new SegmentPlan(null, starts, total, starts.Length);
+        return starts[^1] >= total.TotalSeconds ? null : starts;
     }
 
     /// <summary>

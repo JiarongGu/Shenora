@@ -60,7 +60,7 @@ public class SegmentStreamRemoteTests : IDisposable
         public string Describe() => "counting";
         public TimeSpan? DurationOf(MediaByteSource source) { DurationProbes++; return Duration; }
         public bool HasPicture(MediaByteSource source) { PictureProbes++; return SourceHasPicture; }
-        public SegmentPlan? PlanSegments(MediaByteSource source, double seconds, CancellationToken ct = default) => null;
+        public SegmentPlan? PlanSegments(MediaByteSource source, SegmentLengths lengths, CancellationToken ct = default) => null;
         public bool HasRenderedPicture(string segment) => true;
 
         public ISegmentRun? Start(SegmentRunRequest request)
@@ -91,6 +91,8 @@ public class SegmentStreamRemoteTests : IDisposable
             Log = log,
         },
         Sources = sources,
+        // Uniform: these tests are about the remote DOOR, and a ramp would have them counting its segments.
+        HeadSegmentSeconds = [],
     };
 
     private static string Url(string handle, string resource) => $"https://x/shenora-hls/~remote/{handle}/{resource}";

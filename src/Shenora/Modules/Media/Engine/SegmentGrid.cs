@@ -105,19 +105,32 @@ internal static class SegmentGrid
     /// <param name="targetSeconds">The length asked for. Every segment is at least this long except the last.</param>
     public static IReadOnlyList<double> KeyFrameStarts(IReadOnlyList<long> keyFrameTicks,
                                                       SourceTimeline timeline, double targetSeconds)
+        => KeyFrameStarts(keyFrameTicks, timeline, SegmentLengths.Of(targetSeconds));
+
+    /// <summary>
+    /// The same, with a HEAD RAMP: the first segments aim at <see cref="SegmentLengths.Head"/> and the rest
+    /// at the steady length. Greedy forward throughout, so every segment is at least as long as was asked.
+    /// </summary>
+    public static IReadOnlyList<double> KeyFrameStarts(IReadOnlyList<long> keyFrameTicks,
+                                                      SourceTimeline timeline, SegmentLengths lengths)
     {
         ArgumentNullException.ThrowIfNull(keyFrameTicks);
+        ArgumentNullException.ThrowIfNull(lengths);
 
         var starts = new List<double> { 0 };
-        if (timeline.Timescale == 0 || targetSeconds <= 0) return starts;
+        if (timeline.Timescale == 0 || lengths.Seconds <= 0) return starts;
 
         var last = 0.0;
         foreach (var tick in keyFrameTicks)
         {
             var at = timeline.SecondsOf(tick);
+            // ⚠ The target is the one for the segment being CLOSED — `starts.Count - 1` is its index — so a
+            // head of [1,2,4] makes segment 0 aim at 1 s, segment 1 at 2 s, and everything after at the
+            // steady length. Reading it as the index of the segment being OPENED shifts the whole ramp by
+            // one and quietly gives away the short first segment that is the entire point.
             // Also rejects a keyframe whose time went BACKWARDS, which a reordering stream can present and
             // which makes the plan non-ascending — the one shape a manifest cannot express.
-            if (at < last + targetSeconds) continue;
+            if (at < last + lengths.TargetAt(starts.Count - 1)) continue;
             starts.Add(at);
             last = at;
         }

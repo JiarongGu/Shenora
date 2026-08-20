@@ -438,6 +438,14 @@ Conversion
 Segment
 Run
 Engine
+# `Boundaries` and `Lengths` (2026-08-20) — both admitted as plain mechanism words, and neither carries a
+# domain concept: a boundary is where a stream is cut, a length is how long a piece is. `SegmentBoundaries`
+# says WHERE a plan's cuts came from, which is what decides whether a run may copy the picture onto them;
+# `SegmentLengths` is how long each piece should be, head ramp included. Both replace an INFERENCE the
+# engine was making from the shape of a plan, which is the kind of thing D22 wants named rather than
+# deduced. ⚠ Neither is a policy: they hold numbers an app chose, and nothing here decides what is good.
+Boundaries
+Lengths
 # `Matroska` (2026-08-06) — the CONTAINER FORMAT, in MatroskaProbe. Admitted on exactly the terms `Zip` was,
 # and the parallel is close enough to be worth stating: it is a published format name rather than a product
 # concept, the type reads its header and does nothing else, and naming the format is the SMALLER commitment.

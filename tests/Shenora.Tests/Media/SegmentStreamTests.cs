@@ -70,7 +70,7 @@ public class SegmentStreamTests : IDisposable
         public TimeSpan? DurationOf(MediaByteSource source) => Duration;
         public bool HasPicture(MediaByteSource source) => SourceHasPicture;
 
-        public SegmentPlan? PlanSegments(MediaByteSource source, double segmentSeconds, CancellationToken cancellationToken = default)
+        public SegmentPlan? PlanSegments(MediaByteSource source, SegmentLengths lengths, CancellationToken cancellationToken = default)
             => Cuts is null ? null : SegmentPlan.Cuts(Cuts, Duration);
 
         /// <summary>A segment "has a rendered picture" when the run that wrote it said so in its name.</summary>
@@ -119,7 +119,7 @@ public class SegmentStreamTests : IDisposable
         public string Describe() => "one-segment";
         public TimeSpan? DurationOf(MediaByteSource source) => TimeSpan.FromSeconds(20);
         public bool HasPicture(MediaByteSource source) => false;
-        public SegmentPlan? PlanSegments(MediaByteSource source, double seconds, CancellationToken ct = default) => null;
+        public SegmentPlan? PlanSegments(MediaByteSource source, SegmentLengths lengths, CancellationToken ct = default) => null;
         public bool HasRenderedPicture(string segment) => true;
 
         public ISegmentRun? Start(SegmentRunRequest request)
@@ -145,7 +145,14 @@ public class SegmentStreamTests : IDisposable
         return path;
     }
 
-    private SegmentStreamOptions Options(TimeSpan? waitBudget = null) => new()
+    /// <param name="head">
+    /// ⚠ <b>Empty by default, which is NOT the shipped default.</b> The route ramps its first segments so
+    /// playback starts sooner, and every test below that counts segments or reads an <c>EXTINF</c> is about
+    /// something else — so they opt into a uniform stream and say so, rather than being quietly rewritten
+    /// each time the ramp changes. <see cref="The_shipped_default_starts_with_a_SHORT_segment"/> covers the
+    /// default itself.
+    /// </param>
+    private SegmentStreamOptions Options(TimeSpan? waitBudget = null, IReadOnlyList<double>? head = null) => new()
     {
         Access = new MediaAccessOptions
         {
@@ -157,12 +164,99 @@ public class SegmentStreamTests : IDisposable
         },
         // Default 20 s. A test that EXPECTS a refusal must not spend it.
         WaitBudget = waitBudget ?? TimeSpan.FromSeconds(20),
+        HeadSegmentSeconds = head ?? [],
     };
 
     private static async Task<string> BodyOf(WebViewResourceResponse response)
     {
         using var reader = new StreamReader(response.Content);
         return await reader.ReadToEndAsync();
+    }
+
+    // ── the head ramp: what the first segment costs ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>The shipped default opens with a SHORT segment</b>, because segment 0 is the entire startup
+    /// budget: a page cannot play until the init segment arrives, that request drives segment 0, and a VOD
+    /// playlist starts there. Six seconds of production before the first frame is what the uniform default
+    /// used to cost.
+    /// <para>
+    /// ⚠ <c>EXT-X-TARGETDURATION</c> is an UPPER bound, so it still states the STEADY length — a reader that
+    /// saw the short lead-in there would size its buffers for the wrong stream.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_shipped_default_starts_with_a_SHORT_segment()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        // No `head:` argument — the SHIPPED default, which is the whole subject here.
+        using var _ = interceptor.UseSegmentStream(
+            new FakeEngine { Duration = TimeSpan.FromSeconds(20) },
+            new SegmentStreamOptions
+            {
+                Access = new MediaAccessOptions
+                {
+                    Resolve = uri => Path.Combine(_sources, Path.GetFileName(uri.AbsolutePath)),
+                    AllowedRoots = [_sources],
+                    CacheRoot = _cache,
+                },
+            });
+
+        var manifest = await BodyOf((await interceptor.AskAsync("https://x/shenora-hls/track.flac/index.m3u8"))!);
+
+        // 1 s, then 2 s, then 4 s, then the steady 6 s — the ramp in the playlist itself.
+        Assert.Contains("#EXTINF:1.000,", manifest, StringComparison.Ordinal);
+        Assert.Contains("#EXTINF:2.000,", manifest, StringComparison.Ordinal);
+        Assert.Contains("#EXTINF:4.000,", manifest, StringComparison.Ordinal);
+        Assert.Contains("#EXT-X-TARGETDURATION:6", manifest, StringComparison.Ordinal);
+        // The sum still has to be the source: 1+2+4 = 7, leaving 13 s over 6 s segments.
+        Assert.Contains("#EXTINF:6.000,", manifest, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴 <b>A ramp is EncoderCuts, never SourceKeyFrames — so the run re-encodes rather than copying.</b>
+    /// Copied frames keep the original encoder's keyframes, which are nowhere near a synthetic 1/2/4 ramp;
+    /// let a run copy onto one and every cut slips to the next source keyframe, the segments still play, and
+    /// only a seek shows it. The origin is what the run reads to decide, so it is asserted here.
+    /// </summary>
+    [Fact]
+    public async Task A_head_ramp_is_declared_as_encoder_boundaries_so_a_run_will_not_copy_onto_it()
+    {
+        NewSource();
+        var engine = new FakeEngine { Duration = TimeSpan.FromSeconds(20) };
+        var interceptor = new FakeInterceptor();
+        using var _ = interceptor.UseSegmentStream(engine, Options(head: [1.0, 2.0]));
+
+        await interceptor.AskAsync("https://x/shenora-hls/track.flac/seg0.m4s");
+
+        var plan = Assert.Single(engine.Starts).Plan;
+        Assert.Equal(SegmentBoundaries.EncoderCuts, plan.Origin);
+        Assert.Null(plan.GridSeconds);
+        Assert.Equal(1.0, plan.LengthOf(0), 6);
+        Assert.Equal(2.0, plan.LengthOf(1), 6);
+        Assert.Equal(6.0, plan.LengthOf(2), 6);
+    }
+
+    /// <summary>
+    /// A head length the kit's encoders cannot land on is refused at COMPOSITION time. The same policy a
+    /// fractional grid gets, for the same reason: those segments play, and only a seek misbehaves — so the
+    /// failure has to be a sentence at startup rather than a bug report about scrubbing.
+    /// </summary>
+    [Fact]
+    public void A_head_length_that_cannot_land_on_a_keyframe_is_refused_when_the_route_is_built()
+    {
+        var interceptor = new FakeInterceptor();
+
+        // 1.5 s: no encoder keyframe sits there.
+        var fractional = Assert.Throws<ArgumentException>(() =>
+            interceptor.UseSegmentStream(new FakeEngine(), Options(head: [1.5])));
+        Assert.Contains("keyframe", fractional.Message, StringComparison.OrdinalIgnoreCase);
+
+        // And a head LONGER than the steady length, which would delay playback rather than start it sooner.
+        var backwards = Assert.Throws<ArgumentException>(() =>
+            interceptor.UseSegmentStream(new FakeEngine(), Options(head: [8.0])));
+        Assert.Contains("longer than the steady", backwards.Message, StringComparison.Ordinal);
     }
 
     // ── readiness: publishing is what makes a part servable ───────────────────────────────────────────
@@ -466,6 +560,7 @@ public class SegmentStreamTests : IDisposable
         public TimeSpan? DurationOf(MediaByteSource source) => null;
         public bool HasPicture(MediaByteSource source) => false;
         public bool HasRenderedPicture(string segment) => false;
+        public SegmentPlan? PlanSegments(MediaByteSource source, SegmentLengths lengths, CancellationToken ct = default) => null;
         public SegmentPlan? PlanSegments(MediaByteSource source, double seconds, CancellationToken cancellationToken = default) => null;
         public ISegmentRun? Start(SegmentRunRequest request) => null;
     }

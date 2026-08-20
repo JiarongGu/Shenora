@@ -53,9 +53,9 @@ public interface ISegmentEngine
     /// </para>
     /// </summary>
     /// <param name="source">The bytes the stream is for.</param>
-    /// <param name="segmentSeconds">The length the caller asked for. A derived plan aims at it rather than hitting it.</param>
+    /// <param name="lengths">The lengths the caller asked for, head ramp included. A derived plan AIMS at them rather than hitting them — a copied track can only be cut where the source already has a keyframe.</param>
     /// <param name="cancellationToken">The request's own token.</param>
-    SegmentPlan? PlanSegments(MediaByteSource source, double segmentSeconds, CancellationToken cancellationToken = default);
+    SegmentPlan? PlanSegments(MediaByteSource source, SegmentLengths lengths, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Does a produced SEGMENT actually contain a picture — frames, not merely a declared stream?

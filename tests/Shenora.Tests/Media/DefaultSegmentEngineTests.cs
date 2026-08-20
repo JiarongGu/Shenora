@@ -140,7 +140,7 @@ public class DefaultSegmentEngineTests
 
         Assert.False(engine.IsAvailable);
         Assert.Null(engine.Start(Request("x.mkv", "d")));
-        Assert.Null(engine.PlanSegments(Bytes("x.mkv"), 6.0));
+        Assert.Null(engine.PlanSegments(Bytes("x.mkv"), SegmentLengths.Of(6.0)));
         Assert.Contains("no segment engine", engine.Describe(), StringComparison.OrdinalIgnoreCase);
     }
 
@@ -170,7 +170,7 @@ public class DefaultSegmentEngineTests
         var engine = new DefaultSegmentEngine(new FakeConversion());
         var path = Write(dir, Carriable(frames: 40));
 
-        var plan = engine.PlanSegments(Bytes(path), 2.5);
+        var plan = engine.PlanSegments(Bytes(path), SegmentLengths.Of(2.5));
 
         Assert.NotNull(plan);
         Assert.Null(plan!.GridSeconds);
@@ -206,7 +206,7 @@ public class DefaultSegmentEngineTests
         // An unreadable source is an absent answer, not a throw — every member promises that.
         Assert.Null(engine.DurationOf(Bytes(dir.Combine("missing.mkv"))));
         Assert.False(engine.HasPicture(Bytes(dir.Combine("missing.mkv"))));
-        Assert.Null(engine.PlanSegments(Bytes(dir.Combine("missing.mkv")), 6.0));
+        Assert.Null(engine.PlanSegments(Bytes(dir.Combine("missing.mkv")), SegmentLengths.Of(6.0)));
     }
 
     // ── the source is an OPENER, not a path ───────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ public class DefaultSegmentEngineTests
         };
 
         var engine = new DefaultSegmentEngine(new FakeConversion());
-        var plan = engine.PlanSegments(source, 1.0);
+        var plan = engine.PlanSegments(source, SegmentLengths.Of(1.0));
         Assert.NotNull(plan);
 
         using (var run = engine.Start(new SegmentRunRequest(source, dir.Root, HasPicture: true,
@@ -274,7 +274,7 @@ public class DefaultSegmentEngineTests
         };
 
         Assert.Null(engine.DurationOf(source));
-        Assert.Null(engine.PlanSegments(source, 1.0));
+        Assert.Null(engine.PlanSegments(source, SegmentLengths.Of(1.0)));
         Assert.Contains(lines, l => l.Contains("seekable adapter", StringComparison.Ordinal));
         Assert.Contains(lines, l => l.Contains("forward-only", StringComparison.Ordinal));
     }
@@ -298,7 +298,7 @@ public class DefaultSegmentEngineTests
         using var dir = TempDir.Create();
         var engine = new DefaultSegmentEngine(new FakeConversion());
         // 24 frames at 250 ms = 6 s, keyframes every 12 frames = every 3 s.
-        var plan = engine.PlanSegments(Bytes(Write(dir, Carriable(frames: 24, keyEvery: 12))), 1.0);
+        var plan = engine.PlanSegments(Bytes(Write(dir, Carriable(frames: 24, keyEvery: 12))), SegmentLengths.Of(1.0));
 
         Assert.NotNull(plan);
         Assert.Null(plan!.GridSeconds);
@@ -307,6 +307,36 @@ public class DefaultSegmentEngineTests
         Assert.Equal(3.0, plan.StartOf(1), 6);
         Assert.Equal(3.0, plan.LengthOf(0), 6);
         Assert.Equal(3.0, plan.LengthOf(1), 6);
+    }
+
+    /// <summary>
+    /// 🔴 <b>A head ramp reaches the COPY path too, and stays cut on the source's own keyframes.</b> This is
+    /// the shape an iPhone actually gets — an H.264 picture copied beside a soundtrack it must convert — so
+    /// a ramp that only worked when the picture was re-encoded would miss the common case entirely.
+    /// <para>
+    /// ⚠ The plan is still <see cref="SegmentBoundaries.SourceKeyFrames"/>: the ramp changed which keyframes
+    /// are CHOSEN, not where they are. A copy is still legal on it, which is the whole difference from a
+    /// synthetic ramp.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_head_ramp_shortens_the_first_COPIED_segments_without_moving_a_keyframe()
+    {
+        using var dir = TempDir.Create();
+        var engine = new DefaultSegmentEngine(new FakeConversion());
+        // 40 frames at 250 ms = 10 s, a keyframe every second.
+        var path = Write(dir, Carriable(frames: 40, keyEvery: 4));
+
+        var plan = engine.PlanSegments(Bytes(path), new SegmentLengths(4.0, [1.0, 2.0]));
+
+        Assert.NotNull(plan);
+        Assert.Equal(SegmentBoundaries.SourceKeyFrames, plan!.Origin);
+        // 1 s, then 2 s, then the steady 4 s — every boundary a real keyframe of the source.
+        Assert.Equal([0.0, 1.0, 3.0, 7.0], [.. Enumerable.Range(0, plan.Count).Select(plan.StartOf)]);
+
+        // The control: the SAME source with no ramp opens with a full-length segment.
+        var uniform = engine.PlanSegments(Bytes(path), SegmentLengths.Of(4.0));
+        Assert.Equal(4.0, uniform!.LengthOf(0), 6);
     }
 
     /// <summary>
@@ -324,7 +354,7 @@ public class DefaultSegmentEngineTests
         var engine = new DefaultSegmentEngine(new FakeConversion(), AppCallback.Logger(lines.Add));
         var path = Write(dir, Carriable(frames: 24, keyEvery: 12));
 
-        var plan = engine.PlanSegments(Bytes(path), 1.0);
+        var plan = engine.PlanSegments(Bytes(path), SegmentLengths.Of(1.0));
 
         // The fallback is a WORKING plan, not a refusal — the same 3 s cuts the walk has always produced.
         Assert.NotNull(plan);
@@ -342,7 +372,7 @@ public class DefaultSegmentEngineTests
         using var dir = TempDir.Create();
         var engine = new DefaultSegmentEngine(new FakeConversion());
 
-        Assert.Null(engine.PlanSegments(Bytes(Write(dir, Convertible(frames: 24))), 1.0));
+        Assert.Null(engine.PlanSegments(Bytes(Write(dir, Convertible(frames: 24))), SegmentLengths.Of(1.0)));
     }
 
     /// <summary>
@@ -360,7 +390,7 @@ public class DefaultSegmentEngineTests
         // 200 frames at 250 ms = 50 s, with exactly ONE keyframe — past the 30 s a copied fragment may be.
         var path = Write(dir, Carriable(frames: 200, withAudio: false, keyEvery: 1_000));
 
-        Assert.Null(engine.PlanSegments(Bytes(path), 6.0));
+        Assert.Null(engine.PlanSegments(Bytes(path), SegmentLengths.Of(6.0)));
         Assert.Contains(lines, l => l.Contains("re-encoding instead", StringComparison.Ordinal));
     }
 
@@ -380,7 +410,7 @@ public class DefaultSegmentEngineTests
         var engine = new DefaultSegmentEngine(conversion);
         var path = Write(dir, Carriable(frames: 16));
 
-        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(Bytes(path), 1.0)))!)
+        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(Bytes(path), SegmentLengths.Of(1.0))))!)
         {
             Assert.NotNull(run);
             RunToCompletion(run);
@@ -457,7 +487,7 @@ public class DefaultSegmentEngineTests
         var engine = new DefaultSegmentEngine(conversion);
         var path = Write(dir, Mixed(frames: 16));
 
-        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(Bytes(path), 1.0)))!)
+        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(Bytes(path), SegmentLengths.Of(1.0))))!)
         {
             RunToCompletion(run);
         }
@@ -497,7 +527,7 @@ public class DefaultSegmentEngineTests
         using var dir = TempDir.Create();
         var engine = new DefaultSegmentEngine(new FakeConversion());
         var path = Write(dir, Mixed(frames: 16));            // 4 s at 250 ms a frame, 1 s segments
-        var plan = engine.PlanSegments(Bytes(path), 1.0);
+        var plan = engine.PlanSegments(Bytes(path), SegmentLengths.Of(1.0));
 
         const int first = 2;                                  // start at 2 s, not at zero
         using (var run = engine.Start(Request(path, dir.Root, first: first, plan: plan))!)
@@ -535,7 +565,7 @@ public class DefaultSegmentEngineTests
         int[] shown = [0, 750, 250, 500, 1_000, 1_750, 1_250, 1_500];
         var path = Write(dir, Carriable(frames: 8, withAudio: false, keyEvery: 4, presentation: shown));
 
-        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(Bytes(path), 1.0)))!)
+        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(Bytes(path), SegmentLengths.Of(1.0))))!)
         {
             RunToCompletion(run);
         }
@@ -585,7 +615,7 @@ public class DefaultSegmentEngineTests
         var engine = new DefaultSegmentEngine(new FakeConversion());
         var path = Write(dir, copied ? Carriable(frames: 16) : Convertible(frames: 16));
 
-        using (var run = engine.Start(Request(path, dir.Root, first: 2, plan: engine.PlanSegments(Bytes(path), 1.0)))!)
+        using (var run = engine.Start(Request(path, dir.Root, first: 2, plan: engine.PlanSegments(Bytes(path), SegmentLengths.Of(1.0))))!)
         {
             RunToCompletion(run);
         }

@@ -91,10 +91,11 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
     /// derived plan only for one it will COPY: the kit's encoders emit a keyframe every second so a
     /// whole-second grid is hittable, while copied frames keep the original encoder's keyframes (D76).
     /// </remarks>
-    public SegmentPlan? PlanSegments(MediaByteSource source, double segmentSeconds, CancellationToken cancellationToken = default)
+    public SegmentPlan? PlanSegments(MediaByteSource source, SegmentLengths lengths, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
-        if (_conversion is null || segmentSeconds <= 0) return null;
+        ArgumentNullException.ThrowIfNull(lengths);
+        if (_conversion is null || lengths.Seconds <= 0) return null;
         if (Probe(source, cancellationToken)?.Duration is not { } duration || duration <= TimeSpan.Zero) return null;
 
         try
@@ -124,7 +125,7 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
                 keyFrames = [.. lead.Track.Samples.Where(s => s.KeyFrame).Select(s => s.Ticks)];
             }
 
-            var starts = SegmentGrid.KeyFrameStarts(keyFrames, timeline, segmentSeconds);
+            var starts = SegmentGrid.KeyFrameStarts(keyFrames, timeline, lengths);
             if (SegmentPlan.Cuts(starts, duration) is not { } plan)
             {
                 Report("segments: the source's keyframes do not describe a playlist — falling back to the grid");
@@ -319,9 +320,11 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
             // source keyframe past the boundary: nothing reports it, an index the drift skips is never
             // written, and the page waits out its budget and restarts on every segment.
             // ⚠ Sound is exempt: every audio frame is a sync sample, so any boundary suits it.
-            var onAGrid = request.Plan.GridSeconds is not null;
+            // ⚠ The plan SAYS which it is; this used to ask "is it a grid?" and read the answer as "must I
+            // re-encode?", which held only while every non-grid plan came from the source's own keyframes.
+            var copyable = request.Plan.Origin is SegmentBoundaries.SourceKeyFrames;
             var video = request.HasPicture
-                ? owner.Pick(reader, MediaStreamKind.Video, allowCopy: !onAGrid)
+                ? owner.Pick(reader, MediaStreamKind.Video, allowCopy: copyable)
                 : null;
             var audio = owner.Pick(reader, MediaStreamKind.Audio);
             if (video is null && audio is null)

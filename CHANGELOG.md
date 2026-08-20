@@ -51,6 +51,29 @@ at the first list and missed five more breaking changes.
     ever. `Url` is now identity only — the address stays inside the app's own opener closure, which is
     what keeps it out of a kit log line by construction rather than by care.
 
+- **A segment stream now opens with a SHORT first segment by default** — `SegmentStreamOptions.HeadSegmentSeconds`,
+  defaulting to `[1, 2, 4]` before the steady `SegmentSeconds`. Set it to `[]` for the old uniform stream.
+  - **Why: segment 0 is the entire startup budget.** A page cannot play until the init segment arrives,
+    that request drives segment 0, and a VOD playlist starts there — the "begin three target durations from
+    the end" rule is a LIVE one. So the previous uniform six seconds meant six seconds of production before
+    the first frame. `EXT-X-TARGETDURATION` is an upper bound, so a short lead-in is ordinary playlist and
+    it still states the steady length.
+  - **A ramp rather than short segments throughout**, because short segments cost a request each and cost
+    bitrate: a keyframe every second measurably raises what the same picture needs.
+  - ⚠ **It is a REQUEST, not a promise.** A copied picture is cut where the SOURCE has keyframes, so a
+    ten-second GOP still gives a ten-second first segment. The ramp changes which keyframes are chosen, not
+    where they are.
+  - **Refused at composition time**: a head length that is not a whole multiple of the encoders' one-second
+    keyframe interval, or one longer than the steady length. Same policy as a fractional grid, and for the
+    same reason — those segments play, and only seeking misbehaves.
+- **`ISegmentEngine.PlanSegments` takes a `SegmentLengths` instead of a `double`**, since the head ramp is
+  part of what the caller is asking for and only the engine knows where the boundaries can land.
+- **`SegmentPlan` now states its `Origin`** (new `SegmentBoundaries`: `Grid`, `SourceKeyFrames`,
+  `EncoderCuts`), and a run reads it to decide whether it may COPY the picture.
+  - **Why: the run used to INFER that from "is this a grid?"**, which held only while every non-grid plan
+    came from the source's own keyframes. A head ramp is a third shape — explicit boundaries an encoder can
+    hit — and under the old inference a run would have copied onto it, slipping every cut to the next source
+    keyframe. The segments still play; only a seek shows it. New factory `SegmentPlan.EncoderCuts`.
 - **A segment engine must now PUBLISH ATOMICALLY, and the segment route serves a part the moment it
   exists.** A run writes `seg{k}.m4s.part` (new `SegmentRunRequest.PartialExtension`) and renames it into
   place once whole; the same goes for `init.mp4`.

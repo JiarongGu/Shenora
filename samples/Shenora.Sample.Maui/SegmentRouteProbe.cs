@@ -264,7 +264,7 @@ internal static class SegmentRouteProbe
         var engine = SegmentEngine.Default(conversion, AppCallback.Logger(log));
         if (!engine.IsAvailable) return "SEEK-RUN: SKIPPED — this shell registered no conversion";
 
-        var plan = engine.PlanSegments(MediaByteSource.ForFile(source), 6.0);
+        var plan = engine.PlanSegments(MediaByteSource.ForFile(source), SegmentLengths.Of(6.0));
         if (plan is null || plan.Count < 2) return $"SEEK-RUN: SKIPPED — {Fixture} plans {plan?.Count ?? 0} segment(s)";
 
         // A directory of its own, so nothing already produced can answer this.

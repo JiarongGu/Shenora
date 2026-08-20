@@ -105,7 +105,7 @@ public class RealSourceSegmentTests
         var lines = new List<string>();
         var engine = new DefaultSegmentEngine(new RecordingConversion(), AppCallback.Logger(lines.Add));
 
-        var plan = engine.PlanSegments(FixtureBytes, SegmentSeconds);
+        var plan = engine.PlanSegments(FixtureBytes, SegmentLengths.Of(SegmentSeconds));
 
         Assert.NotNull(plan);
         Assert.Null(plan.GridSeconds);          // derived, not uniform
@@ -167,7 +167,7 @@ public class RealSourceSegmentTests
     {
         var conversion = new RecordingConversion();
         var engine = new DefaultSegmentEngine(conversion);
-        var plan = engine.PlanSegments(FixtureBytes, SegmentSeconds);
+        var plan = engine.PlanSegments(FixtureBytes, SegmentLengths.Of(SegmentSeconds));
         Assert.NotNull(plan);
 
         var dir = Artifacts;

@@ -1077,7 +1077,7 @@ interface Shenora.Modules.Media.IMediaStreamConversionRun : System.IDisposable
   public abstract int OutputFramesPerPacket { get; }
 interface Shenora.Modules.Media.ISegmentEngine
   public abstract Shenora.Modules.Media.ISegmentRun? Start(Shenora.Modules.Media.SegmentRunRequest request)
-  public abstract Shenora.Modules.Media.SegmentPlan? PlanSegments(Shenora.Modules.Media.MediaByteSource source, double segmentSeconds, System.Threading.CancellationToken cancellationToken = default)
+  public abstract Shenora.Modules.Media.SegmentPlan? PlanSegments(Shenora.Modules.Media.MediaByteSource source, Shenora.Modules.Media.SegmentLengths lengths, System.Threading.CancellationToken cancellationToken = default)
   public abstract System.TimeSpan? DurationOf(Shenora.Modules.Media.MediaByteSource source)
   public abstract bool HasPicture(Shenora.Modules.Media.MediaByteSource source)
   public abstract bool HasRenderedPicture(string segment)
@@ -1442,8 +1442,29 @@ sealed class Shenora.Modules.Media.RemoteMediaSource : System.IEquatable<Shenora
   public static bool op_Equality(Shenora.Modules.Media.RemoteMediaSource? left, Shenora.Modules.Media.RemoteMediaSource? right)
   public static bool op_Inequality(Shenora.Modules.Media.RemoteMediaSource? left, Shenora.Modules.Media.RemoteMediaSource? right)
   public string? Identity { get; init; }
+enum Shenora.Modules.Media.SegmentBoundaries (int)
+  public const Shenora.Modules.Media.SegmentBoundaries EncoderCuts = 2
+  public const Shenora.Modules.Media.SegmentBoundaries Grid = 0
+  public const Shenora.Modules.Media.SegmentBoundaries SourceKeyFrames = 1
+  public int value__
 static class Shenora.Modules.Media.SegmentEngine
   public static Shenora.Modules.Media.ISegmentEngine Default(Shenora.Modules.Media.IMediaStreamConversion? conversion, Microsoft.Extensions.Logging.ILogger? log = null)
+sealed class Shenora.Modules.Media.SegmentLengths : System.IEquatable<Shenora.Modules.Media.SegmentLengths>
+  public .ctor(double Seconds, System.Collections.Generic.IReadOnlyList<double> Head)
+  public Shenora.Modules.Media.SegmentLengths <Clone>$()
+  public System.Collections.Generic.IReadOnlyList<double> Head { get; init; }
+  public System.Collections.Generic.IReadOnlyList<double> StartsFor(System.TimeSpan total)
+  public bool Equals(Shenora.Modules.Media.SegmentLengths? other)
+  public bool IsUsable(out string reason)
+  public double Seconds { get; init; }
+  public double TargetAt(int index)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static Shenora.Modules.Media.SegmentLengths Of(double seconds)
+  public static bool op_Equality(Shenora.Modules.Media.SegmentLengths? left, Shenora.Modules.Media.SegmentLengths? right)
+  public static bool op_Inequality(Shenora.Modules.Media.SegmentLengths? left, Shenora.Modules.Media.SegmentLengths? right)
+  public void Deconstruct(out double Seconds, out System.Collections.Generic.IReadOnlyList<double> Head)
 enum Shenora.Modules.Media.SegmentMergeOutcome (int)
   public const Shenora.Modules.Media.SegmentMergeOutcome DestinationRefused = 3
   public const Shenora.Modules.Media.SegmentMergeOutcome Failed = 4
@@ -1465,6 +1486,7 @@ sealed class Shenora.Modules.Media.SegmentMergeResult : System.IEquatable<Shenor
   public string Detail { get; init; }
   public void Deconstruct(out Shenora.Modules.Media.SegmentMergeOutcome Outcome, out string Detail)
 sealed class Shenora.Modules.Media.SegmentPlan
+  public Shenora.Modules.Media.SegmentBoundaries Origin { get; }
   public System.TimeSpan Total { get; }
   public bool StartsNewSegment(double seconds, bool keyFrame, int current)
   public double LengthOf(int index)
@@ -1476,6 +1498,7 @@ sealed class Shenora.Modules.Media.SegmentPlan
   public override string ToString()
   public static Shenora.Modules.Media.SegmentPlan Grid(double segmentSeconds, System.TimeSpan total)
   public static Shenora.Modules.Media.SegmentPlan? Cuts(System.Collections.Generic.IReadOnlyList<double> startSeconds, System.TimeSpan total)
+  public static Shenora.Modules.Media.SegmentPlan? EncoderCuts(System.Collections.Generic.IReadOnlyList<double> startSeconds, System.TimeSpan total)
 sealed class Shenora.Modules.Media.SegmentRunRequest : System.IEquatable<Shenora.Modules.Media.SegmentRunRequest>
   public .ctor(Shenora.Modules.Media.MediaByteSource Source, string Directory, bool HasPicture, int FirstSegment, Shenora.Modules.Media.SegmentPlan Plan, int Attempt)
   public Shenora.Modules.Media.MediaByteSource Source { get; init; }
@@ -1499,6 +1522,7 @@ static class Shenora.Modules.Media.SegmentStreamExtensions
   public static Shenora.Modules.Media.ISegmentStreamRoute UseSegmentStream(Shenora.Core.WebView.IWebViewInterceptor interceptor, Shenora.Modules.Media.ISegmentEngine engine, Shenora.Modules.Media.SegmentStreamOptions options, Microsoft.Extensions.Logging.ILogger? log = null)
 sealed class Shenora.Modules.Media.SegmentStreamOptions
   public Shenora.Modules.Media.MediaSourceRegistry? Sources { get; init; }
+  public System.Collections.Generic.IReadOnlyList<double> HeadSegmentSeconds { get; init; }
   public System.TimeSpan PictureGrace { get; init; }
   public System.TimeSpan WaitBudget { get; init; }
   public const string RemotePrefix = "~remote/"
