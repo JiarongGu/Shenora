@@ -306,7 +306,7 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   and are validated by hand. Judge their code by inspection against the source + the invariants,
   not by expecting a test.
 
-Totals as of 2026-08-15: **1538 dotnet + 202 vitest** (158 react + 44 cli) green; `verify` PASSED.
+Totals as of 2026-08-21: **1696 dotnet + 351 vitest** (180 react + 171 cli) green; `verify` PASSED.
 ⚠ **Dated, and treat the date as the load-bearing half** — a bare "current totals" goes stale silently:
 this line sat at 442 + 63 for four months, then at 1043 + 115 for ten days across ~500 new tests. It is
 here to give a sense of MAGNITUDE, never to be trusted as current. Run `dev.mjs verify`. The dotnet

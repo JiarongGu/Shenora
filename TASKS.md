@@ -30,6 +30,30 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
+### 📱 THE MEDIA FIRST-LOAD REWRITE OWES A DEVICE RUN — it was never measured on the phone
+
+The whole arc (opener seam · atomic publish · plan from Cues · index-as-you-write · head ramp) was built
+for one reported symptom: **a long initial wait playing video on an iPhone.** That wait was never measured,
+before or after. Everything below is unit-level and arithmetic.
+
+- [ ] **Measure first paint on the phone, and split the terms** — manifest response, `init.mp4` response,
+  seg0 response. Without the split a total says nothing about which change earned it.
+- [ ] 🔴 **A SEEK run is the one that matters**, not a play-from-zero run. A run starting past segment 0 is
+  where chunked indexing meets the run-relative audio clock, and that intersection has bitten once already:
+  the converted-soundtrack bug was *"arithmetically invisible at segment 0"* and needed a seek AND an
+  unsupported soundtrack together. `SegmentRouteProbe.CheckSeekRun` exists for exactly this.
+  - The guards it would exercise: shift taken from the FIRST chunk only · decode times never going
+    backwards across a chunk seam · negative composition clamped. All three are asserted off-device by a
+    differential test against a real B-frame clip; none has met hardware.
+- [ ] **Confirm the Android encoder change on a device.** The bitrate was ~1/30th of intent (no frame-rate
+  factor); the fix is arithmetic and changes output size and encode cost on a phone. ⚠ It also became
+  reachable for ORDINARY 1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be
+  copied — so this path is newly hot, not newly correct.
+- [ ] **Decide whether the kit ships a ranged-HTTP seekable stream.** `MediaByteSource` made the tier
+  transport-agnostic, but the kit ships no transport, so a remote source needs the app to supply a seekable
+  adapter. It is generic plumbing an app should not rewrite — and it is not obviously "what .NET can do and
+  React cannot" (D54). Owner call, and it decides how useful the Cues work is remotely.
+
 ### 🔧 THE BOX REFUSES ~30 % OF CLIPBOARD WRITES FROM A LOOPING TEST PROCESS
 
 🔴 **The code is exonerated — do not "fix" `ClipboardService`.** Diagnosed 2026-08-16: a PowerShell
