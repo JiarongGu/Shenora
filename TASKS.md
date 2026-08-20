@@ -111,3 +111,39 @@ precisely what a host↔guest clipboard bridge registers — rather than a compe
     (`EnableClipboardHistory`, `EnableCloudClipboard`, `CloudClipboardAutomaticUpload` all unset under
     `HKCU\Software\Microsoft\Clipboard`). `cbdhsvc_*` is implicated but was never the whole story —
     restarting it moved 13/15 → 3–6/15, which this now explains: restarting it never removed the emulator.
+
+### 🍎 `ios doctor`'s BINDINGS ROW IS ADVISORY BUT READS AS A VERDICT — and its advice is incomplete
+
+Found by an adopter on 2026-08-21 taking the 0.12.0 remote path for the first time: Windows → LAN Mac
+(Xcode 26.3, SDK 26.2, bands 26.0/26.6/27.0) → a real iPhone. Both halves of this are small; together they
+cost the first hour of the first successful iOS build.
+
+**1. The row never reads the csproj, so it cannot go green.** `ios doctor` compares the newest INSTALLED
+band against the Xcode SDK and prints `MISSING ios bindings … pin <TargetPlatformVersion>26.0</…> in the
+csproj`, then exits `not ready`. Pinning it in the csproj — exactly as instructed — changes nothing: the
+row still says MISSING and the doctor still says not ready, because the condition it tests is "a too-new
+band is installed", which the adopter cannot do anything about short of uninstalling it. An adopter who
+has complied still sees red, which is how a doctor gets ignored. Same family as the JDK row 0.12.0 just
+fixed, mirrored: there a green check did not predict failure, here a red one does not reflect success.
+*Suggestion:* read the effective `TargetPlatformVersion` for the iOS TFM and report `ok — pinned to 26.0`,
+keeping MISSING for the genuinely-unpinned case.
+
+**2. The advice is incomplete: pinning ALONE does not build on Xcode 26.3.** The comment above
+`pickBindingBand` states "Verified on Xcode 26.3 with bands 26.0/26.6/27.0 installed: pinning
+`TargetPlatformVersion` to 26.0 builds, links, signs and installs on hardware." On this Mac — same Xcode,
+same bands — it does not:
+
+```
+error : This version of .NET for iOS (26.0.11017) requires Xcode 26.0.
+        The current version of Xcode is 26.3. Either install Xcode 26.0, or use a
+        different version of .NET for iOS.
+```
+
+The pack asserts an EXACT Xcode match of its own, which the band choice cannot satisfy. Adding
+`-p:ValidateXcodeVersion=false` (and `-p:MtouchLink=SdkOnly`) builds, signs, packages a 29 MB `.ipa`, and
+installs and launches on the device. So either that verification carried the bypass and did not record it,
+or the pack revision has since tightened — either way the doctor should say the second half, since it is
+the difference between a build and a wall of errors.
+
+- [ ] **Make the bindings row reflect the PROJECT, and name the Xcode-validation bypass alongside the pin.**
+  Both are message-level; neither changes what the kit builds.
