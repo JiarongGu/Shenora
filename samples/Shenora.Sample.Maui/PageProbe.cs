@@ -446,18 +446,30 @@ internal static class PageProbe
 	/// actually backgrounded the handler returned early and measured nothing.
 	/// </para>
 	/// <para>
-	/// After this, background the app and read the <c>audio t=</c> lines: they stop while it is away, and
-	/// the jump in <c>t</c> across that gap is the answer.
+	/// After this, background the app and read the <c>audio t=</c> lines. On Android they STOP while it is
+	/// away and the jump in <c>t</c> across the gap is the answer; on iOS they keep coming, throttled from
+	/// 2 s to 3 s, and <c>t</c> advancing 1:1 with the timestamps is the answer.
+	/// </para>
+	/// <para>
+	/// 🔴 <b>It LOOPS, because a single play of the 60 s clip gives this probe a CEILING it cannot report.</b>
+	/// Without it, "survives 60 s" and "survives forever" produce the identical reading, and the difference
+	/// is the whole question an adopter is asking. Looping is what let the same instrument read 319 s.
+	/// (No earlier figure is known to have hit that ceiling — it was latent, not the cause of any of them.)
 	/// </para>
 	/// </summary>
 	public static async Task<string> StartBackgroundAudioAsync(HybridWebView webView, Action<string> log)
 	{
 		ArgumentNullException.ThrowIfNull(log);
 
+		// `loop` is set BEFORE the click: it is read at the END of a play, but setting it first means a run
+		// backgrounded immediately still gets it. (Commentary lives out here — see Safe(): the script is
+		// flattened to one line, so a `//` inside it swallows the rest of the program.)
 		var started = await EvaluateAsync(webView, """
 			(function(){
 				var b = document.getElementById('maud');
-				if (!b) return 'no-button';
+				var a = document.getElementById('aud');
+				if (!b || !a) return 'no-button';
+				a.loop = true;
 				b.click();
 				return 'clicked';
 			})()
