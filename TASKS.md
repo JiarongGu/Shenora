@@ -73,35 +73,3 @@ sample proves nothing. The suite is held out of the gate deliberately (`[Trait("
     several times with every qemu process stopped and again with one running, and compare the SPREAD.
     ⚠ A wedged emulator from 12 Aug is still resident and cannot be killed — it needs a reboot, and
     until then "no VM running" is not actually achievable on this box.
-
-### 📋 THE MOBILE CLIPBOARD — `text/html` is LOST on Android
-
-Both platforms have now run the sample's `[CLIPBOARD]` startup probe (2026-08-19, simulator + emulator).
-
-| | text | `text/html` | an app's own type |
-|---|---|---|---|
-| iOS | round-trips | present | present (arbitrary UTI) |
-| Android | round-trips | **DROPPED** | refused, by name |
-
-**ANSWERED — the EMULATOR destroys it, and an emulator therefore cannot answer this question at all.**
-Its clipboard bridge pushes the HOST clipboard INTO the guest, overwriting whatever the app just wrote.
-Proven twice: setting the Windows clipboard to `HOST-WINS-9482`, then to `SECOND-PROOF-7731`, and reading
-the guest through the kit's own `READ_CLIPBOARD` each time — the guest returned the host's value both
-times. The bridge is also TEXT-ONLY: the Windows clipboard received the sentinel text from the guest and
-no HTML format at all.
-
-That accounts for every observation, including the ones that killed five other explanations. The app
-writes an HTML clip; the bridge mirrors it out as plain text and pushes it back in, replacing the rich
-clip with a text-only one; the read then finds `text/plain`. It is INTERMITTENT because it is a race
-between the read and the bridge's sync, and it hits the kit and a direct platform call identically
-because the bridge does not care who wrote.
-
-- ⚠ **The kit is cleared and no change is warranted.** Its write was already instrumented as correct
-  (`built=[text/html]`, identical arguments to a direct call). Two attempts to "fix" it from emulator
-  readings would each have broken a working capability.
-- **What is still genuinely unknown** is what a HANDSET does — untestable here, and not worth a guess.
-  Re-run the sample's `[CLIPBOARD]` probe on real hardware if it ever matters; the instrument ships.
-- 🔴 **The general lesson, worth more than the answer**: on an emulator the clipboard is SHARED WITH THE
-  HOST, so any clipboard measurement there is measuring the bridge. That applies to the Windows
-  clipboard suite too.
-
