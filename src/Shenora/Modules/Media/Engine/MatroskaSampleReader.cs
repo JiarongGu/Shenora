@@ -4,29 +4,11 @@ namespace Shenora.Modules.Media;
 
 /// <summary>
 /// Walks a Matroska file's CLUSTERS and reports where every frame lives — the half
-/// <see cref="MatroskaProbe"/> deliberately skips.
-///
+/// <see cref="MatroskaProbe"/> skips. A second EBML reader rather than a reuse of the probe's, which is
+/// bounded, never seeks, and cannot express an absolute position.
 /// <para>
-/// <b>Why this is a second EBML reader and not a reuse of the probe's.</b> They do genuinely different
-/// jobs and the difference is in their safety properties, not their convenience. The probe answers
-/// "can this play?" from a HEADER: it is bounded to 8 MiB, never seeks, and BUFFERS each nested element
-/// so a child can never advance its parent (the 🔴 note on <c>EbmlReader.Nested</c> records the bug that
-/// forced that). This one must walk to the end of a multi-gigabyte file, must SEEK — twice, since the
-/// output needs its sample table before its first byte — and must record absolute positions, which a
-/// buffering reader cannot even express. Widening the probe's reader to do both would have put a
-/// proven parser at risk to serve a new caller.
-/// </para>
-/// <para>
-/// ⚠ <b>The one invariant that must never diverge between them</b> is EBML's variable-length integer
-/// rule: an ID keeps its length marker (the marker is part of the id) and a SIZE drops it (it is not
-/// part of the value). Conflating the two is the classic way an EBML parser reads every element wrong,
-/// and it is stated in both files for that reason.
-/// </para>
-/// <para>
-/// Read in two stages on purpose — <see cref="ReadHeader"/> stops at the first cluster so the caller can
-/// choose its tracks, then <see cref="ReadSamples"/> continues from exactly there. A multi-language film
-/// carries four audio tracks and recording samples for all of them would cost several times the memory
-/// on the device least able to spare it, for tracks nobody asked for.
+/// Read in two stages: <see cref="ReadHeader"/> stops at the first cluster so the caller can choose its
+/// tracks, then <see cref="ReadSamples"/> continues from exactly there and records only those.
 /// </para>
 /// </summary>
 internal sealed class MatroskaSampleReader(Stream source)
@@ -71,13 +53,9 @@ internal sealed class MatroskaSampleReader(Stream source)
     private const ulong TrackTypeAudio = 2;
 
     /// <summary>
-    /// The most frames this will record before refusing.
-    /// <para>
-    /// ⚠ A bound rather than trust, for the same reason the probe has one: this parses a file the PAGE can
-    /// point at, and each frame costs a record. Four million is roughly a nine-hour film at 60 fps with a
-    /// soundtrack — far past anything a translation layer is for, and small enough that a hostile file
-    /// costs bounded memory instead of the process.
-    /// </para>
+    /// The most frames this will record before refusing. ⚠ A bound rather than trust — this parses a file
+    /// the PAGE can point at, and each frame costs a record. Four million is roughly a nine-hour film at
+    /// 60 fps with a soundtrack.
     /// </summary>
     private const int MaxSamples = 4_000_000;
 
@@ -126,12 +104,11 @@ internal sealed class MatroskaSampleReader(Stream source)
         source.Position = 0;
 
         if (!TryReadElement(out var id, out var size) || id != IdEbmlHeader) return false;
-        // size < 0 is the malformed/unknown-size sentinel every sibling site guards; unguarded it
-        // seeks BACKWARD one byte here (Position - 1 passes SkipTo's range check) and misparses.
+        // ⚠ size < 0 is the unknown-size sentinel; unguarded it seeks BACKWARD one byte here
+        // (Position - 1 passes SkipTo's range check) and misparses.
         if (size < 0 || !SkipTo(source.Position + size)) return false;
 
         if (!TryReadElement(out id, out size) || id != IdSegment) return false;
-        // Every position the container STORES is relative to here — see the field.
         _segmentAt = source.Position;
         // An unknown-size Segment means "to the end of the file", which is what a live-muxed file writes.
         _segmentEnd = size < 0 ? Length : Math.Min(source.Position + size, Length);
@@ -151,14 +128,13 @@ internal sealed class MatroskaSampleReader(Stream source)
                     ReadTracks(payloadAt + childSize);
                     break;
                 case IdSeekHead when childSize >= 0:
-                    // Where the INDEX is. Normally the only thing at the front that knows, since Cues are
-                    // written at the end. Moves the position, so the skip below is not optional.
+                    // Where the INDEX is; Cues themselves are normally at the end. ⚠ Moves the position, so
+                    // the skip below is not optional.
                     ReadSeekHead(payloadAt + childSize, depth: 0);
                     if (!SkipTo(payloadAt + childSize)) return Tracks.Count > 0;
                     break;
                 case IdCues when childSize >= 0:
-                    // Cues at the FRONT — what `cues_to_front` and `mkclean --keep-cues` produce. Rare, and
-                    // free to honour since we are standing on it.
+                    // Cues at the FRONT — what `cues_to_front` and `mkclean --keep-cues` produce.
                     _cuesAt = elementAt;
                     if (!SkipTo(payloadAt + childSize)) return Tracks.Count > 0;
                     break;
@@ -179,10 +155,9 @@ internal sealed class MatroskaSampleReader(Stream source)
     /// <summary>Record where the SeekHead says the index is. ⚠ Moves the stream; the caller restores it.</summary>
     /// <param name="end">One past the SeekHead's payload.</param>
     /// <param name="depth">
-    /// 🔴 <b>A SeekHead may point at ANOTHER SeekHead, and that is not a curiosity.</b> MKVToolNix writes
-    /// exactly that layout whenever an in-place header edit outgrows its reserved space, so a reader handling
-    /// only one level reports "no index" for ordinary files people really have. Followed ONCE: a cycle would
-    /// otherwise be a hang, on a file the page chose.
+    /// 🔴 <b>A SeekHead may point at ANOTHER SeekHead</b> — MKVToolNix writes that layout whenever an
+    /// in-place header edit outgrows its reserved space, so a reader handling only one level reports "no
+    /// index" for ordinary files. Followed ONCE: a cycle would otherwise hang, on a file the page chose.
     /// </param>
     private void ReadSeekHead(long end, int depth)
     {
@@ -207,8 +182,7 @@ internal sealed class MatroskaSampleReader(Stream source)
             var payloadAt = source.Position;
             if (payloadAt + size > end) return;
 
-            // A SeekID's bytes ARE an element id, length marker included — the same form these constants are
-            // written in, so this comparison is equality rather than a translation.
+            // A SeekID's bytes ARE an element id, length marker included — the same form these constants use.
             if (id == IdSeekId) target = ReadUnsigned(size);
             else if (id == IdSeekPosition) position = (long)ReadUnsigned(size);
 
@@ -232,24 +206,16 @@ internal sealed class MatroskaSampleReader(Stream source)
     }
 
     /// <summary>
-    /// The track's keyframe times, in the file's own ticks, taken from its INDEX rather than by walking it.
-    ///
+    /// The track's keyframe times, in the file's own ticks, taken from its INDEX rather than by walking it —
+    /// two small reads instead of touching a third of the file.
     /// <para>
-    /// 🔴 <b>This is the cheap answer to "where can this be cut": two small reads instead of touching a third
-    /// of the file.</b> A cluster walk seeks past every frame in the source to find block headers; the Cues
-    /// element already states where the keyframes are, and Matroska says a file that is not a live stream
-    /// SHOULD carry one.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>Null means "ask the clusters instead" and is an ORDINARY answer</b> — no index, an index for other
-    /// tracks, or one that fails the checks below. Cues are optional and this must never be the only way the
-    /// tier can plan.
+    /// ⚠ <b>Null means "ask the clusters instead" and is an ORDINARY answer</b> — no index, an index for
+    /// other tracks, or one that fails the checks below.
     /// </para>
     /// </summary>
     /// <param name="trackNumber">
-    /// ⚠ Cues are PER TRACK and a cue for the soundtrack says nothing about where the picture has a keyframe
-    /// — every audio frame is a sync sample, so taking the wrong track's cues yields boundaries no decoder
-    /// can start at.
+    /// ⚠ Cues are PER TRACK, and every audio frame is a sync sample — so the soundtrack's cues yield picture
+    /// boundaries no decoder can start at.
     /// </param>
     /// <param name="cancellationToken">This runs on a web request, like the walk it replaces.</param>
     public IReadOnlyList<long>? KeyFrameTicksFromCues(ulong trackNumber,
@@ -347,27 +313,25 @@ internal sealed class MatroskaSampleReader(Stream source)
     }
 
     /// <summary>
-    /// Is this index worth believing? The checks other demuxers learned to apply, because a BROKEN index is
-    /// worse than an absent one — absent falls back to the walk, broken puts every cut in the wrong place and
-    /// nothing reports it.
+    /// Is this index worth believing? ⚠ A BROKEN index is worse than an absent one — absent falls back to
+    /// the walk, broken puts every cut in the wrong place and nothing reports it.
     /// </summary>
     private bool IsUsableIndex(List<long> ticks)
     {
         // Fewer than two points says nothing about spacing, and is what ffmpeg refuses outright.
         if (ticks.Count < 2 || ticks[0] < 0) return false;
 
-        // Strictly ascending, or it is not a timeline. A plan cannot express a boundary that goes backwards.
+        // Strictly ascending, or it is not a timeline.
         for (var i = 1; i < ticks.Count; i++)
         {
             if (ticks[i] <= ticks[i - 1]) return false;
         }
 
-        // A last cue past the declared duration is a real shape from real tools, and it has broken real
-        // players. One percent of tolerance absorbs rounding without accepting a nonsense tail.
+        // A last cue past the declared duration is a real shape from real tools. One percent of tolerance
+        // absorbs rounding without accepting a nonsense tail.
         if (DurationTicks is { } duration) return ticks[^1] <= duration * 1.01 + 1;
 
-        // No declared duration to check against: refuse an implausible magnitude the way ffmpeg does, whose
-        // guard is 1e14 nanoseconds — about twenty-seven hours.
+        // No declared duration: refuse an implausible magnitude, as ffmpeg does at 1e14 ns (~27 hours).
         return TimestampScaleNs <= 0 || ticks[^1] <= 100_000_000_000_000L / TimestampScaleNs;
     }
 
@@ -376,13 +340,10 @@ internal sealed class MatroskaSampleReader(Stream source)
     /// <para>
     /// 🔴 <b>The classic Matroska index bug is an OFF-BY-SEGMENT one</b> — a stored position is relative to
     /// the Segment's data, and reading it as a file offset (or the reverse) yields an index that is
-    /// structurally perfect and points at nothing. That produces cut boundaries no decoder can start at,
-    /// silently. Landing on a Cluster header is cheap and refutes it.
+    /// structurally perfect, points at nothing, and produces cut boundaries no decoder can start at.
     /// </para>
     /// <para>
-    /// ⚠ <b>It does NOT prove the cue TIMES are keyframes</b> — that would need the cluster's blocks parsed,
-    /// and this is a sanity check rather than a verification. True when there was no position to check, since
-    /// a missing <c>CueClusterPosition</c> is not evidence of anything.
+    /// ⚠ <b>It does NOT prove the cue TIMES are keyframes.</b> True when there was no position to check.
     /// </para>
     /// </summary>
     private bool PointsAtACluster(long clusterAt)
@@ -401,45 +362,35 @@ internal sealed class MatroskaSampleReader(Stream source)
     }
 
     /// <summary>
-    /// Walk every cluster, recording each frame's POSITION and length for the requested tracks. The bytes
-    /// themselves are never read here — that is the whole point, and it is what makes a remux cost one
-    /// copy rather than a decode.
+    /// Walk every cluster, recording each frame's POSITION and length for the requested tracks. The frame
+    /// bytes are never read, which is what makes a remux cost one copy rather than a decode.
     /// </summary>
     /// <param name="trackNumbers">The tracks worth recording. Everything else is parsed and discarded.</param>
     /// <param name="cancellationToken">
-    /// 🔴 <b>Checked once per CLUSTER, and that is the only place in this class a caller can be let go.</b>
-    /// This is the long walk: seek-heavy metadata over the WHOLE file, however many gigabytes that is, and
-    /// it is reached from a WEB REQUEST — a range route plans a source before serving it — where an
-    /// abandoned request must stop costing a phone its disk and its thread. A cluster is the right
-    /// granularity: bounded, where the seeks are, and a second or two of media in a real file.
+    /// 🔴 <b>Checked once per CLUSTER, the only place in this class a caller can be let go.</b> This is the
+    /// long walk and it is reached from a WEB REQUEST, where an abandoned request must stop costing a phone
+    /// its disk and its thread.
     /// </param>
     /// <returns>False when the file is malformed past repair or exceeds <see cref="MaxSamples"/>.</returns>
     /// <exception cref="OperationCanceledException">
-    /// The caller cancelled mid-walk. ⚠ Deliberately a THROW rather than a <c>false</c> return: false here
-    /// means "this file is malformed", and reporting a cancellation that way would have the caller tell a
-    /// user their video is broken when in fact they navigated away.
+    /// The caller cancelled mid-walk. ⚠ A THROW rather than a <c>false</c> return, because false means "this
+    /// file is malformed" — reporting a cancellation that way tells a user their video is broken.
     /// </exception>
     public bool ReadSamples(IReadOnlySet<ulong> trackNumbers, CancellationToken cancellationToken = default)
         => ReadSamplesUntil(trackNumbers, long.MaxValue, cancellationToken);
 
     /// <summary>
     /// The same walk, but STOPPING once it has read past <paramref name="untilTicks"/> — resumable, so a
-    /// producer can index the window it is about to write and come back for the rest.
-    ///
+    /// producer can index the window it is about to write and come back for the rest. This is what keeps a
+    /// whole-file walk off the first-paint path.
     /// <para>
-    /// 🔴 <b>This is what keeps a whole-file walk off the first-paint path.</b> A run must index the samples
-    /// it is about to emit; it does not have to index the two hours after them, and doing so before writing
-    /// a single fragment is the walk the page waits out.
+    /// ⚠ <b>It stops on a CLUSTER boundary, never inside one</b>, because block times are relative to their
+    /// cluster's timestamp — a position halfway through one means nothing on its own.
     /// </para>
     /// <para>
-    /// ⚠ <b>It stops on a CLUSTER boundary, never inside one</b>, because a cluster is the only place this
-    /// reader can resume from: block times are relative to their cluster's timestamp, so a position halfway
-    /// through one means nothing on its own.
-    /// </para>
-    /// <para>
-    /// ⚠ Calls ACCUMULATE into <see cref="MatroskaTrack.Samples"/> — each one appends where the last stopped,
-    /// and the sample bound is counted across all of them. <see cref="SamplesComplete"/> is the only way to
-    /// know there is no more; an empty chunk is not evidence of the end.
+    /// ⚠ Calls ACCUMULATE into <see cref="MatroskaTrack.Samples"/>, and the sample bound is counted across
+    /// all of them. <see cref="SamplesComplete"/> is the only way to know there is no more; an empty chunk
+    /// is not evidence of the end.
     /// </para>
     /// </summary>
     /// <param name="trackNumbers">The tracks worth recording. ⚠ The same set on every call, or a track that
@@ -471,9 +422,9 @@ internal sealed class MatroskaSampleReader(Stream source)
                 continue;
             }
 
-            // ⚠ An unknown-size CLUSTER cannot be bounded without scanning for the next top-level id, which
-            // is guesswork on a file a page supplied. Refused rather than guessed — it is vanishingly rare
-            // on a file at rest (it is a live-muxing shape) and a wrong guess produces silent corruption.
+            // ⚠ An unknown-size CLUSTER is REFUSED, not guessed: bounding it means scanning for the next
+            // top-level id, which is guesswork on a file a page supplied, and a wrong guess corrupts
+            // silently. It is a live-muxing shape, vanishingly rare on a file at rest.
             if (size < 0) return false;
 
             if (!ReadCluster(Math.Min(payloadAt + size, _segmentEnd), wanted, ref _recorded)) return false;
@@ -502,8 +453,7 @@ internal sealed class MatroskaSampleReader(Stream source)
             {
                 case IdClusterTimestamp:
                     clusterTicks = (long)ReadUnsigned(size);
-                    // What a BOUNDED walk stops against — see ReadSamplesUntil.
-                    _lastClusterTicks = clusterTicks;
+                    _lastClusterTicks = clusterTicks;       // what a BOUNDED walk stops against
                     break;
 
                 case IdSimpleBlock:
@@ -527,10 +477,10 @@ internal sealed class MatroskaSampleReader(Stream source)
     }
 
     /// <summary>
-    /// A BlockGroup is the older shape, and its keyframe rule is INVERTED relative to a SimpleBlock: there
-    /// is no flag, and a frame is a keyframe exactly when it carries no <c>ReferenceBlock</c>. Reading it
-    /// the SimpleBlock way marks every frame a keyframe, which produces a sync table that says "seek
-    /// anywhere" about a stream where almost nowhere is seekable.
+    /// A BlockGroup is the older shape, and 🔴 <b>its keyframe rule is INVERTED relative to a SimpleBlock</b>:
+    /// there is no flag, and a frame is a keyframe exactly when it carries no <c>ReferenceBlock</c>. Reading
+    /// it the SimpleBlock way marks every frame a keyframe, so the sync table says "seek anywhere" about a
+    /// stream where almost nowhere is seekable.
     /// </summary>
     private bool ReadBlockGroup(long end, long clusterTicks, Dictionary<ulong, MatroskaTrack> wanted, ref int total)
     {
@@ -572,8 +522,7 @@ internal sealed class MatroskaSampleReader(Stream source)
         var relative = BinaryPrimitives.ReadInt16BigEndian(head[..2]);
         var flags = head[2];
 
-        // Not a track we are copying. Everything above still had to be read to find that out — the track
-        // number is INSIDE the block, so there is no cheaper way to skip one.
+        // Not a track we are copying. The track number is INSIDE the block, so there was no cheaper way.
         if (!wanted.TryGetValue(trackNumber, out var track)) return true;
 
         var ticks = clusterTicks + relative;
@@ -582,7 +531,7 @@ internal sealed class MatroskaSampleReader(Stream source)
         var payloadSize = end - payloadAt;
         if (payloadSize < 0) return false;
 
-        // Bits 0x06 select the lacing scheme. Audio blocks are routinely laced — several AAC frames share
+        // 🔴 Bits 0x06 select the LACING scheme. Audio blocks are routinely laced — several AAC frames share
         // one block header — so a remuxer that ignores lacing silently drops most of the soundtrack.
         var frames = (flags & 0x06) switch
         {
@@ -601,8 +550,7 @@ internal sealed class MatroskaSampleReader(Stream source)
             if (++total > MaxSamples) return false;
 
             // ⚠ Laced frames share ONE timestamp on the wire. DefaultDuration spaces them when the track
-            // declares it; when it does not, they are left tied and spread later against the next block's
-            // time (see Mp4Remuxer's timing pass) — which is the only place that information exists.
+            // declares it; otherwise they stay tied and Mp4Remuxer's timing pass spreads them.
             var frameTicks = track.DefaultDurationNs > 0 && TimestampScaleNs > 0
                 ? ticks + i * (track.DefaultDurationNs / TimestampScaleNs)
                 : ticks;
@@ -658,7 +606,7 @@ internal sealed class MatroskaSampleReader(Stream source)
 
     /// <summary>
     /// EBML lacing: the first size is an unsigned vint, and each one after it is a SIGNED delta from the
-    /// previous — biased by half its own range, which is the part that is easy to get wrong.
+    /// previous, biased by half its own range.
     /// </summary>
     private long[]? ReadEbmlLacing(long end)
     {
@@ -668,13 +616,9 @@ internal sealed class MatroskaSampleReader(Stream source)
 
         long known = 0;
 
-        // ⚠ `count` is frames MINUS ONE, and EBML lacing codes exactly `count` sizes — the last frame's is
-        // always implied by what is left. So a block declaring ONE frame codes NONE, and reading a size
-        // here would consume the frame's own first bytes as a length. 🔴 Reading the first vint
-        // UNCONDITIONALLY makes a single-frame EBML-laced block either refuse the whole file — the usual
-        // outcome, since the bogus length overshoots — or plan the wrong bytes. ⚠ Xiph and fixed lacing
-        // are immune, their loops being `0..count` and degrading correctly at zero; this one is the odd
-        // shape, which is why it carries the note.
+        // 🔴 `count` is frames MINUS ONE and EBML lacing codes exactly `count` sizes, so a block declaring
+        // ONE frame codes NONE. Reading the first vint unconditionally consumes the frame's own bytes as a
+        // length — refusing the whole file, or planning the wrong bytes. Xiph and fixed lacing are immune.
         // Pinned by `An_EBML_laced_block_with_a_SINGLE_frame_codes_no_sizes`.
         if (count > 0)
         {
@@ -764,8 +708,7 @@ internal sealed class MatroskaSampleReader(Stream source)
             _ => MediaStreamKind.Unknown,
         };
 
-        // Only the two kinds a remux can carry are kept. Subtitles are droppable by the planner's own rule
-        // and carrying them into MP4 means a text-track format conversion, which is not a container rewrite.
+        // ⚠ Only the two kinds a remux can carry are kept — subtitles never reach `Tracks`.
         if (track.Kind is MediaStreamKind.Video or MediaStreamKind.Audio) Tracks.Add(track);
     }
 
@@ -821,9 +764,10 @@ internal sealed class MatroskaSampleReader(Stream source)
     /// <summary>
     /// EBML's variable-length integer: the first set bit of the first byte says how many bytes it spans.
     /// <para>
-    /// ⚠ <b>An ID keeps that marker and a SIZE drops it</b> — the marker is part of an id's identity and is
-    /// not part of a size's value. This is the one rule <see cref="MatroskaProbe"/>'s reader and this one
-    /// must never disagree about; conflating them reads every element wrong.
+    /// 🔴 <b>An ID keeps that marker and a SIZE drops it</b> — the marker is part of an id's identity and is
+    /// not part of a size's value. Conflating them reads every element wrong. This is the one rule
+    /// <see cref="MatroskaProbe"/>'s reader and this one must never disagree about, which is why both state
+    /// it.
     /// </para>
     /// </summary>
     private bool TryReadVarInt(bool keepMarker, out ulong value, out int width)
@@ -889,9 +833,8 @@ internal sealed class MatroskaSampleReader(Stream source)
     }
 
     /// <summary>
-    /// CodecPrivate, bounded. It carries the decoder configuration record a player needs before the first
-    /// frame — an <c>avcC</c> for H.264, an <c>hvcC</c> for HEVC, an AudioSpecificConfig for AAC — and
-    /// those are tens of bytes, so a declared megabyte is a malformed file rather than a rich one.
+    /// CodecPrivate, bounded. A decoder configuration record is tens of bytes, so a declared megabyte is a
+    /// malformed file rather than a rich one.
     /// </summary>
     private byte[]? ReadBytes(long size)
     {
@@ -934,8 +877,8 @@ internal sealed class MatroskaTrack
 }
 
 /// <summary>
-/// Where one frame lives in the source and when it is shown. Deliberately a POSITION and not the bytes —
-/// a remux copies each frame exactly once, straight from the source into the output.
+/// Where one frame lives in the source and when it is shown — a POSITION, not the bytes, so a remux copies
+/// each frame exactly once straight from the source into the output.
 /// </summary>
 /// <param name="Offset">Absolute position of the frame in the source file.</param>
 /// <param name="Length">Frame length in bytes.</param>

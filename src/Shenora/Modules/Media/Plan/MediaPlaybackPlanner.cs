@@ -20,15 +20,14 @@ public enum MediaPlaybackAction
 }
 
 /// <summary>
-/// What the app's player can open, expressed as sets the app owns. ⚠ <b>The kit ships NO default</b>
-/// (D42): there is no correct universal list — a browser's set differs from a bundled engine's, Android's
-/// differs PER DEVICE because codec support is vendor-declared, and a licensed codec like AC-3 may be
-/// present on one handset and absent on the next.
+/// What the app's player can open, expressed as sets the app owns. ⚠ <b>The kit ships NO default</b> (D42):
+/// codec support is vendor-declared and differs PER DEVICE — a licensed codec like AC-3 may be present on
+/// one handset and absent on the next.
 /// </summary>
 public sealed record MediaPlaybackPolicy
 {
     /// <summary>
-    /// Containers the player can OPEN, as lowercase extensions including the dot. Checked separately from
+    /// Containers the player can OPEN, as lowercase extensions including the dot. ⚠ Checked separately from
     /// the codecs: an <c>.mkv</c> holding perfectly ordinary AAC still cannot be opened, so a codec-only
     /// answer calls it playable and the player then refuses.
     /// </summary>
@@ -37,13 +36,11 @@ public sealed record MediaPlaybackPolicy
     /// <summary>
     /// Codec names the player can DECODE, keyed by stream kind, as a probe reports them (<c>h264</c>,
     /// <c>aac</c>). A kind that is absent decodes nothing. Keyed by <see cref="MediaStreamKind"/> to match
-    /// <see cref="IMediaCapability"/>, which asks the DEVICE the same question — the gap between the two
-    /// IS the converter's job (D59).
+    /// <see cref="IMediaCapability"/>, which asks the DEVICE the same question — the gap between the two IS
+    /// the converter's job (D59).
     /// <para>
-    /// ⚠ AUDIO is the set most likely to be the reason a file fails. Licensed audio — AC-3, E-AC-3, DTS —
+    /// ⚠ AUDIO is the set most likely to be the reason a file fails: licensed audio — AC-3, E-AC-3, DTS —
     /// is not in Android's mandatory set, so a file whose picture decodes perfectly plays with NO SOUND.
-    /// That is why this planner is per-stream: a single verdict would call that case unsupported and throw
-    /// away a remux that fixes it.
     /// </para>
     /// </summary>
     public IReadOnlyDictionary<MediaStreamKind, IReadOnlySet<MediaStreamCodec>> Codecs { get; init; } =
@@ -71,31 +68,19 @@ public sealed record MediaPlaybackPolicy
     public bool Decodes(MediaStreamKind kind, MediaStreamCodec codec) => CodecsFor(kind).Covers(codec);
 }
 
-/// <summary>
-/// What the planner concluded about ONE stream.
-/// <para>
-/// ⚠ Was two bools, <c>DecodesNatively</c> + <c>NeedsReEncode</c>, which could not tell three different
-/// facts apart: a stream that genuinely decodes, one whose codec is UNKNOWN and was given the benefit of
-/// the doubt, and a subtitle recorded but never counted. All three read as "decodes natively", so a
-/// consumer could not distinguish a certainty from a guess.
-/// </para>
-/// </summary>
+/// <summary>What the planner concluded about ONE stream. ⚠ It distinguishes a CERTAINTY from a GUESS — a
+/// consumer that must not guess can refuse <see cref="Assumed"/>.</summary>
 public enum MediaStreamVerdict
 {
     /// <summary>The policy lists this codec — it plays.</summary>
     Decodes,
 
-    /// <summary>
-    /// The codec is UNNAMED and the container is one the policy accepts, so it is given the benefit of
-    /// the doubt. ⚠ A GUESS, not a promise: distinguishable from <see cref="Decodes"/> precisely so a
-    /// caller that must not guess can refuse.
-    /// </summary>
+    /// <summary>The codec is UNNAMED and the container is one the policy accepts, so it is given the
+    /// benefit of the doubt. ⚠ A GUESS, not a promise.</summary>
     Assumed,
 
-    /// <summary>
-    /// A subtitle or unknown KIND. Recorded so the stream list is complete, and it never votes on the
-    /// file's action.
-    /// </summary>
+    /// <summary>A subtitle or unknown KIND. Recorded so the stream list is complete; it never votes on the
+    /// file's action.</summary>
     Droppable,
 
     /// <summary>The policy does not list this codec — this stream is what forces a transcode.</summary>
@@ -109,9 +94,8 @@ public sealed record MediaStreamPlan(MediaStreamInfo Stream, MediaStreamVerdict 
 {
     /// <summary>
     /// True when this stream does not force a transcode — <see cref="MediaStreamVerdict.Decodes"/>,
-    /// <see cref="MediaStreamVerdict.Assumed"/> or <see cref="MediaStreamVerdict.Droppable"/>.
-    /// ⚠ Convenience over the verdict, NOT a second source of truth: it cannot tell a certainty from a
-    /// guess, which is the distinction the enum exists for.
+    /// <see cref="MediaStreamVerdict.Assumed"/> or <see cref="MediaStreamVerdict.Droppable"/>. ⚠ It cannot
+    /// tell a certainty from a guess; read <see cref="Verdict"/> when that matters.
     /// </summary>
     public bool Plays => Verdict is not MediaStreamVerdict.NeedsReEncode;
 }
@@ -133,29 +117,26 @@ public sealed record MediaPlaybackPlan(
 
 /// <summary>
 /// Decides what must happen before a player can open a file — <b>per STREAM, not per file</b>. A pure
-/// function with no I/O; the verdicts live in <see cref="MediaPlaybackPolicy"/> and only the mechanism is
-/// here.
+/// function with no I/O; the verdicts live in <see cref="MediaPlaybackPolicy"/>.
 /// <para>
-/// <b>Per-stream</b> (D42) because the frequent real failure is not "this file will not play", it is
-/// <i>picture with no sound</i>: H.264 that decodes perfectly beside AC-3 that does not. A single
-/// <c>CanPlay(file) -&gt; bool</c> is wrong in the most common failure case and discards the cheap fix —
-/// copy the video, re-encode only the sound.
+/// <b>Per-stream</b> (D42) because the common real failure is <i>picture with no sound</i>: H.264 that
+/// decodes perfectly beside AC-3 that does not. A single <c>CanPlay(file) -&gt; bool</c> is wrong in that
+/// case and discards the cheap fix — copy the video, re-encode only the sound.
 /// </para>
 /// </summary>
 public static class MediaPlaybackPlanner
 {
     /// <summary>
-    /// Plan playback for a probed file under an app's policy. The order is load-bearing:
+    /// Plan playback for a probed file under an app's policy. 🔴 The order is load-bearing:
     /// <list type="number">
     /// <item><b>The CONTAINER is decided first and separately.</b> An <c>.mkv</c> carrying ordinary AAC
     /// cannot be opened, so testing codecs first calls the file playable and the player then refuses.</item>
-    /// <item><b>An UNPROBED file gets the benefit of the doubt</b> — no streams means no probe ran, which
-    /// is normal for an external tool the app may not have installed, so the container alone decides and
-    /// an accepted one is <see cref="MediaPlaybackAction.Direct"/> rather than a needless transcode.</item>
+    /// <item><b>An UNPROBED file gets the benefit of the doubt</b> — no streams means no probe ran, so the
+    /// container alone decides and an accepted one is <see cref="MediaPlaybackAction.Direct"/>.</item>
     /// <item><b>An unknown codec is treated as decodable</b>, but only when the container opens: guessing
     /// "broken" on missing information turns absent tooling into failed playback.</item>
-    /// <item><b>Subtitles and unknown streams never force a transcode</b> — they are droppable, and a
-    /// player that cannot render a subtitle track still plays the film.</item>
+    /// <item><b>Subtitles and unknown streams never force a transcode</b> — a player that cannot render a
+    /// subtitle track still plays the film.</item>
     /// </list>
     /// </summary>
     /// <param name="probe">What a probe found. May be empty; may be sparsely populated.</param>
@@ -185,9 +166,9 @@ public static class MediaPlaybackPlanner
                 continue;
             }
 
-            // Step 3 — an unnamed codec is given the benefit of the doubt. ⚠ ONE keyed lookup for EVERY
-            // kind (`CodecsFor`), never a per-kind branch: branching video-vs-audio silently treats
-            // subtitles — and any kind added later — as AUDIO.
+            // Step 3 — an unnamed codec is given the benefit of the doubt. ⚠ ONE keyed lookup for EVERY kind
+            // (`CodecsFor`): branching video-vs-audio silently treats subtitles, and any kind added later,
+            // as AUDIO.
             var named = stream.Codec is { Length: > 0 } codec;
             var verdict = !named ? MediaStreamVerdict.Assumed
                 : policy.Decodes(stream.Kind, new MediaStreamCodec(stream.Codec!, stream.Profile)) ? MediaStreamVerdict.Decodes
@@ -196,8 +177,8 @@ public static class MediaPlaybackPlanner
 
             if (verdict is not MediaStreamVerdict.NeedsReEncode) continue;
 
-            // Can the policy actually perform this re-encode? If not, Unsupported lets the app hand the
-            // file to an external player rather than start a conversion that cannot finish.
+            // Can the policy actually perform this re-encode? If not, Unsupported lets the app hand the file
+            // to an external player rather than start a conversion that cannot finish.
             if (!policy.CanEncode(stream.Kind)) blocked = true;
             else if (stream.Kind is MediaStreamKind.Video) reEncodeVideo = true;
             else reEncodeAudio = true;
@@ -223,8 +204,8 @@ public static class MediaPlaybackPlanner
                 Describe("remux (container)", probe, plans));
     }
 
-    /// <summary>A one-line summary for the host LOG only — it names real codecs and containers, and
-    /// nothing user-facing or wire-facing in this kit carries English prose (`ipc-contracts`).</summary>
+    /// <summary>A one-line summary for the host LOG only — it names real codecs and containers, which
+    /// nothing user-facing or wire-facing may carry (`ipc-contracts`).</summary>
     private static string Describe(string verdict, MediaProbeResult probe, List<MediaStreamPlan> plans)
     {
         var container = probe.Container is { Length: > 0 } c ? c : "(unknown container)";

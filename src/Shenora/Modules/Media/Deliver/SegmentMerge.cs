@@ -34,49 +34,30 @@ public sealed record SegmentMergeResult(SegmentMergeOutcome Outcome, string Deta
 /// <summary>
 /// The handle <c>UseSegmentStream</c> returns: dispose it to remove the route, and ask it when a stream has
 /// finished producing.
-///
 /// <para>
-/// 🔴 <b>"We have every segment" and "we have the finished file" are ONE state</b> (D71). Streaming is not a
-/// lesser path that a download later replaces — it is the production, and the whole file is what it LEAVES
-/// BEHIND. So there is no second converter to run: the segments already on disk ARE the artifact, in order,
-/// and merging is a copy rather than a re-encode.
-/// </para>
-/// <para>
-/// ⚠ <b>The APP asks, in .NET, and the page contract does not change</b> — the same shape D72 settled for
-/// warming the computed-remux plan. A page that has been playing a stream keeps playing it; an app that
-/// wants an offline copy calls this and then points at the file, where playback is `Direct` and no
-/// MediaSource is involved at all.
+/// 🔴 <b>"We have every segment" and "we have the finished file" are ONE state</b> (D71): the segments
+/// already on disk ARE the artifact, in order, so merging is a copy rather than a second production. The
+/// APP asks, in .NET, and the page contract does not change.
 /// </para>
 /// </summary>
 public interface ISegmentStreamRoute : IDisposable
 {
     /// <summary>
-    /// Has every segment the manifest names been produced?
-    ///
-    /// <para>
-    /// <b>A checkable predicate, never an assumption</b> (D71): every index on the plan exists and is
-    /// non-empty, and so does the initialisation segment. False for a source this route has never opened —
-    /// completeness is a fact about produced output, and nothing can be said about a stream nobody asked
-    /// for.
-    /// </para>
+    /// Has every segment the manifest names been produced? Every index on the plan exists and is non-empty,
+    /// and so does the initialisation segment. False for a source this route has never opened.
     /// </summary>
     /// <param name="source">The same file path the route's own resolver returns.</param>
     bool IsComplete(string source);
 
     /// <summary>
-    /// Concatenate a finished stream into ONE fragmented MP4 at <paramref name="destination"/>.
-    ///
+    /// Concatenate a finished stream into ONE fragmented MP4 at <paramref name="destination"/>. The
+    /// initialisation segment followed by every fragment in plan order IS a valid fMP4, so this is a byte
+    /// copy; written to a temporary path and moved into place.
     /// <para>
-    /// The initialisation segment followed by every fragment in plan order IS a valid fMP4 file — which is
-    /// what makes this a byte copy rather than a second production. Written to a temporary path and moved
-    /// into place, so an interrupted run can never leave a half-file that later reads as complete.
-    /// </para>
-    /// <para>
-    /// 🔴 <b>The destination may NOT be inside the segment cache, and this is enforced rather than
-    /// documented.</b> The two have OPPOSITE policies: the cache is rebuildable and evicted oldest-used
-    /// first under a byte cap, while a persisted artifact must never be evicted. Writing one into the other
-    /// means ordinary playback silently deletes a file someone waited for, and the failure appears much
-    /// later as a download that used to work.
+    /// 🔴 <b>The destination may NOT be inside the segment cache, and this is enforced.</b> The two have
+    /// OPPOSITE policies — the cache is evicted oldest-used first under a byte cap, a persisted artifact
+    /// never — so writing one into the other means ordinary playback silently deletes a file someone waited
+    /// for, surfacing much later as a download that used to work.
     /// </para>
     /// </summary>
     /// <param name="source">The source whose stream to merge.</param>
@@ -86,13 +67,7 @@ public interface ISegmentStreamRoute : IDisposable
                                                  CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// The pure half of piece 5: what "complete" means, and how the pieces become one file.
-/// <para>
-/// Separated from the route for the reason the planner is separated from the converter — the decisions are
-/// where the bugs live, so they are the part a test can pin with no webview and no codec.
-/// </para>
-/// </summary>
+/// <summary>The pure half of piece 5: what "complete" means, and how the pieces become one file.</summary>
 internal static class SegmentMerge
 {
     /// <summary>Copied in this size — big enough that a two-hour film is not a million calls.</summary>
@@ -117,12 +92,8 @@ internal static class SegmentMerge
     }
 
     /// <summary>
-    /// Is every part present and non-empty?
-    /// <para>
-    /// ⚠ <b>Non-empty, not merely present.</b> A run killed mid-write leaves a file that exists and holds
-    /// nothing, and treating existence as completeness would merge a truncated film that plays for
-    /// two seconds — the same distinction <c>IsComplete</c> already draws on the serving path.
-    /// </para>
+    /// Is every part present and non-empty? ⚠ Non-empty, not merely present: a run killed mid-write leaves
+    /// a file that exists and holds nothing, and merging that gives a film that plays for two seconds.
     /// </summary>
     internal static bool IsComplete(string directory, SegmentPlan plan)
     {
@@ -144,11 +115,8 @@ internal static class SegmentMerge
     }
 
     /// <summary>
-    /// Would writing to <paramref name="destination"/> put the artifact inside the evictable cache?
-    /// <para>
-    /// Compared on FULL PATHS with a trailing separator, so <c>…/cache-of-mine</c> is not treated as living
-    /// inside <c>…/cache</c> — the prefix bug every containment check has to answer.
-    /// </para>
+    /// Would writing to <paramref name="destination"/> put the artifact inside the evictable cache? Compared
+    /// on FULL PATHS with a trailing separator, so <c>…/cache-of-mine</c> is not inside <c>…/cache</c>.
     /// </summary>
     internal static bool IsInside(string destination, string cacheRoot)
     {

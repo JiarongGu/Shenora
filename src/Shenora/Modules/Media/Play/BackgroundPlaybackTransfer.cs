@@ -21,7 +21,7 @@ public enum BackgroundPlaybackOutcome
     /// <summary>The app supplied no source the native player could open. Nothing moved.</summary>
     Unresolved,
 
-    /// <summary>The transfer was attempted and threw. <see cref="BackgroundPlaybackResult.Detail"/> names the type.</summary>
+    /// <summary>The transfer threw. <see cref="BackgroundPlaybackResult.Detail"/> names the type.</summary>
     Failed,
 }
 
@@ -39,9 +39,9 @@ public sealed class BackgroundPlaybackOptions
 {
     /// <summary>
     /// What the NATIVE player should open to continue what the page is playing — <c>null</c> when nothing
-    /// should carry on. The page plays a URL the app's own routes serve (an interceptor scheme, a
-    /// converted-cache path) and a native player cannot fetch any of that, so only the app can map it to a
-    /// file this device can open. ⚠ Asked at BACKGROUND time, on the app's own thread: it must not block.
+    /// should carry on. A native player cannot fetch the URLs the app's own routes serve, so only the app
+    /// can map one to a file this device can open. ⚠ Asked at BACKGROUND time, on the app's own thread: it
+    /// must not block.
     /// </summary>
     public required Func<string?> ResolveNativeSource { get; init; }
 
@@ -74,7 +74,7 @@ public sealed class BackgroundPlaybackOptions
 /// — seeking a 60 s element to 60.00 rewinds it. A finished playback parks the page at the end.</item>
 /// </list>
 /// <para>⚠ <b>Opening the native player PAUSES the page by itself</b> on both mobile platforms, because it
-/// takes the audio session — so this does NOT pause the page.</para>
+/// takes the audio session — so this does not pause the page.</para>
 /// </summary>
 /// <param name="page">The page-backed player — what <c>UseMediaPlayer</c> registers as <see cref="IMediaPlayer"/>.</param>
 /// <param name="native">The shell's own player, resolved BY ITS TYPE (<c>AndroidMediaPlayer</c>, <c>IosMediaPlayer</c>).</param>
@@ -191,10 +191,8 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
         }
     }
 
-    /// <summary>
-    /// Guarded and lazy, via <see cref="AppCallback.Log"/> — every one of these sits inside a
-    /// <c>catch</c> whose job is to keep a handoff failure from costing the page its playhead.
-    /// </summary>
+    /// <summary>Guarded and lazy — every call site sits inside a <c>catch</c> whose job is to keep a handoff
+    /// failure from costing the page its playhead.</summary>
     private void Report(Func<string> message, Exception? failure = null) =>
         AppCallback.Log(_options.Log, message,
                         failure is null ? LogLevel.Debug : LogLevel.Warning, failure);

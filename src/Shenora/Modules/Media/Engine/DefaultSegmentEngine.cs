@@ -5,9 +5,8 @@ namespace Shenora.Modules.Media;
 /// <summary>
 /// The kit's own <see cref="ISegmentEngine"/> — the platform's codecs behind
 /// <see cref="IMediaStreamConversion"/>, plus <see cref="Mp4FragmentWriter"/>, and nothing else. It ships no
-/// engine bytes and inherits no licence (D42/D51); an app past the platform's reach supplies its own engine
-/// through the same seam. Segments are the TRANSCODE path, and which route a source takes is the APP's
-/// decision (D71/D72).
+/// engine bytes and inherits no licence (D42/D51). Segments are the TRANSCODE path, and which route a source
+/// takes is the APP's decision (D71/D72).
 /// <para>
 /// 🔴 <b>IT COPIES EVERY STREAM MP4 CAN CARRY AND RE-ENCODES ONLY WHAT IT CANNOT</b> (D76). The platform
 /// video encoders offer h263/mpeg4/mpeg2video, none of which a webview decodes, so re-encoding everything
@@ -15,16 +14,13 @@ namespace Shenora.Modules.Media;
 /// every real film.
 /// </para>
 /// <para>
-/// 🔴 <b>It runs wherever an <see cref="IMediaStreamConversion"/> is REGISTERED — a registration test, not a
-/// platform one.</b> <see cref="IsAvailable"/> is false on the desktop only because <c>Shenora.Windows</c>
-/// ships no converter. ⚠ A copy-only run needs no codec at all, so requiring one is what keeps this route
-/// from competing with the computed remux.
+/// ⚠ <see cref="IsAvailable"/> is a REGISTRATION test, not a platform one: it is false on the desktop only
+/// because <c>Shenora.Windows</c> ships no converter.
 /// </para>
 /// </summary>
 internal sealed class DefaultSegmentEngine : ISegmentEngine
 {
-    // Explicit fields, not primary-constructor captures: a captured parameter is not a member the nested run
-    // class can reach.
+    // Explicit fields, not primary-constructor captures: the nested run class cannot reach a captured parameter.
     private readonly IMediaStreamConversion? _conversion;
     private readonly ILogger? _log;
 
@@ -39,8 +35,8 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
     }
 
     /// <summary>
-    /// The track numbers this engine writes. Fixed rather than derived because
-    /// <see cref="HasRenderedPicture"/> is handed a PATH and must know which track to measure.
+    /// The track numbers this engine writes. Fixed because <see cref="HasRenderedPicture"/> is handed a PATH
+    /// and must know which track to measure.
     /// </summary>
     internal const int VideoTrackId = 1;
     internal const int AudioTrackId = 2;
@@ -65,13 +61,11 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
 
     /// <inheritdoc />
     /// <remarks>
-    /// ⚠ A video STREAM is not a picture: an attached cover image is carried as one, and building a video
-    /// encoder for album art wastes a hardware codec on a segment whose "picture" is one frame repeated.
-    /// 🔴 <b>The dimensions that separate them are on the RESULT, not on the stream</b> —
-    /// <c>MatroskaProbe</c> fills <see cref="MediaProbeResult.Width"/>/<see cref="MediaProbeResult.Height"/>
-    /// and leaves <see cref="MediaStreamInfo.Width"/> null on every stream it reports, so asking the stream
-    /// answers FALSE for every source alive and the engine builds no video encoder, producing sound-only
-    /// segments that play perfectly. A test pins it: the wrong version compiles and looks right.
+    /// 🔴 <b>The dimensions are read off the RESULT, not off the stream</b> — <c>MatroskaProbe</c> fills
+    /// <see cref="MediaProbeResult.Width"/>/<see cref="MediaProbeResult.Height"/> and leaves
+    /// <see cref="MediaStreamInfo.Width"/> null on every stream it reports, so asking the stream answers
+    /// FALSE for every source alive and the engine builds no video encoder, producing sound-only segments
+    /// that play perfectly. A test pins it: the wrong version compiles and looks right.
     /// </remarks>
     public bool HasPicture(MediaByteSource source)
     {
@@ -88,8 +82,7 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
     /// <inheritdoc />
     /// <remarks>
     /// Answers null — "I will hit your grid" — for every source whose PICTURE this run would re-encode, and a
-    /// derived plan only for one it will COPY: the kit's encoders emit a keyframe every second so a
-    /// whole-second grid is hittable, while copied frames keep the original encoder's keyframes (D76).
+    /// derived plan only for one it will COPY (D76).
     /// </remarks>
     public SegmentPlan? PlanSegments(MediaByteSource source, SegmentLengths lengths, CancellationToken cancellationToken = default)
     {
@@ -105,17 +98,14 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
             var reader = new MatroskaSampleReader(file);
             if (!reader.ReadHeader()) return null;
 
-            // Only the LEAD track decides the boundaries, and only when it is copied. A converted picture is
-            // cut on the grid; a soundtrack has a keyframe on every frame, so any boundary suits it.
+            // Only the LEAD track decides the boundaries, and only when it is copied. A soundtrack has a
+            // keyframe on every frame, so any boundary suits it.
             if (Pick(reader, MediaStreamKind.Video) is not { Copy: true } lead) return null;
 
             var timeline = SourceTimeline.For(reader.TimestampScaleNs);
 
-            // 🔴 THE FILE'S OWN INDEX FIRST. Cues state where the keyframes are, which is the entire
-            // question here — where the walk below seeks past every frame in the source to rediscover it,
-            // touching about a third of the file's pages before the first manifest can be answered.
-            // ⚠ Null is ORDINARY: Cues are optional in Matroska, may be for other tracks, or may fail the
-            // reader's checks. The walk is the answer then, and the boundaries are identical either way.
+            // 🔴 THE FILE'S OWN INDEX FIRST; the walk below is the expensive fallback. ⚠ Null is ORDINARY —
+            // Cues are optional — and the boundaries are identical either way.
             var keyFrames = reader.KeyFrameTicksFromCues(lead.Track.Number, cancellationToken);
             if (keyFrames is null)
             {
@@ -132,8 +122,8 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
                 return null;
             }
 
-            // 🔴 A source whose keyframes are minutes apart cannot be COPIED into fragments — a fragment is
-            // held whole in memory. Declining sends the run back to the grid and a re-encode.
+            // 🔴 A fragment is held whole in memory, so keyframes minutes apart cannot be COPIED. Declining
+            // sends the run back to the grid and a re-encode.
             if (plan.LongestSeconds > MaxCopiedSegmentSeconds)
             {
                 Report($"segments: the source's keyframes are up to {plan.LongestSeconds:0.#}s apart, past the "
@@ -146,7 +136,6 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
         }
         catch (OperationCanceledException)
         {
-            // The request went away. Not a fault, and not this engine's to report.
             throw;
         }
         catch (Exception ex)
@@ -158,13 +147,9 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
     }
 
     /// <summary>
-    /// Can this stream be INDEXED — seekable, and able to say how long it is?
-    /// <para>
-    /// Checked by name rather than left to fail: Matroska states where a frame lives instead of streaming it
-    /// in order, so a forward-only stream reads as a malformed container and every diagnostic downstream says
-    /// "not readable Matroska" about a file that is perfectly fine. A ranged remote source needs a seekable
-    /// adapter, and this is the line that says so.
-    /// </para>
+    /// Can this stream be INDEXED — seekable, and able to say how long it is? ⚠ Refused BY NAME: Matroska is
+    /// read by offset, so a forward-only stream otherwise reads as a malformed container and every
+    /// diagnostic downstream says "not readable Matroska" about a file that is perfectly fine.
     /// </summary>
     private bool IsIndexable(Stream stream, MediaByteSource source)
     {
@@ -181,17 +166,15 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
         ArgumentNullException.ThrowIfNull(request.Plan);
         if (_conversion is null) return null;
 
-        // ONE candidate. The `Attempt` ladder exists for an engine that can offer a software encoder after a
-        // hardware one failed; this one has no second answer, so null tells the caller to stop asking.
+        // ONE candidate: this engine has no second encoder path, so null tells the caller to stop asking.
         if (request.Attempt > 0)
         {
             Report($"segments: no second candidate — this engine has one encoder path (attempt {request.Attempt})");
             return null;
         }
 
-        // Refused at composition time rather than discovered by a seek: a fractional grid produces segments
-        // that PLAY and only misbehave when somebody seeks into them (SegmentGrid). ⚠ Only a GRID can be
-        // unhittable — boundaries taken from the source's own keyframes are real by construction.
+        // ⚠ Only a GRID can be unhittable — boundaries taken from the source's own keyframes are real by
+        // construction (SegmentGrid).
         if (request.Plan.GridSeconds is { } grid && !SegmentGrid.IsUsable(grid, out var reason))
         {
             Report($"segments: {reason}");
@@ -205,12 +188,8 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
 
     /// <summary>
     /// The first track of a kind this run can produce, and HOW it will travel — copy first, convert only what
-    /// cannot be copied (D76).
-    /// <para>
-    /// ⚠ <b>The conversion fallback is asked of the CONVERSION and not of the container</b>: a track whose
-    /// codec the encoder declines is one the run would feed for nothing, producing a segment missing that
-    /// stream — which reads as a broken engine rather than as an unsupported codec.
-    /// </para>
+    /// cannot be copied (D76). The fallback is asked of the CONVERSION rather than of the container, so a
+    /// codec the encoder declines is reported instead of being fed for nothing.
     /// </summary>
     /// <param name="reader">Past its header, so the tracks are known.</param>
     /// <param name="kind">Picture or sound.</param>
@@ -241,9 +220,8 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
     }
 
     /// <summary>
-    /// The source's header, or null when it cannot be read. ⚠ Opens its OWN stream and closes it: the probe
-    /// reads only the head, and holding one open across a whole run would pin a ranged transport's connection
-    /// for the duration.
+    /// The source's header, or null when it cannot be read. ⚠ Opens its OWN stream and closes it — holding
+    /// one open across a whole run would pin a ranged transport's connection for the duration.
     /// </summary>
     private MediaProbeResult? Probe(MediaByteSource source, CancellationToken cancellationToken = default)
     {
@@ -290,13 +268,13 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
             }
             catch (OperationCanceledException)
             {
-                // Disposed. The caller asked for this, so it is not a fault and not worth a line.
+                // Disposed — the caller asked for this.
             }
             catch (Exception ex)
             {
-                // 🔴 A run dies with NO caller on the stack — started with Task.Run and never awaited — so an
-                // escaping exception is an unobserved fault whose only symptom is segments that stop
-                // appearing. The consumer then reports "seg{k} did not arrive", the effect. This is the cause.
+                // 🔴 Started with Task.Run and never awaited, so an escaping exception is an unobserved fault
+                // whose only symptom is segments that stop appearing. This line is the cause; the consumer
+                // reports only the effect ("seg{k} did not arrive").
                 owner.Report($"segments: the production run failed ({ex.GetType().Name}: {ex.Message})");
             }
         }
@@ -313,15 +291,10 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
                 return;
             }
 
-            // 🔴 A copied PICTURE is cut where the SOURCE has keyframes; a UNIFORM plan instead relies on the
-            // kit's own encoders emitting one every second, which only an encoder can promise — so on a grid
-            // the picture is re-encoded even where it could have been copied. Without this the two halves
-            // disagree whenever PlanSegments declined, the run copies, and every cut SLIPS to the first
-            // source keyframe past the boundary: nothing reports it, an index the drift skips is never
-            // written, and the page waits out its budget and restarts on every segment.
+            // 🔴 The PLAN says whether a copy is legal, and getting this wrong is silent: on any other origin
+            // the picture is re-encoded even where it could have been copied, because a copy slips every cut
+            // to the first source keyframe past the boundary and nothing reports it.
             // ⚠ Sound is exempt: every audio frame is a sync sample, so any boundary suits it.
-            // ⚠ The plan SAYS which it is; this used to ask "is it a grid?" and read the answer as "must I
-            // re-encode?", which held only while every non-grid plan came from the source's own keyframes.
             var copyable = request.Plan.Origin is SegmentBoundaries.SourceKeyFrames;
             var video = request.HasPicture
                 ? owner.Pick(reader, MediaStreamKind.Video, allowCopy: copyable)
@@ -336,16 +309,13 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
             var wanted = new HashSet<ulong>();
             if (video is not null) wanted.Add(video.Track.Number);
             if (audio is not null) wanted.Add(audio.Track.Number);
-            // The source's clock, stated exactly — a copied track is written on it. Both tracks are cut
-            // against the SAME plan; the manifest declares one for the whole presentation.
             var timeline = SourceTimeline.For(reader.TimestampScaleNs);
             var startSeconds = request.Plan.StartOf(request.FirstSegment);
 
-            // 🔴 INDEX ONLY WHAT THIS RUN NEEDS TO BEGIN, and let the pump ask for the rest as it writes.
-            // Indexing the whole file first is a walk of every cluster to the end — on the request that
-            // gates first paint, since a page cannot play until the init segment lands and that request
-            // drives segment 0. ⚠ Returns whether it made PROGRESS, not whether it succeeded: a reader that
-            // has reached the end answers "no more" and the pump must not ask again.
+            // INDEX ONLY WHAT THIS RUN NEEDS TO BEGIN and let the pump ask for the rest as it writes —
+            // indexing the whole file first walks every cluster on the request that gates first paint.
+            // ⚠ Returns whether it made PROGRESS, not whether it succeeded: a reader that has reached the end
+            // answers "no more" and the pump must not ask again.
             var counted = 0;
             bool Extend(double untilSeconds)
             {
@@ -386,7 +356,7 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
                        extend: Extend, cancellationToken);
         }
 
-        /// <summary>How one track travels, for the log — the line that says whether a codec is being spent.</summary>
+        /// <summary>How one track travels, for the log — whether a codec is being spent.</summary>
         private static string How(SegmentTrack? track, string name) => track is null
             ? string.Empty
             : $"{name} ({(track.Copy ? "copied" : "converted")})";
@@ -397,8 +367,7 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
             _stopping.Cancel();
             try
             {
-                // Bounded: a pump blocked inside a platform codec must not hold up the caller's teardown, and
-                // it has already been told to stop. Everything it owns is disposed by its own finally.
+                // Bounded: a pump blocked inside a platform codec must not hold up the caller's teardown.
                 _pump?.Wait(TimeSpan.FromSeconds(5));
             }
             catch (Exception)

@@ -3,14 +3,13 @@ using System.Buffers.Binary;
 namespace Shenora.Modules.Media;
 
 /// <summary>
-/// Writes FRAGMENTED MP4 — an <c>init</c> segment that declares the tracks, then numbered media segments that
-/// each carry their own index. A fragment states only its OWN samples, so a producer can emit piece 3 while
-/// piece 900 does not exist yet. No codec, no demuxer: it takes samples that already exist and writes the
-/// boxes around them.
+/// Writes FRAGMENTED MP4 — an <c>init</c> segment that declares the tracks, then numbered media segments
+/// that each carry their own index, so a producer can emit piece 3 while piece 900 does not exist yet. No
+/// codec, no demuxer: it takes samples that already exist and writes the boxes around them.
 /// <para>
-/// ⚠ <b>fMP4 and NOT MPEG-TS.</b> A <c>MediaSource</c> append failure is SILENT, and only the <c>trun</c>'s
-/// sizes make a segment's picture bytes COUNTABLE — MPEG-TS names its streams in the PMT, so a segment whose
-/// encoder wrote nothing still declares a video stream and looks correct. That subtraction is what
+/// ⚠ <b>fMP4 and NOT MPEG-TS</b>, because only the <c>trun</c>'s sizes make a segment's picture bytes
+/// COUNTABLE — MPEG-TS names its streams in the PMT, so a segment whose encoder wrote nothing still declares
+/// a video stream and looks correct. That subtraction is what
 /// <see cref="ISegmentEngine.HasRenderedPicture"/> rests on.
 /// </para>
 /// </summary>
@@ -30,14 +29,12 @@ internal static class Mp4FragmentWriter
 
     /// <summary>
     /// The init segment: <c>ftyp</c> + a <c>moov</c> whose sample tables are EMPTY, plus the <c>mvex</c> that
-    /// tells a reader to expect fragments.
+    /// tells a reader to expect fragments. The duration is zero everywhere — a fragmented movie's length is
+    /// not known yet, and each fragment carries its own decode time.
     /// <para>
-    /// ⚠ <b><c>mvex</c> is what makes the empty tables legal rather than broken.</b> Without it a reader sees
-    /// tracks declaring zero samples and is entitled to conclude the movie is empty — which renders as a file
-    /// that opens, reports a duration of nothing and plays nothing.
+    /// ⚠ <b><c>mvex</c> is what makes the empty tables legal rather than broken.</b> Without it a reader is
+    /// entitled to conclude the movie is empty: the file opens, reports no duration, and plays nothing.
     /// </para>
-    /// The duration is zero everywhere: a fragmented movie's length is not known when its init segment is
-    /// written, and each fragment carries its own decode time instead.
     /// </summary>
     /// <param name="target">Written from the current position. Need not be seekable.</param>
     /// <param name="tracks">One per track, in the order their <c>traf</c> boxes will appear in every fragment.</param>
@@ -102,7 +99,7 @@ internal static class Mp4FragmentWriter
                     {
                         w.U32(track.TrackId);
                         w.U32(1);                       // sample description index — the only entry in stsd
-                        // Zero defaults: every fragment states a duration, size and flags per sample itself.
+                        // Zero defaults — every fragment states duration, size and flags per sample.
                         w.U32(0);                       // default sample duration
                         w.U32(0);                       // default sample size
                         w.U32(0);                       // default sample flags
@@ -115,8 +112,8 @@ internal static class Mp4FragmentWriter
         buffer.CopyTo(target);
     }
 
-    /// <summary>A sample table that indexes NOTHING — the fragmented form. It still carries the
-    /// <c>stsd</c>, which a fragment never repeats.</summary>
+    /// <summary>A sample table that indexes NOTHING, but still carries the <c>stsd</c> — which is why a
+    /// fragment never repeats it.</summary>
     private static void EmptyStbl(BoxWriter w, Mp4FragmentTrack track)
     {
         using (w.Box("stbl"))
@@ -138,11 +135,11 @@ internal static class Mp4FragmentWriter
     /// <summary>
     /// One media segment: <c>styp</c> + <c>moof</c> + <c>mdat</c>.
     /// <para>
-    /// 🔴 <b><c>trun</c>'s data offset is circular by construction:</b> it points from the start of the
-    /// <c>moof</c> to that track's first sample byte inside the <c>mdat</c> — a distance that includes the
-    /// size of the <c>moof</c> being written. So the <c>moof</c> is built into a buffer with the offsets left
-    /// blank, its length is then known, and each blank is patched. A guessed length produces a segment that
-    /// appends without error and plays silence.
+    /// 🔴 <b><c>trun</c>'s data offset is circular by construction:</b> it measures from the start of the
+    /// <c>moof</c> to that track's first sample byte inside the <c>mdat</c>, a distance that includes the
+    /// size of the <c>moof</c> being written. So the <c>moof</c> is buffered with the offsets left blank,
+    /// its length becomes known, and each blank is patched. A guessed length produces a segment that appends
+    /// without error and plays silence.
     /// </para>
     /// </summary>
     /// <param name="target">Written from the current position. Need not be seekable.</param>
@@ -185,8 +182,8 @@ internal static class Mp4FragmentWriter
                 {
                     using (w.FullBox("tfhd", 0, TfhdDefaultBaseIsMoof)) w.U32(contributing[i].Track.TrackId);
 
-                    // Version 1 — a 64-bit decode time. The 32-bit form wraps after about 13 hours at a
-                    // 90 kHz timescale, and a wrapped base time seeks to the wrong place rather than failing.
+                    // ⚠ Version 1 — a 64-bit decode time. The 32-bit form wraps after ~13 hours at a 90 kHz
+                    // timescale, and a wrapped base time seeks to the wrong place rather than failing.
                     using (w.FullBox("tfdt", 1, 0)) w.U64(contributing[i].BaseMediaDecodeTime);
 
                     offsetFields[i] = Trun(w, contributing[i].Samples);
@@ -194,8 +191,7 @@ internal static class Mp4FragmentWriter
             }
         }
 
-        // Everything from the start of the moof, which is where a data offset is measured from.
-        var moofLength = buffer.Length - stypLength;
+        var moofLength = buffer.Length - stypLength;    // a data offset measures from the moof, not the styp
         var dataStart = moofLength + 8;                 // + the mdat header
         var raw = buffer.GetBuffer();
 
@@ -208,7 +204,7 @@ internal static class Mp4FragmentWriter
         buffer.Position = 0;
         buffer.CopyTo(target);
 
-        // The mdat, written straight through rather than buffered — it is the whole payload.
+        // The mdat, written straight through rather than buffered.
         var payload = contributing.Sum(t => (long)t.Data.Length);
         Span<byte> header = stackalloc byte[8];
         BinaryPrimitives.WriteUInt32BigEndian(header, checked((uint)(payload + 8)));
@@ -223,10 +219,9 @@ internal static class Mp4FragmentWriter
     /// </summary>
     private static long Trun(BoxWriter w, IReadOnlyList<Mp4FragmentSample> samples)
     {
-        // Composition offsets are written only when one is non-zero: an all-zero table is four bytes per
-        // sample a reader walks for nothing. ⚠ Version 1, so the offsets are SIGNED — a fragment states its
-        // own decode time and does nothing to shift the presentation, so a negative offset is ordinary here
-        // where the whole-file writer had shifted it away.
+        // Composition offsets are written only when one is non-zero. 🔴 Version 1, so they are SIGNED — a
+        // fragment states its own decode time and never shifts the presentation, so a NEGATIVE offset is
+        // ordinary here where the whole-file writer had shifted it away.
         var composed = false;
         for (var i = 0; i < samples.Count; i++)
         {
@@ -259,10 +254,9 @@ internal static class Mp4FragmentWriter
     /// The per-sample flags word, which is how a fragment says "you may start here".
     /// <para>
     /// 🔴 <b>The two halves must agree or a seek lands on a frame nothing can decode.</b> A sync sample
-    /// declares <c>sample_depends_on = 2</c> ("depends on nothing") AND clears
-    /// <c>sample_is_non_sync_sample</c>; a non-sync sample declares <c>1</c> and sets it. Writing only one of
-    /// the two produces a stream where every frame looks seekable to one reader and none to another — and the
-    /// symptom is a seek that plays macroblock soup rather than an error.
+    /// declares <c>sample_depends_on = 2</c> AND clears <c>sample_is_non_sync_sample</c>; a non-sync sample
+    /// declares <c>1</c> and sets it. Write only one half and every frame looks seekable to one reader and
+    /// none to another — a seek that plays macroblock soup rather than an error.
     /// </para>
     /// </summary>
     private static uint SampleFlags(bool keyFrame) => keyFrame
@@ -280,8 +274,8 @@ internal sealed class Mp4FragmentTrack
     public required uint Timescale { get; init; }
 
     /// <summary>The <c>stsd</c> child — an <c>avc1</c>/<c>hvc1</c>/<c>mp4a</c> entry, built by
-    /// <see cref="Mp4Builder.VisualSampleEntry"/> or <see cref="Mp4Builder.AudioSampleEntry"/>. It carries the
-    /// decoder configuration, which is why a fragment needs none.</summary>
+    /// <see cref="Mp4Builder.VisualSampleEntry"/> or <see cref="Mp4Builder.AudioSampleEntry"/>. It carries
+    /// the decoder configuration, which is why a fragment needs none.</summary>
     public required byte[] SampleEntry { get; init; }
 
     /// <summary>Picture or sound.</summary>
@@ -322,9 +316,8 @@ internal sealed class Mp4FragmentTrackData
     public required IReadOnlyList<Mp4FragmentSample> Samples { get; init; }
 
     /// <summary>
-    /// The sample bytes, concatenated in the same order as <see cref="Samples"/> and summing to their lengths.
-    /// Held whole because a fragment is bounded by the segment grid — a few seconds, not a film; that stops
-    /// being true if a caller ever asks for a segment measured in minutes.
+    /// The sample bytes, concatenated in the same order as <see cref="Samples"/> and summing to their
+    /// lengths. ⚠ Held WHOLE in memory, which is only safe while a segment stays a few seconds long.
     /// </summary>
     public required ReadOnlyMemory<byte> Data { get; init; }
 }

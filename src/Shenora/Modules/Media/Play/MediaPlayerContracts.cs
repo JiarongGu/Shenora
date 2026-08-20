@@ -56,11 +56,8 @@ public sealed record MediaPlayerStatus
     public string? Error { get; init; }
 }
 
-/// <summary>
-/// What to play. A file the host can open, or a URL the platform will stream. ⚠ <b>Not a stream or a byte
-/// source</b> — a native player owns the read, on its own threads inside a process-wide media service, and
-/// a managed <c>Stream</c> would marshal every one of those reads across that boundary.
-/// </summary>
+/// <summary>What to play: a file the host can open, or a URL the platform will stream. Never a
+/// <c>Stream</c> — a native player owns the read, on its own threads.</summary>
 public sealed record MediaSource
 {
     /// <summary>An absolute local file path, or an <c>http(s)</c> URL — including one served by the app's
@@ -73,16 +70,15 @@ public sealed record MediaSource
 }
 
 /// <summary>
-/// A media player owned by the HOST, driven by the page (D54), implemented once per shell (D19/D20's law,
-/// the same shape as <see cref="IPlaybackSession"/> and <see cref="IUiDispatcher"/>). It plays what the
-/// PLATFORM decodes, which a <c>&lt;video&gt;</c> element does not: its ceiling is the webview's.
+/// A media player owned by the HOST, driven by the page (D54), implemented once per shell (D19/D20). It
+/// plays what the PLATFORM decodes, which a <c>&lt;video&gt;</c> element does not.
 /// <para>
-/// <b>What this does NOT do.</b> No queue, no playlist, no gapless, no crossfade, no shuffle — only the app
-/// knows what "next" means. And no video SURFACE: video decodes and its clock advances, but nothing
-/// composites it into the page's layout, so AUDIO is what this promises today.
+/// <b>What this does NOT do.</b> No queue, no playlist, no gapless, no crossfade, no shuffle. And no video
+/// SURFACE: video decodes and its clock advances, but nothing composites it into the page's layout, so
+/// AUDIO is what this promises today.
 /// </para>
 /// <para>
-/// Registered as a SINGLETON by the shell and injected. There is no <c>IDisposable</c>: an app disposing an
+/// Registered as a SINGLETON by the shell and injected. ⚠ There is no <c>IDisposable</c> — disposing an
 /// injected singleton would tear down the shell's player for everyone. Say <see cref="CloseAsync"/>.
 /// </para>
 /// </summary>
@@ -98,11 +94,6 @@ public interface IMediaPlayer
     /// <para>
     /// ⚠ <b>A platform may not honour the exact value</b> — each clamps to its own range and some refuse
     /// rates a codec cannot resample, so <see cref="MediaPlayerStatus.Rate"/> reports what was ASKED FOR.
-    /// </para>
-    /// <para>
-    /// It is a METHOD, not a settable property: the platform call behind it can fail, can take time, and
-    /// can be cancelled, and a setter can express none of those. It was a property, and the IPC route had
-    /// to fabricate the await.
     /// </para>
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="rate"/> is not greater than zero.</exception>
@@ -131,7 +122,7 @@ public interface IMediaPlayer
 
     /// <summary>Release the source and return to <see cref="MediaPlayerState.Empty"/>. ⚠ <b>Say this when
     /// playback is over</b> — an open player holds a decoder, a file handle and, on the mobile shells, a
-    /// slice of a process-wide media service. The counterpart to <see cref="IPlaybackSession.Clear"/>.</summary>
+    /// slice of a process-wide media service.</summary>
     Task CloseAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -140,7 +131,7 @@ public interface IMediaPlayer
     /// <para>
     /// ⚠ <b>Raised on whatever thread the platform uses, which is not the UI thread</b> — marshal with
     /// <see cref="IUiDispatcher"/> before touching UI. A throwing handler is caught and logged
-    /// (<see cref="AppCallback"/>) rather than escaping into a platform callback nobody can catch.
+    /// (<see cref="AppCallback"/>).
     /// </para>
     /// </summary>
     event Action<MediaPlayerStatus>? StateChanged;

@@ -3,13 +3,14 @@ using Microsoft.Extensions.Logging;
 namespace Shenora.Modules.Media;
 
 /// <summary>
-/// The <see cref="IMediaPlayer"/> STATE MACHINE, with the platform left abstract.
+/// The <see cref="IMediaPlayer"/> STATE MACHINE, with the platform left abstract. A shell supplies the
+/// platform handle, four transport verbs, position/duration, and the callbacks <see cref="OnOpened"/> /
+/// <see cref="OnEnded"/> / <see cref="OnFailed"/> / <see cref="OnPlatformState"/>.
 /// <para>🔴 <b>Four invariants live here, and each is invisible when broken:</b></para>
 /// <list type="number">
-///   <item><b>A terminal state is never overwritten by a platform transition.</b> Every platform drives
-///   its session to "paused" once it ends or fails, erasing <see cref="MediaPlayerState.Ended"/> and
-///   <see cref="MediaPlayerState.Failed"/> microseconds after they are raised — a failed open then reports
-///   as a healthy paused player carrying an error string nothing displays.</item>
+///   <item><b>A terminal state is never overwritten by a platform transition.</b> Platforms drive a session
+///   to "paused" once it ends or fails, erasing <see cref="MediaPlayerState.Ended"/> and
+///   <see cref="MediaPlayerState.Failed"/> — a failed open then reports as a healthy paused player.</item>
 ///   <item><b>A rate set while paused is remembered, not applied.</b> On AVFoundation rate and transport
 ///   are the SAME control, so pushing a remembered 1.5× would silently start a paused player.</item>
 ///   <item><b>A cancelled open leaves the player <see cref="MediaPlayerState.Empty"/>, not half-loaded</b>,
@@ -17,10 +18,6 @@ namespace Shenora.Modules.Media;
 ///   <item><b>An abandoned open completes EXCEPTIONALLY.</b> Re-opening or closing while an open is in
 ///   flight otherwise leaves its caller awaiting forever — no exception, no log.</item>
 /// </list>
-/// <para>
-/// <b>A shell supplies</b> the platform handle, four transport verbs, position/duration, and the callbacks
-/// <see cref="OnOpened"/> / <see cref="OnEnded"/> / <see cref="OnFailed"/> / <see cref="OnPlatformState"/>.
-/// </para>
 /// <para>
 /// ⚠ Not the page-backed <see cref="MediaPlayer"/>'s base — that one's "platform" is a webview element
 /// reporting over IPC.
@@ -66,10 +63,9 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     }
 
     /// <summary>
-    /// What this player believes it is doing, without asking the platform for a position or duration. For a
-    /// callback meaningful in only one state: AVFoundation reports "the buffer ran dry" whether or not
-    /// anything was playing, so forwarding it blindly leaves a PAUSED player
-    /// <see cref="MediaPlayerState.Buffering"/> for good.
+    /// What this player believes it is doing, without asking the platform. ⚠ AVFoundation reports "the
+    /// buffer ran dry" whether or not anything was playing, so forwarding a platform callback blindly
+    /// leaves a PAUSED player <see cref="MediaPlayerState.Buffering"/> for good.
     /// </summary>
     protected MediaPlayerState State { get { lock (_gate) return _state; } }
 
@@ -97,12 +93,8 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (string.IsNullOrWhiteSpace(source.Uri)) throw new MediaPlayerException("Media source URI is empty.");
 
-        // Names what is actually wrong: only a RELATIVE string reaches here now, and the fix is to root
-        // it. The old wording ("not a file path or an absolute URL") was the message a `file:` URL got
-        // while being both of those things.
-        // ⚠ The offending value is NOT interpolated. This type documents its message as an "app-safe
-        // reason", and an adopter reporting `ex.Message` onward is the exact copy-paste `IpcErrorMapping`
-        // exists to prevent — a caller's path must not become the thing that leaks through it.
+        // ⚠ The offending value is NOT interpolated: this message is an app-safe reason, and a caller's
+        // path must not leak through an adopter reporting `ex.Message` onward.
         var uri = ParseUri(source.Uri)
             ?? throw new MediaPlayerException(
                 "Media source URI is relative — pass a rooted path or an absolute URL.");
@@ -265,10 +257,8 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         Raise();
     }
 
-    /// <summary>
-    /// The platform failed. <paramref name="reason"/> must be APP-SAFE — never the platform's own text,
-    /// which can reach a page; log that separately.
-    /// </summary>
+    /// <summary>The platform failed. ⚠ <paramref name="reason"/> must be APP-SAFE — never the platform's
+    /// own text, which can reach a page; log that separately.</summary>
     protected void OnFailed(string reason)
     {
         TaskCompletionSource? completion;
@@ -280,8 +270,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
 
     /// <summary>
     /// The platform changed transport state on its own — buffering, resuming, stalling.
-    /// <para>🔴 Invariant 1: a TERMINAL state wins.</para>
-    /// <para>A transition matching what we already believe raises NOTHING: it is not a tick.</para>
+    /// <para>🔴 Invariant 1: a TERMINAL state wins. A transition matching the current state raises nothing.</para>
     /// </summary>
     /// <param name="state">What the platform now reports, already mapped to the kit's vocabulary.</param>
     protected void OnPlatformState(MediaPlayerState state)
@@ -300,16 +289,12 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     /// <summary>Where the platform has got to. Only asked while a source is open.</summary>
     protected abstract TimeSpan PositionCore { get; }
 
-    /// <summary>
-    /// How long the source is, or null when the platform does not know (a live stream, a source still
-    /// resolving). Only asked while a source is open.
-    /// </summary>
+    /// <summary>How long the source is, or null when the platform does not know (a live stream, a source
+    /// still resolving). Only asked while a source is open.</summary>
     protected abstract TimeSpan? DurationCore { get; }
 
-    /// <summary>
-    /// Begin opening. Returns once the platform has accepted the source; readiness is signalled later
-    /// through <see cref="OnOpened"/> or <see cref="OnFailed"/>.
-    /// </summary>
+    /// <summary>Begin opening. Returns once the platform has accepted the source; readiness is signalled
+    /// later through <see cref="OnOpened"/> or <see cref="OnFailed"/>.</summary>
     /// <param name="source">The caller's source, for anything beyond the URI.</param>
     /// <param name="uri">The validated absolute URI — a file path has already become a <c>file:</c> URI.</param>
     protected abstract void OpenCore(MediaSource source, Uri uri);
@@ -332,16 +317,12 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     /// <summary>Change the speed of a PLAYING player.</summary>
     protected abstract void ApplyRateCore(double rate);
 
-    /// <summary>
-    /// Release the source. Called by <see cref="CloseAsync"/>, before every re-open, and by
-    /// <see cref="Dispose"/> — so it must be safe with no source open.
-    /// </summary>
+    /// <summary>Release the source. Called by <see cref="CloseAsync"/>, before every re-open, and by
+    /// <see cref="Dispose"/> — so it must be safe with no source open.</summary>
     protected abstract void TeardownCore();
 
-    /// <summary>
-    /// Detach platform callbacks, before teardown. Override where the platform raises during disposal — a
-    /// handler running then touches a half-disposed object from a thread nobody owns.
-    /// </summary>
+    /// <summary>Detach platform callbacks, before teardown. ⚠ Override where the platform raises during
+    /// disposal — a handler running then touches a half-disposed object from a thread nobody owns.</summary>
     protected virtual void DetachCore() { }
 
     /// <summary>Release the platform handle itself, after teardown.</summary>
@@ -350,16 +331,8 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     // ---- Shared plumbing.
 
     /// <summary>
-    /// A file path or an absolute URL, and nothing else. A relative string is REJECTED, never resolved
-    /// against the process's working directory — that is not where an app's media lives.
-    /// <para>
-    /// ⚠ <b>A <c>file:</c> URL is accepted, and used not to be.</b> The guard read <c>!parsed.IsFile</c>,
-    /// so <c>new Uri(path).AbsoluteUri</c> — the obvious thing for a .NET caller to hand over — matched
-    /// neither branch and was refused as "not a file path or an absolute URL", naming both of the things
-    /// it IS. Found by the first adopter, one failed open each. It costs nothing to accept: the rooted
-    /// branch below already returns a <c>file:</c> URI, so every consumer downstream was handling one
-    /// anyway (<c>IosMediaPlayer</c> branches on <c>IsFile</c> and takes <c>LocalPath</c>).
-    /// </para>
+    /// A rooted file path or an absolute URL — including a <c>file:</c> one. A relative string is REJECTED,
+    /// never resolved against the process's working directory.
     /// </summary>
     private static Uri? ParseUri(string uri)
     {
@@ -390,10 +363,8 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         Try(TeardownCore, nameof(TeardownCore));
     }
 
-    /// <summary>
-    /// Raise <see cref="StateChanged"/> with a fresh snapshot. ⚠ A throwing handler is caught and logged
-    /// rather than escaping into a platform callback, where nobody can catch it.
-    /// </summary>
+    /// <summary>Raise <see cref="StateChanged"/> with a fresh snapshot. ⚠ A throwing handler is caught and
+    /// logged rather than escaping into a platform callback, where nobody can catch it.</summary>
     private void Raise()
     {
         var handler = StateChanged;
@@ -403,7 +374,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
             ex => Log(() => "A MediaPlayer state handler threw.", ex));
     }
 
-    /// <summary>Run a platform call, logging rather than throwing — the rule every transport verb follows.</summary>
+    /// <summary>Run a platform call, logging rather than throwing.</summary>
     private void Try(Action action, string what)
     {
         try { action(); }

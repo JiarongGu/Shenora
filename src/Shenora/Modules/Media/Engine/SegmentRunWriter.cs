@@ -2,14 +2,9 @@ namespace Shenora.Modules.Media;
 
 /// <summary>
 /// The pump behind <see cref="DefaultSegmentEngine"/>: take source frames, COPY the ones MP4 can carry and
-/// push the rest through the platform's codecs, and cut the output into numbered fMP4 fragments on the plan.
-/// Split out of the engine because it is the part with STATE, and the part a fake
+/// push the rest through the platform's codecs (D76), and cut the output into numbered fMP4 fragments on the
+/// plan. Split out of the engine because it is the part with STATE, and the part a fake
 /// <see cref="IMediaStreamConversion"/> can drive end to end on a machine with no codecs at all.
-/// <para>
-/// 🔴 <b>COPYING IS THE DEFAULT AND CONVERTING IS THE FALLBACK</b> (D76): the platform video encoders offer
-/// h263/mpeg4/mpeg2video, none of which a webview decodes, so re-encoding everything yields SOUND-ONLY
-/// segments for essentially every real film. Only a stream MP4 cannot hold (AC-3, DTS, VP9) costs a codec.
-/// </para>
 /// <para>
 /// 🔴 <b>THE THREE KINDS OF CHANNEL ARE TIMED DIFFERENTLY, and one rule for all of them produces a stream
 /// that appends cleanly and buffers NOTHING</b>: a COPIED track on the source's own clock, a CONVERTED
@@ -44,14 +39,10 @@ internal sealed class SegmentRunWriter(
     /// <param name="conversionOf">The shell's codecs, or null when this shell registered none.</param>
     /// <param name="cancellationToken">Checked between frames; disposing the run fires it.</param>
     /// <param name="extend">
-    /// Index more of the source, up to the given time in SECONDS; false when there is no more. Called before
-    /// the pump would consume its last known sample.
-    /// <para>
-    /// 🔴 <b>Called BEFORE the last sample rather than after it runs out, and the difference is a
-    /// correctness one.</b> A copied sample's duration is the gap to its SUCCESSOR, so a frame taken while
-    /// it is the last one known gets the track's declared duration instead of its real gap. Keeping one
-    /// sample of lookahead means every frame but the true final one is timed from the file.
-    /// </para>
+    /// Index more of the source, up to the given time in SECONDS; false when there is no more.
+    /// 🔴 <b>Called BEFORE the pump consumes its last known sample, not after it runs out</b>: a copied
+    /// sample's duration is the gap to its SUCCESSOR, so a frame taken while it is the last one known gets
+    /// the track's declared duration instead of its real gap.
     /// </param>
     public void Run(Stream source, SegmentTrack? video, SegmentTrack? audio,
                     int from, double startSeconds, IMediaStreamConversion? conversionOf,
@@ -75,14 +66,13 @@ internal sealed class SegmentRunWriter(
 
         foreach (var channel in tracks)
         {
-            // Each track seeks independently: their keyframes are their own, and using the picture's index
-            // for both starts the sound in the wrong place.
+            // Each track seeks independently: using the picture's index for both starts the sound in the
+            // wrong place.
             channel.Next = ReferenceEquals(channel.Track, lead)
                 ? from
                 : SegmentGrid.SeekIndex(channel.Track.Samples, startTicks);
             channel.Start = channel.Next;
-            // Only a converted soundtrack needs this: a copy carries the source's own times, and a converted
-            // picture is stamped by the encoder from the source's.
+            // Only a converted soundtrack needs an origin — see TimeOf.
             channel.StartTime = channel.Conversion is not null && !channel.IsVideo
                 ? (long)Math.Round(startSeconds * channel.Timescale)
                 : 0;
@@ -96,8 +86,8 @@ internal sealed class SegmentRunWriter(
                 .OrderBy(c => c.Track.Samples[c.Next].Ticks)
                 .FirstOrDefault();
 
-            // Every channel is within one sample of its known end: index more of the source before taking,
-            // so the frame about to be written still has a successor to be timed against. See `extend`.
+            // Every channel is within one sample of its known end: index more before taking, so the frame
+            // about to be written still has a successor to be timed against. See `extend`.
             if (tracks.All(c => c.Next + 1 >= c.Track.Samples.Count))
             {
                 var reach = channel is not null
@@ -124,12 +114,11 @@ internal sealed class SegmentRunWriter(
 
             if (channel.Conversion is null)
             {
-                // A copy: bytes and timeline both come from the source, so nothing waits and nothing drops.
                 Take(channel, index, frame.AsSpan(0, sample.Length).ToArray());
             }
             else
             {
-                // Zero outputs is NORMAL: codecs buffer, and a video encoder holds a GOP. Treating an empty
+                // ⚠ Zero outputs is NORMAL: codecs buffer, and a video encoder holds a GOP. Treating an empty
                 // return as failure abandons a working conversion in its opening second.
                 var micros = (long)Math.Round(timeline.SecondsOf(sample.Ticks) * 1_000_000);
                 Accept(channel, channel.Conversion.Push(new MediaFrame(frame.AsMemory(0, sample.Length), micros, sample.KeyFrame)));
@@ -139,8 +128,7 @@ internal sealed class SegmentRunWriter(
         }
 
         // 🔴 Without the drain the tail sits inside the codec and the last segment is short, in a file that is
-        // otherwise well-formed — playback simply stops early. A copied channel has no tail: its last frame
-        // was written the moment it was read.
+        // otherwise well-formed — playback simply stops early. A copied channel has no tail.
         if (!cancellationToken.IsCancellationRequested)
         {
             foreach (var channel in tracks.Where(c => c.Conversion is not null))
@@ -151,10 +139,9 @@ internal sealed class SegmentRunWriter(
             Flush(tracks, segment);                 // whatever is left is the final segment
         }
 
-        // 🔴 What each track actually CONTRIBUTED. A short track is silent by construction — the fragments are
-        // well-formed, every append succeeds, and playback stalls only because `SourceBuffer.buffered` is the
-        // INTERSECTION of the tracks — so `of` (what the source held), `from` (where this run began) and
-        // `emitted` (what came out) are the only way to tell a missing sample from a late seek.
+        // 🔴 What each track actually CONTRIBUTED. A short track is silent by construction — the fragments
+        // are well-formed and every append succeeds — so `of`, `from` and `emitted` are the only way to tell
+        // a missing sample from a late seek.
         foreach (var channel in tracks)
         {
             owner.Report($"segments: {(channel.IsVideo ? "picture" : "sound")} "
@@ -175,8 +162,8 @@ internal sealed class SegmentRunWriter(
 
         if (choice.Copy)
         {
-            // Checked again rather than trusted: the entry is what a decoder starts from, and the selection
-            // that chose this track is far enough from here to disagree about a malformed file.
+            // Asked again rather than trusted: the selection that chose this track is far enough from here
+            // to disagree about a malformed file.
             if (Mp4Carriage.EntryFor(track) is not { } entry)
             {
                 owner.Report($"segments: the {kind} track declares a carriable codec but no usable configuration");
@@ -189,7 +176,6 @@ internal sealed class SegmentRunWriter(
                 Conversion = null,
                 IsVideo = isVideo,
                 TrackId = isVideo ? DefaultSegmentEngine.VideoTrackId : DefaultSegmentEngine.AudioTrackId,
-                // The source's own clock, stated exactly — see SourceTimeline.
                 Timescale = timeline.Timescale,
                 SamplesPerPacket = 0,
                 SampleEntry = entry,
@@ -232,13 +218,9 @@ internal sealed class SegmentRunWriter(
     }
 
     /// <summary>
-    /// Build a COPIED track's decode timeline once, for the whole track.
-    /// <para>
-    /// 🔴 <b>Matroska stores the time a frame is SHOWN and MP4 states the time it is DECODED, and with
-    /// B-frames those are not the same order.</b> <see cref="SampleTiming.Derive"/> is what
-    /// <see cref="Mp4Remuxer"/> already uses — a remux and a fragment run disagreeing about one file's timing
-    /// is a bug nobody can see from either side.
-    /// </para>
+    /// Build a COPIED track's decode timeline once, for the whole track, through
+    /// <see cref="SampleTiming.Derive"/> — the same derivation <see cref="Mp4Remuxer"/> uses, so a remux and
+    /// a fragment run cannot disagree about one file's timing.
     /// <para>
     /// ⚠ <b>The whole track at once, not per fragment, and the shift is CANCELLED</b> — per-fragment
     /// derivation gives neighbours different shifts and leaves a gap between them. Version-1 <c>trun</c>
@@ -274,11 +256,9 @@ internal sealed class SegmentRunWriter(
             channel.Shifted = true;
         }
 
-        // ⚠ THE SEAM. Sorting inside a chunk gives the same decode order as sorting the whole track only
-        // while reordering stays INSIDE the chunk — true by an enormous margin for any real encoder, whose
-        // reorder depth is a handful of frames against a chunk of a segment or more. It is CHECKED rather
-        // than assumed: a chunk whose first frame decodes before the previous chunk's last would put the
-        // fragments out of order, which appends without error and plays wrongly.
+        // ⚠ THE SEAM. Sorting inside a chunk matches sorting the whole track only while reordering stays
+        // INSIDE the chunk. Checked rather than assumed: a chunk whose first frame decodes before the
+        // previous chunk's last puts the fragments out of order, which appends without error and plays wrongly.
         if (channel.Decode.Count > 0 && decode[0] < channel.Decode[^1] && !channel.WarnedSeam)
         {
             channel.WarnedSeam = true;
@@ -309,8 +289,7 @@ internal sealed class SegmentRunWriter(
             channel.Durations[i] = Math.Max(0, channel.Decode[i + 1] - channel.Decode[i]);
         }
 
-        // The final entry has no successor yet. A fallback beats a zero, which reads as a truncated file;
-        // it is overwritten the moment another chunk arrives.
+        // The final entry has no successor yet, and a fallback beats a zero, which reads as a truncated file.
         var last = channel.Decode.Count - 1;
         channel.Durations[last] = channel.Step > 0 ? channel.Step
             : last > 0 ? channel.Durations[last - 1]
@@ -323,7 +302,7 @@ internal sealed class SegmentRunWriter(
     /// <summary>Take one COPIED sample, with the timing derived for the whole track.</summary>
     private static void Take(Channel channel, int index, byte[] data)
     {
-        channel.Emitted++;      // counted for the end-of-run line; a copy's TIMES never come from it
+        channel.Emitted++;      // the end-of-run line only; a copy's TIMES never come from it
         channel.Pending.Add(new Pending(
             Decode: channel.Decode[index],
             Presentation: channel.Presentation[index],
@@ -353,11 +332,11 @@ internal sealed class SegmentRunWriter(
     /// <summary>
     /// Take a codec's outputs into the segment being filled.
     /// <para>
-    /// ⚠ <b>Reordered output is REFUSED rather than reordered here.</b> A converted channel states sample
-    /// durations as the gap to the next sample, so a backwards presentation time gives a negative duration —
-    /// unrepresentable, and rounding it to zero writes a segment that plays frames on top of each other. Both
-    /// platform encoders are configured not to reorder, so this is a fail-closed guard on an assumption; a
-    /// COPIED channel needs none of it, <see cref="Retime"/> expressing its reordering exactly.
+    /// ⚠ <b>Reordered output is REFUSED rather than reordered here</b>, and the frame is DROPPED — segments
+    /// come out short rather than wrong. A converted channel states sample durations as the gap to the next
+    /// sample, so a backwards presentation time gives a negative duration, and rounding it to zero writes a
+    /// segment that plays frames on top of each other. A COPIED channel needs none of it,
+    /// <see cref="Retime"/> expressing its reordering exactly.
     /// </para>
     /// </summary>
     private void Accept(Channel channel, IReadOnlyList<MediaFrame> outputs)
@@ -431,10 +410,9 @@ internal sealed class SegmentRunWriter(
             for (var i = 0; i < take; i++)
             {
                 var current = channel.Pending[i];
-                // A COPIED sample already knows its duration, measured across the whole track. A CONVERTED
-                // one is the gap to the next frame, and the LAST in a fragment borrows the previous gap
-                // rather than holding the segment hostage to a frame that has not arrived. Converted audio is
-                // a FIXED number of samples per packet, so its duration is arithmetic and exact.
+                // A COPIED sample already knows its duration. A CONVERTED one is the gap to the next frame,
+                // and the LAST in a fragment borrows the previous gap rather than holding the segment hostage
+                // to a frame that has not arrived; converted audio is a fixed number of samples per packet.
                 var next = i + 1 < channel.Pending.Count ? channel.Pending[i + 1].Decode : (long?)null;
                 var duration = current.Duration > 0 ? current.Duration
                              : !channel.IsVideo ? channel.SamplesPerPacket
@@ -458,9 +436,8 @@ internal sealed class SegmentRunWriter(
 
         if (data.Count == 0) return;
 
-        // The init segment carries the decoder configuration, which for a CONVERTED track is knowable only
-        // once the encoder has produced output — so it is written HERE, beside the first fragment, and a
-        // consumer waits for it exactly as it waits for seg0.
+        // The init segment's decoder configuration is knowable only once an encoder has produced output, so
+        // it is written HERE, beside the first fragment — see SegmentRunRequest.Directory.
         if (!_initWritten)
         {
             WriteInit(data.Select(d => d.Track).ToList());
@@ -469,10 +446,10 @@ internal sealed class SegmentRunWriter(
         }
 
         // 🔴 A fragment may only carry a track the init segment DECLARED — the `moov`/`trex` pair there is the
-        // only place a track id is defined. They diverge because the init is written beside the FIRST
-        // fragment: a COPIED track produces from its first frame while an encoder may hold a whole segment's
-        // worth. Dropping the late samples costs that track its opening seconds; writing them puts an
-        // undeclared id in the stream, which a MediaSource may reject SILENTLY.
+        // only place a track id is defined, and they diverge because a COPIED track produces from its first
+        // frame while an encoder may hold a whole segment's worth. Dropping the late samples costs that track
+        // its opening seconds; writing them puts an undeclared id in the stream, which a MediaSource may
+        // reject SILENTLY.
         for (var i = data.Count - 1; i >= 0; i--)
         {
             if (_declared.Contains(data[i].Track.TrackId)) continue;
@@ -501,17 +478,8 @@ internal sealed class SegmentRunWriter(
 
     /// <summary>
     /// Write a part to <c>{path}.part</c> and RENAME it into place, so it becomes visible only once it is
-    /// whole (<see cref="SegmentRunRequest.PartialExtension"/>).
-    /// <para>
-    /// 🔴 <b>The consumer serves a part the moment it exists</b>, so writing in place publishes a truncated
-    /// fragment for however long the write takes — which appends without error and plays for a fraction of a
-    /// second. Renaming inside one directory is atomic on every platform this ships to.
-    /// </para>
-    /// <para>
-    /// ⚠ A failed write leaves the <c>.part</c> rather than a corrupt final name; the route sweeps those when
-    /// it next opens the source. Leaving it is better than deleting it here — a delete that itself fails
-    /// during a teardown would be a second exception on the way out of the first.
-    /// </para>
+    /// whole (<see cref="SegmentRunRequest.Directory"/> states the contract). ⚠ A failed write leaves the
+    /// <c>.part</c> rather than a corrupt final name; the route sweeps those when it next opens the source.
     /// </summary>
     private static void Publish(string path, Action<Stream> write)
     {
@@ -521,7 +489,7 @@ internal sealed class SegmentRunWriter(
     }
 
     /// <summary>
-    /// The track as the init segment must declare it. A COPIED track is declared from the SOURCE, whose
+    /// The track as the init segment must declare it. ⚠ A COPIED track is declared from the SOURCE, whose
     /// configuration its frames were encoded with; a CONVERTED one from the RUN's output format, because a
     /// decoder may downmix and an encoder may align dimensions up to a macroblock.
     /// </summary>
@@ -572,8 +540,8 @@ internal sealed class SegmentRunWriter(
 
     public void Dispose()
     {
-        // A device has a handful of hardware codecs and a video run holds TWO. Leaking one does not leak
-        // memory: it makes the NEXT conversion fail with a resource error that names nothing.
+        // 🔴 A device has a handful of hardware codecs and a video run holds TWO. Leaking one makes the NEXT
+        // conversion fail with a resource error that names nothing.
         foreach (var run in _runs)
         {
             try { run.Dispose(); }
@@ -583,12 +551,8 @@ internal sealed class SegmentRunWriter(
     }
 
     /// <summary>One sample waiting to be written, on its own channel's timescale.</summary>
-    /// <param name="Decode">
-    /// When it is decoded — what <c>tfdt</c> and a duration are measured on. Differs from
-    /// <paramref name="Presentation"/> only for a copied track with B-frames.
-    /// </param>
-    /// <param name="Presentation">When it is SHOWN — what a cut is decided against, a plan's boundaries being
-    /// presentation times.</param>
+    /// <param name="Decode">When it is decoded — what <c>tfdt</c> and a duration are measured on.</param>
+    /// <param name="Presentation">When it is SHOWN — what a cut is decided against.</param>
     /// <param name="Duration">Known exactly for a copy; 0 for a conversion, which is measured at flush time.</param>
     /// <param name="Composition">Presentation minus decode, signed. Zero for anything without B-frames.</param>
     /// <param name="KeyFrame">Whether a decoder may start here.</param>
@@ -609,7 +573,7 @@ internal sealed class SegmentRunWriter(
         /// <summary>Ticks per second on THIS track's timeline — see the type remarks.</summary>
         public required uint Timescale { get; init; }
 
-        /// <summary>Frames per output packet; 0 for a picture and for any copy, whose frames are timed individually.</summary>
+        /// <summary>Frames per output packet; 0 for a picture and for any copy.</summary>
         public required int SamplesPerPacket { get; init; }
 
         /// <summary>A copied track's <c>stsd</c> entry, taken from the source. Null for a conversion.</summary>
@@ -638,11 +602,8 @@ internal sealed class SegmentRunWriter(
 
         /// <summary>
         /// The presentation shift that makes every frame decodable before it is shown.
-        /// <para>
-        /// 🔴 <b>Taken from the FIRST chunk and never changed.</b> It is a property of the encoder's GOP
-        /// structure, not of a position in the file, and a shift that moved between chunks would put
-        /// neighbouring fragments on different timelines — the gap <c>media.md</c> warns about.
-        /// </para>
+        /// 🔴 <b>Taken from the FIRST chunk and never changed</b> — a shift that moved between chunks would
+        /// put neighbouring fragments on different timelines.
         /// </summary>
         public long Shift { get; set; }
 
@@ -655,8 +616,7 @@ internal sealed class SegmentRunWriter(
         /// <summary>How many output frames a CONVERTED channel has produced — the audio timeline's whole input.</summary>
         public long Emitted { get; set; }
 
-        /// <summary>Where this run began in the track's samples, so the end-of-run line can say how many were
-        /// actually READ — which a seek landing past the end makes zero.</summary>
+        /// <summary>Where this run began in the track's samples, for the end-of-run line.</summary>
         public int Start { get; set; }
 
         /// <summary>
@@ -681,7 +641,7 @@ internal sealed class SegmentRunWriter(
 
 /// <summary>
 /// One track a run will produce, and HOW it travels: copied verbatim, or through a codec. ⚠ Chosen once, by
-/// the engine, and carried — the plan the manifest was built from depends on the same answer (a copied
-/// picture cuts on the source's keyframes, a converted one on the grid), so a second decision can disagree.
+/// the engine, and carried — the plan the manifest was built from depends on the same answer, so a second
+/// decision can disagree with it.
 /// </summary>
 internal sealed record SegmentTrack(MatroskaTrack Track, bool Copy);

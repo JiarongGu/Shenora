@@ -11,8 +11,7 @@ internal readonly record struct Mp4SampleSpan(long SourceOffset, int Length, lon
 /// <summary>
 /// The MP4 a remux WOULD write, computed without writing it, EXACTLY to the byte. 🔴 A plan and a write that
 /// disagree answer a <c>Content-Range</c> total the bytes do not honour, and a media element fails that
-/// SILENTLY: blank picture, no error, nothing logged. ⚠ A layout is valid only for the source it was computed
-/// from, and planning peaks far above the finished layout's size.
+/// SILENTLY: blank picture, no error, nothing logged. ⚠ Valid only for the source it was computed from.
 /// <para>
 /// ⚠ <b>Never compare two of these for equality</b>: <see cref="ReadOnlyMemory{T}"/> compares by segment and
 /// <see cref="IReadOnlyList{T}"/> by reference, so the generated <c>Equals</c>/<c>==</c> is quietly always
@@ -41,26 +40,23 @@ internal sealed record Mp4Layout(
 /// Turns a planned <see cref="Mp4Layout"/> into bytes, reading only the source bytes a requested range
 /// actually touches.
 /// <para>
-/// ⚠ <b>The CALLER, not this type, must ensure <c>source</c> is the SAME stream the layout was planned from,
-/// unchanged since</b> — a layout carries no identity, so the check lives one layer up, keyed on
+/// 🔴 <b>The CALLER, not this type, must ensure <c>source</c> is the SAME stream the layout was planned
+/// from, unchanged since</b> — a layout carries no identity, so the check lives one layer up, keyed on
 /// <c>DerivedCacheKey.For(path, length, mtime)</c>. <b>Getting it wrong is SILENT</b>: every span still
-/// resolves to a valid offset in the wrong file, so the bytes returned are another file's frames wearing this
-/// one's <c>Content-Range</c>.
+/// resolves to a valid offset in the wrong file, so the bytes returned are another file's frames wearing
+/// this one's <c>Content-Range</c>.
 /// </para>
 /// </summary>
 internal static class Mp4LayoutReader
 {
-    /// <summary>64 KiB, matching <see cref="Mp4Remuxer"/>'s sample copy, so one very large span is never
-    /// buffered whole.</summary>
+    /// <summary>64 KiB, matching <see cref="Mp4Remuxer"/>'s sample copy.</summary>
     private const int BufferSize = 64 * 1024;
 
     /// <summary>
-    /// Write the planned output's bytes in <c>[start, endInclusive]</c> to <paramref name="destination"/> — an
-    /// INCLUSIVE end, matching HTTP's <c>Range</c> header, in order and never more than one
-    /// <see cref="BufferSize"/> chunk at a time. A PUSH-style wrapper over
-    /// <see cref="Mp4LayoutRangeStream"/>, which owns the range→span mapping. ⚠ <paramref name="source"/> must
-    /// be the exact stream <paramref name="layout"/> was planned from; its position is unspecified on return,
-    /// and this method never closes it.
+    /// Write the planned output's bytes in <c>[start, endInclusive]</c> to <paramref name="destination"/> —
+    /// an INCLUSIVE end, matching HTTP's <c>Range</c> header. A PUSH-style wrapper over
+    /// <see cref="Mp4LayoutRangeStream"/>, which owns the range→span mapping. ⚠ <paramref name="source"/>'s
+    /// position is unspecified on return, and this method never closes it.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="start"/> is negative or past
     /// <paramref name="endInclusive"/>, or <paramref name="endInclusive"/> reaches
@@ -86,10 +82,8 @@ internal static class Mp4LayoutReader
 
     /// <summary>
     /// The index of the first span in <paramref name="samples"/> that can hold byte <paramref name="target"/>,
-    /// skipping any ZERO-length span — it holds no byte yet shares its
-    /// <see cref="Mp4SampleSpan.OutputOffset"/> with the real span that follows it. Binary search for the
-    /// RIGHTMOST span at or before the target: offsets are non-decreasing, and the content-bearing span at an
-    /// offset is always the LAST of that run.
+    /// skipping any ZERO-length span. Binary search for the RIGHTMOST span at or before the target: offsets
+    /// are non-decreasing, and the content-bearing span at an offset is always the LAST of that run.
     /// </summary>
     /// <returns>An index into <paramref name="samples"/>, or -1 when the list is empty.</returns>
     internal static int FindFirstSpanCovering(IReadOnlyList<Mp4SampleSpan> samples, long target)
@@ -124,10 +118,9 @@ internal static class Mp4LayoutReader
 /// bound — like <see cref="BoundedBodyStream"/> — not on a platform-initiated close iOS never sends.
 /// </para>
 /// <para>
-/// ⚠ <b>A read failure also closes <c>source</c>, and calls <c>onReadFailure</c> before rethrowing</b> — the
+/// ⚠ <b>A read failure also closes <c>source</c>, and calls <c>onReadFailure</c> before rethrowing.</b> The
 /// bytes are read AFTER the status line and <c>Content-Length</c> are committed, so a source that moved out
-/// from under a cached plan can only be caught here, and <c>onReadFailure</c> drops the poisoned cache entry
-/// so the NEXT request re-plans.
+/// from under a cached plan can only be caught here; <c>onReadFailure</c> drops the poisoned cache entry.
 /// </para>
 /// </summary>
 internal sealed class Mp4LayoutRangeStream : Stream
@@ -161,12 +154,11 @@ internal sealed class Mp4LayoutRangeStream : Stream
     /// <see cref="Read"/> can race a caller's <see cref="Dispose(bool)"/>.</summary>
     private int _disposed;
 
-    /// <param name="layout">What the remux would produce. See the type's own remarks on source identity.</param>
+    /// <param name="layout">What the remux would produce.</param>
     /// <param name="source">The exact stream <paramref name="layout"/> was planned from. Read and seeked freely.</param>
     /// <param name="start">First byte of the range, inclusive, zero-based against the planned output.</param>
     /// <param name="endInclusive">Last byte of the range, inclusive — HTTP Range semantics, not exclusive.</param>
-    /// <param name="ownsSource">Whether this stream disposes <paramref name="source"/> — at its own bound, on
-    /// a read failure, or when itself disposed. Defaults to <c>false</c>.</param>
+    /// <param name="ownsSource">Whether this stream disposes <paramref name="source"/>. Defaults to <c>false</c>.</param>
     /// <param name="onReadFailure">Called, before the triggering exception is rethrown, when
     /// <paramref name="source"/> throws or runs dry before a planned span's bytes do. Optional.</param>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -207,8 +199,7 @@ internal sealed class Mp4LayoutRangeStream : Stream
         {
             _mdatCursor = Math.Max(start, header.Length);
             var index = Mp4LayoutReader.FindFirstSpanCovering(layout.Samples, _mdatCursor);
-            // -1 only for an empty Samples list, unreachable here; guarded rather than assumed.
-            _sampleIndex = index < 0 ? layout.Samples.Count : index;
+            _sampleIndex = index < 0 ? layout.Samples.Count : index;   // -1 only for an empty Samples list
         }
     }
 
@@ -225,13 +216,10 @@ internal sealed class Mp4LayoutRangeStream : Stream
 
     /// <summary>
     /// Read up to <paramref name="count"/> bytes of the range, resuming where the previous call left off: the
-    /// header remainder first, then <c>mdat</c> span by span, skipping zero-length ones and reading at most
-    /// one span's worth per call. A short nonzero read passes straight through; only a <c>0</c> while the span
-    /// still owes bytes is treated as truncation.
-    /// <para>
-    /// When this stream owns the source it closes it on the read that delivers the LAST byte, not on a later
-    /// call that would merely confirm EOF — nothing is guaranteed to ask again.
-    /// </para>
+    /// header remainder first, then <c>mdat</c> span by span, at most one span per call. A short nonzero read
+    /// passes through; only a <c>0</c> while the span still owes bytes is truncation.
+    /// ⚠ When this stream owns the source it closes it on the read that delivers the LAST byte, not on a
+    /// later call that would merely confirm EOF — nothing is guaranteed to ask again.
     /// </summary>
     public override int Read(byte[] buffer, int offset, int count)
     {
@@ -287,8 +275,8 @@ internal sealed class Mp4LayoutRangeStream : Stream
     }
 
     /// <summary>
-    /// Advance past any zero-length span and land on the next one this range actually overlaps, recording
-    /// where to resume reading it from. Called once per span, never once per <see cref="Read"/>.
+    /// Advance past any zero-length span and land on the next one this range overlaps, recording where to
+    /// resume reading it from. Called once per span, never once per <see cref="Read"/>.
     /// </summary>
     /// <returns><c>true</c> with the current-span cursors set, <c>false</c> when no further span overlaps.</returns>
     private bool AdvanceToNextSpan()

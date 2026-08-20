@@ -4,9 +4,9 @@ using Shenora.Core.Events;
 namespace Shenora.Modules.Media;
 
 /// <summary>
-/// The event types <see cref="MediaPlayer"/> publishes to the page. The page's element driver subscribes
-/// to these and reports back through <see cref="MediaPlayer.Report"/>. A WIRE contract — the TypeScript
-/// half matches these by string, so the payloads are described here rather than typed.
+/// The event types <see cref="MediaPlayer"/> publishes to the page; the page's element driver reports back
+/// through <see cref="MediaPlayer.Report"/>. A WIRE contract — the TypeScript half matches these by string,
+/// so the payloads are described here rather than typed.
 /// </summary>
 public static class MediaPlayerEvents
 {
@@ -43,40 +43,37 @@ public sealed class MediaPlayerOptions
     public MediaPlaybackPolicy? Policy { get; set; }
 
     /// <summary>
-    /// How long <see cref="MediaPlayer.OpenAsync"/> waits for the page's first report before failing with
-    /// a <see cref="MediaPlayerException"/> that NAMES the likely cause — the missing <c>PLAYER_REPORT</c>
-    /// route described on <see cref="MediaPlayer"/>. 30 s by default; <see cref="TimeSpan.Zero"/> waits
-    /// forever, which is an await that never returns when nothing answers. ⚠ Not a correctness boundary:
-    /// a genuinely slow source on a cold network can exceed any default.
+    /// How long <see cref="MediaPlayer.OpenAsync"/> waits for the page's first report before failing with a
+    /// <see cref="MediaPlayerException"/> naming the likely cause — the missing <c>PLAYER_REPORT</c> route
+    /// described on <see cref="MediaPlayer"/>. 30 s by default. ⚠ <see cref="TimeSpan.Zero"/> waits forever,
+    /// an await that never returns when nothing answers.
     /// </summary>
     public TimeSpan OpenTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Turn a source and its plan into the URL the element loads: a <see cref="MediaPlaybackAction.Direct"/>
-    /// plan returns a plain file URL, anything else the interceptor's conversion route for that source. An
-    /// empty string means "this cannot be played here"; unset passes the source straight through.
-    /// ⚠ The plan is <c>null</c> when nothing was probed or no policy was supplied — that means "play it
-    /// directly", not an error.
+    /// plan returns a plain file URL, anything else the interceptor's conversion route. An empty string
+    /// means "this cannot be played here"; unset passes the source straight through. ⚠ A <c>null</c> plan
+    /// means nothing was probed or no policy was supplied — "play it directly", not an error.
     /// </summary>
     public Func<string, MediaPlaybackPlan?, string>? ResolveUri { get; set; }
 
     /// <summary>
     /// Where the conversion route may read from, where its output is cached, and which module its routes and
     /// the player's own commands publish on — the containment boundary shared with every other media delivery
-    /// path (<see cref="MediaAccessOptions"/>). ⚠ <see cref="MediaAccessOptions.AllowedRoots"/> is never
-    /// defaulted: it is what stops a page-supplied path escaping into the rest of the disk. Empty means no
-    /// file-serving conversion is wired, which is the zero-configuration case.
+    /// path (<see cref="MediaAccessOptions"/>). <see cref="MediaAccessOptions.AllowedRoots"/> is never
+    /// defaulted, being what stops a page-supplied path escaping into the rest of the disk; empty means no
+    /// file-serving conversion is wired, the zero-configuration case.
     /// <para>
     /// ⚠ <b><see cref="MediaAccessOptions.Resolve"/> is inert on this particular <see cref="Access"/>.</b>
     /// <c>UseMediaPlayer</c> mounts its OWN <see cref="MediaConversionOptions"/> with a resolver built from
-    /// <c>MediaPlayerRoute</c>, and borrows only this object's <see cref="MediaAccessOptions.AllowedRoots"/>,
-    /// <c>CacheRoot</c> and <c>Module</c>. It must still be supplied — it is <c>required</c> on the type —
-    /// so set it to <c>static _ =&gt; null</c>.
+    /// <c>MediaPlayerRoute</c>, and borrows only <see cref="MediaAccessOptions.AllowedRoots"/>,
+    /// <c>CacheRoot</c> and <c>Module</c>. It is <c>required</c> on the type, so set it to
+    /// <c>static _ =&gt; null</c>.
     /// </para>
     /// </summary>
     public MediaAccessOptions Access { get; set; } = new()
     {
-        // Never called from here — see the remarks above.
         Resolve = static _ => null,
         // "" is a PLACEHOLDER, not a refusal: `UseMediaPlayer` substitutes `paths.DataArea("media")` the
         // first time `IMediaPlayer` is resolved, so registration itself touches no disk (D64).
@@ -86,23 +83,18 @@ public sealed class MediaPlayerOptions
 
 /// <summary>
 /// <b>The kit's media player.</b> Its lifecycle lives in .NET — probe, plan, resolve, and the state machine
-/// across all three; its display and sound are a page element.
+/// across all three shells; its display and sound are a page element. It talks to the page over
+/// <see cref="IEventBus"/>, and the page answers by calling <see cref="Report"/> from its IPC route.
 /// <para>
-/// It talks to the page over <see cref="IEventBus"/>, and the page answers by calling <see cref="Report"/>
-/// from its IPC route.
-/// 🔴 <b>⚠ That return route is the APP's to write and the kit ships no facade for it</b> — the page
-/// posts <c>PLAYER_REPORT</c> on <see cref="MediaAccessOptions.Module"/>
-/// (<see cref="MediaPlayerOptions.Access"/>) and something must turn it into a <see cref="Report"/> call.
-/// <see cref="OpenAsync"/> completes on the first non-<c>Opening</c> report and on nothing else, so
-/// skipping the route makes every open fail — after <see cref="MediaPlayerOptions.OpenTimeout"/> (30 s by
-/// default), with a <see cref="MediaPlayerException"/> naming this as the usual cause.
-/// <c>docs/ADOPTION.md</c> has the four-line route.
+/// 🔴 <b>That return route is the APP's to write and the kit ships no facade for it</b> — the page posts
+/// <c>PLAYER_REPORT</c> on <see cref="MediaAccessOptions.Module"/> and something must turn it into a
+/// <see cref="Report"/> call. <see cref="OpenAsync"/> completes on the first non-<c>Opening</c> report and
+/// on nothing else, so skipping the route makes every open fail after
+/// <see cref="MediaPlayerOptions.OpenTimeout"/>. <c>docs/ADOPTION.md</c> has the four-line route.
 /// </para>
 /// <para>
-/// <b>⚠ It does NOT replace <c>IosMediaPlayer</c>/<c>AndroidMediaPlayer</c>.</b> A page element cannot play
-/// while iOS has the app backgrounded — that is the gap a native player exists for. <b>Both are
-/// <see cref="IMediaPlayer"/></b>, so an app can hold one field and swap which it points at, and
-/// <c>ReportTo(session)</c> keeps Now Playing honest for either.
+/// It does NOT replace <c>IosMediaPlayer</c>/<c>AndroidMediaPlayer</c>: a page element cannot play while iOS
+/// has the app backgrounded. Both are <see cref="IMediaPlayer"/>, so an app can swap which it holds.
 /// </para>
 /// </summary>
 public sealed class MediaPlayer : IMediaPlayer, IDisposable
@@ -201,8 +193,8 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
 
         Send(MediaPlayerEvents.Load, new { uri, startAt = source.StartAt.TotalSeconds });
 
-        // The PAGE decides when it is ready. Bounded, so a missing PLAYER_REPORT route fails with a
-        // message instead of hanging forever.
+        // The PAGE decides when it is ready. Bounded, so a missing PLAYER_REPORT route fails with a message
+        // instead of hanging forever.
         using var expiry = _options.OpenTimeout > TimeSpan.Zero
             ? new CancellationTokenSource(_options.OpenTimeout)
             : null;
@@ -218,9 +210,8 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
         }
         catch (OperationCanceledException)
         {
-            // ⚠ ONLY tear down if this open is still the current one. The CALLER's token means clean up;
-            // being SUPERSEDED by a later OpenAsync means do nothing — the successor already owns the
-            // element, and unloading here would leave it empty.
+            // ⚠ ONLY tear down if this open is still the current one: being SUPERSEDED by a later OpenAsync
+            // means do nothing, because the successor already owns the element.
             bool superseded;
             lock (_gate) superseded = !ReferenceEquals(_opening, opening);
             if (!superseded)
@@ -230,8 +221,8 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
                 Raise();
             }
 
-            // ⚠ The TIMEOUT is a different outcome from the caller cancelling. Checked in this order
-            // because a caller cancelling DURING the timeout window is still a cancel.
+            // A timeout is a different outcome from the caller cancelling — and a cancel DURING the timeout
+            // window is still a cancel, hence this order.
             if (expiry is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested)
             {
                 Fail("The page never reported on the media source.");
@@ -283,12 +274,11 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     }
 
     /// <summary>
-    /// The page saying what its element is doing — called from the app's IPC route.
-    /// <para>⚠ <b>Position and duration come from HERE and nowhere else</b>; nothing else has a clock.</para>
+    /// The page saying what its element is doing — called from the app's IPC route. Position and duration
+    /// come from HERE and nowhere else; nothing else has a clock.
     /// <para>
     /// ⚠ <b>Report on TRANSITIONS, not on a timer</b> — <c>loadedmetadata</c>, <c>canplay</c>, <c>play</c>,
-    /// <c>pause</c>, <c>waiting</c>, <c>seeked</c>, <c>ended</c>, <c>error</c>, and no more. <c>timeupdate</c>
-    /// fires about four times a second to say what the host can extrapolate.
+    /// <c>pause</c>, <c>waiting</c>, <c>seeked</c>, <c>ended</c>, <c>error</c>, and no more.
     /// </para>
     /// </summary>
     public void Report(MediaPlayerStatus status)
@@ -298,8 +288,8 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
         TaskCompletionSource? opening;
         lock (_gate)
         {
-            // The rate stays the player's — taking the page's verbatim would silently reset a configured
-            // 1.5x on the first report from a page that does not carry one.
+            // ⚠ The rate stays the player's: taking the page's verbatim silently resets a configured 1.5x
+            // on the first report from a page that does not carry one.
             _status = status with { Rate = _rate };
             opening = _opening;
 
@@ -309,8 +299,8 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
 
         Raise();
 
-        // Settled OUTSIDE the lock: a completion runs this class's StateChanged subscribers via the
-        // awaiting caller, and settling under `_gate` would hold it across app code.
+        // Settled OUTSIDE the lock: a completion runs subscribers via the awaiting caller, and settling
+        // under `_gate` would hold it across app code.
         if (opening is null) return;
         if (status.State == MediaPlayerState.Failed)
             opening.TrySetException(new MediaPlayerException(status.Error ?? "The media source could not be played."));
@@ -318,10 +308,8 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
             opening.TrySetResult();
     }
 
-    /// <summary>
-    /// Emit without awaiting — <see cref="IEventBus.Emit(string, string, object?, string?)"/> runs every
-    /// handler inside the bus's own guard, so a subscriber cannot fault the emit.
-    /// </summary>
+    /// <summary>Emit without awaiting — <see cref="IEventBus.Emit(string, string, object?, string?)"/> runs
+    /// every handler inside the bus's own guard, so a subscriber cannot fault the emit.</summary>
     private void Send(string type, object? payload = null) => _events.Emit(_options.Access.Module, type, payload);
 
     private void RequireLoaded()

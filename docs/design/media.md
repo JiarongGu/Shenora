@@ -283,6 +283,12 @@ and there is never one — `IComputedRemuxRoute.PlanAsync` already caches the la
 source "answers from the cache without touching the file". A frame index would cost ~51 MiB of RAM for a
 two-hour file to serve a case that cannot occur.
 
+**A remux is TWO PASSES, and the second is affordable because it is a byte move.** A player needs the
+sample table (`moov`) before it can seek, and that table cannot be written until every frame's size and
+position are known — streaming the output as it is read would put `moov` at the END, where the file plays
+from the start and cannot seek until fetched whole. Measured at roughly **1.2–1.4 GB/s in memory**
+(31.3 MB / 4,000 frames in 22–26 ms), excluding file I/O.
+
 ✅ **The `Remux` arm is proven on hardware, including the claim the whole design turns on:** a **cold seek to
 80 %** lands and plays on, with nothing produced before or after it. That is what "a computed file" buys —
 any range is serviceable without having produced a byte of the rest.

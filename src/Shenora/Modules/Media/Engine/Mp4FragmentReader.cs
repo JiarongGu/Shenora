@@ -3,28 +3,17 @@ using System.Buffers.Binary;
 namespace Shenora.Modules.Media;
 
 /// <summary>
-/// Reads back what a fragment actually CONTAINS — how many bytes of real samples a track contributed.
-///
+/// Reads back what a fragment actually CONTAINS — how many bytes of real samples a track contributed, which
+/// is how <see cref="ISegmentEngine.HasRenderedPicture"/> answers "did the encoder write any picture?".
 /// <para>
-/// 🔴 <b>This exists for one question, and <see cref="ISegmentEngine.HasRenderedPicture"/> calls it the
-/// single most valuable thing in the whole segment feature: did the encoder write any picture at all?</b>
-/// The failure it catches was measured rather than imagined — a hardware H.264 encoder advertised by both
-/// the tool's encoder list and the platform's codec list opened cleanly, mapped the stream, accepted every
-/// frame, wrote <c>video:0KiB</c>, and exited 0. Every capability check that could be made said the encoder
-/// was there.
+/// 🔴 <b>"Has a video stream" is the WRONG test, which is why this reads SIZES rather than structure.</b> A
+/// hardware encoder can open cleanly, accept every frame, write <c>video:0KiB</c> and exit 0, with every
+/// capability check saying it was there. The <c>trun</c> states each sample's size, so the answer is a
+/// SUBTRACTION and not a guess (D71 — MPEG-TS cannot do this; its PMT names the stream regardless).
 /// </para>
-///
 /// <para>
-/// ⚠ <b>"Has a video stream" is the WRONG test, and that is why this reads sizes rather than structure.</b>
-/// A declared track proves a declaration. Under MPEG-TS the two are indistinguishable — the PMT names the
-/// stream whether or not any bytes followed — which is the concrete reason D71 piece 3 chose fMP4: here the
-/// <c>trun</c> states every sample's size, so the answer is a subtraction and not a guess.
-/// </para>
-///
-/// <para>
-/// It parses only what that question needs. A fragment written by <see cref="Mp4FragmentWriter"/> is the
-/// expected input, but nothing here assumes it: the <c>trun</c> flags are honoured, so a fragment from any
-/// writer is read correctly or reported as zero.
+/// It parses only what that question needs, and honours the <c>trun</c> flags, so a fragment from any writer
+/// is read correctly or reported as zero.
 /// </para>
 /// </summary>
 internal static class Mp4FragmentReader
@@ -39,11 +28,8 @@ internal static class Mp4FragmentReader
     /// <summary>
     /// Total sample bytes <paramref name="trackId"/> contributed to this fragment, summed from every
     /// <c>trun</c>. Zero when the track is absent, carries no samples, or the file is not a fragment.
-    /// <para>
-    /// ⚠ <b>Zero and "unreadable" are deliberately the SAME answer.</b> The caller's question is whether this
-    /// segment is usable, and a fragment that cannot be parsed is not — distinguishing them would offer a
-    /// choice with no second branch, and the reason it failed belongs in the producer's log rather than here.
-    /// </para>
+    /// ⚠ <b>Zero and "unreadable" are the SAME answer</b>: the caller's question is whether this segment is
+    /// usable, and a fragment that cannot be parsed is not.
     /// </summary>
     public static long SampleBytes(byte[] fragment, int trackId)
     {
@@ -75,9 +61,7 @@ internal static class Mp4FragmentReader
         }
         catch (Exception)
         {
-            // Unreadable is unusable — see the remarks. A segment is bounded by the grid, so reading it whole
-            // is the same few megabytes the writer just held.
-            return 0;
+            return 0;                       // unreadable is unusable — see the remarks
         }
     }
 
@@ -85,12 +69,10 @@ internal static class Mp4FragmentReader
     /// The decode time this fragment declares for <paramref name="trackId"/> — its <c>tfdt</c>
     /// <c>baseMediaDecodeTime</c>, in the track's own timescale. Null when the track is absent or the
     /// fragment cannot be read.
-    ///
     /// <para>
-    /// 🔴 <b>WHERE a fragment sits is not checkable from its byte count, and that is what let a whole
-    /// class of bug through.</b> A fragment written at the wrong time is the right size, carries the right
-    /// samples, appends without error, and only fails as a stream that will not play — so a suite asserting
-    /// only <see cref="SampleBytes(byte[], int)"/> passes over it. This exists so a test can say WHEN.
+    /// 🔴 <b>WHERE a fragment sits is not checkable from its byte count.</b> One written at the wrong time is
+    /// the right size, carries the right samples, appends without error, and only fails as a stream that will
+    /// not play — so a suite asserting only <see cref="SampleBytes(byte[], int)"/> passes over it.
     /// </para>
     /// </summary>
     public static long? BaseDecodeTime(byte[] fragment, int trackId)
@@ -143,11 +125,8 @@ internal static class Mp4FragmentReader
 
     /// <summary>
     /// Boxes of one type directly inside <paramref name="from"/>..<paramref name="to"/>.
-    /// <para>
-    /// ⚠ The 64-bit length form (a declared size of 1) is honoured. A reader that handles only the common
-    /// header reports a perfectly good file as having no boxes, which is how "the output is truncated" gets
-    /// misdiagnosed — the whole-file navigator carries the same warning for the same reason.
-    /// </para>
+    /// ⚠ The 64-bit length form (a declared size of 1) is honoured — a reader that handles only the common
+    /// header reports a perfectly good file as having no boxes.
     /// </summary>
     private static List<Span> Children(byte[] data, int from, int to, string type)
     {
@@ -190,10 +169,8 @@ internal static class Mp4FragmentReader
     /// Sum one run's sample sizes, walking the per-sample record whose WIDTH the flags decide.
     /// <para>
     /// 🔴 <b>A run with no size flag is not an error and not zero bytes — it is sizes this box does not
-    /// state</b>, because the movie's <c>trex</c> supplied a default instead. Reading such a run as zero
-    /// would report a perfectly good segment as picture-less, which is the exact false alarm this whole
-    /// check must not raise. The kit's own writer always states sizes; a foreign one need not, so that case
-    /// answers with the flag's absence rather than a number.
+    /// state</b>, the movie's <c>trex</c> having supplied a default. Reading it as zero reports a perfectly
+    /// good segment as picture-less, the exact false alarm this check must not raise.
     /// </para>
     /// </summary>
     private static long TrunBytes(byte[] data, Span trun)

@@ -13,19 +13,16 @@ namespace Shenora.Modules.Media;
 /// <param name="SourcePath">The original file. Already authorised against the allowed roots.</param>
 /// <param name="DestinationPath">
 /// Where to write. ⚠ A TEMPORARY path — the kit swaps it into place only once the delegate returns without
-/// throwing (<see cref="Files.BeginReplace"/>), so a cancelled or failed conversion can never leave a
-/// half-written file where a later request would serve it as a cache hit.
+/// throwing (<see cref="Files.BeginReplace"/>), so a failed conversion leaves no half-written cache hit.
 /// </param>
 /// <param name="Progress">
 /// Fraction complete, 0…1, forwarded to the page as <see cref="MediaConversionEvents.SourceProgress"/>.
-/// Optional to call: a converter with no usable progress simply never reports, and the page sees
-/// <see cref="MediaConversionEvents.Ready"/> when it finishes.
+/// Optional to call: a converter with no usable progress simply never reports.
 /// </param>
 /// <param name="Container">
 /// The container the output must be, as a lowercase extension including the dot (<c>.mp4</c>).
 /// ⚠ <b>Told, never inferred from <see cref="DestinationPath"/></b>, whose name ends <c>.tmp</c>: an engine
-/// that picks its muxer from the extension sees <c>.m4a.tmp</c>, recognises no format, and refuses before
-/// writing a byte.
+/// picking its muxer from the extension sees <c>.m4a.tmp</c> and refuses before writing a byte.
 /// </param>
 public sealed record MediaConversionRequest(
     string SourcePath,
@@ -40,8 +37,8 @@ public sealed record MediaConversionRequest(
     /// <para>
     /// 🔴 <b>A conversion that SUCCEEDS having dropped the soundtrack is this kit's most dangerous
     /// outcome:</b> nothing throws, the file plays, and the user hears silence with no way to tell "this
-    /// film has no audio" from "this device cannot play the audio it has". Reporting here is a REFUSAL, not
-    /// a caveat — the conversion fails. ⚠ So a converter that CAN carry a stream must not report it.
+    /// film has no audio" from "this device cannot play the audio it has". ⚠ So a converter that CAN carry
+    /// a stream must not report it.
     /// </para>
     /// </summary>
     public IList<string> Dropped { get; } = new List<string>();
@@ -51,10 +48,8 @@ public sealed record MediaConversionRequest(
     /// or <see cref="MediaPlaybackAction.Transcode"/> (a stream must be re-encoded). Defaults to
     /// <see cref="MediaPlaybackAction.Remux"/>.
     /// <para>
-    /// A converter MAY trust it: <see cref="MediaPlaybackAction.Remux"/> means no codec is needed, so a
-    /// converter can skip building one. ⚠ It is a HINT about intent, not a guarantee about content — the
-    /// file is still the authority on what it holds, and a converter that finds otherwise must report it
-    /// (<see cref="Dropped"/>).
+    /// ⚠ A HINT about intent, not a guarantee about content: the file is still the authority on what it
+    /// holds, and a converter that finds otherwise must report it (<see cref="Dropped"/>).
     /// </para>
     /// </summary>
     public MediaPlaybackAction Action { get; init; } = MediaPlaybackAction.Remux;
@@ -66,11 +61,8 @@ public static class MediaConversionErrorCodes
 {
     /// <summary>
     /// The output would have lost a stream, so nothing was cached. The event carries <c>dropped</c> — the
-    /// codecs — and a page can name them.
-    /// <para>
-    /// ⚠ It means "not playable HERE", not always "not supported": a conversion run with no
-    /// <see cref="MediaConversionOptions.Conversion"/> never asked the platform. The host log says which.
-    /// </para>
+    /// codecs — and a page can name them. ⚠ It means "not playable HERE", not always "not supported": a run
+    /// with no <see cref="MediaConversionOptions.Conversion"/> never asked the platform.
     /// </summary>
     public const string UnsupportedCodec = "UNSUPPORTED_CODEC";
 }
@@ -117,14 +109,9 @@ public sealed class MediaConversionOptions
 {
     /// <summary>
     /// Where a source may be read from, where a finished conversion is cached, and which module the route's
-    /// progress events publish on. <see cref="MediaAccessOptions.AllowedRoots"/> has no default: the app
-    /// supplies the containment boundary, the kit only enforces it.
-    /// <para>
-    /// <see cref="MediaAccessOptions.Resolve"/> maps a request to the SOURCE file it names, returning null
-    /// for "not a conversion request" so the pipeline falls through. Whatever it returns is still authorised
-    /// against <see cref="MediaAccessOptions.AllowedRoots"/>, so being generous here cannot widen what is
-    /// reachable.
-    /// </para>
+    /// progress events publish on. <see cref="MediaAccessOptions.Resolve"/> returns null for "not a
+    /// conversion request" so the pipeline falls through; whatever it returns is still authorised against
+    /// <see cref="MediaAccessOptions.AllowedRoots"/>, so being generous here cannot widen what is reachable.
     /// </summary>
     public required MediaAccessOptions Access { get; init; }
 
@@ -138,28 +125,22 @@ public sealed class MediaConversionOptions
     /// <summary>
     /// The PLATFORM's codec seam, wired into the kit's default converter. Resolve it from DI
     /// (<c>services.GetService&lt;IMediaStreamConversion&gt;()</c>) — the mobile shells register one; leave
-    /// it null and the default repairs containers only.
-    /// <para>
-    /// ⚠ <b>Its reach is what the DEVICE decodes and its WEBVIEW refuses, and no wider (D59)</b>, and that
-    /// differs per device — ask <see cref="IMediaCapability"/> rather than assuming. For anything past that
-    /// line, write <see cref="Convert"/>.
-    /// </para>
-    /// <para>⚠ Ignored when <see cref="Convert"/> is set, and setting both THROWS.</para>
+    /// it null and the default repairs containers only. Its reach is what the DEVICE decodes and its WEBVIEW
+    /// refuses, and no wider (D59) — ask <see cref="IMediaCapability"/>, and write <see cref="Convert"/> for
+    /// anything past that line. ⚠ Ignored when <see cref="Convert"/> is set, and setting both THROWS.
     /// </summary>
     public IMediaStreamConversion? Conversion { get; init; }
 
     /// <summary>
     /// Produce a playable file — <b>the OVERRIDE, for work past the platform's reach.</b> Leave it unset
-    /// and the kit supplies its own: <see cref="Conversion"/> joined to <see cref="Mp4Remuxer"/>.
+    /// and the kit supplies its own: <see cref="Conversion"/> joined to <see cref="Mp4Remuxer"/>. Runs inside
+    /// a mission, never on the request path, so it may take minutes; honouring its own cancellation token is
+    /// what makes shutdown prompt.
     /// <code>
     /// // nothing at all: container repair, every platform
     /// // Conversion = conversion:  …and the device's own codecs (the default engine)
     /// Convert = myEngine.ToConverter(conversion),   // yours, for codecs no platform decodes
     /// </code>
-    /// <para>
-    /// Runs inside a mission, so it may take minutes; it is never on the request path. It receives its OWN
-    /// cancellation token, and honouring it is what makes shutdown prompt.
-    /// </para>
     /// </summary>
     public Func<MediaConversionRequest, CancellationToken, Task>? Convert { get; init; }
 
@@ -196,24 +177,18 @@ public sealed class MediaConversionOptions
     /// remote source</b>, and so does a policy that throws.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// ⚠ <b>An SSRF boundary: the HOST can reach addresses the PAGE cannot.</b> The page supplies the
-    /// source, so without a policy it could name <c>http://169.254.169.254/</c>, a container-internal
-    /// service, or anything else behind the machine, and the engine would fetch it with the host's own
-    /// network position. <b>The kit never fetches</b> — it decides, and the app's <see cref="Convert"/>
-    /// engine does the reading.
+    /// source, so without a policy it could name <c>http://169.254.169.254/</c> or anything else behind the
+    /// machine, and the engine would fetch it with the host's own network position. A predicate over a
+    /// page-supplied url is strictly WEAKER than <see cref="MediaSourceRegistry"/>, where the page can only
+    /// name a handle the app issued.
+    /// <para>
+    /// ⚠ <b>Synchronous</b>, on the resource path the mobile shells resolve SYNCHRONOUSLY — a policy that
+    /// needs I/O must precompute its allow-list at startup and consult it in memory here.
     /// </para>
     /// <para>
-    /// ⚠ <b>Synchronous.</b> This runs on the resource path, which the mobile shells resolve SYNCHRONOUSLY —
-    /// an async policy doing a DNS or directory lookup would block a webview callback on the network. A
-    /// policy that needs I/O must precompute: resolve its allow-list at startup and consult it in memory
-    /// here.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>A remote source is cached by its URL alone</b>, because nothing else is knowable without
-    /// fetching it — unlike a local file, which is keyed by identity+length+mtime. So a url whose CONTENT
-    /// can change while its address stays the same will serve a stale conversion. Version or
-    /// content-address your urls, the way a CDN does.
+    /// ⚠ <b>A remote source is cached by its URL alone</b>, since nothing else is knowable without fetching
+    /// it, so a url whose CONTENT changes while its address does not will serve a stale conversion.
     /// </para>
     /// </remarks>
     public Func<Uri, bool>? AllowRemoteSource { get; init; }
@@ -233,21 +208,14 @@ public static class MediaConversionExtensions
     /// hit is served by exactly the same range-correct code path as any other local file.
     /// </summary>
     /// <remarks>
+    /// 🔴 <b>A miss answers <c>503</c> with <c>Retry-After</c>, and the page must be event-driven</b>,
+    /// learning from <see cref="MediaConversionEvents.Ready"/> when to set its element's source: a media
+    /// element pointed at this URL before the file exists will error and never retry.
     /// <para>
-    /// <b>Everything slow happens in the MISSION.</b> The mobile interceptor resolves SYNCHRONOUSLY — both
-    /// platforms need the status line and headers by the time the event returns — so this middleware can
-    /// neither await a conversion nor probe on the request path. What it does is: resolve, authorise,
-    /// compute the cache key, and either serve a hit or start the mission and answer immediately.
-    /// </para>
-    /// <para>
-    /// <b>A miss answers <c>503</c> with <c>Retry-After</c>, and the page must be event-driven.</b> It
-    /// learns from <see cref="MediaConversionEvents.Ready"/> when to set its element's source. A media
-    /// element pointed at this URL before the file exists will error.
-    /// </para>
-    /// <para>
-    /// <see cref="PathClaims.Exclusive(string)"/> means one source converts once even if twenty requests
-    /// arrive, and <see cref="DerivedCacheKey.For"/> keys on identity+length+mtime so replacing the source
-    /// invalidates its conversion rather than serving yesterday's.
+    /// Everything slow happens in the MISSION, because the mobile interceptor resolves SYNCHRONOUSLY. One
+    /// source converts once however many requests arrive (<see cref="PathClaims.Exclusive(string)"/>), and
+    /// <see cref="DerivedCacheKey.For"/> keys on identity+length+mtime so replacing the source invalidates
+    /// its conversion rather than serving yesterday's.
     /// </para>
     /// </remarks>
     /// <returns>Dispose to remove the route.</returns>
@@ -272,13 +240,10 @@ public static class MediaConversionExtensions
 
         var delivery = interceptor.RangeDelivery;
 
-        // 🔴 SOURCES WHOSE CONVERSION CANNOT SUCCEED, REMEMBERED — without this a page's own retry loop
-        // re-runs the WHOLE TRANSCODE once per second, for ever: `request.Dropped` is only populated AFTER
-        // the writer has finished, so discovering "this codec cannot be carried" costs a whole conversion.
-        //
-        // ⚠ ONLY DETERMINISTIC failures are remembered: a dropped stream is a property of the FILE and
-        // re-running cannot change it, while an IO error, an OOM or a cancellation says nothing about the
-        // source and must stay retryable. `MediaStreamsDroppedException` is the only one on the first side.
+        // 🔴 SOURCES WHOSE CONVERSION CANNOT SUCCEED, REMEMBERED: `request.Dropped` is populated only AFTER
+        // the writer has finished, so without this a page's retry loop re-runs the WHOLE TRANSCODE once a
+        // second, for ever. ⚠ ONLY DETERMINISTIC failures — a dropped stream is a property of the FILE,
+        // while an IO error, an OOM or a cancellation says nothing about the source and must stay retryable.
         var unconvertible = new Dictionary<string, byte>(StringComparer.Ordinal);
         var unconvertibleGate = new object();
 
@@ -293,7 +258,8 @@ public static class MediaConversionExtensions
             {
                 if (unconvertible.Count >= MaxRememberedFailures)
                 {
-                    // Insertion order: the oldest refusal is the one least likely to be asked for again.
+                    // ⚠ Whichever entry enumerates first: a Dictionary that has had a removal no longer
+                    // enumerates in insertion order, so this is arbitrary rather than oldest-first.
                     foreach (var oldest in unconvertible.Keys.Take(1).ToArray()) unconvertible.Remove(oldest);
                 }
                 unconvertible[cacheKey] = 0;
@@ -305,8 +271,7 @@ public static class MediaConversionExtensions
             if (options.Access.Resolve(request.Uri) is not { } requested) return next(request, cancellationToken);
 
             // A source is either a REMOTE url the engine may read or a LOCAL path. Both are page-supplied
-            // and both are authorised, by different rules: a local path can escape its roots, a remote one
-            // can reach the host's own network.
+            // and both are authorised, by different rules — the roots for one, the SSRF policy for the other.
             string source;
             string key;
             if (IsRemote(requested, out var remote))
@@ -322,7 +287,7 @@ public static class MediaConversionExtensions
             }
             else
             {
-                // Containment runs BEFORE the filesystem is touched. A refusal is the same 404 as a missing
+                // Containment runs BEFORE the filesystem is touched; a refusal is the same 404 as a missing
                 // file, so nothing can probe for existence by comparing responses.
                 if (WebViewFiles.ResolveContained(requested, options.Access.AllowedRoots) is not { } contained)
                 {
@@ -356,8 +321,7 @@ public static class MediaConversionExtensions
             }
 
             // 🔴 BEFORE submitting anything: a source already proven unconvertible answers 404 rather than
-            // another `503` and another whole transcode. 404 rather than a permanent 503 because the page
-            // has ALREADY been told why, by name, on the `FAILED` event the first attempt emitted.
+            // another whole transcode — the page was told why on the `FAILED` event the first attempt sent.
             if (IsKnownUnconvertible(key))
             {
                 Log(options, () => "[Shenora.Modules.Media] conversion declines a source it has already "
@@ -376,8 +340,7 @@ public static class MediaConversionExtensions
     /// <summary>Is this source an absolute <c>http</c>/<c>https</c> url rather than a path?</summary>
     /// <remarks>
     /// ⚠ Only those two schemes count as remote. Everything else — including <c>file:</c>, <c>ftp:</c> and
-    /// anything unrecognised — falls to the LOCAL branch, where containment refuses it. Internal because
-    /// <see cref="ComputedRemuxExtensions"/> must get the same answer.
+    /// anything unrecognised — falls to the LOCAL branch, where containment refuses it.
     /// </remarks>
     internal static bool IsRemote(string source, out Uri remote)
     {
@@ -413,10 +376,9 @@ public static class MediaConversionExtensions
         {
             Kind = "media-conversion",
             Key = new MissionKey(key),
-            // The claim exists only for a local source: it stops the conversion racing a file update on the
-            // same path, because that queue takes the same claim. ⚠ A remote url gets NO path claim — a url
-            // fed to a path-shaped scope is normalised as a path and conflicts with unrelated urls sharing
-            // a prefix.
+            // The claim exists only for a local source, stopping the conversion racing a file update on the
+            // same path. ⚠ A remote url gets NO path claim — a url fed to a path-shaped scope is normalised
+            // as a path and conflicts with unrelated urls sharing a prefix.
             Claims = isLocal ? [PathClaims.Exclusive(source)] : [],
             Run = (_, missionToken) => ConvertAsync(events, options, converter, source, cachePath, action,
                                                     () => onUnconvertible(key), missionToken),
@@ -450,9 +412,8 @@ public static class MediaConversionExtensions
     {
         Directory.CreateDirectory(options.Access.CacheRoot);
 
-        // Atomic: the engine writes to a temp beside the target, swapped in only on Commit. An interrupted
-        // run leaves NO cache entry rather than a truncated one that every later request would serve as a
-        // cache hit.
+        // Atomic: the engine writes to a temp beside the target, swapped in only on Commit, so an
+        // interrupted run leaves NO cache entry rather than a truncated one served as a cache hit.
         using var replacement = Files.BeginReplace(cachePath);
         // NOT System.Progress<T>: that captures the SynchronizationContext at construction, so every tick
         // of a chatty encoder would marshal onto the UI thread. Emit runs wherever the engine reported.
@@ -467,9 +428,8 @@ public static class MediaConversionExtensions
             };
             await converter(request, cancellationToken);
 
-            // 🔴 A DROPPED STREAM IS A FAILED CONVERSION. Committing would cache a SILENT FILM and serve it
-            // as a 200 for ever: nothing throws, the video plays, and the user cannot tell "this film has
-            // no soundtrack" from "this device could not play the soundtrack it has".
+            // 🔴 A DROPPED STREAM IS A FAILED CONVERSION — committing would cache a SILENT FILM and serve it
+            // as a 200 for ever. See `MediaConversionRequest.Dropped`.
             var dropped = request.Dropped.ToArray();
             if (dropped.Length > 0) throw new MediaStreamsDroppedException(dropped, options.Conversion is not null);
 
@@ -499,15 +459,13 @@ public static class MediaConversionExtensions
         }
         catch (OperationCanceledException)
         {
-            // A cancel is not a failure and must not tell the page one happened. Nothing is committed, so
-            // the next request simply starts again.
+            // A cancel is not a failure and must not tell the page one happened. Nothing is committed.
             Log(options, () => "[Shenora.Modules.Media] conversion cancelled");
             throw;
         }
         catch (Exception ex)
         {
-            // The TYPE name only — page script can read `reason`, so no raw exception text crosses. Details
-            // go to the host log.
+            // The TYPE name only — page script reads `reason`, so no raw exception text crosses.
             events.Emit(options.Access.Module, MediaConversionEvents.Failed, new { source, reason = ex.GetType().Name });
             Log(options, () => $"[Shenora.Modules.Media] conversion FAILED: {ex}");
             throw;
@@ -515,20 +473,15 @@ public static class MediaConversionExtensions
     }
 
     /// <summary>
-    /// The answer while work this route started is still running: <c>503</c> with <c>Retry-After: 1</c>.
+    /// The answer while work this route started is still running: <c>503</c> with <c>Retry-After: 1</c>. The
+    /// ONE not-ready answer for all three delivery routes, because the retry INTERVAL is a contract with the
+    /// page's own loop and separate copies would drift apart while every test still passed.
     /// <para>
-    /// 🔴 <b>⚠ ONLY A <c>fetch</c> CLIENT CAN ACT ON IT — never a media element.</b> To an element the 503
-    /// and a 404 are indistinguishable: both raise <c>error</c> with <c>error.code 4</c>
-    /// (<c>MEDIA_ERR_SRC_NOT_SUPPORTED</c>) and issue no further request, so a bare
-    /// <c>&lt;video src&gt;</c> does not survive the wait. A page must re-point its element after
-    /// <see cref="MediaConversionEvents.Ready"/>, which is then served a <c>206</c> where a remembered 404
-    /// would have to be invalidated. Numbers: <c>docs/design/mobile-shells.md</c>.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>Internal rather than private because it is the ONE not-ready answer for all THREE delivery
-    /// routes</b> — this one, <see cref="ComputedRemuxExtensions"/> and <c>UseSegmentStream</c>. The retry
-    /// INTERVAL is a contract with the page's own loop, so copies of it could drift apart while every test
-    /// still passes.
+    /// 🔴 <b>ONLY A <c>fetch</c> CLIENT CAN ACT ON IT — never a media element.</b> To an element the 503 and
+    /// a 404 are indistinguishable: both raise <c>error</c> with <c>error.code 4</c>
+    /// (<c>MEDIA_ERR_SRC_NOT_SUPPORTED</c>) and issue no further request, so a bare <c>&lt;video src&gt;</c>
+    /// does not survive the wait. A page must re-point its element after
+    /// <see cref="MediaConversionEvents.Ready"/>. Numbers: <c>docs/design/mobile-shells.md</c>.
     /// </para>
     /// </summary>
     internal static WebViewResourceResponse NotReadyYet() => new()

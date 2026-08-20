@@ -36,10 +36,8 @@ public interface IComputedRemuxRoute : IDisposable
     /// <para>
     /// ⚠ It applies the request path's authorisation, not a shortened one. ⚠ Cheap to call again: a planned
     /// source answers from the cache without touching the file, and two concurrent calls share ONE walk.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>Cancelling stops the WAIT, not the walk</b> — the mission lives as long as the route does, so the
-    /// answer is recorded anyway. <see cref="CancellationToken.None"/> means waiting as long as the walk takes.
+    /// ⚠ <b>Cancelling stops the WAIT, not the walk</b>, and nothing here times out —
+    /// <see cref="CancellationToken.None"/> waits as long as the walk takes.
     /// </para>
     /// </remarks>
     /// <param name="source">The media file, as <see cref="MediaAccessOptions.Resolve"/> would have produced it.</param>
@@ -57,11 +55,8 @@ public interface IComputedRemuxRoute : IDisposable
 /// </para>
 /// <para>
 /// ⚠ <b>REGISTER IT BEFORE the conversion route</b> — middleware run in registration order, and the other
-/// way round leaves this one dead code that still passes every test of its own. ⚠ Registered first it never
-/// consults <see cref="MediaAccessOptions.CacheRoot"/>: a source with a finished artifact beside it is
-/// planned, not served from cache (register it AFTER if a cached artifact must win). A source it cannot plan
-/// FALLS THROUGH — a 404 would make every <see cref="MediaPlaybackAction.Transcode"/> source permanently
-/// unplayable.
+/// way round leaves this one dead code that still passes every test of its own. Registered first it never
+/// consults <see cref="MediaAccessOptions.CacheRoot"/>; register it AFTER if a cached artifact must win.
 /// </para>
 /// </summary>
 public static class ComputedRemuxExtensions
@@ -71,16 +66,11 @@ public static class ComputedRemuxExtensions
     /// The shell's interceptor; it supplies the platform's <see cref="IWebViewInterceptor.RangeDelivery"/> rule.
     /// </param>
     /// <param name="scheduler">
-    /// Where the metadata WALK runs — never on a webview callback. The request answers
-    /// <c>503 Retry-After: 1</c> until the plan lands. ⚠ <b>Pass the app's ONE scheduler</b>: a scheduler per
-    /// route is a concurrency bound per route, and sharing costs contention —
-    /// <c>MissionSchedulerOptions.GlobalLaneCapacity</c> defaults to <c>clamp(cores-1, 1, 4)</c>, so on a
-    /// one-permit device a film answers <c>503</c> until a running conversion finishes.
+    /// Where the metadata WALK runs — never on a webview callback; the request answers
+    /// <c>503 Retry-After: 1</c> until the plan lands. ⚠ <b>Pass the app's ONE scheduler.</b> Lanes are then
+    /// shared, so on a one-permit device a film answers <c>503</c> until a running conversion finishes.
     /// </param>
-    /// <param name="options">
-    /// Where media may be read from and how a URL maps to a source. ⚠ <see cref="MediaAccessOptions.CacheRoot"/>
-    /// is unused by this route: there is no artifact.
-    /// </param>
+    /// <param name="options">Where media may be read from and how a URL maps to a source.</param>
     /// <returns>
     /// The route handle. Dispose to remove the route, drop the layouts AND cancel a walk still in flight.
     /// ⚠ <b>Keep it for <see cref="IComputedRemuxRoute.PlanAsync"/> too</b> — the only way to warm a source.
@@ -111,8 +101,7 @@ public static class ComputedRemuxExtensions
 /// <summary>
 /// The middleware behind <see cref="ComputedRemuxExtensions.UseComputedRemux"/>: resolve → authorise → plan
 /// (once per source identity, in a mission) → answer a byte range out of the plan. Its one piece of state is
-/// the layout cache, which is also its state MACHINE (<see cref="PlanState"/>), so the request path answers
-/// without waiting for anything.
+/// the layout cache, which is also its state MACHINE (<see cref="PlanState"/>).
 /// </summary>
 internal sealed class ComputedRemuxRoute : IDisposable
 {
@@ -193,17 +182,10 @@ internal sealed class ComputedRemuxRoute : IDisposable
 
     /// <summary>Answer one request, or null to decline it.</summary>
     /// <remarks>
-    /// ⚠ <b>Never walk here</b> (<see cref="PlanSource"/>): a cache miss submits a walk and answers
-    /// <c>503</c>. ⚠ <b>Nothing here is <c>async</c></b> either — both mobile shells resolve a resource
-    /// SYNCHRONOUSLY, so this path may not await anything. ⚠ <b>Remote is DECLINED, not 404'd</b>: the
-    /// conversion route behind this one DOES accept a url behind its SSRF policy, and a 404 would make every
-    /// remote conversion unreachable.
-    /// <para>
-    /// ⚠ An <see cref="OperationCanceledException"/> propagates rather than becoming a 404, which would tell a
-    /// media element the file is missing. It is NOT the token the WALK observes, and does not cover the lazy
-    /// body's own reads — those happen after this call returns, and neither
-    /// <see cref="Mp4LayoutRangeStream"/> nor <see cref="BoundedBodyStream"/> takes one on <c>Read</c>.
-    /// </para>
+    /// ⚠ <b>Never walk here (<see cref="PlanSource"/>) and never await</b>: both mobile shells resolve a
+    /// resource SYNCHRONOUSLY, so a cache miss submits a walk and answers <c>503</c>. ⚠ <b>Remote is
+    /// DECLINED, not 404'd</b> — the conversion route behind this one accepts a url behind its SSRF policy,
+    /// and a 404 would make every remote conversion unreachable.
     /// </remarks>
     private WebViewResourceResponse? Answer(WebViewResourceRequest request, CancellationToken cancellationToken)
     {
@@ -257,9 +239,8 @@ internal sealed class ComputedRemuxRoute : IDisposable
         {
             // 🔴 `FileShare.Delete`, not the `FileShare.Read` a `File.OpenRead` gives: this handle stays open
             // for as long as the platform holds the response, and NTFS defers a delete until every handle
-            // closes, so a read in flight keeps seeing the same bytes. ⚠ NOT widened to `ReadWrite`: a
-            // concurrent WRITE would tear the bytes this read is mid-way through, silently.
-            // ⚠ The WALK opens the same file with the same flags (see `PlanSource`) — one rule, two openers.
+            // closes. ⚠ NOT widened to `ReadWrite` — a concurrent write would tear this read's bytes,
+            // silently. The WALK opens the same file with the same flags (see `PlanSource`).
             source = new FileStream(contained, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
         }
         catch (Exception ex)
@@ -284,29 +265,20 @@ internal sealed class ComputedRemuxRoute : IDisposable
         }
         finally
         {
-            // `ServeRange` does not always call `read` — a range past the end (416) never reaches `Produce` —
-            // so this is the last chance to close the handle.
+            // `ServeRange` does not always call `read` (a 416 never reaches `Produce`), so close it here.
             if (!produced) source.Dispose();
         }
     }
 
     /// <summary>
     /// Produce the output's bytes <c>[from, from + count)</c> out of the plan, as a LAZILY-read body:
-    /// <see cref="Mp4LayoutRangeStream"/> seeks and copies only the source bytes a range actually touches, at
-    /// the moment the PLATFORM asks for them.
-    ///
-    /// <para>🔴 <b>There is NO output-size ceiling on this route.</b></para>
+    /// <see cref="Mp4LayoutRangeStream"/> copies only the source bytes a range actually touches, at the
+    /// moment the PLATFORM asks for them. 🔴 There is NO output-size ceiling on this route.
     /// <para>
-    /// 🔴 <b>Ownership of <paramref name="source"/> passes onward on every path out.</b> It is disposed here
-    /// on decline (<paramref name="count"/> zero) and on a construction-time failure; otherwise it goes to a
-    /// <see cref="Mp4LayoutRangeStream"/> with <c>ownsSource: true</c>, inside a
-    /// <see cref="BoundedBodyStream"/> that closes itself at its bound and survives a second dispose.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>A read-time failure — the source moved out from under a cached plan — cannot be caught HERE</b>:
-    /// the try/catch below sees only CONSTRUCTION-time failures, and the read happens after a status line and
-    /// <c>Content-Length</c> have gone out. <see cref="Mp4LayoutRangeStream"/>'s <c>onReadFailure</c> drops
-    /// the cached plan instead.
+    /// 🔴 <b>Ownership of <paramref name="source"/> passes onward on every path out</b>: disposed here on
+    /// decline (<paramref name="count"/> zero) and on a construction-time failure, otherwise owned by the
+    /// <see cref="Mp4LayoutRangeStream"/>. ⚠ A read-time failure cannot be caught here — the read happens
+    /// after the status line has gone out, so <c>onReadFailure</c> drops the cached plan instead.
     /// </para>
     /// </summary>
     private Stream? Produce(string key, Mp4Layout layout, Stream source, long from, long count,
@@ -322,10 +294,10 @@ internal sealed class ComputedRemuxRoute : IDisposable
         // Shared, so a construction-time failure and a read-time one log and forget identically.
         void OnReadFailure(Exception ex)
         {
-            // 🔴 WHAT THIS CATCHES, AND WHAT IT CANNOT. What reaches here is a source replaced BETWEEN this
-            // stat and this read. ⚠ A same-LENGTH, same-mtime rewrite in place is invisible to every layer:
-            // `DerivedCacheKey` is identity+length+mtime, not a content hash, and every span still resolves to
-            // a valid offset — so a 206 with a correct `Content-Range` goes out over bytes that are WRONG.
+            // What reaches here is a source replaced BETWEEN this stat and this read. ⚠ WHAT IT CANNOT
+            // CATCH: a same-LENGTH, same-mtime rewrite in place. `DerivedCacheKey` is identity+length+mtime,
+            // not a content hash, and every span still resolves to a valid offset — so a 206 with a correct
+            // `Content-Range` goes out over bytes that are WRONG.
             Log(() => "[Shenora.Modules.Media] computed remux could not read a planned range "
                     + $"({ex.GetType().Name}) — dropping the cached plan so the next request re-plans");
 
@@ -366,12 +338,9 @@ internal sealed class ComputedRemuxRoute : IDisposable
     /// atomic step. 🔴 iOS opens a container with HUNDREDS of range requests, and look-then-claim would let
     /// every request in the burst submit its own walk.
     /// <para>
-    /// ⚠ <b><see cref="PlanState.Failed"/> is CONSUMED here rather than returned twice</b> — this request
-    /// declines so the route behind gets its chance, the next one submits a fresh walk.
-    /// </para>
-    /// <para>
-    /// ⚠ Every hit also touches the eviction clock, including a <see cref="PlanState.Planning"/> one: the
-    /// retries arriving while a big film is walked are what keep its own entry from being evicted under it.
+    /// ⚠ <see cref="PlanState.Failed"/> is CONSUMED here rather than returned twice. Every hit also touches
+    /// the eviction clock, including a <see cref="PlanState.Planning"/> one, so the retries arriving while a
+    /// big film is walked keep its own entry from being evicted under it.
     /// </para>
     /// </summary>
     /// <param name="key">The source's identity key.</param>
@@ -448,14 +417,11 @@ internal sealed class ComputedRemuxRoute : IDisposable
 
     /// <inheritdoc cref="IComputedRemuxRoute.PlanAsync"/>
     /// <remarks>
-    /// 🔴 <b>It reuses the REQUEST path's machinery</b> — the same <see cref="Claim"/>, the same mission, the
-    /// same recorded answer — so a warmed source and a requested one cannot end up with different layouts.
-    /// The only difference is that this one AWAITS the mission instead of answering <c>503</c>.
-    /// <para>
-    /// ⚠ <b>The loop cannot spin.</b> Every branch except <see cref="PlanState.Planning"/> returns, and both
-    /// that continue make progress: a mission always records an answer, even when its body never ran
-    /// (<see cref="SubmitGuardedAsync"/>), and a disposed route ends it through <see cref="Claim"/>.
-    /// </para>
+    /// Reuses the REQUEST path's machinery — the same <see cref="Claim"/>, the same mission, the same
+    /// recorded answer — so a warmed source and a requested one cannot end up with different layouts; the
+    /// only difference is that this one AWAITS the mission instead of answering <c>503</c>. ⚠ The loop
+    /// cannot spin: every branch except <see cref="PlanState.Planning"/> returns, and a mission always
+    /// records an answer even when its body never ran (<see cref="SubmitGuardedAsync"/>).
     /// </remarks>
     public async Task<MediaPlanOutcome> PlanAsync(string source, CancellationToken cancellationToken = default)
     {
@@ -466,9 +432,8 @@ internal sealed class ComputedRemuxRoute : IDisposable
         if (MediaConversionExtensions.IsRemote(source, out _)) return MediaPlanOutcome.Unplannable;
         if (!TryContainAndKey(source, out var contained, out var key)) return MediaPlanOutcome.Refused;
 
-        // ⚠ NOTHING HERE TIMES OUT — the caller owns that through the token, since a legitimate walk of a
-        // two-hour film on a busy one-permit scheduler IS minutes. The failure mode is an app thread waiting
-        // for ever on a `Planning` entry nobody resolves; that silent hang gets one log line.
+        // ⚠ NOTHING HERE TIMES OUT: the failure mode is an app thread waiting for ever on a `Planning` entry
+        // nobody resolves, and that silent hang gets one log line.
         var waitingSince = DateTime.UtcNow;
         var warned = false;
 
@@ -511,23 +476,17 @@ internal sealed class ComputedRemuxRoute : IDisposable
     }
 
     /// <summary>
-    /// Submit the walk without waiting for it, with a GUARD: this runs on a platform event thread with no
-    /// caller above it, so an unobserved fault would be an unhandled exception rather than a failed plan.
+    /// Submit the walk without waiting for it, guarded: this runs on a platform event thread with no caller
+    /// above it, so an unobserved fault would be an unhandled exception rather than a failed plan.
     /// </summary>
     /// <remarks>
-    /// Four properties of the submitted mission, each of which breaks something if changed:
-    /// <list type="bullet">
-    /// <item>🔴 <b>the ROUTE's token (<see cref="_closing"/>), never the request's</b> — the request answers
-    /// <c>503</c> and is over, so its token would cancel the walk immediately;</item>
-    /// <item>🔴 <b><see cref="MissionDefinition.Priority"/> 1</b> — at the default 0 a plan queues behind every
-    /// pending transcode and this route 503s throughout. ⚠ It does not help against a transcode already
-    /// RUNNING (<c>GlobalLaneCapacity</c>);</item>
-    /// <item>⚠ <b>no claim and no lane</b> — a walk writes nothing, and an unregistered claim scope makes
-    /// <see cref="IMissionScheduler.SubmitAsync"/> throw, which would leave a source unplannable;</item>
-    /// <item>🔴 <b>no <see cref="MissionDefinition.Key"/></b> — keying would deduplicate a re-submission
-    /// against a mission that has recorded its answer but not yet released the key, stranding a
-    /// <see cref="PlanState.Planning"/> entry nobody resolves (a permanent 503).</item>
-    /// </list>
+    /// Four properties of the mission, each of which breaks something if changed: the ROUTE's token
+    /// (<see cref="_closing"/>) and never the request's, whose token would cancel the walk immediately;
+    /// <see cref="MissionDefinition.Priority"/> 1, since at the default 0 a plan queues behind every pending
+    /// transcode; no claim and no lane, since an unregistered claim scope makes
+    /// <see cref="IMissionScheduler.SubmitAsync"/> throw; and 🔴 no <see cref="MissionDefinition.Key"/>,
+    /// since keying would deduplicate a re-submission against a mission that has recorded its answer but not
+    /// released the key, stranding a <see cref="PlanState.Planning"/> entry nobody resolves (a permanent 503).
     /// </remarks>
     private void StartPlanning(string key, string path)
     {
@@ -551,20 +510,15 @@ internal sealed class ComputedRemuxRoute : IDisposable
     };
 
     /// <summary>
-    /// The guard around the discarded task. <see cref="IMissionScheduler.SubmitAsync"/> reports a FAILED body
-    /// through <c>MissionResult</c> rather than by throwing, so a <c>catch</c> here sees a submit-time fault —
-    /// a disposed scheduler, an unregistered lane — which would otherwise go unobserved.
+    /// The guard around the discarded task: <see cref="IMissionScheduler.SubmitAsync"/> reports a FAILED body
+    /// through <c>MissionResult</c> rather than by throwing, so a <c>catch</c> here sees a submit-time fault
+    /// — a disposed scheduler, an unregistered lane — that would otherwise go unobserved.
     /// </summary>
     /// <remarks>
-    /// 🔴 <b>The outcome is INSPECTED, not just awaited.</b> A mission that never RAN records nothing —
-    /// cancelled at shutdown, or dropped by an app's <c>IMissionPolicy</c> — leaving a
-    /// <see cref="PlanState.Planning"/> entry nobody resolves, which is a permanent 503. So the test is
+    /// 🔴 <b>The outcome is INSPECTED, not just awaited.</b> A mission that never RAN records nothing,
+    /// leaving a <see cref="PlanState.Planning"/> entry nobody resolves — a permanent 503. So the test is
     /// <see cref="MissionOutcome.Completed"/> and nothing else: <b>NOT <c>result.Succeeded</c></b>, which is
     /// <c>Completed || Deduplicated</c>, and a deduplicated mission's body never ran.
-    /// <para>
-    /// ⚠ <b>What a decline COSTS:</b> a spurious decline of a plannable film falls through to the conversion
-    /// route and starts a WHOLE TRANSCODE of it.
-    /// </para>
     /// </remarks>
     private async Task SubmitGuardedAsync(MissionDefinition definition, string key)
     {
@@ -585,24 +539,15 @@ internal sealed class ComputedRemuxRoute : IDisposable
     }
 
     /// <summary>
-    /// Walk the source and record its layout.
-    ///
+    /// Walk the source and record its layout. 🔴 Never on the request path, at any size: both mobile shells
+    /// resolve a webview resource SYNCHRONOUSLY, and one blocking read there has DEADLOCKED the iOS main
+    /// thread.
     /// <para>
-    /// 🔴 <b>WHY THIS MAY NOT RUN ON THE REQUEST PATH, AT ANY SIZE.</b> A plan walks the source's whole
-    /// metadata — seconds of IO and a heap peak far above the finished layout (<see cref="Store"/>) — and
-    /// both mobile shells resolve a webview resource SYNCHRONOUSLY, blocking with
-    /// <c>.GetAwaiter().GetResult()</c> where one blocking read has DEADLOCKED the iOS main thread.
-    /// </para>
-    /// <para>
-    /// 🔴 <b>The answer is CACHED because iOS issues HUNDREDS of range requests to read one container.</b>
-    /// ⚠ <b>A REFUSAL is cached too</b> (<see cref="PlanState.Unplannable"/>): the route behind answers
-    /// <c>503 Retry-After: 1</c>, so a page retries about once a second.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>A FAILURE is recorded but NOT remembered</b> (<see cref="PlanState.Failed"/>): <c>Plan</c>
-    /// swallows everything but cancellation, so the catch below sees an OOM or a file that could not be
-    /// OPENED, neither of which says whether the source is plannable. Without the recording, an unopenable
-    /// file would answer 503 for ever.
+    /// The answer — and a REFUSAL (<see cref="PlanState.Unplannable"/>) — is cached, because iOS issues
+    /// HUNDREDS of range requests to read one container. ⚠ <b>A FAILURE is recorded but NOT remembered</b>
+    /// (<see cref="PlanState.Failed"/>): the catch below sees an OOM or a file that could not be OPENED,
+    /// neither of which says whether the source is plannable, and without the recording an unopenable file
+    /// would answer 503 for ever.
     /// </para>
     /// </summary>
     private void PlanSource(string key, string path, CancellationToken cancellationToken)
@@ -646,15 +591,11 @@ internal sealed class ComputedRemuxRoute : IDisposable
 
     /// <summary>Record that a walk produced no answer — fall through THIS time, plan again next time.</summary>
     /// <remarks>
-    /// It refuses to STORE in two cases. An answer some other walk already recorded
-    /// (<c>entry.State != Planning</c>) must not be demoted back to <see cref="PlanState.Failed"/>: a late
-    /// failure from a stale mission would turn a working film into a declined one.
-    /// <para>
-    /// 🔴 <b>The key can also be ABSENT</b> — the bounded cache (<see cref="Store"/>) can evict an entry whose
-    /// walk is still running. Storing <see cref="PlanState.Failed"/> for a key nobody waits on leaves a
-    /// phantom that the next, unrelated request consumes — declining to the route behind, which per
-    /// <see cref="SubmitGuardedAsync"/> starts a WHOLE TRANSCODE. Absent means "start fresh".
-    /// </para>
+    /// 🔴 It refuses to STORE in two cases, and either would decline a good film to the conversion route
+    /// behind — a WHOLE TRANSCODE. An answer some other walk already recorded (<c>entry.State != Planning</c>)
+    /// must not be demoted back to <see cref="PlanState.Failed"/>; and the key can be ABSENT, since the
+    /// bounded cache (<see cref="Store"/>) can evict an entry whose walk is still running, so a
+    /// <see cref="PlanState.Failed"/> nobody waits on is a phantom the next unrelated request consumes.
     /// </remarks>
     private void Fail(string key)
     {
@@ -667,15 +608,12 @@ internal sealed class ComputedRemuxRoute : IDisposable
     }
 
     /// <summary>
-    /// Remember one answer, and keep the cache BOUNDED. A layout is ~24 bytes per sample (about 13 MB for a
-    /// two-hour film), and an unbounded dictionary keyed on identity keeps every distinct version of every
-    /// file a page ever names. ⚠ <b>The bound is a file COUNT while the real budget is memory</b>: four
-    /// ordinary layouts are tens of megabytes, four at the reader's four-million-sample ceiling would be
-    /// hundreds.
+    /// Remember one answer, and keep the cache BOUNDED — a layout is ~24 bytes per sample, about 13 MB for a
+    /// two-hour film. ⚠ <b>The bound is a file COUNT while the real budget is memory</b>: four ordinary
+    /// layouts are tens of megabytes, four at the reader's four-million-sample ceiling would be hundreds.
     /// <para>
     /// ⚠ <b>A walk IN FLIGHT occupies an entry too</b>, so four films planned at once fill the cache while
-    /// holding no layouts. An evicted marker is not a lost walk — the mission still records its answer — but
-    /// it DOES cost a duplicate walk (<see cref="StartPlanning"/> declares no
+    /// holding no layouts. An evicted marker costs a duplicate walk (<see cref="StartPlanning"/> declares no
     /// <see cref="MissionDefinition.Key"/>), and two concurrent walks of one film double its ~110–150 MB peak.
     /// </para>
     /// </summary>

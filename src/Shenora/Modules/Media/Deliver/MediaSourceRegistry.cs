@@ -6,38 +6,28 @@ namespace Shenora.Modules.Media;
 /// A remote source an app has AUTHORISED, and the name diagnostics may call it by.
 /// </summary>
 /// <remarks>
-/// <para>
-/// 🔴 <b><see cref="Url"/> is treated as a secret and <see cref="Label"/> is not.</b> A remote media URL
-/// routinely carries the caller's credentials — a presigned S3 link, a CDN token, a session query string —
-/// and every existing diagnostic in this route prints the source it is working on. Splitting the two is
-/// what lets the logs stay useful without becoming a credential dump, and it is why this type exists
-/// rather than the route taking a bare <see cref="System.Uri"/>.
-/// </para>
-/// <para>
-/// ⚠ <b><see cref="ToString"/> is overridden for the same reason.</b> A record's generated version prints
-/// every property, so the url would reach any log line, exception message or debugger watch that formats
-/// the object — none of which looks like a place a credential goes.
-/// </para>
+/// 🔴 <b><see cref="Url"/> is treated as a secret and <see cref="Label"/> is not</b> — a remote media URL
+/// routinely carries credentials (a presigned S3 link, a CDN token, a session query string), and every
+/// diagnostic here prints the source it is working on. ⚠ <see cref="ToString"/> is overridden for the same
+/// reason: a record's generated version prints every property, so the url would reach any log line,
+/// exception message or debugger watch that formats the object.
 /// </remarks>
 public sealed record RemoteMediaSource
 {
     /// <summary>
     /// What this source IS — its identity and, for an app that keys off it, its address. ⚠ Treated as a
-    /// SECRET: never logged, never put on the wire, never returned to the page.
-    /// <para>
-    /// ⚠ <b>Not what the engine reads.</b> That is <see cref="Open"/>, which the app supplies — so the url
-    /// stays inside the app's own closure and cannot reach a kit log line even by accident.
-    /// </para>
+    /// SECRET: never logged, never put on the wire, never returned to the page. It is not what the engine
+    /// reads either — that is <see cref="Open"/>, so the url stays inside the app's own closure.
     /// </summary>
     public required Uri Url { get; init; }
 
     /// <summary>
-    /// How to READ the bytes: open a fresh seekable stream over the source, however it is fetched.
+    /// How to READ the bytes: open a fresh SEEKABLE stream over the source, however it is fetched — the kit
+    /// ships no transport, and Matroska is read by offset (<see cref="MediaByteSource.Open"/>).
     /// <para>
-    /// 🔴 <b>Null means this source can be described but never PRODUCED from</b>, and the route says so by
-    /// name on the first request rather than dying on every restart. The kit ships no transport — a ranged
-    /// HTTP reader, a LAN share, a partially-downloaded file are all the app's to provide — and the stream
-    /// must be seekable, because Matroska is read by offset (<see cref="MediaByteSource.Open"/>).
+    /// 🔴 <b>Null means this source can be described but never PRODUCED from, and the route refuses it at
+    /// the MANIFEST</b> — a playlist is derived from the duration, which is suppliable, so serving one for
+    /// bytes nobody can read hands the page a complete playlist whose every entry <c>503</c>s for ever.
     /// </para>
     /// </summary>
     public Func<CancellationToken, Stream>? Open { get; init; }
@@ -49,25 +39,18 @@ public sealed record RemoteMediaSource
     public required string Label { get; init; }
 
     /// <summary>
-    /// A stable identity for caching, when the url itself is not one.
+    /// A stable identity for caching, when the url itself is not one. Defaults to the url.
     /// <para>
-    /// 🔴 <b>Set this whenever the url ROTATES.</b> Segments are cached under a key derived from this, and
-    /// a presigned url that changes every hour is a different key every hour — so the same film is
-    /// re-segmented from scratch each time while the old copies sit in the cache until the sweep reaches
-    /// them. A local file avoids this by keying on identity+length+mtime, none of which is knowable here
-    /// without fetching. Defaults to the url, which is correct only for a stable address.
+    /// 🔴 <b>Set this whenever the url ROTATES.</b> Segments are cached under a key derived from it, so a
+    /// presigned url that changes every hour re-segments the same film from scratch each time while the old
+    /// copies sit in the cache until the sweep reaches them.
     /// </para>
     /// </summary>
     public string? Identity { get; init; }
 
     /// <summary>
-    /// How long it plays, when the caller already knows.
-    /// <para>
-    /// ⚠ Supplied rather than probed because probing a REMOTE source costs an engine launch that reads a
-    /// network header before the first manifest can be answered — and the caller that registered the
-    /// source usually has this from the same catalogue entry the url came from. Null falls back to asking
-    /// the engine, which still works and is simply slower.
-    /// </para>
+    /// How long it plays, when the caller already knows. Null asks the engine instead, which costs a launch
+    /// reading a network header before the first manifest can be answered.
     /// </summary>
     public TimeSpan? Duration { get; init; }
 
@@ -82,35 +65,20 @@ public sealed record RemoteMediaSource
 /// Remote sources the app has authorised, each addressable only by an opaque handle it issued.
 /// </summary>
 /// <remarks>
-/// <para>
-/// 🔴 <b>THE INVERSION IS THE SECURITY PROPERTY.</b> The alternative — letting the page name a url and
-/// asking the app to judge it — is what <see cref="MediaConversionOptions.AllowRemoteSource"/> does, and
-/// it is strictly weaker: a policy that has to judge a page-supplied url can be WRONG, and being wrong
-/// means the host fetches an address the page could not reach itself (an internal service, a metadata
-/// endpoint, anything behind the machine). A handle that was never issued cannot be guessed, so there is
-/// no judgement to get wrong. The page cannot express a source this registry did not authorise.
-/// </para>
-/// <para>
-/// ⚠ <b>Registering is the app's decision and this type deliberately does not second-guess it.</b> It
-/// holds what it was given. The boundary is that the PAGE cannot add to it.
-/// </para>
-/// <para>
-/// Found by an adopter building it by hand: a track the webview refuses, that is not downloaded, had
-/// exactly one answer — the server's transcode — spending CPU and a lossy step on a file the device's own
-/// engine reads fine. Working around it meant forking this route to teach it a handle.
-/// </para>
+/// 🔴 <b>THE INVERSION IS THE SECURITY PROPERTY.</b> A handle that was never issued cannot be guessed, so
+/// the page cannot express a source this registry did not authorise — strictly stronger than
+/// <see cref="MediaConversionOptions.AllowRemoteSource"/>, whose predicate over a page-supplied url can be
+/// WRONG, and wrong means the host fetches an address the page could not reach itself. ⚠ Registering is
+/// the app's decision and this type does not second-guess it; the boundary is that the PAGE cannot add to it.
 /// </remarks>
 public sealed class MediaSourceRegistry
 {
     private readonly ConcurrentDictionary<string, RemoteMediaSource> _sources = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Authorise a source and get the handle a page may name it by.
-    /// </summary>
+    /// <summary>Authorise a source and get the handle a page may name it by.</summary>
     /// <returns>
     /// An opaque handle. ⚠ 128 bits of it, because this IS the capability — anything shorter or derived
-    /// from the source (a hash, a slug, a counter) can be guessed or enumerated, which hands back exactly
-    /// the property the inversion bought.
+    /// from the source (a hash, a slug, a counter) can be guessed or enumerated.
     /// </returns>
     public string Register(RemoteMediaSource source)
     {
@@ -140,12 +108,8 @@ public sealed class MediaSourceRegistry
     public int Count => _sources.Count;
 
     /// <summary>
-    /// The source behind a handle, or null.
-    /// <para>
-    /// ⚠ Internal: resolving a handle is the ROUTE's job. Public, it would let app code turn a
-    /// page-supplied string back into a credential-bearing url, which is the leak this design exists to
-    /// prevent.
-    /// </para>
+    /// The source behind a handle, or null. ⚠ Internal because public it would let app code turn a
+    /// page-supplied string back into a credential-bearing url — the leak this design exists to prevent.
     /// </summary>
     internal RemoteMediaSource? Resolve(string handle) =>
         !string.IsNullOrEmpty(handle) && _sources.TryGetValue(handle, out var source) ? source : null;

@@ -10,11 +10,8 @@ using Shenora.Core.Ipc;
 
 namespace Shenora;
 
-/// <summary>
-/// Composing <see cref="IMediaPlayer"/> with the rest of the shell. In the ROOT <c>Shenora</c> namespace,
-/// beside <see cref="ShenoraApplicationBuilder"/> and <see cref="ShenoraApplication"/>, so an app that
-/// already wrote <c>using Shenora;</c> needs no second import.
-/// </summary>
+/// <summary>Composing <see cref="IMediaPlayer"/> with the rest of the shell — in the ROOT <c>Shenora</c>
+/// namespace, beside <see cref="ShenoraApplicationBuilder"/> and <see cref="ShenoraApplication"/>.</summary>
 public static class MediaPlayerExtensions
 {
     /// <summary>
@@ -58,8 +55,8 @@ public static class MediaPlayerExtensions
     /// });
     /// </code>
     /// <para>
-    /// Your registration wins, and the callback runs FIRST so exactly ONE exists — the kit's default
-    /// factory is never built. This is the sanctioned way to substitute the NATIVE player (D58).
+    /// Your registration wins: the callback runs FIRST, so the kit's default factory is never built. The
+    /// sanctioned way to substitute the NATIVE player (D58).
     /// </para>
     /// </summary>
     /// <param name="builder">The application builder.</param>
@@ -99,15 +96,13 @@ public static class MediaPlayerExtensions
     }
 
     /// <summary>
-    /// Give <see cref="MediaAccessOptions.CacheRoot"/> its default — <c>Paths.DataArea("media")</c> — for an
-    /// app that named <see cref="MediaAccessOptions.AllowedRoots"/> and left the cache root blank. Deferred
-    /// out of registration because <c>Paths.DataArea</c> CREATES the directory it names (D64).
+    /// Give <see cref="MediaAccessOptions.CacheRoot"/> its default — <c>Paths.DataArea("media")</c> — when
+    /// the app named <see cref="MediaAccessOptions.AllowedRoots"/> and left it blank. Deferred out of
+    /// registration because <c>Paths.DataArea</c> CREATES the directory it names (D64).
     /// <para>
-    /// 🔴 <b>Called from BOTH phases, and it must be.</b> The mount hands <c>CacheRoot</c> to
-    /// <see cref="MediaConversionExtensions.UseMediaConversion"/>, which rejects a blank one — so if only
-    /// the player's factory defaulted it, <c>app.UseMediaPlayer()</c> throws unless the app happened to
-    /// resolve <see cref="IMediaPlayer"/> first. It REPLACES the whole <see cref="MediaAccessOptions"/>
-    /// (every member is <c>init</c>-only) and is idempotent by the blank test.
+    /// 🔴 <b>Called from BOTH phases, and it must be:</b> the mount hands <c>CacheRoot</c> to
+    /// <see cref="MediaConversionExtensions.UseMediaConversion"/>, which rejects a blank one. Replaces the
+    /// whole <see cref="MediaAccessOptions"/> (every member is <c>init</c>-only); idempotent by the blank test.
     /// </para>
     /// </summary>
     private static void DefaultCacheRoot(MediaPlayerOptions options, ShenoraPaths paths)
@@ -135,7 +130,6 @@ public static class MediaPlayerExtensions
     /// app.UseMediaPlayer();      // no `services` argument: the app already holds the provider
     /// app.Run();
     /// </code>
-    /// <para>The per-interceptor overload stays for one webview that must differ.</para>
     /// </summary>
     /// <returns>The app, so calls chain.</returns>
     public static ShenoraApplication UseMediaPlayer(this ShenoraApplication app)
@@ -147,14 +141,6 @@ public static class MediaPlayerExtensions
     /// <summary>
     /// **Mount the player's route on the webview.** The second half of the standard two-phase shape:
     /// configure the provider at builder time, mount it on the pipeline when the pipeline exists.
-    /// <code>
-    /// builder.UseMediaPlayer(x => x.Access = new MediaAccessOptions   // configure the provider
-    /// {
-    ///     Resolve = static _ => null, AllowedRoots = [library], CacheRoot = "",
-    /// });
-    /// …
-    /// interceptor.UseMediaPlayer(services);                            // mount it
-    /// </code>
     /// <para>
     /// **A no-op returning <c>null</c> when <see cref="MediaAccessOptions.AllowedRoots"/> is empty**, so it
     /// is safe to call unconditionally.
@@ -171,12 +157,10 @@ public static class MediaPlayerExtensions
         var options = services.GetRequiredService<MediaPlayerOptions>();
         if (options.Access.AllowedRoots.Count == 0) return null;
 
-        // 🔴 DEFAULTED HERE TOO, not only in the player's factory: this phase is the one that hands the
-        // cache root to `UseMediaConversion`, which rejects a blank one. See `DefaultCacheRoot`.
+        // 🔴 Defaulted here too, not only in the player's factory — see `DefaultCacheRoot`.
         DefaultCacheRoot(options, services.GetRequiredService<ShenoraPaths>());
 
-        // ONE convention, defined in MediaPlayerRoute and used from both ends here, so the encoder and the
-        // decoder cannot drift.
+        // ONE convention for both ends, so the encoder and the decoder cannot drift.
         options.ResolveUri ??= (source, plan) =>
             plan is null || plan.Action == MediaPlaybackAction.Direct
                 ? source
@@ -187,13 +171,11 @@ public static class MediaPlayerExtensions
             new MediaConversionOptions
             {
                 ResolveAction = uri => MediaPlayerRoute.ActionOf(uri.PathAndQuery),
-                // BOTH seams resolved from DI, so registering one is enough to have it used (D59). A
-                // consumer's native muxer replaces only the muxing stage; their codec only the codec.
+                // BOTH seams resolved from DI, so registering one is enough to have it used (D59).
                 Convert = (services.GetService<IMediaContainerWriter>() ?? new Mp4Remuxer())
                     .ToConverter(services.GetService<IMediaStreamConversion>()),
-                // A FRESH `MediaAccessOptions`, not `options.Access` itself: this route reads URLs
-                // `MediaPlayerRoute` built for its OWN convention, so `options.Access.Resolve` is INERT
-                // here. Containment and cache location still come from the one place an app named them.
+                // ⚠ A FRESH `MediaAccessOptions`: this route reads URLs `MediaPlayerRoute` built for its
+                // OWN convention, so `options.Access.Resolve` is INERT here.
                 Access = new MediaAccessOptions
                 {
                     Resolve = uri => MediaPlayerRoute.SourceOf(uri.PathAndQuery),
@@ -206,26 +188,20 @@ public static class MediaPlayerExtensions
 
     /// <summary>
     /// Keep the OS transport surface telling the truth: report the PLAYER's own state to
-    /// <paramref name="session"/> whenever it changes.
+    /// <paramref name="session"/> whenever <see cref="IMediaPlayer.StateChanged"/> fires.
     /// <para>
     /// ⚠ <b>It calls <see cref="IPlaybackSession.Report"/> and never
     /// <see cref="IPlaybackSession.Publish"/>.</b> <c>Publish</c> takes a WHOLE
-    /// <see cref="PlaybackInfo"/>, so publishing what a player knows — position, rate, duration — would
-    /// blank the title, subtitle and artwork the app had already set. Metadata stays the app's to publish,
-    /// <b>including <see cref="PlaybackInfo.Duration"/></b>; this carries state and position only.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>Raised on the platform's thread, not the UI thread</b> (<see cref="IMediaPlayer.StateChanged"/>).
-    /// Every <see cref="IPlaybackSession"/> implementation is safe to call from any thread; an app doing
-    /// more in its own handler must marshal itself.
+    /// <see cref="PlaybackInfo"/>, so publishing what a player knows would blank the title, subtitle and
+    /// artwork the app had already set. Metadata stays the app's to publish, <b>including
+    /// <see cref="PlaybackInfo.Duration"/></b>; this carries state and position only.
     /// </para>
     /// </summary>
     /// <param name="player">The player to follow.</param>
     /// <param name="session">The transport surface to keep in step.</param>
     /// <returns>
-    /// A handle that stops the reporting. Dispose it when the pairing ends — both objects are singletons
-    /// that outlive any one screen, so a subscription nobody drops keeps writing to the lock screen after
-    /// the feature using it has gone.
+    /// A handle that stops the reporting. Dispose it when the pairing ends — both objects are singletons,
+    /// so a subscription nobody drops keeps writing to the lock screen.
     /// </returns>
     public static IDisposable ReportTo(this IMediaPlayer player, IPlaybackSession session)
     {
@@ -234,8 +210,7 @@ public static class MediaPlayerExtensions
 
         void OnChanged(MediaPlayerStatus status)
         {
-            // Empty means the source is gone, which is what Clear() means — unlike Stopped, which leaves
-            // the app on the lock screen with a resumable item.
+            // Empty means the source is gone — Clear(), not Stopped, which leaves a resumable item up.
             if (status.State == MediaPlayerState.Empty)
             {
                 session.Clear();
@@ -246,8 +221,8 @@ public static class MediaPlayerExtensions
             {
                 State = ToPlaybackState(status.State),
                 Position = status.Position,
-                // The app's real speed even when paused: every shell derives the PUBLISHED speed from the
-                // state and ignores this otherwise (see PlaybackProgress).
+                // The app's real speed even when paused; every shell derives the PUBLISHED speed from the
+                // state (see PlaybackProgress).
                 Rate = status.Rate,
             });
         }
@@ -257,18 +232,16 @@ public static class MediaPlayerExtensions
     }
 
     /// <summary>
-    /// The player's state in the vocabulary the OS renders.
-    /// ⚠ <see cref="MediaPlayerState.Ended"/> and <see cref="MediaPlayerState.Failed"/> both become
-    /// <see cref="PlaybackState.Stopped"/> — a transport surface has no "it broke" state to render, so
-    /// telling the user WHY is the app's job in the app's own UI.
+    /// The player's state in the vocabulary the OS renders. ⚠ <see cref="MediaPlayerState.Ended"/> and
+    /// <see cref="MediaPlayerState.Failed"/> both become <see cref="PlaybackState.Stopped"/> — a transport
+    /// surface has no "it broke" state to render, so telling the user WHY stays the app's job.
     /// </summary>
     private static PlaybackState ToPlaybackState(MediaPlayerState state) => state switch
     {
         MediaPlayerState.Playing => PlaybackState.Playing,
         MediaPlayerState.Paused => PlaybackState.Paused,
         MediaPlayerState.Opening or MediaPlayerState.Buffering => PlaybackState.Buffering,
-        // Ended, Failed, Empty (handled by the caller) and anything a later version adds. Stopped claims
-        // the least.
+        // Ended, Failed, Empty (handled by the caller) and anything a later version adds.
         _ => PlaybackState.Stopped,
     };
 

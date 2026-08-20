@@ -4,14 +4,9 @@ using System.Text;
 namespace Shenora.Modules.Media;
 
 /// <summary>
-/// Writes ISO base media file format boxes — the output side of the remux.
-///
-/// <para>
-/// A box is a length, a four-character type, and a payload that may hold more boxes. The length is not
-/// known until the payload has been written, so every box here is opened as a SCOPE that back-patches its
-/// own size on close. Writing sizes by hand is the single most common way a hand-rolled muxer produces a
-/// file that parses for a while and then does not.
-/// </para>
+/// Writes ISO base media file format boxes — the output side of the remux. A box's length is not known
+/// until its payload is written, so every box is opened as a SCOPE that back-patches its own size on close.
+/// ⚠ Write a size by hand and the file parses for a while and then does not.
 /// </summary>
 internal sealed class BoxWriter(Stream target)
 {
@@ -121,13 +116,8 @@ internal sealed class Mp4TrackPlan
 
     /// <summary>
     /// Where this track's sample bytes actually live. Null means the SOURCE file, which is the copy case.
-    /// <para>
-    /// 🔴 A CONVERTED track's bytes are not in the source at all — they came out of a codec — so they are
-    /// spooled to a temporary stream and its offsets point there instead. Spooled rather than held in
-    /// memory because a two-hour soundtrack is ~115 MB as AAC, which is not a thing to keep on a phone;
-    /// spooling also means the offset/length model is IDENTICAL for both kinds of track, so nothing
-    /// downstream has to know which is which.
-    /// </para>
+    /// 🔴 A CONVERTED track's bytes came out of a codec, so they are spooled to a temporary stream and its
+    /// offsets point there instead — same offset/length model, so nothing downstream knows which it has.
     /// </summary>
     public Stream? ByteSource { get; set; }
 
@@ -149,14 +139,12 @@ internal sealed class Mp4TrackPlan
 
 /// <summary>
 /// Assembles the <c>moov</c> — the whole sample table for every track.
-///
 /// <para>
-/// ⚠ <b>Chunk offsets are written as 64-bit (<c>co64</c>) always, and that is a deliberate simplification
-/// rather than an oversight.</b> The offsets cannot be known until <c>moov</c>'s own length is known,
-/// because the media follows it — and with 32-bit offsets the table's SIZE depends on the values, so a file
-/// that crosses 4 GB while being written changes the length of the box that states where everything is. A
-/// fixed-width table makes the whole circularity disappear: build once to learn the length, build again
-/// with real values, and the second build is byte-for-byte the same size as the first.
+/// 🔴 <b>Chunk offsets are written as 64-bit (<c>co64</c>) ALWAYS, never <c>stco</c>.</b> The offsets are
+/// unknown until <c>moov</c>'s own length is, because the media follows it — and with 32-bit offsets the
+/// table's SIZE depends on the values, so a file crossing 4 GB mid-write changes the length of the box that
+/// states where everything is. A fixed-WIDTH table removes the circularity: build once to learn the length,
+/// build again with real values, and the second is byte-for-byte as long.
 /// </para>
 /// </summary>
 internal static class Mp4Builder
@@ -236,15 +224,9 @@ internal static class Mp4Builder
 
     /// <summary>
     /// Everything about a <c>trak</c> that does NOT depend on how its samples are indexed — the header, the
-    /// media/handler boxes, the media-information header and the self-contained data reference.
-    /// <para>
-    /// 🔴 <b>Extracted so the FRAGMENT writer does not carry a second copy</b>
-    /// (<c>Mp4FragmentWriter</c>). A fragmented init segment is exactly this skeleton with an EMPTY
-    /// sample table and a <c>mvex</c> beside it — so the only genuine difference is the <c>stbl</c>, which is
-    /// what the callback supplies. Two copies of `tkhd`/`mdhd`/`hdlr`/`minf` is two places for a
-    /// unity-matrix or a handler-name mistake to live, and this repo has paid for that shape enough times
-    /// (<c>AppCallback</c>, <c>TempDir</c>, <c>UiDispatcherBase</c>).
-    /// </para>
+    /// media/handler boxes, the media-information header and the self-contained data reference. Shared with
+    /// <c>Mp4FragmentWriter</c>, whose init segment is this skeleton with an EMPTY sample table and a
+    /// <c>mvex</c> beside it.
     /// </summary>
     /// <param name="w">The writer, positioned where the <c>trak</c> should begin.</param>
     /// <param name="shape">The track's identity, timescale, duration and dimensions.</param>
@@ -257,7 +239,7 @@ internal static class Mp4Builder
 
         using (w.Box("trak"))
         {
-            // flags 7 = enabled + in movie + in preview. A track written without them is present and never
+            // ⚠ flags 7 = enabled + in movie + in preview. Without them the track is present and never
             // played, which reads exactly like a remux that dropped the stream.
             using (w.FullBox("tkhd", 0, 7))
             {
@@ -330,8 +312,8 @@ internal static class Mp4Builder
                         }
                     }
 
-                    // The media is in THIS file, which is what a self-contained 'url ' entry declares. Its
-                    // flag is the whole meaning of the box: without it a player looks for an external file.
+                    // ⚠ The 'url ' entry's FLAG is the whole meaning of the box — set, the media is in this
+                    // file; clear, a player goes looking for an external one.
                     using (w.Box("dinf"))
                     using (w.FullBox("dref", 0, 0))
                     {
@@ -345,10 +327,7 @@ internal static class Mp4Builder
         }
     }
 
-    /// <summary>
-    /// The <c>trak</c> facts that are independent of how samples are indexed. A fragmented init segment and a
-    /// fully-indexed movie disagree only about the sample table, so everything else is stated once.
-    /// </summary>
+    /// <summary>The <c>trak</c> facts that are independent of how samples are indexed.</summary>
     internal readonly record struct TrakShape
     {
         /// <summary>1-based, and unique within the movie.</summary>
@@ -363,7 +342,7 @@ internal static class Mp4Builder
         /// </summary>
         public required long MediaDuration { get; init; }
 
-        /// <summary>Picture or sound — decides the handler, the media header and whether dimensions are written.</summary>
+        /// <summary>Picture or sound — decides the handler, the media header and the dimensions.</summary>
         public required bool IsVideo { get; init; }
 
         /// <summary>Written into <c>tkhd</c> for a video track; ignored for sound.</summary>
@@ -401,8 +380,7 @@ internal static class Mp4Builder
                 }
             }
 
-            // ctts — omitted entirely when every offset is zero, which is the no-B-frame case and most
-            // audio. An all-zero table is legal but is a table a player has to read for nothing.
+            // ctts — omitted when every offset is zero (the no-B-frame case, and most audio).
             if (Array.Exists(track.Composition, offset => offset != 0))
             {
                 using (w.FullBox("ctts", 0, 0))
@@ -417,9 +395,8 @@ internal static class Mp4Builder
                 }
             }
 
-            // stss — the sync sample table. ⚠ ABSENCE means "every sample is a sync sample", so writing it
-            // when they all are is not merely redundant, and writing it when NONE are must still happen or
-            // a stream with no keyframes is advertised as seekable everywhere.
+            // stss — the sync sample table. ⚠ ABSENCE means "every sample is a sync sample", so it is
+            // omitted only when they all are, and a stream with NO keyframes must still write it.
             if (track.IsVideo && Array.Exists(track.Samples, s => !s.KeyFrame))
             {
                 using (w.FullBox("stss", 0, 0))
@@ -484,15 +461,10 @@ internal static class Mp4Builder
     // ── sample entries ────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// A visual sample entry — <c>avc1</c> for H.264, <c>hvc1</c> for HEVC — wrapping the decoder
-    /// configuration record verbatim.
-    /// <para>
-    /// 🔴 <b>Verbatim is the entire reason a remux needs no codec work.</b> Matroska stores H.264 in the
-    /// same length-prefixed form MP4 does, and its <c>CodecPrivate</c> IS an <c>avcC</c> payload. So the
-    /// configuration is copied, the frames are copied, and nothing is parsed, decoded or re-encoded. (A
-    /// source carrying Annex-B start codes instead would need converting — that is a different job, and one
-    /// this refuses rather than half-does.)
-    /// </para>
+    /// A visual sample entry — <c>avc1</c> for H.264, <c>hvc1</c> for HEVC — wrapping
+    /// <paramref name="config"/> VERBATIM: Matroska's <c>CodecPrivate</c> already IS an <c>avcC</c> payload,
+    /// which is why a remux needs no codec work. ⚠ A source carrying Annex-B start codes would need
+    /// converting first; this does not do it.
     /// </summary>
     public static byte[] VisualSampleEntry(string type, string configBox, int width, int height, byte[] config)
     {
@@ -535,9 +507,8 @@ internal static class Mp4Builder
             w.U16(16);                          // sample size, in bits
             w.U16(0);                           // pre-defined
             w.U16(0);                           // reserved
-            // ⚠ 16.16 fixed point, so a rate above 65535 cannot be expressed here at all. Every rate a
-            // browser decodes is far below it; a file claiming more is clamped rather than wrapped, because
-            // the low half of a wrapped rate is a plausible-looking number that plays at the wrong speed.
+            // ⚠ 16.16 fixed point cannot express a rate above 65535. CLAMPED rather than wrapped: the low
+            // half of a wrapped rate is a plausible-looking number that plays at the wrong speed.
             w.Fixed1616(Math.Min(sampleRate, 65535));
             Esds(w, config);
         }
@@ -546,12 +517,8 @@ internal static class Mp4Builder
 
     /// <summary>
     /// The MPEG-4 elementary stream descriptor: a nest of tag/length records whose only real cargo is the
-    /// AudioSpecificConfig.
-    /// <para>
-    /// ⚠ Descriptor lengths are written in the EXPANDED four-byte form (<c>0x80 0x80 0x80 n</c>) rather than
-    /// the compact one. Both are legal, the expanded one is what most muxers emit, and it keeps the length
-    /// a fixed width so a longer config cannot change the shape of the record around it.
-    /// </para>
+    /// AudioSpecificConfig. ⚠ Lengths are written in the EXPANDED four-byte form
+    /// (<c>0x80 0x80 0x80 n</c>), a fixed width, so a longer config cannot reshape the record around it.
     /// </summary>
     private static void Esds(BoxWriter w, byte[] config)
     {
@@ -559,9 +526,9 @@ internal static class Mp4Builder
         {
             w.U8(0x03);                                     // ES_Descriptor
             // ES id+flags (3) + DecoderConfig tag+len (5) + its content (13) + DecoderSpecificInfo
-            // tag+len (5) + config + SLConfig tag+len+content (6). The last term carried 3 for years —
-            // an SLConfigDescriptor is 6 on the wire in the expanded form — so every AAC esds declared
-            // itself three bytes shorter than what followed.
+            // tag+len (5) + config + SLConfig (6). 🔴 That last term is 6 and not 3 — in the expanded form
+            // an SLConfigDescriptor is tag+len+content — or every AAC esds declares itself three bytes
+            // shorter than what follows it.
             DescriptorLength(w, 3 + 5 + 13 + 5 + config.Length + 6);
             w.U16(0);                                       // ES id
             w.U8(0);                                        // no dependency, no URL, no OCR
@@ -592,19 +559,14 @@ internal static class Mp4Builder
         w.U8(length & 0x7F);
     }
 
-    /// <summary>
-    /// The sampling-frequency indices an AudioSpecificConfig encodes. Used only to SYNTHESISE a config for a
-    /// track that shipped none — a real file carries its own and it is copied untouched.
-    /// </summary>
+    /// <summary>The sampling-frequency indices an AudioSpecificConfig encodes.</summary>
     private static readonly int[] AacSampleRates =
         [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
 
     /// <summary>
-    /// Build a two-byte AAC-LC AudioSpecificConfig from a rate and channel count.
-    /// <para>
-    /// The fallback for a track with no <c>CodecPrivate</c>. Null when the rate is not one AAC can index —
-    /// guessing there would produce a file that plays at the wrong speed, which is worse than refusing.
-    /// </para>
+    /// Build a two-byte AAC-LC AudioSpecificConfig from a rate and channel count — the fallback for a track
+    /// with no <c>CodecPrivate</c>. Null when the rate is not one AAC can index, because guessing produces a
+    /// file that plays at the wrong speed.
     /// </summary>
     public static byte[]? SynthesiseAacConfig(double sampleRate, int channels)
     {

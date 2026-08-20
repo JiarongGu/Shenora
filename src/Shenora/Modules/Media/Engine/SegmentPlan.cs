@@ -3,19 +3,8 @@ using System.Globalization;
 namespace Shenora.Modules.Media;
 
 /// <summary>
-/// How long each segment should be — a short HEAD so playback can start, then a steady length.
-///
-/// <para>
-/// 🔴 <b>The first segment is the entire startup budget for a VOD stream.</b> A page cannot play until the
-/// init segment arrives, that request drives segment 0, and a VOD playlist starts at segment 0 (the
-/// "start three target durations from the end" rule is a LIVE one). So a six-second first segment is six
-/// seconds of production before the first frame, whatever the rest of the stream costs.
-/// </para>
-/// <para>
-/// ⚠ <b>A ramp, not simply short segments throughout.</b> Short segments cost a request each and cost
-/// quality — a keyframe every second measurably raises the bitrate needed for the same picture. Starting
-/// small and settling onto the full length pays that only where it buys something.
-/// </para>
+/// How long each segment should be — a short HEAD so playback can start, then a steady length
+/// (<c>docs/design/media.md</c>, "The head is short").
 /// <para>
 /// ⚠ <b>It is a REQUEST, not a promise.</b> A copied picture can only be cut where the source already has a
 /// keyframe, so a source with a ten-second GOP gives a ten-second first segment however short the head asks
@@ -34,8 +23,8 @@ public sealed record SegmentLengths(double Seconds, IReadOnlyList<double> Head)
     public static SegmentLengths Of(double seconds) => new(seconds, []);
 
     /// <summary>
-    /// Where each segment would begin if every length were delivered exactly — what a RE-ENCODED stream
-    /// gets, since its encoder puts a keyframe on every whole second. Always opens with 0.
+    /// Where each segment would begin if every length were delivered exactly — what a RE-ENCODED stream gets.
+    /// Always opens with 0.
     /// </summary>
     public IReadOnlyList<double> StartsFor(TimeSpan total)
     {
@@ -58,8 +47,7 @@ public sealed record SegmentLengths(double Seconds, IReadOnlyList<double> Head)
 
     /// <summary>
     /// Is every length one a run could actually deliver? False with a reason, at composition time — the same
-    /// policy <see cref="SegmentGrid.IsUsable"/> applies to the steady length, for the same reason: a
-    /// boundary the encoder has no keyframe at still PLAYS, and only a seek misbehaves.
+    /// policy <see cref="SegmentGrid.IsUsable"/> applies to the steady length.
     /// </summary>
     public bool IsUsable(out string reason)
     {
@@ -80,13 +68,12 @@ public sealed record SegmentLengths(double Seconds, IReadOnlyList<double> Head)
 }
 
 /// <summary>
-/// Where a <see cref="SegmentPlan"/>'s boundaries came from — which is the question "may this run COPY the
-/// picture?" in the only form that cannot be got wrong.
+/// Where a <see cref="SegmentPlan"/>'s boundaries came from — the question "may this run COPY the picture?"
+/// in the only form that cannot be got wrong.
 /// <para>
-/// 🔴 <b>A copied picture and a boundary the source has no keyframe at cannot both hold.</b> Copied frames
-/// keep the ORIGINAL encoder's keyframes; a re-encoded picture lands on whole seconds because the kit's own
-/// encoders emit a keyframe every second. A plan that does not say which it is leaves the run to guess, and
-/// a wrong guess slips every cut to the next source keyframe — segments that play, and a seek that does not.
+/// 🔴 <b>A copied picture and an ENCODER boundary cannot both hold.</b> Copied frames keep the ORIGINAL
+/// encoder's keyframes; a plan that does not say which shape it is leaves the run to guess, and a wrong
+/// guess slips every cut to the next source keyframe — segments that play, and a seek that does not.
 /// </para>
 /// </summary>
 public enum SegmentBoundaries
@@ -94,10 +81,7 @@ public enum SegmentBoundaries
     /// <summary>Uniform, every boundary a whole multiple of the encoder's keyframe interval. Re-encoded.</summary>
     Grid,
 
-    /// <summary>
-    /// The SOURCE's own keyframes, of differing length. <b>The only shape a copy may be cut on</b>, and the
-    /// only one a copy can hit exactly.
-    /// </summary>
+    /// <summary>The SOURCE's own keyframes, of differing length. <b>The only shape a copy may be cut on</b>.</summary>
     SourceKeyFrames,
 
     /// <summary>
@@ -109,22 +93,17 @@ public enum SegmentBoundaries
 
 /// <summary>
 /// WHERE THE CUTS ARE: the boundaries a stream's segments actually fall on, in seconds from the start of the
-/// presentation.
+/// presentation. Two shapes — <see cref="Grid"/>, uniform, and <see cref="Cuts"/>, explicit boundaries of
+/// differing length that <c>#EXTINF</c> states one by one.
 /// <para>
 /// 🔴 <b>ONE object, handed to BOTH the manifest and the production run, because a playlist that disagrees
-/// with the producer fails silently.</b> The manifest names every segment and states each length before any
-/// exists; the run decides where to cut. Computed separately — even from the same number — a seek lands
+/// with the producer fails silently.</b> Computed separately — even from the same number — a seek lands
 /// somewhere other than where the playlist promised, and the symptom is a player that jumps to the wrong
 /// minute rather than an error anyone can see. So they travel on <see cref="SegmentRunRequest.Plan"/>.
 /// </para>
 /// <para>
-/// Two shapes, differing in what the producer can promise: <see cref="Grid"/>, uniform, and
-/// <see cref="Cuts"/>, explicit boundaries of differing length that <c>#EXTINF</c> states one by one.
-/// </para>
-/// <para>
-/// ⚠ <b>Seconds, as a <see cref="double"/>, throughout</b> — a run converts a boundary into each of its
-/// tracks' own timescales, and a picture and a soundtrack do not share one, so no tick unit could serve both
-/// halves of this contract.
+/// ⚠ <b>Seconds, as a <see cref="double"/>, throughout</b> — a picture and a soundtrack do not share a
+/// timescale, so no tick unit could serve both halves of this contract.
 /// </para>
 /// </summary>
 public sealed class SegmentPlan
@@ -142,22 +121,17 @@ public sealed class SegmentPlan
 
     /// <summary>
     /// WHERE these boundaries came from, which decides whether a run may COPY a picture onto them.
-    /// <para>
-    /// 🔴 <b>Stated rather than inferred, because the inference was wrong the moment a third shape
-    /// existed.</b> The run used to read "is this a grid?" as "must I re-encode?", which held only while
-    /// every non-grid plan came from the source's own keyframes. Hand it explicit boundaries from anywhere
-    /// else and it copies onto cuts the source has no keyframe at: every cut SLIPS to the next source
-    /// keyframe, the segments still play, and only a seek shows it.
-    /// </para>
+    /// 🔴 <b>Read this rather than inferring it from the shape</b>: a run that copies onto cuts the source
+    /// has no keyframe at slips every one to the next source keyframe, the segments still play, and only a
+    /// seek shows it.
     /// </summary>
     public SegmentBoundaries Origin { get; }
 
     /// <summary>
     /// A uniform grid of <paramref name="segmentSeconds"/> covering <paramref name="total"/> — what a
-    /// RE-ENCODING run produces, the kit's platform encoders emitting a keyframe every second so that any
-    /// whole-second boundary is hittable (D75). The last segment carries the REMAINDER rather than a flat
-    /// length: a playlist's declared total is the sum of its <c>EXTINF</c>s, so a flat final entry overstates
-    /// the source by up to one whole segment and a scrub bar built on it seeks past the end.
+    /// RE-ENCODING run produces (D75). ⚠ The last segment carries the REMAINDER rather than a flat length: a
+    /// playlist's declared total is the sum of its <c>EXTINF</c>s, so a flat final entry overstates the
+    /// source by up to one whole segment and a scrub bar built on it seeks past the end.
     /// </summary>
     public static SegmentPlan Grid(double segmentSeconds, TimeSpan total)
     {
@@ -169,17 +143,12 @@ public sealed class SegmentPlan
     }
 
     /// <summary>
-    /// Explicit boundaries a RE-ENCODER can hit — what a head ramp is, so playback can start on a short
-    /// first segment and settle onto the full length afterwards.
+    /// Explicit boundaries a RE-ENCODER can hit — what a head ramp is.
     /// <para>
     /// 🔴 <b>Every boundary must be a whole multiple of <see cref="SegmentGrid.EncoderKeyFrameSeconds"/></b>,
-    /// for the same reason a fractional grid is refused: what makes a boundary hittable is that the kit's
-    /// encoders emit a keyframe every second, and one placed anywhere else still PLAYS — only a seek
-    /// misbehaves. Null when any boundary fails that, rather than a rounded plan nobody asked for.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>A COPIED picture cannot use these</b>, which is what <see cref="Origin"/> exists to say: copied
-    /// frames keep the original encoder's keyframes, so a run handed this re-encodes (D76).
+    /// and one that is not gives NULL rather than a rounded plan nobody asked for. ⚠ <b>A COPIED picture
+    /// cannot use these</b>, which is what <see cref="Origin"/> exists to say: a run handed this
+    /// re-encodes (D76).
     /// </para>
     /// </summary>
     public static SegmentPlan? EncoderCuts(IReadOnlyList<double> startSeconds, TimeSpan total)
@@ -198,8 +167,8 @@ public sealed class SegmentPlan
 
     /// <summary>
     /// Explicit boundaries — what a COPYING run produces, whose frames land on whatever GOP the ORIGINAL
-    /// encoder chose so that no fixed grid can be hit (D76). <paramref name="startSeconds"/>[k] is where
-    /// segment k begins, ascending, and the first must be zero.
+    /// encoder chose (D76). <paramref name="startSeconds"/>[k] is where segment k begins, ascending, and the
+    /// first must be zero.
     /// </summary>
     /// <returns>
     /// Null when the boundaries are not a plan a stream could serve — empty, not starting at zero, not
@@ -216,7 +185,7 @@ public sealed class SegmentPlan
 
     /// <summary>
     /// The checks every explicit plan shares: non-empty, starting at zero, ascending, finite, and ending
-    /// inside <paramref name="total"/>. Null when the boundaries are not a plan a stream could serve.
+    /// inside <paramref name="total"/>. Null when any fails.
     /// </summary>
     private static double[]? Shape(IReadOnlyList<double> startSeconds, TimeSpan total)
     {
@@ -235,9 +204,8 @@ public sealed class SegmentPlan
     }
 
     /// <summary>
-    /// The uniform grid this plan is, or null when its boundaries are explicit — the one thing a caller may
-    /// ask about the SHAPE, because <see cref="SegmentGrid.IsUsable"/>'s refusal applies to a grid and cannot
-    /// apply to boundaries taken from a source's own keyframes.
+    /// The uniform grid this plan is, or null when its boundaries are explicit — only a grid can be
+    /// unhittable, so only a grid is worth putting through <see cref="SegmentGrid.IsUsable"/>.
     /// </summary>
     public double? GridSeconds { get; }
 
@@ -286,14 +254,12 @@ public sealed class SegmentPlan
         if (seconds <= 0) return 0;
         if (_starts is null)
         {
-            // The grid's own arithmetic, on the finest unit .NET states a time in — see SegmentGrid.
             var index = SegmentGrid.SegmentOf((long)Math.Round(seconds * TimeSpan.TicksPerSecond),
                                               TimeSpan.TicksPerSecond, GridSeconds!.Value);
             return Math.Min(index, Count - 1);
         }
 
-        // The last boundary at or before the time. Binary, because a two-hour film's plan is a thousand
-        // entries and this is asked once per output frame.
+        // The last boundary at or before the time. Binary: this is asked once per output frame.
         var low = 0;
         var high = Count - 1;
         while (low < high)
@@ -308,10 +274,9 @@ public sealed class SegmentPlan
     /// <summary>
     /// Should the frame at <paramref name="seconds"/> OPEN a new segment, given the one being written?
     /// <para>
-    /// Both halves are required, and dropping either produces a stream that appends without complaint:
-    /// without the boundary test the segments stop matching the manifest; without the keyframe test a segment
-    /// starts mid-GOP and cannot be decoded on its own, which is what a page seeking into the middle of a
-    /// film asks it to do. ⚠ Never cuts backwards — a late frame must not reopen a finished segment.
+    /// ⚠ <b>Both halves are required, and dropping either appends without complaint</b>: without the boundary
+    /// test the segments stop matching the manifest; without the keyframe test a segment starts mid-GOP and
+    /// cannot be decoded on its own. Never cuts backwards — a late frame must not reopen a finished segment.
     /// </para>
     /// </summary>
     public bool StartsNewSegment(double seconds, bool keyFrame, int current)

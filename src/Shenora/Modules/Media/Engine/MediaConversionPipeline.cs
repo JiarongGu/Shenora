@@ -6,16 +6,16 @@ namespace Shenora.Modules.Media;
 /// </summary>
 /// <param name="Data">
 /// The compressed frame. On the way IN, as the container stored it; on the way OUT, in the form the target
-/// container carries (length-prefixed, for both AAC in MP4 and H.264 in MP4).
+/// container carries (length-prefixed, for both AAC and H.264 in MP4).
 /// </param>
 /// <param name="PresentationTimeUs">
-/// When this frame is SHOWN or HEARD, in microseconds from the start of the stream. The muxer scales into
-/// the track timescale, so a conversion never has to know what that timescale is.
+/// When this frame is SHOWN or HEARD, in microseconds from the start of the stream. The muxer scales it
+/// into the track timescale.
 /// </param>
 /// <param name="IsKeyframe">
-/// True when this frame decodes without reference to any other — <b>always true for audio</b>, and the
-/// sync-sample table for video. ⚠ Wrong in the safe-looking direction is still wrong: claim every video
-/// frame and a seek lands on a green smear; claim none and the file cannot seek at all.
+/// True when this frame decodes without reference to any other — <b>always true for audio</b>. ⚠ Wrong in
+/// the safe-looking direction is still wrong: claim every video frame and a seek lands on a green smear;
+/// claim none and the file cannot seek at all.
 /// </param>
 public readonly record struct MediaFrame(
     ReadOnlyMemory<byte> Data,
@@ -28,9 +28,8 @@ public readonly record struct MediaFrame(
 /// <see cref="MediaStreamInfo.Kind"/> and returns null for a picture.
 /// </summary>
 /// <param name="source">
-/// What the stream is. <see cref="MediaStreamInfo.SampleRate"/> and <see cref="MediaStreamInfo.Channels"/>
-/// configure an audio codec; <see cref="MediaStreamInfo.Width"/> and <see cref="MediaStreamInfo.Height"/>
-/// configure a video one. A codec told the wrong values does not fail — it produces audio at the wrong
+/// What the stream is, including the values a codec is configured with: rate and channels for audio, width
+/// and height for video. ⚠ A codec told the wrong ones does not fail — it produces audio at the wrong
 /// speed, or a picture that is stretched or green.
 /// </param>
 /// <param name="codecPrivate">The container's initialisation data. Empty is legal and common.</param>
@@ -38,11 +37,8 @@ public delegate IMediaStreamConversionRun? MediaConversionMiddleware(MediaStream
 
 /// <summary>
 /// The conversion pipeline: a chain of converters asked frame by frame, for EVERY stream kind.
-/// <para>
-/// <b>Middleware, not replacement.</b> An app's own converter is ADDED to the chain and the kit's platform
-/// converters stay behind it answering what the app's declines. <b>Later registrations are asked FIRST</b>,
-/// so adding a converter means overriding.
-/// </para>
+/// <b>Middleware, not replacement</b> — an app's converter is ADDED and the kit's platform converters stay
+/// behind it. <b>Later registrations are asked FIRST</b>, so adding a converter means overriding.
 /// </summary>
 public sealed class MediaConversionPipeline : IMediaStreamConversion
 {
@@ -58,19 +54,13 @@ public sealed class MediaConversionPipeline : IMediaStreamConversion
     /// building codecs.
     /// </summary>
     /// <param name="device">
-    /// What this device can decode, or null to fall back to constructing a run per question.
-    /// <para>
-    /// ⚠ Constructing a run to answer produces an over-claim (a promise made from the ENCODER alone, so the
-    /// muxer fails after accepting a track) and an under-claim (a refusal for a codec that merely could not
-    /// open a session without its file's ESDS).
-    /// </para>
+    /// What this device can decode, or null to fall back to constructing a run per question. ⚠ That fallback
+    /// both over-claims (a promise made from the ENCODER alone, so the muxer fails after accepting a track)
+    /// and under-claims (a refusal for a codec that merely could not open a session without its file's ESDS).
     /// </param>
     public MediaConversionPipeline(IMediaCapability? device) => _device = device;
 
-    /// <summary>
-    /// What the registered converters CLAIM, without building a single codec — the declaration half of
-    /// <see cref="CanConvert"/>.
-    /// </summary>
+    /// <summary>What the registered converters CLAIM, without building a single codec.</summary>
     public IReadOnlyList<MediaStreamClaim> Claims
     {
         get { lock (_gate) return [.. _entries.SelectMany(e => e.Claims)]; }
@@ -91,16 +81,11 @@ public sealed class MediaConversionPipeline : IMediaStreamConversion
 
     /// <summary>Is this stream something a registered converter offers to attempt?</summary>
     /// <remarks>
-    /// <para>
-    /// 🔴 <b>A wildcard falls back to ASKING the chain, never to the device alone.</b> The device alone
-    /// answers yes to <c>h264</c>, which every device decodes and this kit refuses to CONVERT because MP4
-    /// carries it and the remuxer copies it losslessly.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>Asked PER CONVERTER, not against one flat list</b>, so a claim-less registration is a wildcard
-    /// for itself only. Flattened, a converter registered WITHOUT claims beside one that declared some would
-    /// have its codecs refused by <c>CanConvert</c> while <c>Begin</c> converted them happily.
-    /// </para>
+    /// 🔴 <b>A wildcard falls back to ASKING the chain, never to the device alone</b> — the device answers
+    /// yes to <c>h264</c>, which this kit refuses to CONVERT because the remuxer copies it losslessly.
+    /// ⚠ <b>Asked PER CONVERTER, not against one flat list</b>: flattened, a converter registered without
+    /// claims beside one that declared some has its codecs refused by <c>CanConvert</c> while
+    /// <c>Begin</c> converts them happily.
     /// </remarks>
     private Claimed IsClaimed(MediaStreamKind kind, string codec)
     {
@@ -112,7 +97,7 @@ public sealed class MediaConversionPipeline : IMediaStreamConversion
             {
                 if (claims.Count == 0)
                 {
-                    // Keep looking: an EXPLICIT claim elsewhere is a stronger answer than "might handle it".
+                    // Keep looking — an EXPLICIT claim elsewhere outranks "might handle it".
                     wildcard = true;
                     continue;
                 }
@@ -136,8 +121,8 @@ public sealed class MediaConversionPipeline : IMediaStreamConversion
     /// <summary>Add a converter and DECLARE what it claims. Dispose the return value to remove both.</summary>
     /// <param name="converter">The converter, unchanged — declining is still how it opts out per stream.</param>
     /// <param name="claims">
-    /// The (kind, codec) pairs this converter is willing to attempt. ⚠ A claim is not a promise: the DEVICE
-    /// still decides. An EMPTY list means "ask me about anything".
+    /// The (kind, codec) pairs this converter is willing to attempt. An EMPTY list means "ask me about
+    /// anything". ⚠ A claim is not a promise: the DEVICE still decides.
     /// </param>
     public IDisposable Use(MediaConversionMiddleware converter, IReadOnlyList<MediaStreamClaim> claims)
     {
@@ -154,30 +139,26 @@ public sealed class MediaConversionPipeline : IMediaStreamConversion
 
     /// <inheritdoc />
     /// <remarks>
-    /// 🔴 <b>TWO QUESTIONS, IN ORDER: does the kit CLAIM it, and can the DEVICE do it.</b> A claim is
-    /// checked first and a NO there is final — the kit will not attempt what it does not offer, whatever
-    /// the hardware can do.
+    /// 🔴 <b>TWO QUESTIONS, IN ORDER: does the kit CLAIM it, and can the DEVICE do it.</b> A NO on the claim
+    /// is final — the kit will not attempt what it does not offer, whatever the hardware can do.
     /// </remarks>
     public bool CanConvert(MediaStreamKind kind, string codec)
     {
         if (string.IsNullOrWhiteSpace(codec)) return false;
 
-        // THE DECLARATION. Free, and a no here is final.
         var claimed = IsClaimed(kind, codec);
         if (claimed is Claimed.No) return false;
 
-        // THE DEVICE — but ONLY for something explicitly declared; a wildcard falls through to the chain.
-        // ⚠ `Contains` uses the SET's comparer, so an app-supplied IMediaCapability built on a plain
-        // HashSet would answer case-sensitively while the claim half above is case-INsensitive — reading
-        // as "this device cannot decode ac3" for a container that spelled it `AC3`. The contract says
-        // OrdinalIgnoreCase (see IMediaCapability.Decodable).
+        // The device, but ONLY for something explicitly declared; a wildcard falls through to the chain.
+        // ⚠ `Covers` uses the SET's comparer, so an app-supplied IMediaCapability built on a plain HashSet
+        // answers case-SENSITIVELY while the claim half is case-insensitive — reading as "this device
+        // cannot decode ac3" for a container that spelled it `AC3`. See IMediaCapability.Decodable.
         if (claimed is Claimed.Yes && _device is not null)
         {
             return _device.Decodable(kind).Covers(codec);
         }
-        // ⚠ The probe carries the DIMENSIONS a video stream would have: a platform video encoder refuses to
-        // configure at 0x0, so a probe without them answers "cannot convert" for a codec the device handles
-        // perfectly. 640x360 is arbitrary, valid, and never encodes anything.
+        // ⚠ The probe carries DIMENSIONS: a platform video encoder refuses to configure at 0x0, so a probe
+        // without them answers "cannot convert" for a codec the device handles perfectly.
         var probe = kind is MediaStreamKind.Video
             ? new MediaStreamInfo(kind, codec, Width: 640, Height: 360)
             : new MediaStreamInfo(kind, codec);
@@ -206,8 +187,8 @@ public sealed class MediaConversionPipeline : IMediaStreamConversion
                                       IReadOnlyList<MediaStreamClaim> claims) : IDisposable
     {
         /// <summary>
-        /// ⚠ Removes the ENTRY, so a converter's claims leave with it — otherwise
-        /// <see cref="CanConvert"/> keeps saying yes to a codec whose converter is gone.
+        /// ⚠ Removes the ENTRY, so a converter's claims leave with it — otherwise <see cref="CanConvert"/>
+        /// keeps saying yes to a codec whose converter is gone.
         /// </summary>
         public void Dispose()
         {
@@ -224,30 +205,23 @@ public sealed class MediaConversionPipeline : IMediaStreamConversion
 /// One stream kind + codec a converter offers to attempt — the DECLARATION half of
 /// <see cref="IMediaStreamConversion.CanConvert"/>.
 /// </summary>
-/// <remarks>
-/// ⚠ A claim is not a promise: "the kit offers to try mpeg4" and "this device can decode mpeg4" are
-/// different facts, and the DEVICE half still decides.
-/// </remarks>
 /// <param name="Kind">Which kind of stream.</param>
 /// <param name="Codec">
-/// The codec name as a probe reports it (<c>ac3</c>, <c>mpeg4</c>) — lowercase by convention and compared
-/// case-insensitively, because a container's spelling is not something a caller should have to match.
+/// The codec name as a probe reports it (<c>ac3</c>, <c>mpeg4</c>) — lowercase by convention, compared
+/// case-insensitively.
 /// </param>
 public readonly record struct MediaStreamClaim(MediaStreamKind Kind, string Codec);
 
 /// <summary>
-/// What a CONSUMER of conversion sees: ask whether a stream can be handled, and begin one. Smaller than
-/// <see cref="MediaConversionPipeline"/>, which additionally lets converters be ADDED.
+/// What a CONSUMER of conversion sees: ask whether a stream can be handled, and begin one.
+/// <see cref="MediaConversionPipeline"/> additionally lets converters be ADDED.
 /// </summary>
 public interface IMediaStreamConversion
 {
     /// <summary>
     /// Can this device turn a <paramref name="kind"/> stream in <paramref name="codec"/> into something the
-    /// container carries and the webview plays?
-    /// <para>
-    /// Asked BEFORE any work starts: the answer to "no" is <see cref="MediaPlaybackAction.Unsupported"/>
-    /// rather than a conversion that fails halfway and leaves a partial file.
-    /// </para>
+    /// container carries and the webview plays? Asked BEFORE any work starts, so "no" becomes
+    /// <see cref="MediaPlaybackAction.Unsupported"/> rather than a conversion that fails halfway.
     /// </summary>
     bool CanConvert(MediaStreamKind kind, string codec);
 
@@ -260,8 +234,7 @@ public interface IMediaStreamConversion
     /// anything: rate and channels for audio, width and height for video.
     /// </param>
     /// <param name="codecPrivate">
-    /// The codec's initialisation data as the container stored it — Matroska's <c>CodecPrivate</c>, which is
-    /// an <c>avcC</c>, an AudioSpecificConfig, or a Vorbis header set depending on the codec.
+    /// The codec's initialisation data as the container stored it — Matroska's <c>CodecPrivate</c>.
     /// ⚠ <b>Empty is legal and common</b> (AC-3 needs none), but for the codecs that DO need it a decoder
     /// configured without it produces silence, or a green picture, rather than an error.
     /// </param>
@@ -271,10 +244,9 @@ public interface IMediaStreamConversion
 /// <summary>
 /// One stream's conversion in progress. Dispose to release the platform codecs.
 /// <para>
-/// ⚠ <b>Disposing MATTERS here in a way it does not for a managed object.</b> Every platform hands out a
-/// hardware or system codec instance and a device has only a handful — a video run holds TWO. Leaking one
-/// does not leak memory, it makes the NEXT conversion in the app fail with a resource error that names
-/// nothing.
+/// ⚠ <b>Disposing MATTERS here in a way it does not for a managed object.</b> A device has only a handful
+/// of hardware codec instances and a video run holds TWO; leaking one makes the NEXT conversion in the app
+/// fail with a resource error that names nothing.
 /// </para>
 /// </summary>
 public interface IMediaStreamConversionRun : IDisposable
@@ -287,13 +259,10 @@ public interface IMediaStreamConversionRun : IDisposable
     MediaStreamInfo OutputFormat { get; }
 
     /// <summary>
-    /// The decoder configuration the OUTPUT needs — an AudioSpecificConfig for AAC, an <c>avcC</c> for
-    /// H.264 — which the container must carry in its sample entry before the first frame.
-    /// <para>
-    /// ⚠ Only knowable after the encoder has been fed. Reading it early is legal and returns empty; writing
-    /// THAT into a file produces one that opens and plays nothing, so <see cref="Mp4Remuxer"/> reads it
-    /// after <see cref="Drain"/>.
-    /// </para>
+    /// The decoder configuration the OUTPUT needs, which the container must carry in its sample entry
+    /// before the first frame. ⚠ Only knowable after the encoder has been fed: reading it early is legal
+    /// and returns EMPTY, and writing that produces a file that opens and plays nothing — so
+    /// <see cref="Mp4Remuxer"/> reads it after <see cref="Drain"/>.
     /// </summary>
     ReadOnlyMemory<byte> OutputConfig { get; }
 
@@ -306,25 +275,21 @@ public interface IMediaStreamConversionRun : IDisposable
     /// <summary>
     /// Feed one compressed input frame; returns whatever came out, which is often nothing.
     /// <para>
-    /// ⚠ <b>Zero outputs is NORMAL and not an error.</b> Codecs buffer — for video a GOP-sized window, so
-    /// the first outputs can be dozens of frames behind. A caller that treats an empty return as failure
-    /// abandons a perfectly good conversion in its opening second.
+    /// ⚠ <b>Zero outputs is NORMAL and not an error.</b> Codecs buffer — for video a GOP-sized window — so
+    /// a caller that treats an empty return as failure abandons a good conversion in its opening second.
     /// </para>
     /// <para>
     /// 🔴 <b>Outputs are in DECODE order — the order to write them — and each carries its own presentation
-    /// time.</b> The two differ when B-frames are used; a caller that assumes emission order is presentation
-    /// order writes a file that plays out of order.
+    /// time.</b> The two differ when B-frames are used; assuming emission order is presentation order
+    /// writes a file that plays out of order.
     /// </para>
     /// </summary>
     IReadOnlyList<MediaFrame> Push(MediaFrame frame);
 
     /// <summary>
     /// End of input: return everything still buffered.
-    /// <para>
-    /// 🔴 <b>Skipping this truncates the stream and nothing reports it.</b> The tail sits inside the codec,
-    /// the file is well-formed, and playback simply stops early — by more for a picture than a soundtrack,
-    /// because the encoder's window is a GOP rather than a few packets.
-    /// </para>
+    /// 🔴 <b>Skipping this truncates the stream and nothing reports it</b> — the tail sits inside the codec,
+    /// the file is well-formed, and playback simply stops early.
     /// </summary>
     IReadOnlyList<MediaFrame> Drain();
 }

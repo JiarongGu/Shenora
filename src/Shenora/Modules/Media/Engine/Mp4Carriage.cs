@@ -3,21 +3,16 @@ namespace Shenora.Modules.Media;
 /// <summary>
 /// What MP4 can hold from a Matroska source WITHOUT re-encoding, and the sample entry each such track
 /// becomes — asked of the raw CodecID, in ONE place.
-///
 /// <para>
-/// 🔴 <b>One place because two writers now depend on the answer, and they must agree about a given file.</b>
-/// <see cref="Mp4Remuxer"/> asks it to decide whether a whole output is COMPUTABLE (a copied track's size is
-/// derivable, a re-encoded one's is not); <see cref="SegmentRunWriter"/> asks it per track to decide whether
-/// to copy a stream into fragments or spend a hardware codec on it. Its own comment already said a second
-/// spelling of this question is how the plan and the write come to disagree about one file — a second
-/// CALLER is the same hazard, so the predicate moved here rather than being repeated.
+/// 🔴 <b>ONE place because two writers depend on the answer and must agree about a given file.</b>
+/// <see cref="Mp4Remuxer"/> asks whether a whole output is COMPUTABLE; <see cref="SegmentRunWriter"/> asks
+/// per track whether to copy a stream into fragments or spend a hardware codec on it. A second spelling of
+/// the question is how the plan and the write come to disagree.
 /// </para>
-///
 /// <para>
 /// ⚠ <b>Asked of the raw Matroska CodecID rather than of a translated codec name</b> (<c>V_MPEG4/ISO/AVC</c>,
-/// not <c>h264</c>). The CodecID is what decides whether the frames can be carried verbatim: Matroska already
-/// stores H.264 and HEVC in the length-prefixed form MP4 uses, so a copy is a byte move. A translated name
-/// loses the distinction that makes that true.
+/// not <c>h264</c>). The CodecID is what decides whether the frames can be carried verbatim — Matroska
+/// already stores H.264 and HEVC in the length-prefixed form MP4 uses — and a translated name loses that.
 /// </para>
 /// </summary>
 internal static class Mp4Carriage
@@ -31,20 +26,16 @@ internal static class Mp4Carriage
 
     /// <summary>
     /// Could the output carry this track's frames UNTOUCHED?
-    /// <para>
-    /// ⚠ <b>Declaring a carriable codec is not enough — the DECODER CONFIGURATION has to be there too</b>, and
-    /// that is why this is not merely a codec lookup. A track whose <c>CodecPrivate</c> is missing cannot be
-    /// copied at all: the <c>avcC</c>/<c>hvcC</c>/AudioSpecificConfig is what the sample entry is built from,
-    /// and a copy without one produces a track a decoder cannot start. <see cref="EntryFor"/> answers null in
-    /// that case and the caller falls back to converting, which is the honest repair.
-    /// </para>
+    /// ⚠ <b>Declaring a carriable codec is not enough — the DECODER CONFIGURATION has to be there too.</b> The
+    /// <c>avcC</c>/<c>hvcC</c>/AudioSpecificConfig is what the sample entry is built from, so a copy without
+    /// one produces a track a decoder cannot start; <see cref="EntryFor"/> answers null and the caller
+    /// converts instead.
     /// </summary>
     public static bool CanCarry(MatroskaTrack track) => track.Kind switch
     {
         MediaStreamKind.Video => CanCarryVideo(track),
         MediaStreamKind.Audio => CanCarryAudio(track),
-        // Subtitles are a FORMAT conversion rather than a container rewrite, and the planner already treats
-        // them as droppable — so nothing carries one, and saying so beats dropping it silently.
+        // Subtitles are a FORMAT conversion rather than a container rewrite; the planner treats them as droppable.
         _ => false,
     };
 
@@ -58,8 +49,8 @@ internal static class Mp4Carriage
             || track.CodecId.StartsWith("A_AAC/", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// The <c>stsd</c> entry a copied track needs, or null when the track cannot be carried after all —
-    /// including the case where it declares a carriable codec but ships no decoder configuration.
+    /// The <c>stsd</c> entry a copied track needs, or null when it cannot be carried after all — including a
+    /// track that declares a carriable codec but ships no decoder configuration.
     /// </summary>
     public static byte[]? EntryFor(MatroskaTrack track) => track.Kind switch
     {
@@ -73,8 +64,7 @@ internal static class Mp4Carriage
         if (track.CodecPrivate is not { Length: > 0 } config) return null;
         var (entry, configBox) = Video[track.CodecId!];
 
-        // A zero dimension makes a track a player lays out as nothing. Refuse rather than write a file that
-        // decodes into a window with no area.
+        // ⚠ A zero dimension makes a track a player lays out as nothing.
         if (track.Width <= 0 || track.Height <= 0) return null;
 
         return Mp4Builder.VisualSampleEntry(entry, configBox, track.Width, track.Height, config);
@@ -85,8 +75,8 @@ internal static class Mp4Carriage
         var channels = track.Channels > 0 ? track.Channels : 2;
         var rate = track.SampleRate > 0 ? track.SampleRate : 48000;
 
-        // A real file ships its own AudioSpecificConfig and it is copied untouched; synthesising one is the
-        // fallback for a track that shipped none, and it refuses rather than guess a rate AAC cannot index.
+        // A shipped AudioSpecificConfig is copied untouched; synthesising one is the fallback, and it refuses
+        // rather than guess a rate AAC cannot index.
         var config = track.CodecPrivate is { Length: > 0 } shipped
             ? shipped
             : Mp4Builder.SynthesiseAacConfig(rate, channels);
