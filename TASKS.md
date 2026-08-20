@@ -93,3 +93,13 @@ maintainer's box almost certainly has one set — which is why this survived.
 
 ⚠ Same shape worth checking in `ios.ts` before closing: any command whose preflight resolves a tool that
 the command itself then does not pass on.
+
+**Verified in BOTH the published build and the tree**, so it is not something the unreleased work already
+fixed: npm `@shenora/cli@0.11.0` `dist/android.js` passes `env: { JAVA_HOME: jdk }` at its deploy call
+(~155) and `{ cwd: cfg.root }` alone at its publish call (~262) — the same asymmetry as the source.
+
+⚠ **Checked and NOT a bug, recorded so nobody re-files it:** on that same published build `ios doctor`
+refuses on Windows outright ("iOS work needs macOS … no way around it"), which looks like the remote-Mac
+feature being ignored. It is not — that string exists ONLY in 0.11.0's `dist`, not in the tree, so the
+LAN-Mac path (`resolveHost`/`SHENORA_IOS_KEY`/`SshTarget`) is simply UNRELEASED. An adopter on Windows
+cannot use `shenora ios *` until the next release is cut.
