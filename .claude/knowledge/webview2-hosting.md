@@ -193,11 +193,12 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
   invariant discarded the resource in the log, and put the decision in a seam the unit tests can
   reach (`AwaitResetNavigationAsync`) — the old test could only drive the override, which is exactly
   how this passed five phase reviews.
-- **A subscribe API on a POOLED object needs a disposal check as much as an operation does.**
-  `RenderSession.OnNetwork`/`OnMessage` install a persistent tap, and after dispose the instance
-  belongs to the next lease — so a late subscribe streamed another lease's API responses and posted
-  messages to the previous caller. Throw `ObjectDisposedException` (loudly, not a silent no-op) AND
-  re-check inside the marshalled body, or the check-then-post race reopens it.
+- **IF a POOLED object ever exposes a SUBSCRIBE api, it needs a disposal check as much as an operation
+  does** — no leased type has one today, which is why this is a trap rather than a rule about live code.
+  A subscribe installs a PERSISTENT tap, and after dispose the instance belongs to the next lease, so a
+  late subscribe streams one caller's traffic to the previous one. Throw `ObjectDisposedException`
+  (loudly, not a silent no-op) AND re-check inside the marshalled body, or the check-then-post race
+  reopens it.
 - **NEVER dispose a `SemaphoreSlim` (or its linked CTS) right after cancelling waiters on it.**
   `RenderSessionPool.Dispose()` cancelled the dispose CTS — correct, it wakes a lease queued on the
   capacity semaphore — and then immediately called `_capacity.Dispose()`. Disposing while a waiter is

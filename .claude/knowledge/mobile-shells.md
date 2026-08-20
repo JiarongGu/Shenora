@@ -495,8 +495,8 @@ when you are RUNNING something rather than changing it.
       Activity update has three separate outcomes — accepted, applied, and REPAINTED — and this shim can
       only see the first two. ⚠ **Never close a rendering question with a log line**; it is the same
       mistake the `LC_MAIN` diagnosis made, one layer up.
-    - A device build additionally needs entitlements for the appex — the simulator build logs
-      `No entitlements set for …IslandProbe.appex` and that warning is expected there.
+    - A device build additionally needs entitlements for the appex — a simulator build logs
+      `No entitlements set for <name>.appex`, and that warning is expected there.
 
 ### 🔴 THE APP→WIDGET WIRE HAS **TWO** LEGS, AND THE APP-SIDE DIAGNOSTIC ONLY WATCHES THE FIRST
 
