@@ -13,10 +13,11 @@ diagnosis kept for two open lines under it. ⚠ **The test is not "is there a �
 this paragraph lose anything a future session must ACT on?"** If the answer is no, the commit that
 landed it is where it lives.
 
-**Status: v0.11.0 is published (2026-08-17)** — the release the long hold was waiting for, carrying the
-whole review-and-fix arc plus `@shenora/cli`'s first real publish. The tree is at the tag. `CHANGELOG.md`
-has no `## Unreleased` section until the next change opens one; the 0.11.0 section is that release's
-record, and it is **mostly BREAKING** (D64/D65/D66) — read `### Breaking` before touching the surface.
+**Status: v0.11.0 published (2026-08-17); the tree is well AHEAD of it and the next release is not cut.**
+`CHANGELOG.md`'s `## Unreleased` carries the media first-load rewrite and a repo-wide comment/doc pass, and
+it is **mostly BREAKING** — read `### Breaking` before touching the surface. ⚠ The version in
+`src/Directory.Build.props` is still `0.11.0` and must STAY there: the release workflow owns the bump, and a
+hand-bump moves the baseline and skips a release (`release-discipline.md`).
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This is the maintainer's remaining work,
 > and a short list means the kit is in good shape rather than that nothing is happening. Several entries
@@ -32,10 +33,9 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ### 📱 THE MEDIA FIRST-LOAD REWRITE IS UNMEASURED — its correctness passed, its SPEED never ran
 
-The whole arc (opener seam · atomic publish · plan from Cues · index-as-you-write · head ramp) was built
-for one reported symptom: **a long initial wait playing video on an iPhone.** The correctness half passed
-on a simulator 2026-08-21 (`SEEK-RUN: PASS`, chunked indexing and the ramp both visible in the log — see
-that commit). **None of it was a stopwatch.**
+Built for one reported symptom — **a long initial wait playing video on an iPhone** — which was never
+timed, before or after. ⚠ Correctness is covered on the simulator, so do not re-run the seek probe to
+find out; what is missing is a stopwatch.
 
 - [ ] 🔴 **MEASURE FIRST PAINT, AND SPLIT THE TERMS** — manifest response · `init.mp4` response · seg0
   response. A total cannot say which change earned it, and the four changes are separable. ⚠ On a **real
@@ -54,34 +54,19 @@ that commit). **None of it was a stopwatch.**
 
 ### 🔧 THE BOX REFUSES ~30 % OF CLIPBOARD WRITES FROM A LOOPING TEST PROCESS
 
-🔴 **The code is exonerated — do not "fix" `ClipboardService`.** Diagnosed 2026-08-16: a PowerShell
-`Set-Clipboard` loop sharing none of our code fails identically, so this is an OS-level condition on this
-machine. `cbdhsvc_*` is implicated (restarting it moved 13/15 → 3–6/15) and is not the whole story.
-⚠ **Only the SPREAD means anything** — the same day ran 13-of-15 failing and 15-of-15 clean; a healthy
-sample proves nothing. The suite is held out of the gate deliberately (`[Trait("Category",
-"RealClipboard")]`, run it with `dev.mjs test clipboard`).
+🔴 **The code is exonerated — do not "fix" `ClipboardService`.** A PowerShell `Set-Clipboard` loop sharing
+none of our code fails identically, so this is an OS-level condition on this machine. The suite is held out
+of the gate deliberately (`[Trait("Category", "RealClipboard")]` — `dev.mjs test clipboard`).
+⚠ **Only the SPREAD means anything**: the same day ran 13-of-15 failing and 15-of-15 clean, so neither a
+healthy sample nor an unhealthy one settles anything on its own.
 
-- [ ] **The residual ~30 % is unexplained, but the suspect list is now SHORTER and one suspect is
-  PROVEN to exist.** Investigated 2026-08-20:
-  - ✔ **Cloud Clipboard and clipboard history are ELIMINATED** — `EnableClipboardHistory`,
-    `EnableCloudClipboard` and `CloudClipboardAutomaticUpload` are all unset under
-    `HKCU\Software\Microsoft\Clipboard`, so neither was ever running. No setting was changed to learn
-    this, and none needs to be.
-  - 🔴 **A VM clipboard sync DOES exist on this machine and actively WRITES the Windows clipboard**: the
-    Android emulator's bridge, proven by setting the host clipboard and watching the guest follow twice
-    (see `mobile-harness.md`). A qemu process has been running here since **12 Aug** — spanning the
-    16 Aug diagnosis — and a second-writer is exactly the shape this entry predicted.
-  - ⚠ **An A/B today could not convict it, because the fault is not currently reproducing**: nine runs
-    with and without the live emulator gave ONE failure, on the first run, then eight clean. That is the
-    entry's own warning working as intended — a healthy sample proves nothing.
-  - **So the experiment is READY rather than done.** When it next bites, run `dev.mjs test clipboard`
-    several times with no emulator serving and again with one running, and compare the SPREAD.
-  - 🔴 **THE "NEEDS A REBOOT" BLOCKER WAS WRONG, and the no-VM arm is available now.** The 12 Aug
-    qemu is a ZOMBIE, not a wedged VM: `taskkill /F` answers *"there is no running instance of the task"*
-    while the process object persists, CPU is frozen (0 s delta over 5 s), one thread sits in
-    `Wait/Unknown`, and **the SDK's `adb devices` lists nothing**. Its 5554/5555 listeners are stale
-    kernel socket state on an unreaped object. A reboot would clear the CORPSE; nothing needs it cleared,
-    because a dead process cannot write the clipboard. ⚠ It does survive `Stop-Process -Force` — that part
-    of the old note held; what did not is the conclusion drawn from it.
-  - ⚠ **Five more runs with nothing serving: all clean.** Adds to the sample and settles nothing, per this
-    entry's own rule — the fault is still not reproducing, which is what blocks it now.
+- [ ] **Run the A/B when it next bites — the fault is not reproducing now, and that is what blocks it.**
+  `dev.mjs test clipboard` several times with no Android emulator serving, then again with one running, and
+  compare the SPREAD. The suspect is the emulator's clipboard bridge, PROVEN to write the Windows clipboard
+  (`mobile-harness.md`); a second writer is exactly this entry's shape.
+  - ⚠ **Already ruled out — do not re-check:** Cloud Clipboard and clipboard history
+    (`EnableClipboardHistory`, `EnableCloudClipboard`, `CloudClipboardAutomaticUpload` all unset under
+    `HKCU\Software\Microsoft\Clipboard`). `cbdhsvc_*` is implicated but is not the whole story — restarting
+    it moved 13/15 → 3–6/15.
+  - ⚠ **No reboot is needed for the no-emulator arm**: the long-running qemu is a zombie with no live
+    emulator behind it (`adb devices` lists nothing), and a dead process cannot write the clipboard.
