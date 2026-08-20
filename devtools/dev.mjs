@@ -697,13 +697,34 @@ function doctor({ fix = false } = {}) {
     }
   }
 
+  // 🔴 CLAUDE.md IS THE AGENT'S STARTING PROMPT, NOT A README — it orients a session, and where the
+  // project has got to is README.md's job. A version there is auto-loaded into every session as a fact
+  // nothing syncs: the consistency check above owns props/npm/README/ARCHITECTURE/LICENSE, and this file
+  // is not one of them. Measured: its status line sat a whole release behind and no gate could see it.
+  // A rule already said not to; the rule is what failed, so this is the mechanism.
+  // ⚠ Deliberately ANY x.y.z, not just the current version: the failure is naming a version at all, and
+  // matching only the current one would go quiet the moment it drifted — passing precisely when wrong.
+  const alwaysLoaded = path.join(repo, 'CLAUDE.md');
+  if (fs.existsSync(alwaysLoaded)) {
+    for (const [i, line] of fs.readFileSync(alwaysLoaded, 'utf8').split(/\r?\n/).entries()) {
+      const named = line.match(/v?\d+\.\d+\.\d+/);
+      if (named) {
+        fail(`CLAUDE.md:${i + 1} names a version (${named[0]}). That file is the AGENT'S STARTING PROMPT, `
+          + 'not a README: where the project has got to belongs in README.md, and the number itself in '
+          + 'src/Directory.Build.props. Nothing syncs it here, so every session is auto-loaded a fact that '
+          + 'goes stale the day the next release ships.');
+      }
+    }
+  }
+
   if (problems === 0)
     // Don't claim the tag matched when the check was skipped — a success line that overstates what
     // ran is the same defect class as a doc that overstates what the code does.
     console.log(`  ok  version ${config.version} consistent (props · npm · README · ARCHITECTURE · LICENSE)`
       + (releasing ? ' — tag check skipped, this is the release' : ' and matches the newest tag')
       + `; ${config.packableProjects.length} packable project(s) agree with their csprojs`
-      + '; no stray tracked filenames; every scanner roots at its own location');
+      + '; no stray tracked filenames; every scanner roots at its own location'
+      + '; CLAUDE.md names no version');
   return problems === 0;
 }
 

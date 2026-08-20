@@ -39,14 +39,10 @@ brain; **Shenora must never depend on Lyntai**. Two consumption profiles: deskto
 constraint earned in one context reads as universal and gets applied where it does not fit. Scan the
 generated index at its top, open the `D<n>` your task actually touches, and leave the other seventy shut.
 
-🔴 **THE PUBLISHED VERSION IS NOT WRITTEN HERE — it is `README.md`'s status line and
-`src/Directory.Build.props`, which `dev.mjs doctor` keeps honest.** This line named one for months and sat
-**a whole release stale** (`v0.10.0` while `v0.11.0` was out), because `doctor` syncs props · npm · README ·
-ARCHITECTURE · LICENSE and cannot see this file. A version in always-loaded context is read as the present
-state by every session that starts, which is why `phase-workflow.md` bans it outright. The tree normally
-runs AHEAD of the published version. Read `CHANGELOG.md` `## Unreleased` before touching the surface: it
-carries **breaking changes**. **The package set lives in `docs/DECISIONS.md`'s
-header table, once** — never reconstruct it from a chain of entries. Repo public, verified against the
+**Status → `README.md`** (no version number belongs in this file; `dev.mjs doctor` enforces it). The tree
+normally runs AHEAD of the published version. Read `CHANGELOG.md` `## Unreleased` before touching the
+surface: it carries **breaking changes**. **The package set lives in `docs/DECISIONS.md`'s header table,
+once** — never reconstruct it from a chain of entries. Repo public, verified against the
 FEED rather than the tree; the kit runs on all three shells, proven on a real iPhone and on Android.
 `TASKS.md` has the open work. Growth is harvest-driven (D15) and adoption-driven. **Every public change
 is SemVer surface**; 1.0 is a separate deliberate freeze, not yet cut.
