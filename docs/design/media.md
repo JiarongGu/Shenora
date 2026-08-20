@@ -153,6 +153,23 @@ every frame payload and reads only block headers — it asks for **149 KB in tot
 so a large buffer drags in exactly the bytes it is skipping, and buys no time back. The invariant lives on
 the `File.OpenRead` call in `Mp4Remuxer`, where someone would change it.
 
+**An earlier run, 2026-08-15**, on a 10 min / 89 MiB H.264+AAC Matroska: **65 ms for 40,841 samples** warm,
+against a two-hour index estimated at **~51 MiB** — the figure that first showed the walk is cheap and the
+INDEX is expensive, which is the opposite of the assumption that filed the question.
+⚠ **The two runs were not controlled against each other**, so read the comparison as suggestive only: 40,841
+samples in 65 ms against 20,121 in 66 ms says time tracks **buffer misses, not sample count**, and misses
+track sample SPACING — at 1.2 Mbps consecutive headers share a 4 KiB page, at 4.6 Mbps each gets its own.
+That predicts cold cost rises with BITRATE rather than duration, and it is untested.
+
+**To re-run**, which needs rebuilding a probe — none ships, and none should:
+- Fixture: `ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=24:duration=300 -f lavfi -i
+  sine=frequency=440:duration=300 -c:v libx264 -preset ultrafast -b:v 4500k -g 240 -c:a aac -b:a 128k
+  out.mkv` — the bitrate is the variable that matters, per the note above.
+- Probe: a counting `Stream` over a `FileStream` opened `bufferSize: 1` (so every read reaches the counter
+  rather than a buffer that would hide the pattern), optionally a `BufferedStream` above it to model a
+  given buffer, driven through `MatroskaSampleReader.ReadHeader()` + `ReadSamples()`. Record the set of
+  `offset / 4096` pages touched; `Shenora.Tests` already has `InternalsVisibleTo`.
+
 **So the cache question is closed: do not build one.** It could only help a SECOND walk of the same source,
 and there is never one — `IComputedRemuxRoute.PlanAsync` already caches the layout by identity, so a planned
 source "answers from the cache without touching the file". A frame index would cost ~51 MiB of RAM for a
