@@ -20,10 +20,7 @@ namespace Shenora.Modules.Platform.Activities;
 /// </summary>
 internal static class ActivityWire
 {
-    /// <summary>
-    /// camelCase and OMIT NULLS: the Swift mirror declares camelCase properties, and every mirrored
-    /// field is optional there because nulls never arrive.
-    /// </summary>
+    /// <summary>camelCase names with nulls omitted — the shape the Swift mirror declares.</summary>
     internal static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

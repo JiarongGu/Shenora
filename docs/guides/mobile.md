@@ -209,8 +209,13 @@ on an iPhone 17 Pro (2026-08-07).
 > `ILiveActivities.Update` calls ActivityKit in-process, so when the app is swiped away or terminated the
 > activity stays on screen frozen at its last value while your update loop is gone. That is normal iOS
 > behaviour, not a defect — updating an activity without a running app is what ActivityKit's PUSH updates
-> are for, and **the kit does not expose a push token today**. If your activity must advance while the app
-> is not running, that gap is yours to fill for now; if it advances while the app runs, this is complete.
+> are for. **`ILiveActivities.PushToken(handle)` hands you that token**; sending to it is your server's job,
+> as it is for any push. If your activity advances only while the app runs, none of this applies.
+>
+> ⚠ **The token is not available the instant `Start` returns** — iOS mints it asynchronously, so an
+> immediate call answers null and that reads as a missing feature rather than a pending one. ⚠ And the
+> PUSH-updated path is still **unproven on hardware** by this repo (`DECISIONS.md` D69): the token is
+> exposed, the round trip is not measured.
 
 The OS requires the UI to be a SwiftUI view in a widget extension. **You do not write it** — the kit ships a
 generic widget that READS a description you give it in C# (D69), so the whole adoption is one MSBuild

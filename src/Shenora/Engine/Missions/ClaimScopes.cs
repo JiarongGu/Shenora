@@ -4,25 +4,15 @@ namespace Shenora.Engine.Missions;
 
 /// <summary>
 /// A named key space plus its conflict rule — the seam that lets ONE scheduler serve resource kinds
-/// whose notions of "these two keys overlap" differ.
-///
-/// <para>
-/// This is the pivot of the whole design. A filesystem planner and a job queue were, in the family's
-/// prior art, two unrelated components of ~500 lines each; they differ only in what makes two keys
-/// conflict. Paths conflict when one CONTAINS the other; entity ids conflict only when equal. Put
-/// that difference behind this interface and the rest — submission order, bounded parallelism,
-/// dispatch, dedup, retry, cancellation — is written once.
-/// </para>
+/// whose notions of "these two keys overlap" differ: paths conflict when one CONTAINS the other,
+/// entity ids only when equal.
 /// </summary>
 public interface IClaimScope
 {
     /// <summary>Scope name, matched against <see cref="MissionClaim.Scope"/>. Case-sensitive.</summary>
     string Name { get; }
 
-    /// <summary>
-    /// Canonical form of a key. Called ONCE per claim at submit time, so conflict checks — which run
-    /// on every dispatch pass — never pay for normalization.
-    /// </summary>
+    /// <summary>Canonical form of a key. Called ONCE per claim at submit time, never on a dispatch pass.</summary>
     string Normalize(string key);
 
     /// <summary>
@@ -32,10 +22,7 @@ public interface IClaimScope
     bool Conflicts(string normalizedA, string normalizedB);
 }
 
-/// <summary>
-/// Keys conflict only when EQUAL. The scope for entity ids, categories, queue names — anything
-/// without hierarchy.
-/// </summary>
+/// <summary>Keys conflict only when EQUAL — entity ids, categories, queue names, anything flat.</summary>
 public sealed class FlatClaimScope : IClaimScope
 {
     private readonly StringComparison _comparison;
@@ -65,16 +52,9 @@ public sealed class FlatClaimScope : IClaimScope
 }
 
 /// <summary>
-/// Keys conflict when equal OR when one CONTAINS the other — a hierarchical namespace separated by
-/// a delimiter. Generalized from the family's path-overlap dispatcher, but nothing here is about
-/// filesystems: tree nodes, registry keys and URL prefixes have the same rule. For platform paths
-/// use <see cref="PathClaims"/>, which is this class pre-configured.
-///
-/// <para>
-/// The containment test is taken at a SEPARATOR BOUNDARY, which is the part that is easy to get
-/// wrong: a naive <c>StartsWith</c> makes <c>a/bc</c> a child of <c>a/b</c>, so two unrelated
-/// resources serialize against each other forever and the bug looks like "the queue is slow".
-/// </para>
+/// Keys conflict when equal OR when one CONTAINS the other, at a SEPARATOR BOUNDARY — a hierarchical
+/// namespace such as tree nodes, registry keys or URL prefixes. For platform paths use
+/// <see cref="PathClaims"/>, which is this class pre-configured.
 /// </summary>
 public sealed class NestedClaimScope : IClaimScope
 {
@@ -96,9 +76,9 @@ public sealed class NestedClaimScope : IClaimScope
     public string Name { get; }
 
     /// <summary>
-    /// Collapses repeated separators, trims a trailing one, and upper-cases when case-insensitive —
-    /// so <c>a//b/</c> and <c>a/b</c> are the same resource. Without this, two spellings of one key
-    /// pass the conflict test and run concurrently, which is the failure this scope exists to stop.
+    /// Collapses repeated separators, trims a trailing one, and upper-cases when case-insensitive — so
+    /// <c>a//b/</c> and <c>a/b</c> are the same resource. ⚠ Two spellings that survive this pass the
+    /// conflict test and run concurrently.
     /// </summary>
     public string Normalize(string key)
     {
@@ -113,7 +93,6 @@ public sealed class NestedClaimScope : IClaimScope
             buffer.Append(ch);
             lastWasSeparator = isSeparator;
         }
-        // A trailing separator names the same resource as the bare key.
         if (buffer.Length > 1 && buffer[^1] == _separator) buffer.Length--;
         var result = buffer.ToString();
         return _ignoreCase ? result.ToUpperInvariant() : result;

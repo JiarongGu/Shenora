@@ -10,19 +10,16 @@ namespace Shenora.Engine.Update;
 public sealed class ManifestFile
 {
     /// <summary>
-    /// Path RELATIVE to the install root, with forward slashes (<c>libs/app.dll</c>). Comparisons
-    /// normalize separators and ignore case; a mismatch there does not fail loudly, it silently
-    /// redownloads a file forever or misses a removal.
+    /// Path RELATIVE to the install root, with forward slashes (<c>libs/app.dll</c>). ⚠ Comparisons
+    /// normalize separators and ignore case; a mismatch does not fail loudly, it silently redownloads a
+    /// file forever or misses a removal.
     /// </summary>
     public required string Path { get; init; }
 
     /// <summary>Size in bytes. Used for the changeset's download total, never for equality.</summary>
     public required long Size { get; init; }
 
-    /// <summary>
-    /// SHA-256 as hex. Compared case-insensitively: generators disagree about casing, and a diff
-    /// treating <c>ABC…</c> and <c>abc…</c> as different would report every file changed.
-    /// </summary>
+    /// <summary>SHA-256 as hex, compared case-insensitively (generators disagree about casing).</summary>
     public required string Sha256 { get; init; }
 }
 
@@ -56,8 +53,7 @@ public sealed class UpdateManifest
     /// (<see cref="ManifestDiff.IsSafeRelativePath"/>).
     /// <para>
     /// ⚠ Refused HERE as well as at diff time: a poisoned BASELINE must take
-    /// <see cref="UpdateStage.ApplyAsync"/>'s <i>"no usable installed manifest — applying without
-    /// removals"</i> branch. Failing only at <see cref="ManifestDiff.Compute"/> would throw past that
+    /// <see cref="UpdateStage.ApplyAsync"/>'s "no usable installed manifest" branch, not throw past that
     /// guard and leave an app permanently unable to update.
     /// </para>
     /// </summary>
@@ -85,8 +81,8 @@ public sealed class UpdateManifest
 }
 
 /// <summary>
-/// What changed between the installed manifest and a release one: the changeset an updater
-/// downloads and an applier lands. A pure function over two lists.
+/// What changed between the installed manifest and a release one: the changeset an updater downloads
+/// and an applier lands.
 /// </summary>
 public sealed class ManifestDiff
 {
@@ -106,8 +102,7 @@ public sealed class ManifestDiff
 
     /// <summary>
     /// Installed but not in the release — delete. <b>Tracked paths only, never a directory sweep:</b>
-    /// user data lives in the same tree, and a manifest is the only thing that knows which files the
-    /// app owns.
+    /// user data lives in the same tree.
     /// </summary>
     public IReadOnlyList<string> Removed { get; }
 
@@ -121,9 +116,8 @@ public sealed class ManifestDiff
     /// Compare an installed manifest with a release one.
     /// <para>
     /// ⚠ <b>A release manifest that failed to load must never reach this method.</b> An EMPTY release
-    /// legitimately means "every installed file is removed", so a manifest that parsed to nothing
-    /// produces a changeset deleting the whole install — as the SUCCESSFUL outcome of a copy.
-    /// Validate the release manifest before calling, not after.
+    /// legitimately means "every installed file is removed", so one that parsed to nothing produces a
+    /// changeset deleting the whole install — as a SUCCESSFUL outcome. Validate before calling.
     /// </para>
     /// </summary>
     /// <exception cref="ArgumentException">Either manifest lists the same path twice.</exception>
@@ -145,8 +139,7 @@ public sealed class ManifestDiff
 
         var removed = installedByPath.Keys.Where(path => !releaseByPath.ContainsKey(path)).ToList();
 
-        // Ordered so two runs over the same inputs are identical: a dictionary's enumeration order is
-        // not a contract, and a changeset is shown to users.
+        // Ordered so two runs over the same inputs match: dictionary enumeration order is not a contract.
         added.Sort(ByPath);
         updated.Sort(ByPath);
         removed.Sort(StringComparer.Ordinal);
@@ -157,12 +150,9 @@ public sealed class ManifestDiff
         string.Compare(Normalize(a.Path), Normalize(b.Path), StringComparison.Ordinal);
 
     /// <summary>
-    /// Forward slashes, lower-cased. <c>libs\app.dll</c> and <c>libs/app.dll</c> must be the same
-    /// entry; otherwise a file is "added" on every single check and never converges.
-    /// <para>
-    /// <c>internal</c> because <see cref="UpdateStage"/>'s intrusion check and path resolution compare
-    /// disk paths against manifest paths and MUST use this rule, not a second copy of it.
-    /// </para>
+    /// Forward slashes, lower-cased — <c>libs\app.dll</c> and <c>libs/app.dll</c> are one entry.
+    /// <c>internal</c> so <see cref="UpdateStage"/>'s intrusion check and path resolution use this rule
+    /// rather than a second copy of it.
     /// </summary>
     internal static string Normalize(string path) => path.Replace('\\', '/').ToLowerInvariant();
 
@@ -180,10 +170,9 @@ public sealed class ManifestDiff
     /// <item>A <c>..</c> segment, which walks out of the root the ordinary way.</item>
     /// </list>
     /// <para>
-    /// ⚠ <b>Refused at the MANIFEST, not at each call site.</b> Hash verification checks a file's CONTENT
-    /// and never its PATH, and the stage's intrusion check walks the staged directory — so a file written
-    /// outside it is not in the walk, and is then looked for at the same escaped location and found. Both
-    /// gates pass.
+    /// ⚠ <b>Refused at the MANIFEST, not at each call site</b>, because both later gates pass: hash
+    /// verification checks CONTENT and never the PATH, and the stage's intrusion check walks the staged
+    /// directory, which a file written outside it is not in.
     /// </para>
     /// </summary>
     internal static bool IsSafeRelativePath(string? path)

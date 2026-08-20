@@ -3,17 +3,8 @@ using System.IO.Compression;
 namespace Shenora.Engine.Update;
 
 /// <summary>
-/// An <see cref="IUpdateSource"/> over one or more ZIP archives — the release shape GitHub Releases
-/// encourages. Staging, per-file SHA-256 verification, the journal and resume all stay on
-/// <see cref="UpdateStage"/>'s side.
-/// <para>
-/// ⚠ <b>It does not DOWNLOAD anything</b> — where the archives come from is the app's (an endpoint, a
-/// file share, a bucket, a USB stick). Hand it archives you already have.
-/// </para>
-/// <para>
-/// ⚠ <b>MULTIPLE archives, not one.</b> A release is commonly one zip PER PART with a single manifest
-/// spanning them; entries are indexed across every archive at construction.
-/// </para>
+/// An <see cref="IUpdateSource"/> over one or more ZIP archives, indexed across every archive at
+/// construction. It does not DOWNLOAD anything — hand it archives you already have.
 /// <para>
 /// ⚠ <b>NOT thread-safe</b>, a property of <see cref="ZipArchive"/>. Safe with
 /// <see cref="UpdateStage.FetchAsync"/> because that opens files SEQUENTIALLY; parallelising that loop
@@ -32,7 +23,7 @@ public sealed class ZipUpdateSource : IUpdateSource, IDisposable
     /// <param name="manifest">The release manifest. Served as-is by <see cref="GetManifestAsync"/>.</param>
     /// <param name="archives">
     /// The archive streams. ⚠ <b>Each MUST be seekable</b> — <see cref="ZipArchive"/> reads the central
-    /// directory from the END of the file, which a forward-only stream (a live HTTP response) cannot do.
+    /// directory from the END of the file.
     /// </param>
     /// <param name="leaveOpen">
     /// False (the default) means <see cref="Dispose"/> closes the streams too. Pass true to keep ownership.
@@ -70,9 +61,7 @@ public sealed class ZipUpdateSource : IUpdateSource, IDisposable
         }
     }
 
-    /// <summary>
-    /// Open <paramref name="archivePaths"/> as files and index them.
-    /// </summary>
+    /// <summary>Open <paramref name="archivePaths"/> as files and index them.</summary>
     public static ZipUpdateSource Open(UpdateManifest manifest, params string[] archivePaths)
     {
         ArgumentNullException.ThrowIfNull(archivePaths);
@@ -104,8 +93,8 @@ public sealed class ZipUpdateSource : IUpdateSource, IDisposable
 
     /// <inheritdoc />
     /// <exception cref="FileNotFoundException">
-    /// The manifest lists a file no archive carries. THROWN rather than returning an empty stream, and
-    /// <see cref="UpdateStage.FetchAsync"/> lets it escape, so a truncated release cannot be staged.
+    /// The manifest lists a file no archive carries. <see cref="UpdateStage.FetchAsync"/> lets it escape,
+    /// so a truncated release cannot be staged.
     /// </exception>
     public Task<Stream> OpenAsync(ManifestFile file, CancellationToken cancellationToken = default)
     {
@@ -126,10 +115,9 @@ public sealed class ZipUpdateSource : IUpdateSource, IDisposable
 
     /// <summary>Record every entry, refusing a duplicate.</summary>
     /// <remarks>
-    /// A path carried by two archives is REJECTED rather than last-wins, the same judgement
-    /// <see cref="UpdateManifest"/> makes for a duplicate manifest entry: last-wins makes the installed
-    /// bytes depend on the order the archives were passed. Directory entries (a trailing separator, zero
-    /// length, empty name) are skipped — a zip may or may not carry them and a manifest never lists them.
+    /// A path carried by two archives is REJECTED rather than last-wins, which would make the installed
+    /// bytes depend on the order the archives were passed. Directory entries are skipped — a zip may or
+    /// may not carry them and a manifest never lists them.
     /// </remarks>
     private void Index(ZipArchive archive)
     {
@@ -150,8 +138,7 @@ public sealed class ZipUpdateSource : IUpdateSource, IDisposable
 
     /// <summary>
     /// One spelling for a path — separators AND case, the same two rules <see cref="ManifestDiff"/>
-    /// normalises by. Without the first every file looks missing; without the second, a generator that
-    /// changes one letter's case turns a whole release into "not carried by any archive".
+    /// normalises by. Diverge from them and a whole release reads as "not carried by any archive".
     /// </summary>
     private static string Normalize(string path) =>
         path.Replace('\\', '/').TrimStart('/').ToLowerInvariant();

@@ -22,13 +22,9 @@ public enum MissionState
 /// <param name="CreatedUtc">Submission time.</param>
 /// <param name="Key">
 /// The caller-chosen identity from <see cref="MissionDefinition.Key"/>, or null when the submission
-/// named none.
-/// <para>
-/// 🔴 <b>The DURABLE half of the identity problem.</b> <see cref="MissionId"/> is per-process, so on the
-/// next boot a store has nothing an app recognises — and the kit ships no store (D28), which makes this
-/// record the wire format between the kit and EVERY adopter's storage. A rehydrate callback can now key
-/// on what the app itself chose rather than on an id it has never seen.
-/// </para>
+/// named none. 🔴 <b>The DURABLE half of the identity problem</b> — <see cref="MissionId"/> is
+/// per-process, so on the next boot a store has nothing an app recognises, and a rehydrate callback
+/// needs something the app itself chose.
 /// </param>
 public sealed record MissionRecord(
     string MissionId,
@@ -59,13 +55,9 @@ public enum RecoveryPolicy
 
 /// <summary>
 /// Where the pending queue LIVES when it must survive a restart. The queue itself is the scheduler's
-/// own, in memory; supply this and the durable half of it is written through to storage.
-/// <para>
-/// <b>The kit ships no implementation</b> — storage is the app's decision and <c>Shenora</c> takes no
-/// storage dependency (D28). Leave <see cref="MissionSchedulerOptions.QueueStore"/> null and every
-/// mission behaves as in-memory regardless of <see cref="MissionDefinition.Durable"/>; ordering stays
-/// the app's through <see cref="IMissionPolicy"/>.
-/// </para>
+/// own, in memory; supply this and the durable half of it is written through to storage. <b>The kit
+/// ships no implementation</b> (D28): leave <see cref="MissionSchedulerOptions.QueueStore"/> null and
+/// every mission behaves as in-memory regardless of <see cref="MissionDefinition.Durable"/>.
 /// <para>
 /// Implementations must tolerate concurrent calls. <see cref="AppendAsync"/> is called AGAIN when a
 /// mission moves from <see cref="MissionState.Queued"/> to <see cref="MissionState.Running"/>.

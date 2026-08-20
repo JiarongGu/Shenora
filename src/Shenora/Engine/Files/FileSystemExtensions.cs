@@ -12,14 +12,7 @@ public static class FileSystemExtensions
 {
     /// <summary>
     /// Register the file-update engine — a journalled queue with rollback, plus the cross-process path
-    /// locks it needs.
-    /// <code>
-    /// builder.UseFileSystem();                                        // journal + locks under the app's data dir
-    /// builder.UseFileSystem(x => x.LeaseTimeout = TimeSpan.FromMinutes(2));
-    /// </code>
-    /// <para>
-    /// Defaults the journal and lock directories under <see cref="ShenoraApplicationBuilder.Paths"/>.
-    /// </para>
+    /// locks it needs, defaulting both directories under <see cref="ShenoraApplicationBuilder.Paths"/>.
     /// <para>
     /// ⚠ <b>The journal must sit on the SAME VOLUME as the files being mutated</b>, because rollback
     /// depends on renames being atomic. The default satisfies that for an app whose data and content share
@@ -27,7 +20,7 @@ public static class FileSystemExtensions
     /// </para>
     /// </summary>
     /// <param name="builder">The application builder.</param>
-    /// <param name="configure">Optional. Anything left unset is defaulted below.</param>
+    /// <param name="configure">Optional. Anything left unset is defaulted.</param>
     public static ShenoraApplicationBuilder UseFileSystem(
         this ShenoraApplicationBuilder builder,
         Action<FileUpdateQueueOptions>? configure = null)
@@ -62,15 +55,12 @@ public static class FileSystemExtensions
             // resolve nothing.
             //
             // ⚠ EVERY default below lands on `resolved`, never on the captured `options` — `TryAddSingleton`
-            // no-ops when the app registered its own `FileUpdateQueueOptions`, and then the captured
-            // instance is one nothing will ever read. Defaulting onto it would build a journal for the
-            // wrong object and hand the queue one with none.
+            // no-ops when the app registered its own, and then the captured instance is one nothing reads.
             var resolved = provider.GetRequiredService<FileUpdateQueueOptions>();
             resolved.LockInspector ??= provider.GetService<IFileLockInspector>();
 
             // 🔴 `Paths.DataArea` CREATES the directory it names, so the journal and locker are built
-            // here and never at `Use…` time — registration must not touch a disk. Defaulted after
-            // `configure`, so an explicit value wins.
+            // here and never at `Use…` time — registration must not touch a disk.
             resolved.Journal ??= new FileUpdateJournal(new FileUpdateJournalOptions
             {
                 Directory = paths.DataArea("journal"),
@@ -78,8 +68,8 @@ public static class FileSystemExtensions
             });
             resolved.Locker ??= new FilePathLocker(new FilePathLockerOptions
             {
-                // ⚠ NOT inside the tree being managed: a sidecar lock in the app's content directory gets
-                // synced, committed and outlives the process (D31).
+                // ⚠ NOT inside the tree being managed: a sidecar lock there gets synced, committed and
+                // outlives the process (D31).
                 LockDirectory = paths.DataArea("locks"),
             });
 

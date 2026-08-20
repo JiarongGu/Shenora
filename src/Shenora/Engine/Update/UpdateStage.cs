@@ -8,9 +8,7 @@ namespace Shenora.Engine.Update;
 
 /// <summary>
 /// Where releases come from — the SEAM. The kit ships ONE implementation,
-/// <see cref="ZipUpdateSource"/>, over archives you already have; the second is yours,
-/// because where the bytes come from (an endpoint, a file share, a bucket, a USB stick) is the app's
-/// decision, and baking an HTTP client in would ship it for you.
+/// <see cref="ZipUpdateSource"/>, over archives you already have; there is no downloader.
 /// </summary>
 public interface IUpdateSource
 {
@@ -18,9 +16,11 @@ public interface IUpdateSource
     Task<UpdateManifest> GetManifestAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Open one file's content for reading; the caller disposes the stream. THROW for a file that
-    /// cannot be fetched — <see cref="UpdateStage.FetchAsync"/> lets it escape, because a partial
-    /// download must not be staged as if it were whole.
+    /// Open one file's content for reading; the caller disposes the stream.
+    /// <para>
+    /// ⚠ <b>THROW for a file that cannot be fetched.</b> Returning an empty stream stages a truncated
+    /// release as if it were whole.
+    /// </para>
     /// </summary>
     Task<Stream> OpenAsync(ManifestFile file, CancellationToken cancellationToken = default);
 }
@@ -30,7 +30,7 @@ public sealed class UpdateStageOptions
 {
     /// <summary>
     /// The staging root, conventionally <c>{installRoot}/.update</c>. Must be somewhere the app can write
-    /// and the APPLIER can read — never a temp folder the applier has no reason to look in.
+    /// and the APPLIER can read.
     /// </summary>
     public required string Root { get; init; }
 
@@ -45,11 +45,10 @@ public sealed class UpdateStageOptions
     /// <summary>
     /// Where <see cref="UpdateStage.ApplyAsync"/> keeps the baseline manifest — the record of what is
     /// currently installed, which the next apply diffs against to compute REMOVALS. Null (default) means
-    /// <c>{installRoot}/manifest.json</c>. A relative path is resolved against the install root; a rooted
-    /// one is used as given.
+    /// <c>{installRoot}/manifest.json</c>; a relative path resolves against the install root.
     /// <para>
-    /// ⚠ Outside the root, the install tree no longer carries its own baseline, so <b>whatever reads it
-    /// must look here too</b>. Lose the file and the next apply removes nothing: stale files stay behind.
+    /// ⚠ Lose the file and the next apply removes nothing: stale files stay behind, silently. Point it
+    /// outside the root and <b>whatever reads the baseline must look here too</b>.
     /// </para>
     /// </summary>
     public string? BaselinePath { get; init; }
@@ -91,40 +90,16 @@ public sealed class UpdateStageStatus
 }
 
 /// <summary>
-/// The staging half of a two-phase update (<c>docs/DECISIONS.md</c> D57). The kit owns the PROTOCOL, not
-/// the download — an app fetches the changed files (<see cref="ManifestDiff"/>) into
-/// <see cref="StagedDirectory"/>, then calls <see cref="CommitAsync"/>.
+/// The staging half of a two-phase update (D57): an app fetches the changed files
+/// (<see cref="ManifestDiff"/>) into <see cref="StagedDirectory"/>, then calls
+/// <see cref="CommitAsync"/>. The on-disk layout, the write order and the failure grading are a
+/// supported contract, stated in <c>docs/design/update.md</c>.
 /// <para>
 /// 🔴 <b>DESKTOP ONLY.</b> This manages the install tree beside <c>Shenora.Launcher</c>; a mobile app
-/// updates through its store and must not use it. The scope is load-bearing rather than advisory,
-/// because <see cref="ManifestDiff"/> compares paths CASE-INSENSITIVELY (mirroring the launcher's C++
-/// <c>manifest.hpp</c>, deliberately — one side alone cannot change): on a case-sensitive filesystem
-/// that widens the "nothing unlisted" check, so a staged <c>Foo.dll</c> reads as listed when the
-/// manifest says <c>foo.dll</c>. Windows and macOS install trees are case-insensitive, which is why the
-/// pair is correct where this runs. Serving anything wider needs BOTH sides to adopt a declared path
-/// comparison and the manifest format to state which — not a one-sided fix here.
-/// </para>
-/// <para>
-/// <b>The ordering IS the property.</b> <c>ready.json</c> is written LAST, after every file in the
-/// manifest has matched its hash, so an applier never re-checks. A crash mid-download leaves files but
-/// no marker, and the next run restages.
-/// </para>
-/// <para><b>THE ON-DISK LAYOUT IS A SUPPORTED CONTRACT, not an implementation detail.</b></para>
-/// <code>
-/// {UpdateStageOptions.Root}/
-///   ready.json          ← the MARKER. Written LAST. Its existence means "complete and verified".
-///   staged/
-///     manifest.json     ← the full release manifest, for the applier's REMOVALS
-///     &lt;every changed file, at its manifest-relative path&gt;
-/// </code>
-/// <para>
-/// <c>ready.json</c> is <see cref="UpdateStageStatus"/> as camelCase JSON —
-/// <c>{"pending":true,"version":"1.4.0","stagedAt":"2026-08-06T09:12:33.4+00:00"}</c>; an applier needing
-/// only "is there an update" may test for its existence.
-/// </para>
-/// <para>
-/// ⚠ Renaming <c>ready.json</c>, moving <c>staged/</c>, or publishing the marker before verification are
-/// breaking changes for appliers this repo cannot recompile, and the API baseline cannot see them.
+/// updates through its store. The scope is load-bearing: <see cref="ManifestDiff"/> compares paths
+/// CASE-INSENSITIVELY, mirroring the launcher's C++ <c>manifest.hpp</c> — one side alone cannot change
+/// it — and on a case-sensitive filesystem that widens the "nothing unlisted" check, so a staged
+/// <c>Foo.dll</c> reads as listed when the manifest says <c>foo.dll</c>.
 /// </para>
 /// </summary>
 public sealed class UpdateStage
@@ -133,9 +108,8 @@ public sealed class UpdateStage
     private const string StagedFolder = "staged";
 
     /// <summary>
-    /// The release manifest that rides along inside the stage for the applier's removals.
-    /// <see cref="FetchAsync"/> writes it, <see cref="ApplyAsync"/> reads it, and the intrusion check
-    /// exempts it. Lower-case: it is compared through <see cref="ManifestDiff.Normalize"/>.
+    /// The full release manifest carried inside the stage, for the applier's removals. Lower-case: it is
+    /// compared through <see cref="ManifestDiff.Normalize"/>.
     /// </summary>
     private const string StagedManifestName = "manifest.json";
 
@@ -185,8 +159,8 @@ public sealed class UpdateStage
     }
 
     /// <summary>
-    /// Clear any previous stage and create an empty <see cref="StagedDirectory"/>. Call before downloading:
-    /// leftovers from a failed attempt would otherwise be verified as part of this one and look like success.
+    /// Clear any previous stage and create an empty <see cref="StagedDirectory"/>. ⚠ Call before
+    /// downloading: leftovers from a failed attempt would be verified as part of this one and pass.
     /// </summary>
     public void Begin()
     {
@@ -201,17 +175,13 @@ public sealed class UpdateStage
     }
 
     /// <summary>
-    /// Verify every file the manifest lists against what is on disk, then publish the marker. On ANY
-    /// failure nothing is published and the stage stays unusable rather than half-usable.
+    /// Verify every file <paramref name="manifest"/> lists against what is on disk, then publish the
+    /// marker. On ANY failure nothing is published and the stage stays unusable rather than half-usable.
+    /// <para>
+    /// ⚠ <paramref name="manifest"/> is the CHANGESET, not the release: an empty one is legitimate and is
+    /// accepted, because it is what a release whose only change is DELETING files stages.
+    /// </para>
     /// </summary>
-    /// <remarks>
-    /// ⚠ <b>An EMPTY changeset is legitimate and is accepted</b> — it is what a release whose only change
-    /// is DELETING files stages. The danger an empty manifest carries ("an applier reads it as: everything
-    /// was removed") belongs to <c>staged/manifest.json</c>, the full RELEASE manifest, and is checked
-    /// below by <see cref="StagedManifestIsUsable"/>. This parameter is the CHANGESET — a different object
-    /// — and refusing it here defended the wrong one, which is what made a removals-only release
-    /// impossible to stage at all.
-    /// </remarks>
     public async Task<UpdateStageStatus> CommitAsync(UpdateManifest manifest, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(manifest);
@@ -235,21 +205,18 @@ public sealed class UpdateStage
             var actual = await Sha256Async(path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(actual, file.Sha256, StringComparison.OrdinalIgnoreCase))
             {
-                // The hash is authoritative, not the size — a truncated download can match a size.
                 Log($"[Shenora.Engine.Update] Stage corrupt: '{file.Path}' does not match its manifest hash.");
                 return new UpdateStageStatus { Pending = false };
             }
         }
 
-        // INTRUSION, after the loop's TRUNCATION and TAMPER: ApplyAsync overlays the staged TREE, not the
-        // manifest, so without this a file nothing verified reaches the install root.
+        // INTRUSION: ApplyAsync overlays the staged TREE, not the manifest, so without this a file
+        // nothing verified reaches the install root.
         if (!VerifyNothingUnlisted(manifest, cancellationToken))
             return new UpdateStageStatus { Pending = false };
 
-        // ApplyAsync REFUSES without a readable, non-empty `staged/manifest.json` — removals are computed
-        // from it — and it runs after the app has exited, where a refusal has nothing to report it.
-        // ⚠ A CHECK, never a write: the manifest passed here is the STAGED changeset, the file is the FULL
-        // release manifest. Writing the changeset there tells the applier everything else was removed.
+        // A CHECK, never a write: `manifest` is the changeset, the file is the FULL release manifest.
+        // Writing the changeset there tells the applier everything else was removed.
         if (!StagedManifestIsUsable())
             return new UpdateStageStatus { Pending = false };
 
@@ -270,11 +237,6 @@ public sealed class UpdateStage
     /// The whole download-and-stage phase: ask the source what it has, diff it against what is
     /// installed, fetch only the changed files, and commit. Returns a non-pending status when there
     /// is nothing to do; a fetch that throws is left to escape and nothing is staged.
-    /// <para>
-    /// <b>Only the CHANGESET is staged</b>, so <see cref="CommitAsync"/> takes the manifest of what is IN
-    /// the stage. The full release manifest is written into the stage as <c>manifest.json</c> for the
-    /// applier's REMOVALS, and the overlay makes it the newly-installed manifest.
-    /// </para>
     /// </summary>
     public async Task<UpdateStageStatus> FetchAsync(IUpdateSource source, UpdateManifest installed,
                                                     CancellationToken cancellationToken = default)
@@ -298,10 +260,7 @@ public sealed class UpdateStage
         }
 
         // 🔴 REMOVALS ALONE STILL STAGE, and downloading nothing is not the same as having nothing to do.
-        // This used to return not-pending whenever there was nothing to DOWNLOAD, so a release whose only
-        // change was deleting files never staged and never applied — stale files stayed on disk forever,
-        // and a dropped-but-still-present assembly is still loadable. The apply pass is what removes them,
-        // and it is driven by `staged/manifest.json` written below, not by the payload.
+        // The apply pass is driven by `staged/manifest.json`, written below, not by the payload.
         if (diff.Added.Count == 0 && diff.Updated.Count == 0)
         {
             Log($"[Shenora.Engine.Update] Nothing to download for version {release.Version} " +
@@ -337,10 +296,9 @@ public sealed class UpdateStage
 
     /// <summary>
     /// Apply a staged update: overlay it onto <paramref name="installRoot"/>, delete what the new
-    /// manifest dropped, and clear the stage. Portable — no native code and nothing platform-specific.
+    /// manifest dropped, and clear the stage.
     /// <para>
-    /// <b>Run this from OUTSIDE <paramref name="installRoot"/>, with the app not running</b> (D50).
-    /// Overlay a tree containing the running process and every self-exclusion case becomes yours.
+    /// 🔴 <b>Run this from OUTSIDE <paramref name="installRoot"/>, with the app not running</b> (D50).
     /// </para>
     /// </summary>
     public async Task<UpdateOutcome> ApplyAsync(string installRoot, CancellationToken cancellationToken = default)
@@ -363,8 +321,6 @@ public sealed class UpdateStage
             Log($"[Shenora.Engine.Update] The staged manifest could not be read: {ex.GetType().Name}");
         }
 
-        // Removals are "installed minus release", so an unreadable or empty release manifest would delete
-        // every tracked path, the files just overlaid included.
         if (release is null || release.Files.Count == 0)
         {
             return new UpdateOutcome
@@ -392,8 +348,8 @@ public sealed class UpdateStage
         {
             cancellationToken.ThrowIfCancellationRequested();
             var relative = Path.GetRelativePath(StagedDirectory, source);
-            // The baseline is written EXPLICITLY below, never carried by the overlay: a configured
-            // BaselinePath would otherwise leave a stray second copy at {installRoot}/manifest.json.
+            // Skipped here and written EXPLICITLY below: a configured BaselinePath would otherwise leave
+            // a stray second copy at {installRoot}/manifest.json.
             if (ManifestDiff.Normalize(relative) == StagedManifestName) continue;
             var destination = Path.Combine(installRoot, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
@@ -421,8 +377,8 @@ public sealed class UpdateStage
         {
             cancellationToken.ThrowIfCancellationRequested();
             // The BASELINE drives this loop and was itself written from a staged manifest, so a manifest
-            // that escaped once would delete outside the install root on the NEXT update. Skipped, not
-            // thrown: abandoning here would leave a half-applied install.
+            // that escaped once would delete outside the install root on the NEXT update. Skipped rather
+            // than thrown: abandoning here would leave a half-applied install.
             var target = ResolveTracked(installRoot, path);
             if (target is null)
             {
@@ -454,8 +410,10 @@ public sealed class UpdateStage
     /// <summary>
     /// Where the baseline manifest lives for this install root — <see cref="UpdateStageOptions.BaselinePath"/>
     /// or the <c>{installRoot}/manifest.json</c> default.
-    /// <see cref="Path.GetFullPath(string, string)"/>, never <see cref="Path.Combine(string, string)"/>:
+    /// <para>
+    /// ⚠ <see cref="Path.GetFullPath(string, string)"/>, never <see cref="Path.Combine(string, string)"/>:
     /// Combine SILENTLY DISCARDS its first argument when the second is rooted.
+    /// </para>
     /// </summary>
     internal string ResolveBaselinePath(string installRoot) =>
         _options.BaselinePath is { Length: > 0 } configured
@@ -466,7 +424,7 @@ public sealed class UpdateStage
     /// Whether <paramref name="path"/> sits inside <paramref name="root"/>. Only decides whether the
     /// baseline is reported in <see cref="UpdateOutcome.Written"/>; it is not a security boundary.
     /// The separator is appended before comparing, as <see cref="WebViewFiles.ResolveContained"/> does:
-    /// without it, <c>/app-old</c> passes as a child of <c>/app</c>.
+    /// without it <c>/app-old</c> passes as a child of <c>/app</c>.
     /// </summary>
     private static bool IsUnder(string path, string root)
     {
@@ -476,8 +434,8 @@ public sealed class UpdateStage
     }
 
     /// <summary>
-    /// Is the full release manifest present in the stage, readable, and non-empty? Mirrors what
-    /// <see cref="ApplyAsync"/> requires. Empty counts as unusable: it reads as "everything was removed".
+    /// Is the full release manifest present in the stage, readable, and non-empty? Empty counts as
+    /// unusable: an applier reads it as "everything was removed".
     /// </summary>
     private bool StagedManifestIsUsable()
     {
@@ -505,9 +463,8 @@ public sealed class UpdateStage
     }
 
     /// <summary>
-    /// The staged tree must contain NOTHING the manifest does not list — the intrusion half of
-    /// verification. Returns false (and logs the offending path) when it does.
-    /// <para><b>The kit's own <c>manifest.json</c> is always exempt</b>, since it is never listed.</para>
+    /// The staged tree must contain NOTHING the manifest does not list. Returns false (and logs the
+    /// offending path) when it does; the kit's own <c>manifest.json</c> is always exempt.
     /// </summary>
     private bool VerifyNothingUnlisted(UpdateManifest manifest, CancellationToken cancellationToken)
     {
@@ -522,7 +479,7 @@ public sealed class UpdateStage
             cancellationToken.ThrowIfCancellationRequested();
             var relative = ManifestDiff.Normalize(Path.GetRelativePath(StagedDirectory, file));
             if (listed.Contains(relative)) continue;
-            if (relative == StagedManifestName) continue;         // see the remarks — the kit's own
+            if (relative == StagedManifestName) continue;         // the kit's own, never listed
             if (_options.IsUnindexed?.Invoke(relative) == true) continue;
 
             Log($"[Shenora.Engine.Update] Stage rejected: '{relative}' is present but the manifest does not " +
@@ -543,12 +500,8 @@ public sealed class UpdateStage
     /// 🔴 <b>The ONE place a manifest path becomes a filesystem path</b> — every write, existence check
     /// and delete in this type goes through here. <see cref="ManifestDiff.IsSafeRelativePath"/> refuses
     /// at diff time; this is the second line, for paths reaching a file operation WITHOUT a diff (a
-    /// manifest handed straight to <see cref="CommitAsync"/>).
-    /// </para>
-    /// <para>
-    /// <see cref="Path.GetFullPath(string, string)"/> as on <see cref="ResolveBaselinePath"/>, then
-    /// <see cref="PathClaims.IsContained"/> — case-sensitive off Windows, so a filesystem where
-    /// <c>Public</c> and <c>public</c> differ cannot widen it.
+    /// manifest handed straight to <see cref="CommitAsync"/>). Containment is
+    /// <see cref="PathClaims.IsContained"/>, under its platform case rule.
     /// </para>
     /// </summary>
     private static string? ResolveTracked(string root, string manifestPath)

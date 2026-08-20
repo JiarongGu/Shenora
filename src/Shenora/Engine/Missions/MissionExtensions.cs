@@ -10,8 +10,7 @@ namespace Shenora;
 public static class MissionExtensions
 {
     /// <summary>
-    /// **Configure** the mission scheduler — the execution half of the kit, one engine serving a
-    /// filesystem operation planner and a job queue alike (D27–D31).
+    /// Configure the mission scheduler (D27–D31).
     /// <code>
     /// // nothing at all — the scheduler is already there (D64)
     /// builder.UseMissions(x => x.GlobalLaneCapacity = 4);      // …bounded
@@ -20,10 +19,6 @@ public static class MissionExtensions
     /// 🔴 <b>You do not call this to GET a scheduler; you call it to change one.</b> <c>Build()</c>
     /// registers it either way (D64); this registers your options FIRST and the kit's is <c>TryAdd</c>,
     /// so yours wins. ⚠ After <c>Build()</c> it does nothing, and two calls are not additive.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>It starts nothing.</b> The scheduler is event-driven and owns no timer (D57) — a policy that
-    /// defers on an external condition needs <see cref="IMissionScheduler.Reevaluate"/>.
     /// </para>
     /// </summary>
     /// <param name="builder">The application builder.</param>

@@ -21,15 +21,11 @@ public enum MissionOutcome
 
 /// <summary>
 /// The outcome of a submission.
-///
 /// <para>
-/// A failing body does NOT throw out of <see cref="IMissionScheduler.SubmitAsync"/> — the failure is
-/// reported here. That is deliberate: this is a queue, and a submitter is frequently a batch loop
-/// that must survive one bad item, which is exactly how both of the family's planners modelled it.
-/// Callers who do want the exception call <see cref="ThrowIfFailed"/>. Programming errors (an
-/// unregistered claim scope, a disposed scheduler) still throw at submit, because those are bugs in
-/// the caller rather than outcomes of the work. An unrecognized LANE name is not one of them — it is
-/// created at the default capacity (see <see cref="IMissionScheduler.SubmitAsync"/>).
+/// ⚠ A failing body does NOT throw out of <see cref="IMissionScheduler.SubmitAsync"/> — the failure is
+/// reported here, so a batch loop survives one bad item. Call <see cref="ThrowIfFailed"/> if you want
+/// the exception. Caller bugs (an unregistered claim scope, a disposed scheduler) still throw at
+/// submit; an unrecognized LANE name is not one of them.
 /// </para>
 /// </summary>
 public sealed class MissionResult

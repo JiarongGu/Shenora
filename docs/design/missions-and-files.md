@@ -24,8 +24,19 @@ A pending mission starts when all three hold:
    stream of newer disjoint work starves a queued item indefinitely;
 3. **a permit is free in every lane it named**, and none of those lanes is held.
 
-Dispatch is **event-driven** — re-evaluated on submit and on each completion. There is no polling worker
-and no dedicated thread.
+Dispatch is **event-driven** — there is no polling worker and no dedicated thread. It is re-evaluated on
+**four** occasions, and the last two are easy to miss:
+
+- a **submit**, and each **completion**;
+- a **lane change** — capacity or hold state, which is what makes releasing a hold take effect at once;
+- a **queued item's own cancellation**, so a cancelled entry frees the slot it was waiting for rather than
+  holding it until something else happens;
+- and whenever an app calls **`IMissionScheduler.Reevaluate()`**.
+
+🔴 **That last one is not optional for a policy that reads the outside world.** `IMissionPolicy` decides on
+whatever an app gives it — a network state, a battery level — and nothing here can observe those change, so
+a policy that starts refusing or permitting work has no effect until something re-triggers admission.
+`Reevaluate()` is that trigger, and an app owning such a policy has to call it.
 
 🔴 **Work never runs under the lock.** The gate covers bookkeeping only; admitted bodies are collected
 into a local list and started after it is released. Running a body inline deadlocks the moment that body

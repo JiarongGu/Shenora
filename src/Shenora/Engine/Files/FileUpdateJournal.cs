@@ -6,14 +6,11 @@ namespace Shenora.Engine.Files;
 /// <summary>What an interrupted update needs done to it when the process comes back.</summary>
 public enum FileUpdateStage
 {
-    /// <summary>
-    /// Changes were still being applied. Recovery ROLLS BACK — the update never reached the point
-    /// where it could claim to have landed.
-    /// </summary>
+    /// <summary>Changes were still being applied. Recovery ROLLS BACK.</summary>
     Applying = 0,
 
     /// <summary>
-    /// Every change landed and only the staged deletions were left to finish. Recovery FINISHES them:
+    /// Every change landed and only the staged deletions were left to finish. Recovery FINISHES them —
     /// rolling back here would undo an update that had already succeeded.
     /// </summary>
     Committing = 1,
@@ -36,8 +33,7 @@ public enum FileUndoKind
 }
 
 /// <summary>
-/// One step of an update's undo plan. Data, not a closure, so it survives a process restart — which
-/// is the entire reason the journal can exist.
+/// One step of an update's undo plan. Data, not a closure, so it survives a process restart.
 /// </summary>
 /// <param name="Kind">What to do.</param>
 /// <param name="Target">The path being restored or removed.</param>
@@ -63,17 +59,9 @@ public sealed record FileUpdateJournalEntry(
 /// <summary>
 /// Where the write-ahead records of in-flight updates live, so that
 /// <see cref="FileAtomicity.AllOrNothing"/> survives the process DYING rather than merely failing.
-///
 /// <para>
-/// Without one, rollback is compensating and in-memory: correct for a failed change, useless after a
-/// power cut, because the plan to undo died with the process. With one, the plan is on disk before
-/// anything is touched, and <see cref="FileUpdateQueue.RecoverAsync"/> completes it at startup.
-/// </para>
-///
-/// <para>
-/// An implementation must be crash-safe ITSELF — a journal that can be half-written is a journal that
-/// can leave a torn recovery, which is worse than no journal at all. <see cref="FileUpdateJournal"/>
-/// is the shipped one; supply your own only if you already have storage with the same property.
+/// 🔴 An implementation must be crash-safe ITSELF — a journal that can be half-written leaves a torn
+/// recovery, which is worse than no journal at all. <see cref="FileUpdateJournal"/> is the shipped one.
 /// </para>
 /// </summary>
 public interface IFileUpdateJournal
@@ -93,7 +81,7 @@ public sealed class FileUpdateJournalOptions
 {
     /// <summary>
     /// Directory the journal files live in — the app's own storage, and on the SAME volume as the
-    /// files being updated if you can manage it, so a disk that survives the crash keeps both.
+    /// files being updated if you can manage it.
     /// </summary>
     public required string Directory { get; init; }
 
@@ -102,21 +90,9 @@ public sealed class FileUpdateJournalOptions
 }
 
 /// <summary>
-/// The shipped journal: one small JSON file per in-flight update, written through to disk.
-///
-/// <para>
-/// Written with <see cref="FileOptions.WriteThrough"/> and flushed before the write is considered
-/// done, because a journal sitting in the OS write cache when the power goes is exactly the journal
-/// that was not there. It is deliberately one file per update rather than an append log: a torn
-/// append is a parsing problem at the worst possible moment, whereas a torn single file is one
-/// unreadable entry that recovery can report and skip.
-/// </para>
-///
-/// <para>
-/// <b>The kit ships this one</b> despite shipping no other storage — a journal that is not crash-safe
-/// is pointless, and "write your own crash-safe store" is not a reasonable thing to ask of every
-/// adopter for a mechanism whose entire purpose is surviving a crash.
-/// </para>
+/// The shipped journal: one small JSON file per in-flight update, written with
+/// <see cref="FileOptions.WriteThrough"/> and flushed before the write is considered done — a journal
+/// sitting in the OS write cache when the power goes is exactly the journal that was not there.
 /// </summary>
 public sealed class FileUpdateJournal : IFileUpdateJournal
 {
@@ -144,7 +120,7 @@ public sealed class FileUpdateJournal : IFileUpdateJournal
         var path = PathFor(entry.UpdateId);
 
         // Write to a temp file and replace: an entry is either the old one or the new one, never a
-        // half-written mixture of the two — the same rule the queue applies to the files it manages.
+        // half-written mixture.
         var temp = $"{path}.writing";
         await using (var stream = new FileStream(temp, new FileStreamOptions
         {
@@ -187,8 +163,8 @@ public sealed class FileUpdateJournal : IFileUpdateJournal
             }
             catch (Exception ex) when (ex is JsonException or IOException)
             {
-                // A torn or unreadable entry is REPORTED and skipped, never thrown: one bad file must
-                // not stop every other interrupted update from being recovered.
+                // Reported and skipped, never thrown: one bad file must not stop every other
+                // interrupted update from being recovered.
                 AppCallback.Log(_options.Log, () => $"unreadable journal entry {file}: {ex.GetType().Name}");
             }
         }

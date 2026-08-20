@@ -2,11 +2,6 @@ using Shenora.Engine.Files;
 
 namespace Shenora.Modules.FileDialog;
 
-// The file-dialog CONTRACT; the WinForms implementation (dedicated-STA dialogs, owner-handle z-order,
-// directory memory) lives in Shenora.Windows (D20), so app logic that picks files compiles with NO
-// Windows reference. The shape is desktop-FLAVOURED: FilePath is specified as "a path or URI the HOST
-// can resolve", never a filesystem path, because a mobile document picker returns a content URI (D16).
-
 /// <summary>One dialog filter row (e.g. name "Images", extensions ["png", "jpg"]).</summary>
 public sealed class FileDialogFilter
 {
@@ -32,12 +27,10 @@ public abstract class FileDialogOptions
 
     /// <summary>
     /// Key under which the last-used directory is remembered (via the app's
-    /// <see cref="IFileDialogPathStore"/>) and restored next time. Null = no memory. Memory is per KEY,
-    /// so the desktop implementation turns Win32's own per-application <c>RestoreDirectory</c> OFF.
+    /// <see cref="IFileDialogPathStore"/>) and restored next time. Null = no memory.
     /// <para>
-    /// ⚠ <b>This value can arrive from the PAGE</b> — a web bundle calling <c>useFileDialogs()</c>
-    /// chooses it. Treat it as untrusted input in your <see cref="IFileDialogPathStore"/>: see that
-    /// interface's remarks.
+    /// ⚠ <b>This value can arrive from the PAGE</b> — treat it as untrusted input in your store, per
+    /// <see cref="IFileDialogPathStore.GetPathAsync"/>.
     /// </para>
     /// </summary>
     public string? RememberPathKey { get; init; }
@@ -62,16 +55,13 @@ public sealed class OpenFileOptions : FileDialogOptions
     public bool? ValidateNames { get; init; }
 }
 
-/// <summary>
-/// Inputs for <see cref="IFileDialogs.OpenFolderAsync"/> — the smallest of the three. No file name:
-/// a folder picker has nothing to pre-name.
-/// </summary>
+/// <summary>Inputs for <see cref="IFileDialogs.OpenFolderAsync"/>. No file name: nothing to pre-name.</summary>
 public sealed class OpenFolderOptions : FileDialogOptions
 {
     /// <summary>
-    /// Also allow picking a FILE. The desktop implementation swaps the folder browser for an
-    /// OpenFileDialog with relaxed validation and a placeholder file name — Windows' Common Item Dialog
-    /// offers folders-only (<c>FOS_PICKFOLDERS</c>) or files-only, never both.
+    /// Also allow picking a FILE, not only a folder. The desktop implementation swaps the folder browser
+    /// for a file dialog with relaxed validation — Windows' Common Item Dialog offers folders-only or
+    /// files-only, never both.
     /// </summary>
     public bool AllowFileSelection { get; init; }
 
@@ -102,8 +92,7 @@ public sealed class SaveFileOptions : FileDialogOptions
 }
 
 /// <summary>
-/// A dialog outcome: the selection, or a cancellation (<see cref="Success"/> false). Failures THROW;
-/// the dispatch boundary maps them.
+/// A dialog outcome: the selection, or a cancellation (<see cref="Success"/> false). Failures THROW.
 /// <para>
 /// ⚠ <b>THREE outcomes, not two:</b> cancelled; succeeded WITH a location (<see cref="FilePath"/> set);
 /// and <b>succeeded with NO location</b> — what <see cref="IFileDialogs.SaveAsync"/> returns on both
@@ -152,8 +141,8 @@ public interface IFileDialogPathStore
 }
 
 /// <summary>
-/// Native file/folder/save dialogs. The desktop implementation is <c>Shenora.Windows.FileDialogs</c>;
-/// depend on this interface so app logic that picks files needs no Windows reference.
+/// Native file/folder/save dialogs. Depend on this interface, not <c>Shenora.Windows.FileDialogs</c>, so
+/// app logic that picks files needs no Windows reference (D20).
 /// </summary>
 public interface IFileDialogs
 {
@@ -161,12 +150,10 @@ public interface IFileDialogs
     Task<FileDialogResult> OpenFileAsync(OpenFileOptions? options = null);
 
     /// <summary>
-    /// Pick a folder (or a file too, with <see cref="OpenFolderOptions.AllowFileSelection"/>).
-    /// <para>
-    /// ⚠ <b>DESKTOP CAPABILITY (D35)</b> — a shell with no expression of it refuses. Only "grant me an
-    /// arbitrary working directory" needs this: storage the app owns is <see cref="ShenoraPaths"/> and
-    /// needs no picker, and a single document is <see cref="OpenFileAsync"/> + <see cref="OpenReadAsync"/>.
-    /// </para>
+    /// Pick a folder (or a file too, with <see cref="OpenFolderOptions.AllowFileSelection"/>). Only
+    /// "grant me an arbitrary working directory" needs this — storage the app owns is
+    /// <see cref="ShenoraPaths"/>, and a single document is <see cref="OpenFileAsync"/>.
+    /// <para>⚠ <b>DESKTOP CAPABILITY (D35)</b> — a shell with no expression of it refuses.</para>
     /// </summary>
     Task<FileDialogResult> OpenFolderAsync(OpenFolderOptions? options = null);
 
@@ -175,36 +162,28 @@ public interface IFileDialogs
     /// <para>
     /// ⚠ <b>DESKTOP CAPABILITY — prefer <see cref="SaveAsync"/> in portable logic (D35).</b> Mobile hands
     /// back a document the app may write INTO, not a path it may write AT, so a shell without that
-    /// concept refuses this loudly (D33) rather than returning something path-shaped that goes nowhere.
+    /// concept refuses this loudly (D33).
     /// </para>
     /// </summary>
     Task<FileDialogResult> SaveFileAsync(SaveFileOptions? options = null);
 
     /// <summary>
-    /// Pick a destination AND write to it, in ONE call — the PORTABLE save, the counterpart to
-    /// <see cref="OpenReadAsync"/>: the HOST does the writing, so this is the only save shape that works
-    /// on every shell.
+    /// Pick a destination AND write to it, in ONE call — the PORTABLE save: the HOST does the writing,
+    /// so this is the only save shape that works on every shell.
     /// <para>
-    /// <b>The write is ATOMIC.</b> The default implementation produces the content into a sibling temp
-    /// and swaps it in only once <paramref name="write"/> has completed, so a save that is cancelled,
-    /// throws, or is interrupted half-way <b>leaves the user's existing file exactly as it was</b>. See
-    /// <see cref="Files.BeginReplace"/>.
-    /// </para>
-    /// <para>
-    /// A default implementation over <see cref="SaveFileAsync"/>; a shell with no addressable
-    /// destination overrides this and refuses <see cref="SaveFileAsync"/> instead.
+    /// <b>The write is ATOMIC</b> (<see cref="Files.BeginReplace"/>): a save that is cancelled, throws,
+    /// or is interrupted half-way leaves the user's existing file exactly as it was.
     /// </para>
     /// </summary>
     /// <param name="options">Dialog inputs; a host without an equivalent ignores what it cannot honour.</param>
     /// <param name="write">
-    /// Produces the content. Receives a writable stream — do NOT dispose it; the caller owns its
-    /// lifetime and closing it early would truncate a host that wraps it. Throw to abandon the save;
-    /// the destination is then left untouched.
+    /// Produces the content. ⚠ Receives a writable stream — do NOT dispose it; closing it early
+    /// truncates a host that wraps it. Throw to abandon the save.
     /// </param>
     /// <param name="cancellationToken">Cancels the write. The user's existing file survives.</param>
     /// <returns>
     /// The destination on success — with a null <see cref="FileDialogResult.FilePath"/> on a host that
-    /// wrote into a one-time grant. See <see cref="FileDialogResult"/>.
+    /// wrote into a one-time grant.
     /// </returns>
     async Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
                                            Func<Stream, CancellationToken, Task> write,
@@ -226,20 +205,18 @@ public interface IFileDialogs
             await write(stream, cancellationToken).ConfigureAwait(false);
         }
         // Only now does the destination change: anything thrown above escapes with the previous file
-        // intact, because Dispose discards the temp on the way out.
+        // intact, because Dispose discards the temp.
         replacement.Commit();
         return FileDialogResult.Selected(path);
     }
 
     /// <summary>
     /// Read the content behind a <see cref="FileDialogResult.FilePath"/> — how PORTABLE app logic
-    /// consumes a picked file.
+    /// consumes a picked file. Null when the handle no longer resolves.
     /// <para>
-    /// <b>Do not call <c>File.OpenRead</c> on a picked handle yourself</b> — FilePath is "a path or URI
-    /// the HOST can resolve". It happens to be a real path on both shells today (MAUI's picker COPIES the
-    /// document into app cache); a shell handing back a genuine content URI overrides this.
+    /// ⚠ <b>Do not call <c>File.OpenRead</c> on a picked handle yourself</b> — FilePath is "a path or URI
+    /// the HOST can resolve", and a shell handing back a genuine content URI overrides this.
     /// </para>
-    /// <para>Null when the handle no longer resolves — a cache copy can be evicted, a picked file deleted.</para>
     /// </summary>
     Task<Stream?> OpenReadAsync(string handle, CancellationToken cancellationToken = default)
     {
@@ -251,8 +228,8 @@ public interface IFileDialogs
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
             // The check-then-open window: a file deleted BETWEEN the two calls is still "the handle no
-            // longer resolves", and must be the documented null rather than the throw the doc rules out.
-            // A file that resolves but cannot be shared still throws — that is a different answer.
+            // longer resolves", so it must be the documented null. A file that resolves but cannot be
+            // SHARED still throws — a different answer.
             return Task.FromResult<Stream?>(null);
         }
     }

@@ -7,9 +7,8 @@ namespace Shenora.Engine.Compression;
 /// <param name="Files">Absolute paths written, in archive order.</param>
 /// <param name="Bytes">Total uncompressed bytes written.</param>
 /// <param name="Refused">
-/// Entries skipped because they would have escaped the destination.
-/// <b>Non-empty means the archive tried something</b>; an app that wants to treat that as fatal has the
-/// names to say which.
+/// Entries skipped because they would have escaped the destination. ⚠ <b>Non-empty means the archive
+/// tried something.</b>
 /// </param>
 public sealed record ExtractionResult(
     IReadOnlyList<string> Files, long Bytes, IReadOnlyList<string> Refused);
@@ -20,9 +19,8 @@ public sealed class ExtractionLimits
     /// <summary>
     /// Largest total uncompressed size to write. Default 1 GiB.
     /// <para>
-    /// ⚠ This is the zip-bomb bound, and it is on the TOTAL rather than per entry: a bomb is usually many
-    /// small entries, or one entry that only looks small until it is inflated. Exceeding it throws — a
-    /// partial extraction that stopped quietly would leave the caller believing it had everything.
+    /// ⚠ The zip-bomb bound, on the TOTAL rather than per entry: a bomb is many small entries, or one that
+    /// only looks small until inflated. Exceeding it THROWS.
     /// </para>
     /// </summary>
     public long MaxTotalBytes { get; init; } = 1L << 30;
@@ -32,24 +30,14 @@ public sealed class ExtractionLimits
 }
 
 /// <summary>
-/// Extracting a ZIP <b>safely</b> — which is the whole reason this exists, because the extraction itself
-/// is one framework call.
-///
+/// Extracting a ZIP <b>safely</b> — the extraction itself is one framework call. Zip only:
+/// <c>System.IO.Compression</c> is in the shared framework, and a native engine for 7z or rar is not
+/// something the kit vendors (D42).
 /// <para>
 /// ⚠ <b>The danger is the entry NAME, not the bytes.</b> An archive is a list of paths chosen by whoever
-/// built it, and nothing stops one of them being <c>../../autoexec.bat</c> or an absolute path — the
-/// "zip slip" family. `ZipFile.ExtractToDirectory` has guarded this since .NET 4.5.1, but a hand-rolled
-/// loop over `archive.Entries` (the shape anyone writing progress reporting or filtering ends up with)
-/// does not, and neither does a third-party native extractor unless it says so. **The donor this was
-/// harvested from leans on its 7-Zip library's behaviour and has no check of its own** — the gap
-/// `extraction-sources.md` says to fix during the port rather than carry.
-/// </para>
-///
-/// <para>
-/// <b>Zip only, and no native engine.</b> `System.IO.Compression` is in the shared framework, so this
-/// package adds no dependency and works on every shell. 7z, rar and friends need a native library, which
-/// the kit will not vendor for the same reason it ships no media encoder (D42) — those arrive as a seam
-/// an app fills, if a second consumer ever asks.
+/// built it, and nothing stops one being <c>../../autoexec.bat</c> or an absolute path — the "zip slip"
+/// family. <c>ZipFile.ExtractToDirectory</c> guards this; a hand-rolled loop over <c>archive.Entries</c>
+/// (the shape anyone writing progress reporting or filtering ends up with) does not.
 /// </para>
 /// </summary>
 public static class ZipExtraction
@@ -59,25 +47,15 @@ public static class ZipExtraction
     /// entry that would land outside it.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// A refused entry is SKIPPED and named in <see cref="ExtractionResult.Refused"/> rather than
-    /// throwing. That is deliberate and it is the one judgement here worth arguing with: an archive with
-    /// one hostile entry is usually still an archive you want the rest of, and a caller who disagrees can
-    /// treat a non-empty list as fatal in one line. Throwing would deny that choice; silently dropping it
-    /// would hide an attack.
-    /// </para>
-    /// <para>
-    /// Limits are the opposite — they THROW, because exceeding one means the caller's assumption about the
-    /// archive was wrong and continuing would write an unknown amount to their disk.
-    /// </para>
+    /// ⚠ A refused entry is SKIPPED and named in <see cref="ExtractionResult.Refused"/>; a caller that
+    /// wants an escaping entry to be fatal treats a non-empty list as such. Limits are the opposite —
+    /// they THROW, because continuing would write an unknown amount to the caller's disk.
     /// </remarks>
     /// <param name="archivePath">The .zip to read.</param>
     /// <param name="destinationDirectory">Where entries land. Created if absent; nothing may escape it.</param>
     /// <param name="limits">Bounds on the result. Null uses <see cref="ExtractionLimits"/>' defaults.</param>
-    /// <param name="overwrite">
-    /// Replace files that already exist. False (the default) throws on a collision, which is the safer
-    /// answer when extracting into a directory that holds anything else.
-    /// </param>
+    /// <param name="overwrite">Replace files that already exist; false (the default) throws on a
+    /// collision.</param>
     /// <param name="cancellationToken">Checked per entry.</param>
     public static ExtractionResult ExtractTo(string archivePath, string destinationDirectory,
         ExtractionLimits? limits = null, bool overwrite = false,
@@ -90,7 +68,7 @@ public static class ZipExtraction
 
     /// <summary>
     /// Extract an already-open <paramref name="archive"/>, refusing any entry that would land outside
-    /// <paramref name="destinationDirectory"/>. See the string overload for the judgement calls.
+    /// <paramref name="destinationDirectory"/>. See the string overload for refusal and limit behaviour.
     /// </summary>
     /// <param name="archive">An open archive. The caller keeps ownership.</param>
     /// <param name="destinationDirectory">Where entries land. Created if absent; nothing may escape it.</param>
@@ -105,8 +83,7 @@ public static class ZipExtraction
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationDirectory);
         limits ??= new ExtractionLimits();
 
-        // The root is resolved ONCE and compared against, rather than re-derived per entry: a check that
-        // recomputes its own baseline is a check that can be argued into agreeing with the attacker.
+        // The root is resolved ONCE and compared against, never re-derived per entry.
         var root = Path.GetFullPath(destinationDirectory);
         Directory.CreateDirectory(root);
 
@@ -118,8 +95,8 @@ public static class ZipExtraction
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // A directory entry: no bytes, and nothing to place. Created lazily by the files inside it,
-            // so an archive that omits directory entries entirely still extracts correctly.
+            // A directory entry: nothing to place. Directories are created by the files inside them, so
+            // an archive that omits directory entries still extracts correctly.
             if (entry.Name.Length == 0) continue;
 
             if (Resolve(root, entry.FullName) is not { } target)
@@ -157,14 +134,12 @@ public static class ZipExtraction
     /// <remarks>
     /// <para>
     /// ⚠ <b>Compared with a separator APPENDED to the root</b> — without it, <c>/data-evil</c> passes as a
-    /// child of <c>/data</c>, which is the same prefix-matching bug `WebViewFiles.ResolveContained` already
-    /// documents. Two features needing the identical rule is why the reasoning is repeated here rather than
-    /// left implicit.
+    /// child of <c>/data</c>.
     /// </para>
     /// <para>
-    /// Separators are normalised first, because a zip written on Linux uses <c>/</c> and one written by a
-    /// careless tool may use <c>\</c> — and on Windows both are separators, so a check that only knew about
-    /// one would resolve <c>..\..\x</c> as a FILE NAME and let it through.
+    /// ⚠ Separators are normalised first: a zip written on Linux uses <c>/</c> and a careless tool may use
+    /// <c>\</c>, and a check that knew only one would resolve <c>..\..\x</c> as a FILE NAME and let it
+    /// through.
     /// </para>
     /// </remarks>
     private static string? Resolve(string root, string entryName)
@@ -172,9 +147,8 @@ public static class ZipExtraction
         if (string.IsNullOrWhiteSpace(entryName)) return null;
 
         var relative = entryName.Replace('\\', '/');
-        // An absolute or rooted name is refused outright rather than "made relative": stripping the root
-        // and continuing is a guess at what the archive meant, and the honest answer is that a
-        // well-formed archive does not contain one.
+        // An absolute or rooted name is refused outright, never "made relative" — stripping the root is a
+        // guess at what the archive meant.
         if (Path.IsPathRooted(relative) || relative.StartsWith('/')) return null;
 
         string full;
@@ -184,9 +158,8 @@ public static class ZipExtraction
         var fence = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
 
         // Platform-correct (PathComparison): a case-insensitive fence is WIDER than a case-sensitive
-        // filesystem, so on Android an entry named `Foo/x` would pass a fence of `…/foo`. A zip entry
-        // name is attacker-influenced — it arrives inside an update package — so the fence must never be
-        // looser than the OS it is protecting.
+        // filesystem, so on Android an entry named `Foo/x` would pass a fence of `…/foo`. An entry name is
+        // attacker-influenced, so the fence must never be looser than the OS it protects.
         return full.StartsWith(fence, PathComparison.ForPaths) ? full : null;
     }
 }

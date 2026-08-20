@@ -13,7 +13,7 @@ namespace Shenora.Modules.Platform;
 /// <param name="Left">Left inset.</param>
 public readonly record struct SafeAreaInsets(double Top, double Right, double Bottom, double Left)
 {
-    /// <summary>No insets — the desktop answer, and the correct default for a shell that has none.</summary>
+    /// <summary>No insets — the desktop answer, and the default for a shell that has none.</summary>
     public static SafeAreaInsets None => new(0, 0, 0, 0);
 
     /// <summary>True when every edge is zero, which is also what a platform reports before it knows.</summary>
@@ -24,58 +24,35 @@ public readonly record struct SafeAreaInsets(double Top, double Right, double Bo
 /// How a shell hands its window insets to the page, and what it does about the gap before it can.
 ///
 /// <para>
-/// <b>Why this exists at all, measured rather than assumed (Android 16 / API 36).</b> The web
-/// platform's own answer — <c>env(safe-area-inset-*)</c> with <c>viewport-fit=cover</c> — is not
-/// sufficient on Android, in two ways a page cannot work around:
-/// </para>
-/// <list type="number">
-///   <item>Android reports the display CUTOUT only, never the system bars. Measured
-///     <c>bottom=0</c> on a device whose navigation bar is genuinely 24 CSS px tall, so content sits
-///     under the gesture pill and no CSS or page script can discover it. iOS reports both.</item>
-///   <item>The values are 0 for the WHOLE first page load and only appear on a later one. A page-side
-///     re-read (rAF, timeout, <c>resize</c>, <c>visualViewport</c>) was written and did not help,
-///     because nothing changes within that document for it to observe.</item>
-/// </list>
-///
-/// <para>
-/// So the host — which knows the insets from the platform — has to tell the page. Everything here is
-/// OPT-IN and individually declinable: an app that wants none of it passes nothing and gets the plain
-/// <c>env()</c> behaviour it has today (D21 — primitives and hooks, never the product).
+/// ⚠ <c>env(safe-area-inset-*)</c> is not sufficient on Android, in two ways a page cannot work around:
+/// it reports the display CUTOUT only and never the system bars (so content sits under the gesture pill),
+/// and it is 0 for the WHOLE first page load. iOS reports both. So the host, which knows the insets from
+/// the platform, tells the page instead. Every option here is opt-in and individually declinable.
 /// </para>
 /// </summary>
 public sealed class SafeAreaOptions
 {
     /// <summary>
     /// What to publish BEFORE the platform reports a real value, or null to publish nothing until it does.
+    /// This is the answer to the first-load zeros: an app that knows its device class sets the exact number
+    /// here and never sees a correction.
     ///
     /// <para>
-    /// This is the fix for the first-load zeros: a page that starts from the real value starts from
-    /// nothing and lays out its first screen under the status bar. Starting from a sensible guess and
-    /// correcting is the better trade — the common case is right immediately and the uncommon one moves
-    /// once. An app that knows its device class can set the exact number here and never see a correction.
-    /// </para>
-    /// <para>
-    /// ⚠ A measured value only replaces this once it is non-empty. Writing a platform's first-load zeros
-    /// over a good default would reintroduce the very bug the default exists to prevent.
+    /// ⚠ A measurement only replaces this once it is NON-EMPTY — first-load zeros must not overwrite a
+    /// good default.
     /// </para>
     /// </summary>
     public SafeAreaInsets? Default { get; init; }
 
     /// <summary>
-    /// A CSS colour painted behind the inset strips, or null to leave them transparent.
-    ///
-    /// <para>
-    /// Worth having because a transparent inset shows whatever is behind the webview — on a dark page
-    /// over a light shell that reads as a flash of the wrong colour at exactly the moment the user is
-    /// looking. The value is passed through verbatim, so any CSS colour works.
-    /// </para>
+    /// A CSS colour painted behind the inset strips, or null to leave them transparent — in which case they
+    /// show whatever is behind the webview. Passed through verbatim, so any CSS colour works.
     /// </summary>
     public string? Color { get; init; }
 
     /// <summary>
     /// How long the layout takes to ease from <see cref="Default"/> to the measured value.
-    /// <see cref="TimeSpan.Zero"/> (the default) snaps instead, which is what an app with its own
-    /// motion language or an accessibility preference will want.
+    /// <see cref="TimeSpan.Zero"/> (the default) snaps instead.
     /// </summary>
     public TimeSpan Settle { get; init; } = TimeSpan.Zero;
 
@@ -84,10 +61,8 @@ public sealed class SafeAreaOptions
     /// over <see cref="Settle"/>. Off by default.
     ///
     /// <para>
-    /// This is the third, independent answer to the same race, and it is the only one that hides the
-    /// correction completely rather than making it small or smooth. ⚠ It is also the one that can hide a
-    /// FAILURE: if the platform never reports, the page would stay covered — so the overlay always
-    /// removes itself after <see cref="SplashTimeout"/> whether or not anything arrived.
+    /// ⚠ This one can hide a FAILURE: if the platform never reports, the page would stay covered — so the
+    /// overlay always removes itself after <see cref="SplashTimeout"/> whether or not anything arrived.
     /// </para>
     /// </summary>
     public bool Splash { get; init; }
@@ -95,40 +70,31 @@ public sealed class SafeAreaOptions
     /// <summary>The splash colour. Falls back to <see cref="Color"/>, then to transparent.</summary>
     public string? SplashColor { get; init; }
 
-    /// <summary>
-    /// The longest the splash may cover the page. Defaults to 2 seconds. A page hidden forever because a
-    /// platform went quiet is a worse bug than the one the splash is covering.
-    /// </summary>
+    /// <summary>The longest the splash may cover the page. Defaults to 2 seconds.</summary>
     public TimeSpan SplashTimeout { get; init; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// The prefix for the published CSS custom properties. Defaults to <c>--sa-</c>, giving
-    /// <c>--sa-top</c>, <c>--sa-right</c>, <c>--sa-bottom</c> and <c>--sa-left</c>. Configurable because
-    /// an app with an existing design-token naming scheme should not have to adopt this one.
+    /// <c>--sa-top</c>, <c>--sa-right</c>, <c>--sa-bottom</c> and <c>--sa-left</c>.
     /// </summary>
     public string VariablePrefix { get; init; } = "--sa-";
 }
 
 /// <summary>
-/// Builds the script a shell injects into the page to publish its safe-area insets.
-///
-/// <para>
-/// A PURE function over <see cref="SafeAreaOptions"/> and an optional measurement, which is the whole
-/// point: the interesting decisions — what the defaults are, whether a zero measurement may overwrite
-/// them, when the splash gives up — are then testable with no device, no webview and no platform. What
-/// is left for a device to prove is only that the platform's numbers are right and that the script runs.
-/// </para>
+/// Builds the script a shell injects into the page to publish its safe-area insets — a pure function over
+/// <see cref="SafeAreaOptions"/> and an optional measurement, so the decisions are testable with no device
+/// and no webview.
 /// </summary>
 public static class SafeAreaScript
 {
     /// <summary>
-    /// What <see cref="Build"/>'s script evaluates to when it actually ran in a document.
+    /// What <see cref="Build"/>'s script evaluates to when it actually ran in a document. A shell should
+    /// treat any other result as NOT DELIVERED and try again.
     ///
     /// <para>
-    /// A shell should treat any other result as NOT DELIVERED and try again. Evaluating script against a
-    /// webview that has no document yet does not throw — it silently does nothing — so without a marker
-    /// "the call succeeded" and "the page received it" are the same observation, and they are not the
-    /// same thing.
+    /// ⚠ Evaluating script against a webview that has no document yet does not throw — it silently does
+    /// nothing — so without this marker "the call succeeded" and "the page received it" are the same
+    /// observation.
     /// </para>
     /// </summary>
     public const string DeliveredMarker = "shenora-safe-area";
@@ -151,8 +117,7 @@ public static class SafeAreaScript
 
         if (effective is { } v)
         {
-            // Only ever written when there is something real to write — see SafeAreaOptions.Default on
-            // why a platform's first-load zeros must not overwrite a good default.
+            // Only written when there is something real: first-load zeros must not overwrite a good default.
             script.Append(Set(prefix, "top", v.Top))
                   .Append(Set(prefix, "right", v.Right))
                   .Append(Set(prefix, "bottom", v.Bottom))
@@ -168,9 +133,8 @@ public static class SafeAreaScript
         if (options.Splash)
         {
             var colour = options.SplashColor ?? options.Color ?? "transparent";
-            // The overlay is created once, keyed by id, and torn down either when a real measurement
-            // arrives or when the timeout fires — whichever is first. Both paths are needed: the first
-            // is the point, the second is what stops a quiet platform from hiding the page forever.
+            // Created once, keyed by id; torn down on the first real measurement or on the timeout,
+            // whichever comes first. The timeout is what stops a quiet platform hiding the page forever.
             script.Append("var s=document.getElementById('shenora-safe-splash');")
                   .Append("if(!s&&!window.__shenoraSplashDone){s=document.createElement('div');")
                   .Append("s.id='shenora-safe-splash';")
@@ -191,10 +155,8 @@ public static class SafeAreaScript
                 script.Append("window.__shenoraDismissSafeSplash();");
         }
 
-        // A truthy marker, so a caller can tell DELIVERED from EVALUATED-AGAINST-NOTHING. Without it,
-        // evaluating against a webview that has no document yet is indistinguishable from success: the
-        // call does not throw, it simply does nothing. That is exactly how the first version of this
-        // shipped looking correct while publishing to no one.
+        // A truthy marker, so a caller can tell DELIVERED from EVALUATED-AGAINST-NOTHING — see
+        // DeliveredMarker.
         script.Append("return '").Append(DeliveredMarker).Append("';})();");
         return script.ToString();
     }
@@ -209,10 +171,9 @@ public static class SafeAreaScript
         ((int)span.TotalMilliseconds).ToString(CultureInfo.InvariantCulture) + "ms";
 
     /// <summary>
-    /// Single-quote and backslash escaping, because every value here reaches a JS string literal and one
-    /// of them (<see cref="SafeAreaOptions.Color"/>) is app-supplied. Not a security boundary — the app
-    /// is the one being protected from its own typo — but a stray quote would otherwise break the whole
-    /// injected script silently, which is the worst failure this could have.
+    /// Single-quote and backslash escaping: every value here reaches a JS string literal and one of them
+    /// (<see cref="SafeAreaOptions.Color"/>) is app-supplied, where a stray quote would break the whole
+    /// injected script silently. Not a security boundary.
     /// </summary>
     private static string Escape(string value) => value.Replace("\\", "\\\\").Replace("'", "\\'");
 }

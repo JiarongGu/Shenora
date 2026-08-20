@@ -5,10 +5,6 @@ namespace Shenora.Engine.Missions;
 /// far it has got. The scheduler hands the same type to the mission body, to
 /// <see cref="IMissionObserver"/>, to <see cref="IMissionPolicy"/> and out of
 /// <see cref="IMissionScheduler.Snapshot"/>.
-/// <para>
-/// ⚠ It carries no <see cref="CancellationToken"/> deliberately — the body receives one as its own
-/// argument. A token inside a snapshot value invites holding it and using it later.
-/// </para>
 /// </summary>
 /// <param name="MissionId">
 /// Scheduler-assigned id, stable across retries. ⚠ <b>PER-PROCESS — a recovered mission is resubmitted
@@ -21,20 +17,14 @@ namespace Shenora.Engine.Missions;
 /// <param name="Sequence">Monotonic submission counter — the tie-break that makes ordering total and stable.</param>
 /// <param name="Attempt">
 /// 1-based attempt number while running; 0 before the first attempt starts, which is the value an
-/// <see cref="IMissionPolicy"/> always sees, because a policy is only ever asked about work that has
-/// not started yet.
+/// <see cref="IMissionPolicy"/> always sees.
 /// </param>
 /// <param name="IsRunning">True once the body is executing. False while queued.</param>
 /// <param name="Key">
 /// The caller-chosen identity from <see cref="MissionDefinition.Key"/>, or null when the submission
-/// named none.
-/// <para>
-/// 🔴 <b>The only thing here an app can RECOGNISE.</b> <see cref="MissionId"/> is the scheduler's and is
-/// per-process, so without this an app could not map a progress report, an observer callback or a
-/// <see cref="IMissionScheduler.Snapshot"/> row back to the item it submitted — a queue UI could list
-/// work and not say what any of it was. The only workaround was to encode instance identity into
-/// <see cref="Kind"/>, which is documented as a TYPE.
-/// </para>
+/// named none. 🔴 <b>The only thing here an app can RECOGNISE</b> — <see cref="MissionId"/> is the
+/// scheduler's and is per-process, so without this an app cannot map a progress report, an observer
+/// callback or a <see cref="IMissionScheduler.Snapshot"/> row back to the item it submitted.
 /// </param>
 public readonly record struct MissionExecution(
     string MissionId,

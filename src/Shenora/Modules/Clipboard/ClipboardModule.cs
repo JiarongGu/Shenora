@@ -8,23 +8,15 @@ namespace Shenora.Modules.Clipboard;
 /// The page's route to the NATIVE clipboard — <see cref="IClipboardService"/> over IPC.
 /// <para>
 /// 🔴 <b>This is not a replacement for <c>navigator.clipboard</c>, and reaching for it by default is a
-/// mistake.</b> The page is running in a real browser: a gesture-driven "copy this text" or "copy this
-/// picture" already works there, needs no host round trip, and is what the platform expects. Two things
-/// it genuinely cannot do are the reason these routes exist:
+/// mistake.</b> A gesture-driven copy already works in the page. Two things it cannot do are why these
+/// routes exist: putting FILES on the clipboard, which no web API expresses, so the user cannot paste
+/// into Explorer or Finder; and access without a user gesture, focus or permission — from a hotkey, a
+/// tray action or a background mission.
 /// </para>
-/// <list type="number">
-/// <item><b>FILES.</b> No web API can put a file list on the clipboard, so the user cannot paste into
-/// Explorer, Finder or a file manager. There is no polyfill for this.</item>
-/// <item><b>Access without a user gesture or focus.</b> <c>navigator.clipboard.read()</c> demands
-/// transient activation, document focus and a permission; a host has none of those constraints, so a
-/// hotkey, a tray action or a background mission can read and write.</item>
-/// </list>
 /// <para>
-/// ⚠ <b>And because a clipboard set is ATOMIC, the choice is per-COPY, not per-format.</b> A clipboard
-/// holds one item; whichever side writes last wins outright. So an item that includes files must be
-/// written entirely through <see cref="WriteType"/> — writing the text half with
-/// <c>navigator.clipboard</c> and the files here would leave only the files, silently. That is why the
-/// routes carry the whole item rather than the file list alone.
+/// ⚠ <b>A clipboard set is ATOMIC, so the choice is per-COPY, not per-format.</b> Whichever side writes
+/// last wins outright: writing the text half with <c>navigator.clipboard</c> and the files through
+/// <see cref="WriteType"/> leaves only the files, silently. Write the whole item through one of them.
 /// </para>
 /// <para>
 /// 🔴 <b>OPT-IN, and think before opting in.</b> <see cref="ReadType"/> lets the page read the user's
@@ -47,9 +39,9 @@ public sealed class ClipboardModule : ModuleBase
 
     /// <summary>
     /// Route: replace the clipboard with one item. Payload <c>{ content }</c>, a
-    /// <see cref="ClipboardContent"/>; answers nothing.
-    /// ⚠ Refused with <see cref="IpcErrorCodes.CapabilityNotSupported"/> when the content asks for
-    /// something this shell has no expression for — <see cref="ClipboardContent.Files"/> on a phone.
+    /// <see cref="ClipboardContent"/>; answers nothing. Refused with
+    /// <see cref="IpcErrorCodes.CapabilityNotSupported"/> when the shell has no expression for the
+    /// content — <see cref="ClipboardContent.Files"/> on a phone.
     /// </summary>
     public const string WriteType = "WRITE";
 
@@ -58,8 +50,8 @@ public sealed class ClipboardModule : ModuleBase
 
     private readonly IClipboardService _clipboard;
 
-    /// <param name="clipboard">The shell's clipboard. Registered by whichever shell package the app composed.</param>
-    /// <param name="logger">Diagnostics, via <see cref="ModuleBase"/>.</param>
+    /// <param name="clipboard">The shell's clipboard, registered by whichever shell package the app composed.</param>
+    /// <param name="logger">Diagnostics.</param>
     public ClipboardModule(IClipboardService clipboard, ILogger<ClipboardModule>? logger = null)
         : base(logger)
     {
@@ -100,10 +92,9 @@ public sealed class ClipboardModule : ModuleBase
     /// Turn a shell's capability refusal into the wire's own <see cref="IpcErrorCodes.CapabilityNotSupported"/>.
     /// </summary>
     /// <remarks>
-    /// ⚠ The message is the KIT's own words — never <c>ex.Message</c>, which crosses the wire verbatim and
-    /// so bypasses the error boundary entirely (<c>.claude/knowledge/ipc-contracts.md</c>). The shell's own
-    /// wording, which names the platform and the alternative, goes to the host log through the
-    /// inner-exception channel instead.
+    /// ⚠ The KIT's own words, never <c>ex.Message</c> — raw exception text must not cross the wire
+    /// (<c>.claude/knowledge/ipc-contracts.md</c>). The shell's own wording reaches the host log as the
+    /// inner exception.
     /// </remarks>
     private static async Task<object?> RefusalGuarded(Func<Task<object?>> call)
     {

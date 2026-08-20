@@ -8,24 +8,19 @@ namespace Shenora.Modules.FileDialog;
 
 /// <summary>
 /// The page's route to the shell's native file dialogs — <see cref="IFileDialogs"/> over IPC. Every
-/// route below answers with a <see cref="FileDialogResult"/>.
+/// route below answers with a <see cref="FileDialogResult"/>, and none moves file CONTENT except
+/// <see cref="SaveTextType"/>; reading a picked file is <see cref="IFileDialogs.OpenReadAsync"/>
+/// host-side, or the resource interceptor when the page wants to RENDER it.
 /// <para>
-/// ⚠ <b>Every field of every options object here is PAGE-SUPPLIED.</b> Most are inert hints the system
-/// dialog interprets, and the user still confirms the actual selection — but
-/// <see cref="FileDialogOptions.RememberPathKey"/> is not inert: it is handed to the app's
-/// <see cref="IFileDialogPathStore"/>, which before these routes existed only ever saw app-authored keys.
-/// See that interface's remarks; the kit ships no store, so the kit cannot fix it for you.
-/// </para>
-/// <para>
-/// It never moves file CONTENT except for <see cref="SaveTextType"/>. Reading a picked file is
-/// <see cref="IFileDialogs.OpenReadAsync"/> host-side, or the resource interceptor
-/// (<c>interceptor.UseFiles</c> + <c>mediaUrl()</c>) when the page wants to RENDER it.
+/// ⚠ <b>Every field of every options object here is PAGE-SUPPLIED.</b> Most are inert hints, but
+/// <see cref="FileDialogOptions.RememberPathKey"/> is handed to the app's
+/// <see cref="IFileDialogPathStore"/> — the kit ships no store, so the kit cannot sanitise it for you.
 /// </para>
 /// </summary>
 public sealed class FileDialogModule : ModuleBase
 {
     /// <summary>
-    /// The module name this facade answers on. Fixed, unlike <see cref="IpcRequestsModule"/>'s — this
+    /// The module name this facade answers on. Fixed, unlike <see cref="IpcRequestsModule"/>'s: this
     /// facade publishes no events that would have to match it.
     /// </summary>
     public const string Module = "SHENORA.DIALOGS";
@@ -35,8 +30,8 @@ public sealed class FileDialogModule : ModuleBase
 
     /// <summary>
     /// Route: pick a folder. Payload <c>{ options? }</c>.
-    /// ⚠ DESKTOP capability (D35) — refused with <see cref="IpcErrorCodes.CapabilityNotSupported"/> on a
-    /// shell that has no expression of it. Gate on <see cref="ShellCapability.FolderPicker"/> first.
+    /// ⚠ DESKTOP capability (D35) — gate on <see cref="ShellCapability.FolderPicker"/>, or a shell with
+    /// no expression of it refuses with <see cref="IpcErrorCodes.CapabilityNotSupported"/>.
     /// </summary>
     public const string OpenFolderType = "OPEN_FOLDER";
 
@@ -49,11 +44,11 @@ public sealed class FileDialogModule : ModuleBase
 
     /// <summary>
     /// Route: pick a destination AND write text to it, in one call — the PORTABLE save, working on every
-    /// shell because the HOST does the writing. Payload <c>{ text, options? }</c>.
+    /// shell because the HOST does the writing. Payload <c>{ text, options? }</c>; anything large or
+    /// binary should be produced host-side through <see cref="IFileDialogs.SaveAsync"/> instead, where it
+    /// never enters a message.
     /// <para>
-    /// ⚠ <b>TEXT</b>, crossing the IPC envelope as JSON — anything large or binary should be produced
-    /// host-side and saved through <see cref="IFileDialogs.SaveAsync"/>, where it never enters a message.
-    /// The result's <see cref="FileDialogResult.FilePath"/> is null on mobile BY CONTRACT (a revocable
+    /// ⚠ The result's <see cref="FileDialogResult.FilePath"/> is null on mobile BY CONTRACT (a revocable
     /// grant, not an address) — a page must not read that as failure.
     /// </para>
     /// </summary>
@@ -61,8 +56,8 @@ public sealed class FileDialogModule : ModuleBase
 
     private readonly IFileDialogs _dialogs;
 
-    /// <param name="dialogs">The shell's dialogs. Registered by whichever shell package the app composed.</param>
-    /// <param name="logger">Diagnostics, via <see cref="ModuleBase"/>.</param>
+    /// <param name="dialogs">The shell's dialogs, registered by whichever shell package the app composed.</param>
+    /// <param name="logger">Diagnostics.</param>
     public FileDialogModule(IFileDialogs dialogs, ILogger<FileDialogModule>? logger = null)
         : base(logger)
     {
@@ -121,10 +116,9 @@ public sealed class FileDialogModule : ModuleBase
     /// Turn a shell's capability refusal into the wire's own <see cref="IpcErrorCodes.CapabilityNotSupported"/>.
     /// </summary>
     /// <remarks>
-    /// ⚠ The message is the KIT's own words plus the capability NAME — never <c>ex.Message</c>, which
-    /// crosses the wire verbatim and so bypasses the error boundary entirely
-    /// (<c>.claude/knowledge/ipc-contracts.md</c>); the real exception goes to the host log through the
-    /// inner-exception channel instead.
+    /// ⚠ The KIT's own words plus the capability NAME, never <c>ex.Message</c> — raw exception text must
+    /// not cross the wire (<c>.claude/knowledge/ipc-contracts.md</c>). The real exception reaches the
+    /// host log as the inner exception.
     /// </remarks>
     private static async Task<object?> RefusalGuarded(string capability, Func<Task<FileDialogResult>> call)
     {

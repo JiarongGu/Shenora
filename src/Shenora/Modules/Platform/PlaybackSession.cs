@@ -18,17 +18,15 @@ public enum PlaybackState
     Paused,
 
     /// <summary>
-    /// Waiting on data. Reported separately from <see cref="Playing"/> because two of the three platforms
-    /// have a distinct state for it and will render a spinner rather than a stale elapsed time — and
-    /// because collapsing it into <c>Playing</c> makes the OS extrapolate a position that is not moving.
+    /// Waiting on data. ⚠ Distinct from <see cref="Playing"/>: two of the three platforms render a spinner
+    /// for it, and collapsing it into <c>Playing</c> makes the OS extrapolate a position that is not moving.
     /// </summary>
     Buffering,
 }
 
 /// <summary>
-/// Which transport controls the OS should OFFER. A flags set rather than "all of them", because a
-/// surface that shows a next-track button for something with no next track is worse than one that does
-/// not: the user presses it and nothing happens, and there is no way to tell that apart from a bug.
+/// Which transport controls the OS should OFFER — only the ones that will do something, since a button
+/// the user presses to no effect is indistinguishable from a bug.
 /// </summary>
 [Flags]
 public enum PlaybackCommands
@@ -43,9 +41,9 @@ public enum PlaybackCommands
     Pause = 1 << 1,
 
     /// <summary>
-    /// One button that means "the other thing". Separate from <see cref="Play"/>/<see cref="Pause"/>
-    /// because hardware sends it as its own event — a headphone pinch and a car stereo's centre button are
-    /// a toggle, not a play — and an app that only handles Play/Pause silently ignores both.
+    /// One button that means "the other thing". ⚠ Hardware sends this as its own event — a headphone pinch
+    /// and a car stereo's centre button — so an app handling only <see cref="Play"/>/<see cref="Pause"/>
+    /// silently ignores both.
     /// </summary>
     TogglePlayPause = 1 << 2,
 
@@ -62,13 +60,8 @@ public enum PlaybackCommands
     Seek = 1 << 6,
 
     /// <summary>
-    /// Jump forward by <see cref="IPlaybackSession.SkipInterval"/> — the ±15 s button.
-    /// <para>
-    /// Distinct from <see cref="Next"/> and from <see cref="Seek"/>, and both distinctions are the point.
-    /// For LONG-FORM audio — an audiobook, a podcast, a lecture — "next" is the wrong granularity when a
-    /// track is fifty minutes long, and a scrubber is a drag rather than a button. Added because the first
-    /// adopter had this working and gave it up to adopt the kit, which is the trade the kit must not force.
-    /// </para>
+    /// Jump forward by <see cref="IPlaybackSession.SkipInterval"/> — the ±15 s button long-form audio
+    /// wants, where <see cref="Next"/> is the wrong granularity and <see cref="Seek"/> is a drag.
     /// </summary>
     SkipForward = 1 << 7,
 
@@ -107,13 +100,7 @@ public enum PlaybackCommand
     SkipBackward,
 }
 
-/// <summary>
-/// A transport control the OS is asking the app to perform.
-/// <para>
-/// A record rather than a bare enum because <see cref="PlaybackCommand.Seek"/> carries a destination, and
-/// an event that cannot express it would force a second event for one command.
-/// </para>
-/// </summary>
+/// <summary>A transport control the OS is asking the app to perform.</summary>
 public sealed record PlaybackCommandRequest
 {
     /// <summary>What was asked for.</summary>
@@ -128,29 +115,19 @@ public sealed record PlaybackCommandRequest
     /// How far to jump — set for <see cref="PlaybackCommand.SkipForward"/> and
     /// <see cref="PlaybackCommand.SkipBackward"/>, null otherwise.
     /// <para>
-    /// It is carried on the request even though the app already declared
-    /// <see cref="IPlaybackSession.SkipInterval"/>, because one platform sends the interval WITH the event
-    /// (iOS's <c>MPSkipIntervalCommandEvent</c>) and honouring what arrived is more correct than assuming
-    /// what was asked for. Where a platform sends nothing, this is the configured interval, so a handler
-    /// can always just use it.
+    /// iOS sends the interval WITH the event (<c>MPSkipIntervalCommandEvent</c>) and that value is honoured;
+    /// where a platform sends none this is the configured <see cref="IPlaybackSession.SkipInterval"/>, so a
+    /// handler can always just use it.
     /// </para>
     /// </summary>
     public TimeSpan? Interval { get; init; }
 }
 
 /// <summary>
-/// What is playing, in the fields every system transport surface can render.
-/// <para>
-/// <b>The names are deliberately generic rather than <c>Artist</c>/<c>Album</c>.</b> The same three fields
-/// carry a podcast's show and episode, an audiobook's book and chapter, a lecture's course, a slideshow's
-/// deck — and this contract lives in <c>Shenora</c>, which every package references, so music
-/// vocabulary here would put containers-and-codecs words on the surface of an app that has none (the
-/// reasoning D40/D45 used to keep <c>Shenora.Media</c> separate and optional).
-/// </para>
-/// <para>
-/// Every field is optional, and that is not laziness: a platform renders what it has, and a host that
-/// throws on a missing subtitle is a host that cannot report a file with no tags.
-/// </para>
+/// What is playing, in the fields every system transport surface can render. The names are generic rather
+/// than <c>Artist</c>/<c>Album</c>: the same three fields carry a podcast's show and episode, an
+/// audiobook's book and chapter, a lecture's course. Every field is optional — a platform renders what it
+/// has.
 /// </summary>
 public sealed record PlaybackInfo
 {
@@ -166,18 +143,15 @@ public sealed record PlaybackInfo
     /// <summary>
     /// Cover image bytes (PNG or JPEG). Empty means "no artwork", which every platform handles.
     /// <para>
-    /// ⚠ BYTES, not a path or a URL, and deliberately: two of the three platforms need an in-memory image
-    /// object, all three need the host process to have read it anyway, and a path would make this contract
-    /// carry file-access rules that <see cref="WebViewFiles"/> already owns. Keep it small — this is a
-    /// thumbnail on a lock screen, and the artwork is copied on every publish.
+    /// ⚠ Bytes, not a path — a path would put file-access rules here that <see cref="WebViewFiles"/> owns.
+    /// Keep it small: this is a lock-screen thumbnail, and the artwork is copied on every publish.
     /// </para>
     /// </summary>
     public ReadOnlyMemory<byte> Artwork { get; init; }
 
     /// <summary>
-    /// How long the item is, when known. A property of the ITEM, which is why it is here and not on
-    /// <see cref="PlaybackProgress"/> — it does not change as the position moves, and re-sending it with
-    /// every position update is what makes a timeline flicker on one of the platforms.
+    /// How long the item is, when known. ⚠ It lives here and not on <see cref="PlaybackProgress"/> because
+    /// re-sending it with every position update makes the timeline flicker on one of the platforms.
     /// </summary>
     public TimeSpan? Duration { get; init; }
 }
@@ -186,13 +160,9 @@ public sealed record PlaybackInfo
 /// Where playback has got to. Report this when the position JUMPS or the state changes — not on a timer.
 /// <para>
 /// <b>⚠ The OS extrapolates, so this is a snapshot AS OF NOW.</b> All three platforms take a position plus a
-/// rate and advance the displayed time themselves; a host that pushes the current position every 250 ms is
-/// paying for battery and IPC to tell the OS something it already worked out, and on one platform it makes
-/// the timeline stutter. Report on seek, pause, resume, rate change and track change. That is all.
-/// </para>
-/// <para>
-/// It follows that a DELAYED report is worse than none: the platform treats the position as current, so a
-/// value queued behind other work lands as a jump backwards. Do not batch these.
+/// rate and advance the displayed time themselves. Report on seek, pause, resume, rate change and track
+/// change, and do not batch: the platform treats a report as current, so a delayed one lands as a jump
+/// backwards.
 /// </para>
 /// </summary>
 public sealed record PlaybackProgress
@@ -205,20 +175,12 @@ public sealed record PlaybackProgress
 
     /// <summary>
     /// How fast, as a multiplier — 1.0 normal, 0.0 not advancing. The OS uses this to extrapolate the
-    /// displayed position as <c>position + elapsed × rate</c>.
-    /// <para>
-    /// <b>You do not have to zero it when pausing.</b> A rate is only meaningful while
-    /// <see cref="State"/> is <see cref="PlaybackState.Playing"/>, so every shell derives the published
-    /// speed from the state and ignores this value otherwise — set it to the app's real playback speed and
-    /// let the state say whether anything is moving. ⚠ A shell that forwards this verbatim makes a paused
-    /// session advertise <c>speed=1.0</c> and its scrubber drift — that belongs in the shell, not in a
-    /// note telling apps to compensate.
-    /// </para>
+    /// displayed position as <c>position + elapsed × rate</c>. Set the app's real playback speed and leave
+    /// it there: a rate only counts while <see cref="State"/> is <see cref="PlaybackState.Playing"/>, and
+    /// every shell derives the published speed from the state.
     /// <para>
     /// ⚠ <b>Not every shell can carry a rate.</b> Windows' <c>SystemMediaTransportControls</c> has no speed
-    /// field at all — its timeline is a position and an end, and "is it advancing" is the playback status —
-    /// so a 1.5× audiobook reads as normal speed there. Stated because it is not discoverable from the
-    /// types: the two mobile shells honour the multiplier, the desktop conveys only moving/not-moving.
+    /// field, so a 1.5× audiobook reads as normal speed there; the two mobile shells honour the multiplier.
     /// </para>
     /// </summary>
     public double Rate { get; init; } = 1.0;
@@ -227,19 +189,15 @@ public sealed record PlaybackProgress
 /// <summary>
 /// The app's handle on the OS's media transport surface — the lock screen, the Dynamic Island's Now
 /// Playing, Android's media notification, Windows' <c>SystemMediaTransportControls</c> — implemented once
-/// per shell (D19/D20's law, the same shape as <see cref="IUiDispatcher"/> and
-/// <see cref="IWebViewInterceptor"/>).
+/// per shell (D19/D20).
 /// <para>
-/// <b>It is TWO-WAY, and the return direction is the interesting one.</b> Metadata and position travel
-/// app → OS; transport commands travel OS → app, from a lock screen, a headphone gesture, a car stereo or a
-/// keyboard media key. So this is an event source as much as a publisher, and the kit deliberately ships no
-/// queue model behind it: only the app knows what "next" means.
+/// <b>It is TWO-WAY.</b> Metadata and position travel app → OS; transport commands travel OS → app, from a
+/// lock screen, a headphone gesture, a car stereo or a keyboard media key. There is no queue model behind
+/// it: only the app knows what "next" means.
 /// </para>
 /// <para>
-/// Registered as a SINGLETON by the shell and injected. There is no <c>IDisposable</c> here on purpose —
-/// an app that disposed an injected singleton would tear down the shell's session for everyone; say
-/// <see cref="Clear"/> instead, which is what "nothing is playing any more" actually means. The concrete
-/// implementations own their native resources and are disposed by the container.
+/// Registered as a SINGLETON by the shell and injected — say <see cref="Clear"/> rather than disposing it,
+/// which is what "nothing is playing any more" actually means.
 /// </para>
 /// </summary>
 public interface IPlaybackSession
@@ -253,16 +211,10 @@ public interface IPlaybackSession
 
     /// <summary>
     /// How far <see cref="PlaybackCommands.SkipForward"/>/<see cref="PlaybackCommands.SkipBackward"/> jump.
-    /// Default 15 seconds.
+    /// Default 15 seconds. The platforms render it onto the button itself — on iOS it is what draws "15"
+    /// instead of a bare arrow — so keep to a value their UI is designed around (15, 10, 30).
     /// <para>
-    /// Stated ONCE rather than per press, because that is what the platforms take — a *preferred* interval
-    /// they render onto the button itself. On iOS it is literally what makes the control draw "15" instead of
-    /// a bare arrow, so leaving it unset reads to a user as a different feature.
-    /// </para>
-    /// <para>
-    /// ⚠ Keep it to a value the platform UI is designed around. 15 s is the near-universal default and 10/30
-    /// are common; an arbitrary interval is not obviously better and renders less well. Set it before
-    /// <see cref="Supported"/>, since that is when the controls are configured.
+    /// ⚠ Set it BEFORE <see cref="Supported"/>: that is when the controls are configured.
     /// </para>
     /// </summary>
     TimeSpan SkipInterval { get; set; }
@@ -274,11 +226,8 @@ public interface IPlaybackSession
     void Report(PlaybackProgress progress);
 
     /// <summary>
-    /// Nothing is playing any more: take the app off the lock screen and out of the media controls.
-    /// <para>
-    /// Distinct from reporting <see cref="PlaybackState.Stopped"/>, which leaves the app present with a
-    /// stopped item — the state a user can resume from. This removes the surface.
-    /// </para>
+    /// Nothing is playing any more: take the app off the lock screen and out of the media controls. Distinct
+    /// from reporting <see cref="PlaybackState.Stopped"/>, which leaves the app present with a stopped item.
     /// </summary>
     void Clear();
 
@@ -288,8 +237,7 @@ public interface IPlaybackSession
     /// ⚠ <b>Raised on whatever thread the platform uses, which is NOT the UI thread on at least one of
     /// them</b> (Windows delivers its button events on a pool thread). Marshal with
     /// <see cref="IUiDispatcher"/> before touching UI or player state that expects it. A throwing handler is
-    /// caught and logged rather than escaping into a platform callback, per the kit's
-    /// <see cref="AppCallback"/> rule — an exception there is not catchable by anyone.
+    /// caught and logged rather than escaping into a platform callback (<see cref="AppCallback"/>).
     /// </para>
     /// </summary>
     event Action<PlaybackCommandRequest>? CommandReceived;

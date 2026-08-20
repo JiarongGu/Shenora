@@ -38,8 +38,8 @@ public static class Components
         LockScreen = Card(symbol, withBar: true, value: null),
         Expanded = Panel(symbol, value: null, withBar: true),
         CompactLeading = new Icon(symbol),
-        // ⚠ No CompactTrailing: the kit's fallback draws a spinner when progress is null. Putting the
-        // (empty) percentage here reserves the space and renders nothing — a widget that reads as broken.
+        // ⚠ No CompactTrailing: the fallback draws a spinner when progress is null, where an (empty)
+        // percentage would reserve the space and render nothing.
         Minimal = new Icon(symbol),
     };
 
@@ -63,8 +63,8 @@ public static class Components
 
     /// <summary>
     /// The lock-screen card: icon │ title over subtitle │ value, with a bar beneath.
-    /// <see cref="Justify.SpaceBetween"/> pins the value to the trailing edge, so the number lands in the
-    /// same place whatever the title's length instead of drifting on every update.
+    /// <see cref="Justify.SpaceBetween"/> pins the value to the trailing edge so it does not drift as the
+    /// title's length changes.
     /// </summary>
     private static Element Card(string symbol, bool withBar, string? value)
     {
@@ -97,8 +97,8 @@ public static class Components
         ];
         if (withBar) card.Add(new ProgressBar());
 
-        // 16pt all round: the kit adds NO insets to a described region, so a card without these sits
-        // hard against the banner's edges.
+        // 16pt all round: the kit adds NO insets to a described region, so a card without these sits hard
+        // against the banner's edges.
         return new Layout
         {
             Axis = Axis.Vertical,
@@ -110,10 +110,8 @@ public static class Components
     }
 
     /// <summary>
-    /// The expanded panel as ONE layout, cutout and all. The icon, the cutout and the value form the row
-    /// the housing splits: the kit renders what precedes the cutout in the Island's leading view and what
-    /// follows it in the trailing view. Everything under the housing is described by the vertical layout
-    /// the row sits inside.
+    /// The expanded panel as ONE layout: the icon, the <see cref="Cutout"/> and the value form the row the
+    /// housing splits; the vertical layout around it describes the strip below.
     /// </summary>
     private static Element Panel(string symbol, string? value, bool withBar)
     {

@@ -15,18 +15,9 @@ public enum ClaimMode
 
 /// <summary>
 /// One resource a <see cref="MissionDefinition"/> needs before it may run: a key inside a named
-/// <see cref="IClaimScope"/>, held either exclusively or shared.
-///
-/// <para>
-/// Claims are how this scheduler expresses "these two pieces of work must not overlap" WITHOUT the
-/// caller taking a lock. That matters more than it first looks: the family's prior art took real
-/// locks per resource, and both of the bugs that cost the most came from owning lock lifetime by
-/// hand — a check-then-remove race while cleaning up a per-key semaphore (two callers got DIFFERENT
-/// semaphores for the same key, so the key was not actually serialized), and a lock-ORDER rule
-/// between two key spaces that every call site had to remember. A request declares its whole claim
-/// SET up front and the scheduler admits it only when all of it is free, so there is no per-key lock
-/// object to leak and no acquisition order to get wrong.
-/// </para>
+/// <see cref="IClaimScope"/>, held either exclusively or shared. A mission declares its whole claim SET
+/// up front and is admitted only when all of it is free, so there is no per-key lock object to leak and
+/// no acquisition order to get wrong.
 /// </summary>
 /// <param name="Scope">Name of the <see cref="IClaimScope"/> that owns this key space.</param>
 /// <param name="Key">The resource key, interpreted by that scope.</param>

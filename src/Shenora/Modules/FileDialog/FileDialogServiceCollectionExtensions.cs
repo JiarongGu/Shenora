@@ -11,37 +11,20 @@ namespace Shenora;
 public static class FileDialogServiceCollectionExtensions
 {
     /// <summary>
-    /// Register the file-dialog route module. OPT-IN: an app whose page never picks a file should not
-    /// carry the routes, and D21 says the kit ships the primitive rather than the product.
-    /// <para>
-    /// ⚠ It used to cite request tracking as the comparable opt-in, which stopped being true when D64 made
-    /// the framework default-on — <c>Build()</c> configures that one for every app, and its registration is
-    /// <c>internal</c> now precisely because there is no add-or-not choice to offer. What keeps THIS one
-    /// opt-in is its dependency: the routes need an <see cref="IFileDialogs"/> only a shell can supply, and
-    /// that is also why it stays PUBLIC — two shell packages call it, and a `ProjectReference` grants no
-    /// `internal` access.
-    /// </para>
+    /// Register the file-dialog route module. OPT-IN, because the routes need an
+    /// <see cref="IFileDialogs"/> only a shell can supply — which is also why it stays PUBLIC: two shell
+    /// packages call it, and a <c>ProjectReference</c> grants no <c>internal</c> access.
     /// <para>
     /// ⚠ <b>Requires an <see cref="IFileDialogs"/> in the container</b>, which the SHELL registers —
-    /// <c>UseWindows</c> on the desktop, <c>UseAndroid</c>/<c>UseIOS</c> on Android/iOS. Call this after the shell, and
-    /// nothing here resolves it eagerly: the facade is constructed on first dispatch through the same lazy
-    /// path every other DI-registered module uses, so a missing shell registration surfaces as an ordinary
-    /// resolve failure rather than a startup crash inside a singleton factory.
-    /// </para>
-    /// <para>
-    /// It takes no options. The facade's module name is a constant
-    /// (<see cref="FileDialogModule.Module"/>) because this facade publishes no events, so there is nothing
-    /// for a configurable name to keep in step with — the reason <c>IpcRequestsModule</c> needs one.
+    /// <c>UseWindows</c> on the desktop, <c>UseAndroid</c>/<c>UseIOS</c> on Android/iOS. Call this after
+    /// the shell; a missing registration surfaces as an ordinary resolve failure on first dispatch.
     /// </para>
     /// </summary>
     public static IServiceCollection AddShenoraFileDialogs(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        // ⚠ TryAddEnumerable, not AddIpcModule: the SHELL calls this now (D64), and an app that also
-        // calls it — every app written before that did — would otherwise register a SECOND
-        // FileDialogModule, and two facades claiming one module name is a duplicate the dispatcher
-        // rejects. So the old explicit call stays valid and becomes a harmless no-op, which is what makes
-        // this a default rather than a migration.
+        // TryAddEnumerable, not AddIpcModule: the SHELL calls this too (D64), and an app that also calls
+        // it must be a no-op — two facades claiming one module name is a duplicate the dispatcher rejects.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IIpcModule, FileDialogModule>());
         return services;
     }

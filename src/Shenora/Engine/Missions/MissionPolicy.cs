@@ -1,15 +1,8 @@
 namespace Shenora.Engine.Missions;
 
 /// <summary>
-/// A lane and how many of its permits one mission needs.
-///
-/// <para>
-/// The permit COUNT exists for long-term fit rather than for any current consumer: a lane is often a
-/// budget (memory, VRAM, bandwidth) where items cost different amounts, not a slot count where every
-/// item costs one. Adding this later would change the type of <see cref="MissionDefinition.Lanes"/> and
-/// break every caller, so it is here from the start — the cost of carrying it is one defaulted
-/// parameter.
-/// </para>
+/// A lane and how many of its permits one mission needs — a weighted count, for a lane that is a budget
+/// (memory, VRAM, bandwidth) rather than a slot count.
 /// </summary>
 /// <param name="Name">Lane name.</param>
 /// <param name="Permits">Permits required. Must be at least 1; may exceed the lane's capacity only if capacity later grows.</param>
@@ -21,37 +14,17 @@ public readonly record struct MissionLane(string Name, int Permits = 1);
 public readonly record struct MissionSchedulerState(int Pending, int Running);
 
 /// <summary>
-/// The app's answer to <b>what</b> to pick up next and <b>when</b> to pick it up.
-///
-/// <para>
-/// Scheduling order is a product decision, not a framework one — "user-initiated before background",
-/// "smallest first", "nothing heavy before 9am", "pause while on battery" are all legitimate and
-/// mutually exclusive, and a kit that hardcodes one of them gets forked by the second app that needs
-/// another. So the kit ships the SAFETY rules (claim exclusion, lane capacity, no starvation) and
-/// hands ordering and timing to the app.
-/// </para>
-///
-/// <para>
-/// <b>The safety boundary — the reason a custom policy cannot corrupt anything.</b> A policy is only
-/// ever consulted about items that have ALREADY passed admission: their claims are free and their
-/// lane permits are available. It chooses among legal moves. It cannot make conflicting work run
-/// concurrently, cannot bypass a lane, and cannot reorder items that conflict with each other. The
-/// worst a buggy policy can do is DELAY work — never corrupt it. That boundary is what makes this
-/// safe to expose.
-/// </para>
+/// The app's answer to <b>what</b> to pick up next and <b>when</b> to pick it up. The kit keeps the
+/// SAFETY rules (claim exclusion, lane capacity, no starvation): a policy is only ever consulted about
+/// items that have ALREADY passed admission, so the worst a buggy one can do is DELAY work.
 /// </summary>
 public interface IMissionPolicy
 {
     /// <summary>
     /// <b>When.</b> May this item start now? Returning false defers it and leaves it queued; it is
-    /// re-asked on the next dispatch pass.
-    ///
-    /// <para>
-    /// Dispatch runs on submit and on completion. A policy that defers on an EXTERNAL condition —
-    /// a clock, system load, battery state — must therefore poke the scheduler when that condition
-    /// changes, via <see cref="IMissionScheduler.Reevaluate"/>; otherwise deferred work waits for
-    /// unrelated traffic to wake it. The kit deliberately owns no timer.
-    /// </para>
+    /// re-asked on the next dispatch pass. ⚠ Deferring on an EXTERNAL condition — a clock, system load,
+    /// battery state — needs <see cref="IMissionScheduler.Reevaluate"/> when that condition changes, or
+    /// the item waits for unrelated traffic to wake it.
     /// </summary>
     bool ShouldStart(in MissionExecution mission, in MissionSchedulerState state);
 
@@ -64,8 +37,7 @@ public interface IMissionPolicy
 
 /// <summary>
 /// The default policy: start anything eligible, highest <see cref="MissionDefinition.Priority"/> first,
-/// ties broken by submission order. With no priorities set this is plain FIFO, which is what every
-/// implementation in the family did.
+/// ties broken by submission order. With no priorities set this is plain FIFO.
 /// </summary>
 public sealed class PriorityMissionPolicy : IMissionPolicy
 {

@@ -17,9 +17,9 @@ public interface IPathLease : IAsyncDisposable
 /// Cross-process exclusion for a path — the thing <see cref="MissionClaim"/> cannot do. A claim excludes
 /// missions inside ONE scheduler in ONE process; this excludes any process that also takes a lease.
 /// <para>
-/// <b>Advisory — it excludes PARTICIPANTS.</b> A process that never takes a lease (a game holding its
-/// own assets open, antivirus, Explorer's thumbnailer) is completely unaffected, and no lock design can
-/// change that; for those, <see cref="RetryPolicy"/> + <see cref="IFileLockInspector"/> names the holder.
+/// ⚠ <b>Advisory — it excludes PARTICIPANTS.</b> A process that never takes a lease (a game holding its
+/// own assets open, antivirus, Explorer's thumbnailer) is completely unaffected; for those,
+/// <see cref="RetryPolicy"/> + <see cref="IFileLockInspector"/> names the holder.
 /// </para>
 /// </summary>
 public interface IPathLocker
@@ -39,9 +39,9 @@ public sealed class FilePathLockerOptions
 {
     /// <summary>
     /// Directory the lock files live in. Required, and it should be the APP's own storage — never the
-    /// tree being locked. ⚠ Two MACHINES sharing a tree over a network share need a directory ON THE
-    /// SHARE: a lock file in one machine's local storage is invisible to the other, so everything works
-    /// until both machines write the same file.
+    /// tree being locked. ⚠ Two MACHINES sharing a tree need a directory ON THE SHARE: a lock file in
+    /// one machine's local storage is invisible to the other, so everything works until both machines
+    /// write the same file.
     /// </summary>
     public required string LockDirectory { get; init; }
 
@@ -56,16 +56,15 @@ public sealed class FilePathLockerOptions
 /// Cross-process leases as lock FILES in a directory of the app's own, one per canonical path. Each
 /// file holds the holder's process id and path, readable by <see cref="IFileLockInspector"/>.
 /// <para>
-/// Opened <c>FileShare.Read</c> + <c>DeleteOnClose</c>: a second holder cannot open it for writing, so
-/// the exclusion is the OS's rather than a convention; and the file vanishes when the holding process
-/// exits — including when it CRASHES — so a stale lock is never a state anyone has to clean up.
+/// Opened <c>FileShare.Read</c> + <c>DeleteOnClose</c>, so the exclusion is the OS's rather than a
+/// convention and the file vanishes when the holding process exits — including when it CRASHES, so a
+/// stale lock is never a state anyone has to clean up.
 /// </para>
 /// <para>
-/// <b>Windows is the tested target</b>; on POSIX <c>DeleteOnClose</c> has no direct equivalent. Over an
-/// SMB2+ share the exclusion holds between machines with
-/// <see cref="FilePathLockerOptions.LockDirectory"/> ON the share, but ⚠ after a HARD failure (the
-/// holder crashes, the link drops) the server frees the handle only when the SESSION TIMES OUT — a
-/// stale lease self-heals in tens of seconds, so size the lease timeout for that.
+/// <b>Windows is the tested target</b>; on POSIX <c>DeleteOnClose</c> has no direct equivalent. ⚠ Over
+/// an SMB2+ share, after a HARD failure (the holder crashes, the link drops) the server frees the handle
+/// only when the SESSION TIMES OUT — a stale lease self-heals in tens of seconds, so size the lease
+/// timeout for that.
 /// </para>
 /// </summary>
 public sealed class FilePathLocker : IPathLocker
@@ -123,10 +122,7 @@ public sealed class FilePathLocker : IPathLocker
         }
     }
 
-    /// <summary>
-    /// The lock file for a path: a hash of it, in the app's own directory — a path is longer than a
-    /// filename may be, and mangling one would leak the managed tree's layout into the app's data folder.
-    /// </summary>
+    /// <summary>The lock file for a path: a hash of it, in the app's own directory.</summary>
     private string LockFileFor(string canonicalPath)
     {
         var key = OperatingSystem.IsWindows() ? canonicalPath.ToUpperInvariant() : canonicalPath;

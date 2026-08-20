@@ -3,9 +3,8 @@ using System.Text.Json.Serialization;
 namespace Shenora.Modules.Platform.Activities;
 
 /// <summary>
-/// What the kit's generic widget should DRAW on each of a Live Activity's surfaces, described as a tree
-/// of elements in C# and interpreted by SwiftUI at runtime — the same shape a React app describes its own
-/// UI in, on the side of the boundary where the app already lives.
+/// What the kit's generic widget should DRAW on each of a Live Activity's surfaces, as a tree of elements
+/// interpreted by SwiftUI at runtime.
 ///
 /// <para>
 /// Every surface is optional; a null one uses the kit's built-in look. The element set is closed (D13) —
@@ -37,9 +36,8 @@ public sealed record Presentation
     /// Dynamic Island, expanded (long-press) — the whole panel as ONE element, normally a horizontal
     /// <see cref="Layout"/> whose children include a <see cref="Cutout"/>.
     /// <para>
-    /// 🔴 The kit splits it across the platform's separate leading/trailing views for you, so an app
-    /// describes a panel rather than three regions. Anything WITHOUT a cutout renders in the full-width
-    /// strip under the housing, which is the only slot that can host arbitrary content.
+    /// 🔴 The kit splits it across the platform's separate leading/trailing views at the
+    /// <see cref="Cutout"/>. Anything WITHOUT a cutout renders in the full-width strip under the housing.
     /// </para>
     /// </summary>
     public Element? Expanded { get; init; }
@@ -58,22 +56,12 @@ public sealed record Presentation
 }
 
 /// <summary>
-/// One node. Deliberately a closed set — see <see cref="Presentation"/> for why widening it is the wrong
-/// move.
+/// One node. A closed set (D13), enforced rather than asserted — the constructor is
+/// <c>private protected</c>, so only this assembly's six elements derive from it.
 /// <para>
 /// ⚠ The JSON discriminator is part of the WIRE: it is read by Swift, so renaming a derived type's
-/// <c>"kind"</c> breaks rendering silently — the interpreter falls back rather than throwing, because a
-/// malformed layout must not take the activity down with it.
-/// </para>
-/// <para>
-/// 🔴 <b>CLOSED IS ENFORCED, NOT ASSERTED — the constructor is <c>private protected</c>.</b> Left plainly
-/// derivable, an adopter could write <c>record MyElement : Element</c>, have it
-/// COMPILE, and get a <see cref="NotSupportedException"/> out of
-/// <see cref="ILiveActivities.Start"/> at runtime — polymorphic serialization refuses a runtime type with no
-/// <c>[JsonDerivedType]</c>. And it could never have worked even if it serialized: the Swift interpreter
-/// branches on a fixed set of <c>kind</c> strings, so a seventh one has nothing to render it. A capability
-/// the type system offers and the wire cannot honour is a trap, and closing it turns a runtime crash in the
-/// adopter's app into a compile error in ours.
+/// <c>"kind"</c> breaks rendering silently — the interpreter falls back rather than throwing, so that a
+/// malformed layout does not take the activity down with it.
 /// </para>
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
@@ -85,7 +73,6 @@ public sealed record Presentation
 [JsonDerivedType(typeof(Spacer), "spacer")]
 public abstract record Element
 {
-    /// <summary>Only this assembly's six elements derive from this — see the type's remarks.</summary>
     private protected Element() { }
 }
 
@@ -93,17 +80,13 @@ public abstract record Element
 /// A line of text.
 /// <para>
 /// <b>Bindings:</b> <c>{title}</c>, <c>{subtitle}</c> and <c>{progress}</c> are substituted from the live
-/// <see cref="LiveActivityState"/> when the widget renders — so a presentation is described ONCE at start
-/// and still shows changing values. <c>{progress}</c> renders as a whole percent; an indeterminate
-/// progress renders as an empty string rather than "0%", which would be a lie that looks like a stalled
-/// job.
+/// <see cref="LiveActivityState"/> at every render, so a presentation described once at start still shows
+/// changing values. ⚠ <c>{progress}</c> renders as a whole percent, and as an EMPTY string when progress
+/// is null.
 /// </para>
 /// </summary>
 /// <param name="Value">Literal text, a binding, or both: <c>"step {progress} done"</c>.</param>
-/// <param name="Role">
-/// What the line IS, not how it looks. ⚠ Semantic on purpose — a <c>Style</c> property would be the first
-/// brick of the design system this must not become.
-/// </param>
+/// <param name="Role">What the line IS, not how it looks. There is no style property (D13).</param>
 public sealed record Text(string Value, TextRole Role = TextRole.Body) : Element
 {
     /// <summary>A <c>#RRGGBB</c> override, or null for the presentation's own colour.</summary>
@@ -119,11 +102,8 @@ public sealed record Icon(string Symbol) : Element
 }
 
 /// <summary>
-/// A progress bar bound to <see cref="LiveActivityState.Progress"/>.
-/// <para>
-/// An indeterminate progress renders as an indeterminate bar, never an empty one — the distinction the
-/// state's <c>null</c> exists to carry.
-/// </para>
+/// A progress bar bound to <see cref="LiveActivityState.Progress"/>. A null progress renders as an
+/// indeterminate bar, never an empty one.
 /// </summary>
 public sealed record ProgressBar : Element
 {
@@ -135,30 +115,20 @@ public sealed record ProgressBar : Element
 public sealed record Spacer : Element;
 
 /// <summary>
-/// A placeholder for the Dynamic Island's sensor housing — the hole an app lays out AROUND.
+/// A placeholder for the Dynamic Island's sensor housing — the hole an app lays out AROUND. It draws
+/// nothing: it marks where the kit splits the panel, so a <see cref="Layout"/>'s children before the
+/// cutout render in the Island's leading region, the ones after it in the trailing region, and everything
+/// else in the strip below.
 ///
 /// <para>
-/// 🔴 <b>IT DRAWS NOTHING, AND THAT IS WHAT LETS AN APP DESCRIBE THE ISLAND AS ONE PANEL.</b> ActivityKit
-/// hands the expanded presentation to a widget as SEPARATE views — leading, trailing, bottom — and nothing
-/// drawn in one can cross into another, so no layout can literally span the housing. <b>The kit splits the
-/// panel for you instead:</b> put a cutout among a <see cref="Layout"/>'s children and the children before
-/// it render in the leading region, the ones after it in the trailing region, and everything else in the
-/// strip below.
+/// ⚠ <b>It must be <see cref="Presentation.Expanded"/> itself or one of its DIRECT children</b> — the
+/// splitter looks no deeper. Nested further it is not found, and the failure is quiet: the whole panel
+/// renders in the bottom strip and the cutout becomes blank space.
 /// </para>
 ///
 /// <para>
-/// ⚠ <b>IT HAS TO BE NEAR THE TOP: the splitter looks at <see cref="Presentation.Expanded"/> itself and at
-/// its DIRECT children, and no deeper.</b> A cutout buried two levels down is not found, and the failure is
-/// quiet by design — the whole panel renders in the bottom strip and the cutout becomes blank space, rather
-/// than the activity refusing to draw. That fallback is right (a malformed layout must never take the
-/// activity down) but it looks like the split "did nothing", so the depth limit is stated here rather than
-/// discovered. In practice this costs nothing: the split row IS the top-level arrangement of the expanded
-/// surface, and nesting it deeper describes a panel the Island cannot render anyway.
-/// </para>
-///
-/// <para>
-/// ⚠ On every other surface — the lock-screen card, the compact pill — there is no housing to avoid, so a
-/// cutout is simply flexible blank space, exactly like <see cref="Spacer"/>.
+/// On every other surface there is no housing to avoid, so a cutout is flexible blank space, exactly like
+/// <see cref="Spacer"/>.
 /// </para>
 /// </summary>
 public sealed record Cutout : Element;
@@ -179,46 +149,25 @@ public sealed record Layout : Element
     public double? Spacing { get; init; }
 
     /// <summary>
-    /// Space around the layout.
-    /// <para>
-    /// 🔴 <b>When a surface supplies a layout, it owns its insets completely: the kit adds none.</b> The
-    /// built-in arrangement keeps its own, but the moment an app describes a tree the kit stops
-    /// second-guessing it — a margin it could not remove would be the most annoying possible default.
-    /// </para>
+    /// Space around the layout. 🔴 When a surface supplies a layout, it owns its insets completely: the
+    /// kit adds none.
     /// </summary>
     public Insets Insets { get; init; }
 
-    /// <summary>
-    /// How the children are distributed ALONG the axis — flexbox's <c>justify-content</c>.
-    /// <para>
-    /// ⚠ <see cref="Spacer"/> still works and is often clearer for one gap;
-    /// <see cref="Justify.SpaceBetween"/> is what you want when the number of children varies, because
-    /// the spacer count would have to vary with it.
-    /// </para>
-    /// </summary>
+    /// <summary>How the children are distributed ALONG the axis — flexbox's <c>justify-content</c>.</summary>
     public Justify Justify { get; init; } = Justify.Start;
 
-    /// <summary>
-    /// How the children line up ACROSS the axis — flexbox's <c>align-items</c>. <see cref="Align.Fill"/>
-    /// stretches them, which is what a progress bar in a column wants.
-    /// </summary>
+    /// <summary>How the children line up ACROSS the axis — flexbox's <c>align-items</c>.</summary>
     public Align Align { get; init; } = Align.Leading;
 }
 
-/// <summary>
-/// Space around an element, per edge.
-/// <para>
-/// 🔴 <b>Insets and spacing are ARRANGEMENT, not styling, which is why they are here at all.</b> A layout
-/// whose gaps cannot be set is an incomplete layout — the same category as its axis. What stays out is the
-/// token vocabulary: named spacing scales, fonts, themes, per-role colours.
-/// </para>
-/// </summary>
+/// <summary>Space around an element, per edge — in points.</summary>
 public readonly record struct Insets(double Top, double Right, double Bottom, double Left)
 {
     /// <summary>No inset — flush to the edge.</summary>
     public static Insets None => new(0, 0, 0, 0);
 
-    /// <summary>The same on every edge, which is what most layouts want.</summary>
+    /// <summary>The same on every edge.</summary>
     public static Insets All(double value) => new(value, value, value, value);
 }
 
@@ -226,10 +175,8 @@ public readonly record struct Insets(double Top, double Right, double Bottom, do
 /// <remarks>
 /// 🔴 <b>The string converter is part of the CONTRACT, not a serializer preference.</b> The widget
 /// compares against the member NAME, so an enum written as a number decodes to nothing and the
-/// interpreter falls back to its default — silently, on both sides. Putting it on the TYPE rather than on
-/// one call site's options means the guarantee travels with the value wherever it is serialized.
-/// (Measured: without it every role rendered as body text and every horizontal layout ran
-/// vertically.) The generic converter, because iOS is AOT and the non-generic one resolves by reflection.
+/// interpreter falls back to its default — silently, on both sides. It is on the TYPE so the guarantee
+/// travels with the value wherever it is serialized, and generic because iOS is AOT.
 /// </remarks>
 [JsonConverter(typeof(JsonStringEnumConverter<Axis>))]
 public enum Axis
@@ -243,12 +190,7 @@ public enum Axis
 
 /// <summary>
 /// How a <see cref="Layout"/> distributes its children along its axis — flexbox's
-/// <c>justify-content</c>, with the names a React developer already uses.
-/// <para>
-/// ⚠ Four values, not six: no <c>SpaceEvenly</c>, no <c>SpaceAround</c>. On a surface this small the
-/// difference is sub-pixel, and every extra value is one more thing the interpreter has to mean exactly
-/// the same by on a platform that never defined it.
-/// </para>
+/// <c>justify-content</c>. Four values: there is no <c>SpaceEvenly</c> and no <c>SpaceAround</c>.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<Justify>))]
 public enum Justify
@@ -268,14 +210,11 @@ public enum Justify
 
 /// <summary>
 /// How a <see cref="Layout"/> lines its children up across its axis — flexbox's <c>align-items</c>.
-/// <para>
-/// ⚠ Four values and no more. This is the alignment a row or a column needs, not a general box model.
-/// </para>
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<Align>))]
 public enum Align
 {
-    /// <summary>Against the leading edge. The default, because text reads from there.</summary>
+    /// <summary>Against the leading edge. The default.</summary>
     Leading,
 
     /// <summary>Centred across the axis.</summary>
@@ -284,14 +223,7 @@ public enum Align
     /// <summary>Against the trailing edge — where a value belongs, so a column of numbers lines up.</summary>
     Trailing,
 
-    /// <summary>
-    /// Stretched across the axis. What a progress bar in a column wants.
-    /// <para>
-    /// ⚠ A member that shares the interpreter's default arm with <see cref="Leading"/> applies no frame,
-    /// so an app can set it and nothing happens — declared and INERT. Pinned by a test asserting at most
-    /// one member of an enum falls to the default.
-    /// </para>
-    /// </summary>
+    /// <summary>Stretched across the axis. What a progress bar in a column wants.</summary>
     Fill,
 }
 
@@ -308,6 +240,6 @@ public enum TextRole
     /// <summary>Secondary, dimmed.</summary>
     Caption,
 
-    /// <summary>Monospaced digits — for a value that changes, so it does not jitter as digits change width.</summary>
+    /// <summary>Monospaced digits, so a changing value does not jitter as digit widths change.</summary>
     Value,
 }

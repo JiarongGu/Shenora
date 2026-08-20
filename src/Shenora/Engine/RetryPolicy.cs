@@ -1,15 +1,8 @@
 namespace Shenora.Engine;
 
 /// <summary>
-/// How a failed attempt is retried. Defaults match the value the family's planners independently
-/// settled on for transient filesystem locks held by an external process.
-/// <para>
-/// ⚠ In <c>Shenora.Engine</c> rather than beside either engine that uses it. Both the mission scheduler
-/// and the file-update queue apply it with the same loop, and it names no vocabulary from either —
-/// while living in <c>Engine.Missions</c> it forced an app using ONLY the file queue to write
-/// <c>using Shenora.Engine.Missions;</c> to name its retry policy, against a design whose whole point
-/// (D30) is that the two components compose and "neither knows about the other".
-/// </para>
+/// How a failed attempt is retried. Shared by the mission scheduler and the file-update queue (D30);
+/// defaults are tuned for transient filesystem locks held by an external process.
 /// </summary>
 public sealed class RetryPolicy
 {

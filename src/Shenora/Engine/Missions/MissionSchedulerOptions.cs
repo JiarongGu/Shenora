@@ -11,41 +11,34 @@ public sealed class MissionSchedulerOptions
     /// <c>clamp(ProcessorCount - 1, 1, 4)</c>. Any value below 1 THROWS, <c>0</c> included.
     /// <para>
     /// ⚠ <b>A CEILING over every named lane, not merely their starting value.</b> A named lane runs at
-    /// <c>min(its own capacity, this)</c> — see <see cref="ILane.EffectiveCapacity"/> for what a lane will
-    /// actually reach. Setting a lane's capacity above this bound is legal and logs why it will not take
-    /// effect.
-    /// </para>
-    /// <para>
-    /// Set it to the widest any lane will ever need. To move the bound at RUNTIME set
-    /// <c>IMissionScheduler.GlobalLane.Capacity</c>, which is live-resizable like any other lane.
+    /// <c>min(its own capacity, this)</c> — see <see cref="ILane.EffectiveCapacity"/> for what a lane
+    /// will actually reach. Set it to the widest any lane will ever need;
+    /// <c>IMissionScheduler.GlobalLane.Capacity</c> moves the bound at runtime.
     /// </para>
     /// </summary>
     public int? GlobalLaneCapacity { get; set; }
 
     /// <summary>
     /// Claim scopes this scheduler understands. A <see cref="MissionClaim"/> naming an unregistered scope
-    /// throws at submit rather than being ignored, which would silently drop the exclusion it asked for.
+    /// throws at submit rather than being ignored.
     /// </summary>
     public IReadOnlyList<IClaimScope> Scopes { get; set; } = [];
 
     /// <summary>
     /// The app's ordering and timing rules — <b>what</b> to pick up next and <b>when</b>. Null uses
-    /// <see cref="PriorityMissionPolicy"/> (priority, then FIFO). A policy can only choose among items
-    /// the scheduler has ALREADY found safe to run, so it can delay work but never corrupt it —
-    /// see <see cref="IMissionPolicy"/>.
+    /// <see cref="PriorityMissionPolicy"/> (priority, then FIFO).
     /// </summary>
     public IMissionPolicy? Policy { get; set; }
 
     /// <summary>
-    /// Lifecycle listeners — metrics, tracing, or attaching a progress registry. Each call is
-    /// guarded, so a throwing observer cannot fail the work it is watching.
+    /// Lifecycle listeners — metrics, tracing, or attaching a progress registry. Each call is guarded,
+    /// so a throwing observer cannot fail the work it is watching.
     /// </summary>
     public IReadOnlyList<IMissionObserver> Observers { get; set; } = [];
 
     /// <summary>
     /// Where the pending queue lives across restarts. Null (the default) keeps the queue entirely in
-    /// memory, and <see cref="MissionDefinition.Durable"/> is then ignored — a mission is durable
-    /// because the queue holding it is backed by a store.
+    /// memory, and <see cref="MissionDefinition.Durable"/> is then ignored.
     /// </summary>
     public IMissionQueueStore? QueueStore { get; set; }
 

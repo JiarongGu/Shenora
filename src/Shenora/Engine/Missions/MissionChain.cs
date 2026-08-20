@@ -44,19 +44,11 @@ public sealed record MissionStep(
 
 /// <summary>
 /// Builds a multi-step mission: steps that run in order, where a later one depends on what an earlier
-/// one did.
-/// <para>
-/// <b>A chain is ONE mission, not N.</b> <see cref="Sequence"/> returns an ordinary
-/// <see cref="MissionDefinition"/>, so the scheduler has no concept of dependencies and no edges.
-/// </para>
+/// one did. <b>A chain is ONE mission, not N</b> — <see cref="Sequence"/> returns an ordinary
+/// <see cref="MissionDefinition"/>, so a failing step fails the chain there and one token cancels it.
 /// <para>
 /// ⚠ <b>The chain holds the UNION of its steps' claims for its whole life</b>, so a five-step chain
-/// touching five paths blocks all five from the start. They are still acquired as one set up front,
-/// so deadlock-freedom is unchanged.
-/// </para>
-/// <para>
-/// <b>Failure and cancellation:</b> a failing step fails the chain at that step, and later steps do
-/// not run. Cancelling cancels the chain — one mission, one token, one cancel.
+/// touching five paths blocks all five from the start.
 /// </para>
 /// </summary>
 public static class MissionChain
@@ -89,10 +81,7 @@ public static class MissionChain
         };
     }
 
-    /// <summary>
-    /// One claim per (scope, key), taking the STRONGER mode when steps disagree: a chain that reads a
-    /// path in one step and writes it in another must hold it exclusively.
-    /// </summary>
+    /// <summary>One claim per (scope, key), taking the STRONGER mode when steps disagree.</summary>
     private static IReadOnlyList<MissionClaim> UnionOf(MissionStep[] steps)
     {
         var strongest = new Dictionary<(string Scope, string Key), ClaimMode>();
@@ -122,8 +111,8 @@ public static class MissionChain
     }
 
     /// <summary>
-    /// Applies the step's own retry budget. Not the scheduler's, which retries a MISSION and would
-    /// therefore re-run the completed steps.
+    /// Applies the step's own retry budget — not the scheduler's, which retries a MISSION and would
+    /// re-run the completed steps.
     /// </summary>
     private static async Task RunStepAsync(
         MissionExecution execution, ChainContext context, MissionStep step, CancellationToken cancellationToken)
@@ -160,8 +149,7 @@ public static class MissionChain
             StepName = steps[index].Name;
         }
 
-        // Unsynchronized: steps run one after another on the chain's single body, so there is no
-        // concurrent access to guard against.
+        // Unsynchronized: steps run one after another on the chain's single body.
         public T? Get<T>(string key)
         {
             ArgumentNullException.ThrowIfNull(key);

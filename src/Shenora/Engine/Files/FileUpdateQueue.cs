@@ -9,11 +9,8 @@ public sealed class FileUpdateQueueOptions
 {
     /// <summary>
     /// Optional cross-process exclusion. Supply one and the queue takes a lease on every path an update
-    /// touches before applying it, releasing them after.
-    /// <para>
-    /// Null (the default) is in-process serialization only, and buys nothing against a process that does
-    /// not take leases; see <see cref="LockInspector"/> for that half.
-    /// </para>
+    /// touches before applying it, releasing them after. Null (the default) is in-process serialization
+    /// only; see <see cref="LockInspector"/> for the non-participant half.
     /// </summary>
     public IPathLocker? Locker { get; set; }
 
@@ -30,15 +27,14 @@ public sealed class FileUpdateQueueOptions
     /// Write-ahead journal — what makes <see cref="FileAtomicity.AllOrNothing"/> survive the process
     /// DYING rather than merely failing. Null (the default) means rollback is in-memory only: correct
     /// for a failed change, absent after a power cut. Only <see cref="FileAtomicity.AllOrNothing"/>
-    /// updates are journalled; <see cref="FileAtomicity.PerChange"/> promises nothing about a crash.
+    /// updates are journalled.
     /// <para>
-    /// Supplying one means calling <see cref="FileUpdateQueue.RecoverAsync"/> at startup. A journal
-    /// nobody replays is a directory that fills up.
+    /// ⚠ Supplying one means calling <see cref="FileUpdateQueue.RecoverAsync"/> at startup.
     /// </para>
     /// </summary>
     public IFileUpdateJournal? Journal { get; set; }
 
-    /// <summary>Diagnostics sink, guarded through <see cref="AppCallback.Log"/> — a throwing sink cannot take the queue down.</summary>
+    /// <summary>Diagnostics sink, guarded through <see cref="AppCallback.Log"/>.</summary>
     public ILogger? Log { get; set; }
 }
 
@@ -58,9 +54,8 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         : this(options, new SystemFileOperations()) { }
 
     /// <summary>
-    /// Test seam, INTERNAL because the kit ships no filesystem abstraction (`docs/ADOPTION.md`). It
-    /// exists so the serialization and rollback invariants can be proven with an injected probe rather
-    /// than with sleeps and real disks.
+    /// Test seam, INTERNAL because the kit ships no filesystem abstraction — it exists so the
+    /// serialization and rollback invariants can be proven without sleeps and real disks.
     /// </summary>
     internal FileUpdateQueue(FileUpdateQueueOptions? options, IFileOperations operations)
     {
@@ -81,14 +76,13 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Leases come AFTER the in-process gate, never before: taking a cross-process lock while
-            // another thread of this process holds the partition is waiting on ourselves through the
-            // filesystem.
+            // Leases come AFTER the in-process gate: taking a cross-process lock while another thread of
+            // this process holds the partition is waiting on ourselves through the filesystem.
             var leases = await AcquireLeasesAsync(update, cancellationToken).ConfigureAwait(false);
             if (leases.Held is null)
             {
-                // ⚠ The path that ACTUALLY refused, never the first one in the set: naming the wrong file
-                // asks the lock inspector about a file nobody is holding, so `Holders` comes back empty.
+                // ⚠ The path that ACTUALLY refused, never the first in the set: asking the lock inspector
+                // about a file nobody holds returns an empty `Holders` that looks like it worked.
                 var contested = leases.Contested!;
                 var error = new IOException(
                     $"another process holds a lease on '{contested}' (waited {_options.LeaseTimeout}).");
@@ -115,9 +109,8 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     /// leases in the SAME order.
     /// <para>
     /// ⚠ <b>The DISTINCT is platform-correct, and must be</b> (see <c>PathComparison</c>): on a
-    /// case-sensitive filesystem such as Android's ext4/f2fs, an ignore-case dedup would drop a genuinely
-    /// distinct path — and a path missing here never gets a LEASE, so the cross-process exclusion
-    /// silently covers less than the caller asked for.
+    /// case-sensitive filesystem an ignore-case dedup would drop a genuinely distinct path, and a path
+    /// missing here never gets a LEASE.
     /// </para>
     /// </summary>
     private static IEnumerable<string> PathsOf(FileUpdate update) =>
@@ -132,7 +125,6 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
             })
             .Select(PathClaims.Canonical)
             .Distinct(PathComparer)
-            // Ordering need only be CONSISTENT, but uses the same comparer so there is one answer here.
             .Order(PathComparer);
 
     private static StringComparer PathComparer { get; } = StringComparer.FromComparison(PathComparison.ForPaths);
@@ -140,7 +132,7 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     /// <summary><c>Held</c> null = the attempt failed, and <c>Contested</c> names the path that refused.</summary>
     private readonly record struct LeaseAttempt(List<IPathLease>? Held, string? Contested);
 
-    /// <summary><c>Held</c> null when any lease could not be taken — everything already taken is released first.</summary>
+    /// <summary>Takes every lease, releasing the ones already held if any of them refuses.</summary>
     private async Task<LeaseAttempt> AcquireLeasesAsync(FileUpdate update, CancellationToken cancellationToken)
     {
         if (_options.Locker is not { } locker) return new LeaseAttempt([], null);
@@ -161,10 +153,7 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         return new LeaseAttempt(held, null);
     }
 
-    /// <summary>
-    /// Best-effort "who is holding this?". Never throws: a diagnostic that can fail the operation it is
-    /// describing is worse than no diagnostic.
-    /// </summary>
+    /// <summary>Best-effort "who is holding this?". Never throws.</summary>
     private IReadOnlyList<FileLockHolder> HoldersOf(string path)
     {
         if (_options.LockInspector is not { } inspector) return [];
@@ -191,7 +180,7 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     }
 
     /// <summary>
-    /// Runs with the partition held. The cancellation token is NOT observed past this point: a
+    /// Runs with the partition held. ⚠ The cancellation token is NOT observed past this point — a
     /// half-applied set abandoned mid-way is the one outcome no caller can do anything with.
     /// </summary>
     private async Task<FileUpdateResult> ApplyLockedAsync(FileUpdate update)
@@ -199,8 +188,7 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         var atomic = update.Atomicity == FileAtomicity.AllOrNothing;
         var undo = new List<FileUndoStep>();
         var staged = new List<FileUndoStep>();   // deletes to finish once the whole set lands
-        // Journalled only for AllOrNothing: PerChange promises nothing about a crash.
-        var journal = atomic ? _options.Journal : null;
+        var journal = atomic ? _options.Journal : null;   // PerChange promises nothing about a crash
         var updateId = $"u{Guid.NewGuid():N}";
         var startedUtc = DateTimeOffset.UtcNow;
 
@@ -228,8 +216,8 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
             }
         }
 
-        // Past this line the update has LANDED. If the process dies now, recovery must finish the
-        // staged deletions rather than roll back a success — which is what the stage marker is for.
+        // Past this line the update has LANDED: if the process dies now, recovery must finish the staged
+        // deletions rather than roll back a success.
         if (journal is not null)
             await journal.WriteAsync(
                 new FileUpdateJournalEntry(updateId, FileUpdateStage.Committing, undo, staged, startedUtc),
@@ -294,8 +282,8 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
             var planned = await PlanChangeAsync(change, atomic).ConfigureAwait(false);
             try
             {
-                // WRITE-AHEAD: the undo plan is durable BEFORE the change happens. An entry written
-                // afterwards is missing exactly the change that got interrupted — the only one recovery needs.
+                // 🔴 WRITE-AHEAD: an entry written AFTER the change is missing exactly the change that
+                // got interrupted — the only one recovery needs.
                 if (journal is not null && (planned.Undo.Count > 0 || planned.Staged.Count > 0))
                     await journal.WriteAsync(
                         new FileUpdateJournalEntry(
@@ -316,9 +304,8 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     }
 
     /// <summary>
-    /// What a change WILL do and how to undo it, decided before anything is touched. The split exists
-    /// for the journal: an undo plan is only useful if it is durable BEFORE the mutation, and it can
-    /// only be computed from the current state (does the target exist? what sidecar name for the backup?).
+    /// What a change WILL do and how to undo it, decided before anything is touched — the undo plan has
+    /// to be journalled BEFORE the mutation, and can only be computed from the current state.
     /// </summary>
     private readonly record struct PlannedChange(
         IReadOnlyList<FileUndoStep> Undo, IReadOnlyList<FileUndoStep> Staged, Func<ValueTask> Apply)
@@ -354,7 +341,7 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                     return new PlannedChange([], [],
                         () => _operations.MoveFileAsync(replace.TempPath, replace.TargetPath, overwrite: true));
 
-                // Keep the displaced original: that is what makes the rollback possible at all.
+                // Keep the displaced original — the rollback restores from it.
                 var backup = SidecarPath(replace.TargetPath, "bak");
                 return new PlannedChange(
                     [new FileUndoStep(FileUndoKind.RestoreBackup, replace.TargetPath, backup)],
@@ -398,8 +385,8 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                         ? _operations.DeleteFileAsync(delete.Path)
                         : _operations.DeleteDirectoryAsync(delete.Path, delete.Recursive));
 
-                // STAGED: a delete is the one change that cannot be undone from nothing, so under
-                // AllOrNothing it is a move aside now and a real delete only once everything lands.
+                // STAGED: a delete cannot be undone from nothing, so under AllOrNothing it is a move
+                // aside now and a real delete only once everything lands.
                 var aside = SidecarPath(delete.Path, "del");
                 return new PlannedChange(
                     [new FileUndoStep(FileUndoKind.MoveBack, delete.Path, aside)],
@@ -427,8 +414,8 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
 
     /// <summary>
     /// Perform one undo step, TOLERATING a world that does not match the plan: after a crash the step may
-    /// already have been done, or never have happened. Every step checks first and does nothing when
-    /// there is nothing to do — which is what makes recovery safe to run twice.
+    /// already have been done, or never have happened. Every step checks first, so recovery is safe to
+    /// run twice.
     /// </summary>
     private async ValueTask RunUndoAsync(FileUndoStep step)
     {
@@ -464,8 +451,8 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     }
 
     /// <summary>
-    /// A sibling of the target: same-volume, therefore atomic and instant. A temp DIRECTORY elsewhere
-    /// would silently become a cross-volume COPY of the file being replaced.
+    /// A sibling of the target: same-volume, therefore atomic. A temp DIRECTORY elsewhere would silently
+    /// become a cross-volume COPY of the file being replaced.
     /// </summary>
     private static string SidecarPath(string path, string tag) =>
         $"{path}.shenora-{tag}-{Guid.NewGuid():N}";
@@ -502,9 +489,7 @@ internal sealed class SystemFileOperations : IFileOperations
     {
         if (Directory.Exists(from))
         {
-            // Directory.Move has no overwrite, and the contract deliberately does not extend the flag
-            // to trees — replacing one would delete it wholesale behind a flag named for files. Named
-            // here so the refusal reads as the rule it is, not as a bare IOException out of the BCL.
+            // Overwrite does not extend to trees; raised here so the refusal is not a bare BCL IOException.
             if (overwrite && (Directory.Exists(to) || File.Exists(to)))
             {
                 throw new IOException(

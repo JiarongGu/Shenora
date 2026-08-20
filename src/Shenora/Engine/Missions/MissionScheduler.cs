@@ -3,29 +3,12 @@ using Microsoft.Extensions.Logging;
 namespace Shenora.Engine.Missions;
 
 /// <summary>
-/// The default <see cref="IMissionScheduler"/> — an event-driven, claim-aware dispatcher.
-///
+/// The default <see cref="IMissionScheduler"/> — an event-driven, claim-aware dispatcher. Admission
+/// rules and durability ordering: <c>docs/design/missions-and-files.md</c>.
 /// <para>
-/// ADMISSION. A pending item starts when all three hold:
-/// (1) no IN-FLIGHT item holds a conflicting claim — the safety rule;
-/// (2) no EARLIER PENDING item holds a conflicting claim — the fairness rule, without which a
-///     steady stream of newer disjoint work starves a queued item indefinitely;
-/// (3) a permit is free in every lane it named, and none of those lanes is held.
-/// </para>
-///
-/// <para>
-/// DISPATCH IS EVENT-DRIVEN — evaluated on submit, on each completion, on a lane change, and when a
-/// pending item's own token cancels. There is no polling worker and no dedicated thread. The family's
-/// two prior planners both used a worker loop and both paid for it, one in idle latency and one in a
-/// thread parked for the process lifetime.
-/// </para>
-///
-/// <para>
-/// WORK NEVER RUNS UNDER THE LOCK. <see cref="_gate"/> covers bookkeeping only; admitted bodies are
-/// collected into a local list and started after it is released. This is called out because it is
-/// the single easiest thing to get wrong here — running a body inline while holding the lock
-/// deadlocks the moment that body submits more work, which every real user of a scheduler
-/// eventually does.
+/// 🔴 <b>Work never runs under <see cref="_gate"/></b>, which covers bookkeeping only: admitted bodies
+/// are collected into a local list and started after it is released. Running one inline deadlocks the
+/// moment that body submits more work.
 /// </para>
 /// </summary>
 public sealed class MissionScheduler : IMissionScheduler, IDisposable
@@ -43,12 +26,10 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
     private readonly CancellationTokenSource _shutdown = new();
 
     /// <summary>
-    /// The shutdown token, captured ONCE at construction. <see cref="RunEntryAsync"/> runs on a pool
+    /// The shutdown token, captured ONCE at construction. ⚠ <see cref="RunEntryAsync"/> runs on a pool
     /// thread that <see cref="StartAll"/> only QUEUES, so reading <c>_shutdown.Token</c> there races
-    /// disposal: a body that had not yet reached its first line when <see cref="Dispose"/> ran would take
-    /// an <see cref="ObjectDisposedException"/> before its try block, stranding the submitter's task
-    /// forever and leaving the fault unobserved. A <see cref="CancellationToken"/> is a struct that stays
-    /// readable after its source is disposed, and still reports the cancellation.
+    /// disposal: the <see cref="ObjectDisposedException"/> lands before that method's try block and
+    /// strands the submitter's task forever. A token struct stays readable after its source is disposed.
     /// </summary>
     private readonly CancellationToken _shutdownToken;
 
@@ -56,14 +37,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// The name of the lane every request draws from — see <see cref="GlobalLane"/>.
-    /// <para>
-    /// It has a real name rather than the empty string it used to carry, because the lane became
-    /// addressable: <see cref="Lane"/> and a mission declaring this name both resolve to the ONE global
-    /// lane instance. Parenthesised so it cannot collide with an app's own lane by accident — and
-    /// resolving it to the same instance is what stops a caller silently getting a decoy lane whose
-    /// capacity changes nothing.
-    /// </para>
+    /// The name of the lane every request draws from — see <see cref="GlobalLane"/>. Parenthesised so it
+    /// cannot collide with an app's own lane name.
     /// </summary>
     public const string GlobalLaneName = "(global)";
 
@@ -81,8 +56,6 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             _scopes[scope.Name] = scope;
         }
 
-        // Null means "choose for me"; anything below 1 is a caller bug and says so rather than being
-        // quietly reinterpreted — a scheduler admitting 0 missions would look like a hang.
         if (_options.GlobalLaneCapacity is { } requested)
             ArgumentOutOfRangeException.ThrowIfLessThan(requested, 1, $"{nameof(options)}.{nameof(MissionSchedulerOptions.GlobalLaneCapacity)}");
         var capacity = _options.GlobalLaneCapacity ?? Math.Clamp(Environment.ProcessorCount - 1, 1, 4);
@@ -126,20 +99,16 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
 
     /// <summary>
     /// Resolve a lane name to its ONE instance, creating it on first use.
-    /// <para>
-    /// ⚠ <see cref="GlobalLaneName"/> resolves to the global lane rather than making a lane that merely
-    /// shares its name. Both callers need that: a decoy would accept a capacity change and alter
-    /// nothing, and a mission DECLARING the global lane would take a second permit from a different
-    /// pool than the one it is already bounded by.
-    /// </para>
+    /// ⚠ <see cref="GlobalLaneName"/> resolves to the global lane itself, never to a lane that merely
+    /// shares its name: a decoy would accept a capacity change and alter nothing, and a mission
+    /// DECLARING the global lane would draw a second permit from a different pool.
     /// </summary>
     private LaneState LaneLocked(string name)
     {
         if (string.Equals(name, GlobalLaneName, StringComparison.Ordinal)) return _defaultLane;
         if (!_lanes.TryGetValue(name, out var lane))
         {
-            // Start at the global bound, not below it: a new lane should never be the thing that
-            // narrows work before anyone has asked it to.
+            // Start at the global bound: a new lane must not narrow work before anyone asked it to.
             lane = new LaneState(name, _defaultLane.Capacity, this);
             _lanes[name] = lane;
         }
@@ -158,8 +127,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            // Dedup BEFORE building state: an identical key already active carries this caller's
-            // completion, and the body never runs a second time.
+            // Dedup BEFORE building state: the active entry carries this caller's completion.
             if (definition.Key is { } key && _byKey.TryGetValue(key, out var existing))
             {
                 Log(() => $"mission '{key}' deduplicated against {existing.MissionId}");
@@ -172,18 +140,16 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             toStart = DispatchLocked();
         }
 
-        // Persist, notify and start OUTSIDE the lock. The Queued append is TRACKED on the entry rather
-        // than awaited — this method must stay synchronous (RecoverAsync relies on it throwing here) —
-        // and every later store write chains behind it, so the store can never see Running or Remove
-        // before Queued: an overtaken Queued append resurrects a finished mission at the next recovery.
-        // ⚠ SUPPLIED, not assigned: the entry became dispatchable INSIDE the lock above, so another
-        // path (a pre-cancelled token taking DispatchLocked's cancel branch, a concurrent completion's
-        // dispatch) can need the ordering before this line runs — they await the entry's own gate,
-        // which resolves here for durable and non-durable alike.
+        // Persist, notify and start OUTSIDE the lock. The Queued append is TRACKED rather than awaited —
+        // this method must stay synchronous — and every later store write chains behind it, so the store
+        // can never see Running or Remove before Queued: an overtaken Queued append resurrects a finished
+        // mission at the next recovery. ⚠ SUPPLIED, not assigned: the entry became dispatchable INSIDE
+        // the lock above, so another path can need the ordering before this line runs, and it resolves
+        // here for durable and non-durable alike.
         entry.SupplyQueuedPersist(entry.Durable ? PersistAsync(entry, MissionState.Queued) : Task.CompletedTask);
-        // A pending item's cancellation must WAKE dispatch: the check in DispatchLocked otherwise runs
-        // only on submit, completion or a lane change, and none of those may ever come. Registering an
-        // already-cancelled token runs the wake HERE, which is what makes the late registration safe.
+        // A pending item's cancellation must WAKE dispatch, which otherwise runs only on submit,
+        // completion or a lane change — none of which may ever come. Registering an already-cancelled
+        // token runs the wake HERE, which is what makes the late registration safe.
         if (cancellationToken.CanBeCanceled)
             entry.CancellationWake = cancellationToken.Register(OnLaneChanged);
         Notify(observer => observer.OnQueued(entry.Execution()));
@@ -207,8 +173,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             var policy = _options.RecoveryPolicyFor?.Invoke(record) ?? DefaultRecoveryPolicy(record);
             if (policy is RecoveryPolicy.Discard or RecoveryPolicy.Fail)
             {
-                // Both drop the record; Fail is distinguished only by being LOGGED, because a record
-                // that silently vanished after a crash is indistinguishable from one that ran.
+                // Both drop the record; Fail is distinguished only by being LOGGED.
                 if (policy == RecoveryPolicy.Fail)
                     Log(() => $"mission {record.MissionId} ({record.Kind}) was {record.State} at shutdown — failed, not retried");
                 await store.RemoveAsync(record.MissionId, cancellationToken).ConfigureAwait(false);
@@ -222,10 +187,9 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
                 continue;
             }
 
-            // SubmitAsync is NOT async, so an unusable definition (no Run, an unknown scope or lane)
-            // throws HERE rather than on the returned task. Skipped, not thrown: abandoning the pass
-            // over one bad row leaves every later record unrecovered AND unremoved, so the next boot
-            // repeats the whole thing.
+            // SubmitAsync is NOT async, so an unusable definition throws HERE, not on the returned task.
+            // Skipped rather than rethrown: abandoning the pass over one bad row leaves every later
+            // record unrecovered AND unremoved, so the next boot repeats the whole thing.
             try { _ = SubmitAsync(request, cancellationToken); }
             catch (Exception ex)
             {
@@ -237,10 +201,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
 
             // 🔴 THE RESUBMIT MINTS A NEW ID, so the recovered record's own id is now orphaned: its
             // ForgetAsync will remove the NEW id and never this one. Left in place it is reloaded and
-            // re-executed on EVERY subsequent boot, forever — the unbounded version of the loop
-            // RecoveryPolicy exists to prevent, reached through Queued instead of Running.
-            // Removed AFTER the resubmit, never before: durability is a best-effort overlay on
-            // execution, and a crash in this window costs a duplicate rather than a lost mission.
+            // re-executed on EVERY subsequent boot, forever. Removed AFTER the resubmit, never before —
+            // a crash in this window costs a duplicate rather than a lost mission.
             await store.RemoveAsync(record.MissionId, cancellationToken).ConfigureAwait(false);
             requeued++;
         }
@@ -268,8 +230,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             _pending.Clear();
         }
 
-        // Queued work never starts; in-flight work is asked to stop and then AWAITED, so a caller
-        // that disposes cannot race a body still writing to disk.
+        // Queued work never starts; in-flight work is asked to stop and then AWAITED, so a caller that
+        // disposes cannot race a body still writing to disk.
         foreach (var entry in pending) entry.TryComplete(MissionOutcome.Cancelled, 0, null);
         await _shutdown.CancelAsync().ConfigureAwait(false);
         foreach (var entry in running)
@@ -284,21 +246,11 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
     /// <summary>
     /// Stop accepting and cancel everything queued — <b>without waiting for work already running</b>.
     /// <para>
-    /// 🔴 <b>This exists because the framework registers a scheduler in EVERY app (D64), and a singleton
-    /// that is <see cref="IAsyncDisposable"/>-only makes Microsoft DI's synchronous
-    /// <c>ServiceProvider.Dispose()</c> THROW.</b> That is not theoretical: it crashes the documented
-    /// <c>using var app = builder.Build(); app.Run();</c> shutdown — a crash dialog on every
-    /// clean quit, with nothing a consumer could do about it. Defaulting the scheduler would have handed
-    /// that same crash to every adopter, so the kit must not ship an async-only singleton it registers
-    /// itself.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>It is a WEAKER guarantee than <see cref="DisposeAsync"/>, and the difference is the whole
-    /// reason both exist.</b> <c>DisposeAsync</c> AWAITS in-flight bodies, so a caller cannot race a
-    /// mission still writing to disk. This one cannot: awaiting here would be a blocking wait on whatever
-    /// thread disposes — routinely the UI thread — which is the measured AppHang shape the family's
-    /// marshalling rules exist to prevent. <b>Prefer <c>await using var app = …</c></b> whenever a mission
-    /// may be mid-write; reach for this when the alternative is a crash.
+    /// 🔴 It exists because the framework registers a scheduler in EVERY app (D64), and a singleton that
+    /// is <see cref="IAsyncDisposable"/>-only makes Microsoft DI's synchronous
+    /// <c>ServiceProvider.Dispose()</c> THROW — a crash on every clean quit. It is the WEAKER teardown:
+    /// <see cref="DisposeAsync"/> awaits in-flight bodies, so <b>prefer <c>await using var app = …</c></b>
+    /// whenever a mission may be mid-write.
     /// </para>
     /// </summary>
     public void Dispose()
@@ -315,8 +267,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         }
 
         foreach (var entry in pending) entry.TryComplete(MissionOutcome.Cancelled, 0, null);
-        // Running bodies are SIGNALLED and not awaited — see the remarks. They observe the token and
-        // unwind on their own threads; what this guarantees is that nothing new starts.
+        // Running bodies are SIGNALLED, not awaited; what this guarantees is that nothing new starts.
         _shutdown.Cancel();
         _shutdown.Dispose();
     }
@@ -324,14 +275,9 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
     // ── Admission ─────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Start every pending item whose resources are free and whose turn the policy says it is.
-    /// Returns the entries to start; the CALLER runs them after releasing the lock.
-    ///
-    /// <para>
-    /// Order of operations matters and is the safety boundary for app-supplied policy: SAFETY is
-    /// decided first (claims, lanes, fairness), and only the survivors are offered to the policy.
-    /// A policy therefore chooses among legal moves and can delay work, never corrupt it.
-    /// </para>
+    /// Start every pending item whose resources are free and whose turn the policy says it is. Returns
+    /// the entries to start; the CALLER runs them after releasing the lock. SAFETY is decided first
+    /// (claims, lanes, fairness) and only the survivors are offered to the policy.
     /// </summary>
     private List<Entry> DispatchLocked()
     {
@@ -364,7 +310,6 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
 
             if (eligible is null || eligible.Count == 0) break;
 
-            // "What next" — the app's ordering, over the already-safe set.
             var state = new MissionSchedulerState(_pending.Count, _running.Count);
             var chosen = SelectLocked(eligible, state);
             if (chosen is null) break;   // policy deferred everything it was offered
@@ -386,7 +331,6 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         foreach (var candidate in eligible)
         {
             var view = candidate.Value.Execution();
-            // "When" — a policy may hold this item back for a reason only the app can see.
             if (!AskShouldStart(view, state)) continue;
             if (best is null || ComparePolicy(view, best.Value.Execution()) < 0) best = candidate;
         }
@@ -395,7 +339,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
 
     private bool AskShouldStart(in MissionExecution view, in MissionSchedulerState state)
     {
-        // A throwing policy must not wedge the scheduler; treat a failure as "not now" and log it.
+        // A throwing policy must not wedge the scheduler: treat a failure as "not now".
         // (`in` parameters cannot be captured by the logging lambda, hence the local copy.)
         try { return _policy.ShouldStart(view, state); }
         catch (Exception ex)
@@ -419,17 +363,15 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
 
     private bool CanStartLocked(Entry entry, LinkedListNode<Entry> self)
     {
-        // (3) lanes first — cheapest test, and the common reason a busy scheduler defers.
+        // Lanes first — cheapest test, and the common reason a busy scheduler defers.
         foreach (var (lane, permits) in entry.Lanes)
             if (lane.IsHeld || lane.AvailableLocked < permits) return false;
 
-        // (1) nothing in flight may conflict.
         foreach (var other in _running)
             if (Conflicts(entry, other)) return false;
 
-        // (2) no EARLIER pending item may conflict — fairness, so a queued item cannot starve.
-        //     Note this is submission order, NOT policy order: priority re-ranks work that could
-        //     legally run in any order, and must never let a newer item jump a conflicting older one.
+        // No EARLIER pending item may conflict — fairness, so a queued item cannot starve. Submission
+        // order, NOT policy order: a newer item must never jump a conflicting older one.
         for (var node = _pending.First; node is not null && node != self; node = node.Next)
             if (Conflicts(entry, node.Value)) return false;
 
@@ -470,9 +412,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
     }
 
     /// <summary>
-    /// Fan a lifecycle callback out to the observers. Guarded per observer: one that throws is
-    /// logged and skipped, and the others — and the work itself — carry on. An observer is a
-    /// bystander; it must never be able to fail the thing it is watching.
+    /// Fan a lifecycle callback out to the observers. One that throws is logged and skipped; the other
+    /// observers, and the work itself, carry on.
     /// </summary>
     private void Notify(Action<IMissionObserver> notification)
     {
@@ -491,9 +432,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         Exception? error = null;
         var attempts = 0;
 
-        // ⚠ `_shutdownToken`, never `_shutdown.Token` — see the field. This method runs on a pool thread
-        // that StartAll only QUEUED, so a read off the source here races disposal, and anything that
-        // throws before the try strands the entry in _running with its submitter awaiting forever.
+        // ⚠ `_shutdownToken`, never `_shutdown.Token` — see the field.
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(entry.Cancellation, _shutdownToken);
         if (entry.Durable)
         {
@@ -529,8 +468,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         {
             outcome = MissionOutcome.Failed;
             error = ex;
-            // RunWithRetryAsync returns a count only on SUCCESS; on the throw path the entry carries
-            // the attempts actually made, and the pre-call value here would claim the body never ran.
+            // RunWithRetryAsync returns a count only on SUCCESS; on the throw path the entry carries the
+            // attempts actually made, and the pre-call value would claim the body never ran.
             attempts = entry.Attempt;
             Log(() => $"mission {entry.MissionId} failed after {attempts} attempt(s)", ex);
         }
@@ -568,9 +507,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             catch (Exception ex) when (
                 attempt < retry.Attempts && !ct.IsCancellationRequested && retry.IsTransient(ex))
             {
-                // Linear backoff: the family measured 500ms × attempt as long enough for an external
-                // process to release a file and short enough that the UI does not feel stuck.
-                await Task.Delay(retry.Delay * attempt, ct).ConfigureAwait(false);
+                await Task.Delay(retry.Delay * attempt, ct).ConfigureAwait(false);   // linear backoff
             }
         }
     }
@@ -582,8 +519,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         if (_options.QueueStore is not { } store) return;
         var record = new MissionRecord(entry.MissionId, entry.Definition.Kind, entry.Definition.Payload, state,
             entry.CreatedUtc, entry.Definition.Key);
-        // A store failure must never take down the work it was describing — durability is a
-        // best-effort overlay on execution, not a precondition for it.
+        // A store failure must never take down the work it was describing: durability is a best-effort
+        // overlay on execution, not a precondition for it.
         try { await store.AppendAsync(record, CancellationToken.None).ConfigureAwait(false); }
         catch (Exception ex) { Log(() => $"mission store save failed for {entry.MissionId}", ex); }
     }
@@ -629,9 +566,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             ArgumentException.ThrowIfNullOrEmpty(name, nameof(definition));
             ArgumentOutOfRangeException.ThrowIfLessThan(permits, 1, nameof(definition));
             var lane = LaneLocked(name);
-            // Naming one lane twice would take its permits twice and could deadlock against itself.
-            // ⚠ This is also what makes declaring the GLOBAL lane safe: it resolves to the instance
-            // already in this list, so the permits MERGE instead of being taken from it twice.
+            // Naming one lane twice would take its permits twice and could deadlock against itself; the
+            // merge is also what makes declaring the GLOBAL lane safe, since it is already in this list.
             var index = lanes.FindIndex(x => ReferenceEquals(x.Lane, lane));
             if (index >= 0) lanes[index] = (lane, lanes[index].Permits + permits);
             else lanes.Add((lane, permits));
@@ -686,7 +622,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         /// <summary>The execution as first accepted: attempt 0, not running. Every other view is a `with`.</summary>
         public MissionExecution Queued { get; }
 
-        /// <summary>Current attempt, so a snapshot of running work reports the attempt it is on.</summary>
+        /// <summary>Current attempt, so a snapshot reports the attempt running work is on.</summary>
         public int Attempt { get; set; }
 
         /// <summary>The execution as it stands now — the one value handed to bodies, observers and views.</summary>
@@ -697,10 +633,10 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         public bool Durable => Definition.Durable;
 
         /// <summary>
-        /// The Queued append, so every later store write can chain behind it — never overtake it.
-        /// A GATE rather than a settable task: the entry is dispatchable the moment it enters
-        /// <c>_pending</c> (inside SubmitAsync's lock), while the append starts after the lock — so a
-        /// waiter arriving in that window must wait for the assignment itself, not read a default.
+        /// The Queued append, so every later store write can chain behind it — never overtake it. A GATE
+        /// rather than a settable task: the entry is dispatchable the moment it enters <c>_pending</c>,
+        /// while the append starts after the lock, so a waiter arriving in that window must wait for the
+        /// assignment itself rather than read a default.
         /// </summary>
         public Task QueuedPersist { get; }
 
@@ -711,19 +647,16 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         public void SupplyQueuedPersist(Task persist) => _queuedPersist.TrySetResult(persist);
 
         /// <summary>
-        /// Wakes dispatch when a pending item's token cancels. <b>Unregister, never Dispose</b>: Dispose
-        /// blocks until an in-flight callback finishes, and that callback takes the scheduler lock —
-        /// disposing from under the lock would deadlock against it.
+        /// Wakes dispatch when a pending item's token cancels. ⚠ <b>Unregister, never Dispose</b>:
+        /// Dispose blocks until an in-flight callback finishes, and that callback takes the scheduler
+        /// lock — disposing from under the lock deadlocks against it.
         /// </summary>
         public CancellationTokenRegistration CancellationWake { get; set; }
 
         public TaskCompletionSource<MissionResult> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        /// <summary>
-        /// Idempotent: a cancelled-while-pending entry can also be reached by dispose, and completing
-        /// a TCS twice throws.
-        /// </summary>
+        /// <summary>Idempotent: a cancelled-while-pending entry can also be reached by dispose.</summary>
         public void TryComplete(MissionOutcome outcome, int attempts, Exception? error)
         {
             CancellationWake.Unregister();
@@ -732,9 +665,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
     }
 
     /// <summary>
-    /// A permit pool. Counters are guarded by the scheduler's lock — the lane deliberately has no
-    /// lock of its own, so there is exactly one lock in this component and therefore no lock order
-    /// to reason about.
+    /// A permit pool. Counters are guarded by the scheduler's lock; the lane has none of its own, so
+    /// there is exactly one lock in this component and no lock order to reason about.
     /// </summary>
     private sealed class LaneState : ILane
     {
@@ -764,19 +696,17 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
                     _capacity = value;
                     bound = IsGlobal ? value : _owner._defaultLane._capacity;
                 }
-                // ⚠ SAY SO when the request cannot take effect. Storing it silently is what made this
-                // invisible: the getter answered with the requested value while the lane ran narrower,
-                // so the only way to find out was to time the work. Logged rather than thrown or
-                // clamped — a governor may legitimately widen a lane just before widening the global
-                // bound, and neither order should be an error.
+                // ⚠ SAY SO when the request cannot take effect — storing it silently made this invisible,
+                // since the getter still answered with the requested value. Logged rather than thrown or
+                // clamped: a governor may widen a lane just before widening the global bound.
                 if (value > bound)
                 {
                     _owner.Log(() =>
                         $"lane '{Name}' capacity set to {value}, but the global lane admits {bound}, so it will " +
                         $"run at {bound}. Raise IMissionScheduler.GlobalLane.Capacity to widen it.");
                 }
-                // Raising capacity can admit queued work immediately; lowering it cannot cancel
-                // anything, it just means AvailableLocked stays <= 0 until enough items finish.
+                // Raising capacity can admit queued work immediately; lowering it cancels nothing —
+                // AvailableLocked simply stays <= 0 until enough items finish.
                 _owner.OnLaneChanged();
             }
         }
@@ -792,14 +722,11 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         }
 
         /// <summary>
-        /// Whether this IS the scheduler's global lane — which bounds every other lane and is therefore
-        /// bounded by nothing but itself.
+        /// Whether this IS the scheduler's global lane, which bounds every other lane and is bounded by
+        /// nothing but itself. ⚠ Compared by REFERENCE: the global lane is constructed before
+        /// <see cref="_defaultLane"/> is assigned, so a name comparison would be true during its own
+        /// construction and would then read an uninitialised field.
         /// </summary>
-        /// <remarks>
-        /// Compared by REFERENCE, not by name: the global lane is constructed before
-        /// <see cref="_defaultLane"/> is assigned, so during its own construction this is false, and a
-        /// name comparison would be true — which would then read an uninitialised field.
-        /// </remarks>
         private bool IsGlobal => ReferenceEquals(this, _owner._defaultLane);
 
         public bool IsHeld { get { lock (_owner._gate) return _holds > 0; } }

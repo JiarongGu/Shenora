@@ -4,14 +4,8 @@ namespace Shenora.Engine.Files;
 
 /// <summary>
 /// Filesystem paths as scheduler claims, plus the containment test every app that maps input to a
-/// path needs.
-///
-/// <para>
-/// This is the whole of what makes a <see cref="MissionScheduler"/> into the family's file-operation
-/// planner: register <see cref="Scope"/>, attach a claim per path an operation touches, and
-/// overlapping work serializes while disjoint work runs in parallel. The ~550-line planners two of
-/// the sibling apps each maintain are this plus their archive code.
-/// </para>
+/// path needs. Register <see cref="Scope"/> with a <see cref="MissionScheduler"/> and attach a claim
+/// per path an operation touches: overlapping work serializes, disjoint work runs in parallel.
 /// </summary>
 public static class PathClaims
 {
@@ -20,8 +14,8 @@ public static class PathClaims
 
     /// <summary>
     /// The claim scope to register in <see cref="MissionSchedulerOptions.Scopes"/>. Hierarchical, so
-    /// <c>C:\a</c> conflicts with <c>C:\a\b</c> — which is the point: deleting a directory must not
-    /// run while something writes a file inside it. Case-insensitive on Windows only.
+    /// <c>C:\a</c> conflicts with <c>C:\a\b</c> — deleting a directory must not run while something
+    /// writes a file inside it. Case-insensitive on Windows only.
     /// </summary>
     public static NestedClaimScope Scope { get; } =
         new(ScopeName, Path.DirectorySeparatorChar, ignoreCase: PathComparison.IgnoresCase);
@@ -31,20 +25,13 @@ public static class PathClaims
 
     /// <summary>
     /// A shared claim on <paramref name="path"/> — for readers. Several readers of one path run
-    /// together; a writer waits for them. None of the family's planners could express this, so they
-    /// serialized reads behind writes they did not conflict with.
+    /// together; a writer waits for them.
     /// </summary>
     public static MissionClaim Shared(string path) => MissionClaim.Shared(ScopeName, Canonical(path));
 
     /// <summary>
     /// Absolute, separator-normalized form — resolving <c>..</c>, <c>.</c> and mixed separators so
-    /// two spellings of one location compare equal.
-    ///
-    /// <para>
-    /// Doing this BEFORE the claim is what makes the exclusion sound: <c>data\mods\..\mods\x</c> and
-    /// <c>data/mods/x</c> are the same directory, and a scheduler that treated them as different
-    /// keys would happily run two mutations on it at once.
-    /// </para>
+    /// two spellings of one location compare equal, and therefore claim the same key.
     /// </summary>
     public static string Canonical(string path)
     {
@@ -57,14 +44,12 @@ public static class PathClaims
 
     /// <summary>
     /// Whether <paramref name="candidate"/> is <paramref name="root"/> itself or sits underneath it,
-    /// compared after full normalization.
-    ///
+    /// compared after full normalization — the guard for anything that turns caller-supplied input
+    /// into a path.
     /// <para>
-    /// The guard for anything that turns caller-supplied input into a path — a resource request, an
-    /// import target, a cleanup sweep. Two traps this closes, and a naive check misses both: a
-    /// <c>..</c> segment escaping the root (which <see cref="Canonical"/> resolves first), and a
-    /// prefix match without a separator boundary, where <c>C:\data-old</c> passes as being inside
-    /// <c>C:\data</c>.
+    /// ⚠ Closes two traps a naive check misses: a <c>..</c> segment escaping the root (which
+    /// <see cref="Canonical"/> resolves first), and a prefix match without a separator boundary, where
+    /// <c>C:\data-old</c> passes as being inside <c>C:\data</c>.
     /// </para>
     /// </summary>
     /// <param name="root">The directory the candidate must not escape.</param>
