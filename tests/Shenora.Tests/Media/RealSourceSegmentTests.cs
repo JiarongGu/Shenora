@@ -158,6 +158,95 @@ public class RealSourceSegmentTests
     }
 
     /// <summary>
+    /// 🔴 <b>Indexing the source in CHUNKS must give the same decode timeline as indexing it whole.</b>
+    /// A run no longer walks every cluster before writing its first fragment — it indexes what it is about
+    /// to emit and comes back for more — and the risk that buys is real: <c>SampleTiming.Derive</c> SORTS,
+    /// and it takes the presentation shift as a maximum over everything it is given. Derived per chunk, a
+    /// B-frame stream could get a different decode order or a different shift on either side of a seam,
+    /// which appends without error and plays wrongly.
+    /// <para>
+    /// ⚠ The control is derived INDEPENDENTLY here — a full walk plus <c>Derive</c> over the whole track,
+    /// which is exactly what the engine used to do — rather than comparing the engine against itself.
+    /// </para>
+    /// <para>
+    /// ⚠ This fixture is many clusters, so the run genuinely crosses chunk seams. A built fixture is one
+    /// cluster and would exercise none of this.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Indexing_the_source_in_chunks_gives_the_same_decode_timeline_as_indexing_it_whole()
+    {
+        // ── the control: one walk, one derivation over the whole track ──────────────────────────────────
+        long[] wholeTrackDecode;
+        using (var file = File.OpenRead(Fixture))
+        {
+            var reader = new MatroskaSampleReader(file);
+            Assert.True(reader.ReadHeader());
+            var track = reader.Tracks.First(t => t.Kind is MediaStreamKind.Video);
+            Assert.True(reader.ReadSamples(new HashSet<ulong> { track.Number }));
+
+            var timeline = SourceTimeline.For(reader.TimestampScaleNs);
+            var presentation = track.Samples.Select(s => s.Ticks * timeline.Factor).ToArray();
+            long shift;
+            (wholeTrackDecode, _, shift) = SampleTiming.Derive(presentation);
+            Assert.True(wholeTrackDecode.Length > 100, "the control derived almost nothing");
+
+            // ⚠ POSITIVE CONTROL. Chunked derivation is only INTERESTING on a reordered stream: with no
+            // B-frames decode order IS presentation order and any chunking scheme passes. If this fixture
+            // is ever replaced by one without them, this test goes quiet rather than wrong — so it says so.
+            var reordered = shift > 0 || presentation.Where((p, i) => p != wholeTrackDecode[i]).Any();
+            Assert.True(reordered,
+                "this fixture's frames are stored in presentation order, so it cannot exercise chunked "
+                + "reordering at all — the claim this test makes needs a B-frame source");
+        }
+
+        // ── the subject: the engine as it now runs, indexing as it writes ───────────────────────────────
+        var dir = Path.Combine(Path.GetTempPath(), "shenora-chunked-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var engine = new DefaultSegmentEngine(new RecordingConversion());
+            var plan = engine.PlanSegments(FixtureBytes, SegmentLengths.Of(SegmentSeconds));
+            Assert.NotNull(plan);
+
+            using (var run = engine.Start(new SegmentRunRequest(FixtureBytes, dir, HasPicture: true,
+                                                                FirstSegment: 0, plan!, Attempt: 0))!)
+            {
+                Assert.NotNull(run);
+                var deadline = DateTime.UtcNow.AddSeconds(120);
+                while (!run.HasExited && DateTime.UtcNow < deadline) await Task.Delay(25);
+                Assert.True(run.HasExited, "the production run did not finish within 120s");
+            }
+
+            var segments = Segments(dir);
+            Assert.Equal(plan!.Count, segments.Count);
+
+            // Every fragment opens at a decode time the WHOLE-TRACK derivation also produced. A chunk seam
+            // that shifted the timeline would put a fragment at a time this set does not contain.
+            var known = wholeTrackDecode.ToHashSet();
+            var bases = new List<long>();
+            foreach (var segment in segments)
+            {
+                var at = Mp4FragmentReader.BaseDecodeTime(segment, DefaultSegmentEngine.VideoTrackId);
+                Assert.NotNull(at);
+                Assert.True(known.Contains(at!.Value),
+                    $"{Path.GetFileName(segment)} opens at {at} — not a decode time the whole-track "
+                    + "derivation produced, so a chunk seam moved the timeline");
+                bases.Add(at.Value);
+            }
+
+            // ...and they advance. A seam that clamped backwards would repeat or reverse one.
+            Assert.Equal(bases.OrderBy(b => b).ToList(), bases);
+            Assert.Equal(bases.Distinct().Count(), bases.Count);
+            Assert.Equal(wholeTrackDecode[0], bases[0]);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch (IOException) { /* a temp dir */ }
+        }
+    }
+
+    /// <summary>
     /// 🔴 <b>The whole of D76 in one assertion: a real H.264 picture and a real AAC soundtrack reach the
     /// fragments without a codec being asked for.</b> Before D76 this run re-encoded both, and on a phone
     /// produced a picture no webview could decode.

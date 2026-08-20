@@ -220,6 +220,29 @@ mix-up, which is otherwise structurally perfect and points at nothing.
 ffmpeg both write them by default; live muxes, interrupted recordings and truncated downloads do not have
 them. The walk is therefore permanent.
 
+#### A run indexes as it WRITES, so no walk is left before first paint
+
+Planning stopped walking when Cues arrived; producing did not — a run indexed every cluster to the end of
+the file before emitting a fragment, on the request that starts it. It now indexes far enough to open its
+first segment and asks for more as the pump consumes what it has (`MatroskaSampleReader.ReadSamplesUntil`,
+resumable, stopping only on a CLUSTER boundary since block times are relative to their cluster).
+
+🔴 **The hazard is `SampleTiming.Derive`, and it is guarded rather than assumed.** It SORTS, and takes the
+presentation shift as a maximum over everything it is given — so a B-frame stream derived per chunk could
+get a different decode order, or a different shift, either side of a seam. That appends without error and
+plays wrongly. So: the shift is taken from the FIRST chunk and never changed; a decode time may not go
+backwards past what is already written; a negative composition offset is clamped; and a stream that reorders
+across a chunk boundary is reported once by name. Real reorder depth is a handful of frames against a chunk
+of a segment or more, so the margin is large — but it is checked, not trusted.
+
+⚠ **A run keeps one sample of lookahead** before consuming its last known frame: a copied sample's duration
+is the gap to its SUCCESSOR, so a frame taken while it is the last one known would get the track's declared
+duration instead of its real gap.
+
+✅ **Pinned by a differential test on a real B-frame clip** — every fragment must open at a decode time a
+full walk plus a whole-track derivation also produces, with the control derived independently. It also
+asserts the fixture really is reordered, so replacing the clip cannot make the test go quiet.
+
 #### What the walk costs, and why there is NO frame-index cache
 
 **Measured 2026-08-20** on a 5 min / 166 MB / 4.6 Mbps Matroska (20,121 samples), counting the DISTINCT

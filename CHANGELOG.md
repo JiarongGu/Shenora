@@ -333,6 +333,25 @@ both.
 
 ### Changed
 
+- **A production run now indexes the source AS IT WRITES, instead of walking every cluster first.** It
+  indexes far enough to open its first segment, then asks for more as the pump consumes what it has.
+  - **Why: this was the last whole-file walk on the first-paint path.** A page cannot play until the init
+    segment arrives, that request starts the run, and the run used to index every cluster to the end of the
+    file before emitting a single fragment. Planning stopped walking when Cues arrived; producing did not.
+  - ⚠ **The risk this buys is real and is guarded rather than assumed.** `SampleTiming.Derive` sorts, and
+    takes the presentation shift as a maximum over everything it is given — so a B-frame stream derived per
+    chunk could get a different decode order or a different shift either side of a seam, which appends
+    without error and plays wrongly. The shift is therefore taken from the FIRST chunk and never changed;
+    decode times may not go backwards past what is already written; a negative composition offset is
+    clamped; and a stream that reorders across a chunk boundary is reported once by name.
+  - **Pinned by a differential test on a real B-frame clip**: every fragment must open at a decode time
+    that a full walk plus a whole-track derivation also produces. The control is derived independently
+    rather than by comparing the engine with itself, and the test asserts the fixture really is reordered
+    so it cannot go quiet if the clip is ever replaced.
+  - **A run keeps one sample of lookahead** before consuming its last known frame, because a copied sample's
+    duration is the gap to its successor — without it, every chunk's final frame would take the track's
+    declared duration instead of its real one.
+
 - **A segment stream now plans from the source's OWN keyframe index instead of walking every cluster to
   rediscover it.** `SeekHead` → `Cues` gives the keyframe times directly, in two small reads. The walk it
   replaces seeks past every frame in the file to read block headers and touches about a third of its pages

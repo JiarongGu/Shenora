@@ -43,8 +43,19 @@ internal sealed class SegmentRunWriter(
     /// <param name="startSeconds">Where the first segment begins on the media timeline.</param>
     /// <param name="conversionOf">The shell's codecs, or null when this shell registered none.</param>
     /// <param name="cancellationToken">Checked between frames; disposing the run fires it.</param>
+    /// <param name="extend">
+    /// Index more of the source, up to the given time in SECONDS; false when there is no more. Called before
+    /// the pump would consume its last known sample.
+    /// <para>
+    /// 🔴 <b>Called BEFORE the last sample rather than after it runs out, and the difference is a
+    /// correctness one.</b> A copied sample's duration is the gap to its SUCCESSOR, so a frame taken while
+    /// it is the last one known gets the track's declared duration instead of its real gap. Keeping one
+    /// sample of lookahead means every frame but the true final one is timed from the file.
+    /// </para>
+    /// </param>
     public void Run(Stream source, SegmentTrack? video, SegmentTrack? audio,
                     int from, double startSeconds, IMediaStreamConversion? conversionOf,
+                    Func<double, bool> extend,
                     CancellationToken cancellationToken)
     {
         var lead = (video ?? audio)!.Track;
@@ -84,6 +95,21 @@ internal sealed class SegmentRunWriter(
                 .Where(c => c.Next < c.Track.Samples.Count)
                 .OrderBy(c => c.Track.Samples[c.Next].Ticks)
                 .FirstOrDefault();
+
+            // Every channel is within one sample of its known end: index more of the source before taking,
+            // so the frame about to be written still has a successor to be timed against. See `extend`.
+            if (tracks.All(c => c.Next + 1 >= c.Track.Samples.Count))
+            {
+                var reach = channel is not null
+                    ? channel.Track.Samples[^1].Ticks * timeline.Factor / (double)timeline.Timescale
+                    : startSeconds;
+                if (extend(reach))
+                {
+                    foreach (var each in tracks.Where(c => c.Conversion is null)) Retime(each);
+                    continue;
+                }
+            }
+
             if (channel is null) break;
 
             var index = channel.Next++;
@@ -223,22 +249,75 @@ internal sealed class SegmentRunWriter(
     private void Retime(Channel channel)
     {
         var samples = channel.Track.Samples;
-        var presentation = new long[samples.Count];
-        for (var i = 0; i < samples.Count; i++) presentation[i] = samples[i].Ticks * timeline.Factor;
+        var from = channel.Retimed;
+        if (from >= samples.Count) return;
 
-        var (decode, composition, shift) = SampleTiming.Derive(presentation);
-        for (var i = 0; i < composition.Length; i++) composition[i] -= shift;
+        if (from == 0)
+        {
+            // The track's declared frame duration on this timeline — what the LAST sample falls back to,
+            // having no next frame to measure against.
+            channel.Step = channel.Track.DefaultDurationNs > 0 && timeline.Timescale > 0
+                ? channel.Track.DefaultDurationNs * timeline.Timescale / 1_000_000_000L
+                : 0;
+        }
 
-        // The track's declared frame duration on this timeline — what the LAST sample falls back to, having
-        // no next frame to measure against.
-        var step = channel.Track.DefaultDurationNs > 0 && timeline.Timescale > 0
-            ? channel.Track.DefaultDurationNs * timeline.Timescale / 1_000_000_000L
-            : 0;
+        var count = samples.Count - from;
+        var presentation = new long[count];
+        for (var i = 0; i < count; i++) presentation[i] = samples[from + i].Ticks * timeline.Factor;
 
-        channel.Presentation = presentation;
-        channel.Decode = decode;
-        channel.Composition = composition;
-        channel.Durations = SampleTiming.Durations(decode, step);
+        var (decode, _, chunkShift) = SampleTiming.Derive(presentation);
+
+        // 🔴 The shift belongs to the RUN, not to the chunk. See Channel.Shift.
+        if (!channel.Shifted)
+        {
+            channel.Shift = chunkShift;
+            channel.Shifted = true;
+        }
+
+        // ⚠ THE SEAM. Sorting inside a chunk gives the same decode order as sorting the whole track only
+        // while reordering stays INSIDE the chunk — true by an enormous margin for any real encoder, whose
+        // reorder depth is a handful of frames against a chunk of a segment or more. It is CHECKED rather
+        // than assumed: a chunk whose first frame decodes before the previous chunk's last would put the
+        // fragments out of order, which appends without error and plays wrongly.
+        if (channel.Decode.Count > 0 && decode[0] < channel.Decode[^1] && !channel.WarnedSeam)
+        {
+            channel.WarnedSeam = true;
+            owner.Report($"segments: the {(channel.IsVideo ? "picture" : "sound")} reorders across an index "
+                       + "boundary, which this run indexes in chunks — timing is clamped at the seam");
+        }
+
+        for (var i = 0; i < count; i++)
+        {
+            var at = decode[i];
+            // Monotonic by construction: a decode time may never go backwards past what is already written.
+            if (channel.Decode.Count > 0 && at < channel.Decode[^1]) at = channel.Decode[^1];
+
+            var composition = presentation[i] + channel.Shift - at;
+            // The run's shift was taken from the first chunk; a later frame needing more would give a
+            // NEGATIVE offset, which asks a player to show a frame it has not decoded.
+            if (composition < 0) composition = 0;
+
+            channel.Presentation.Add(presentation[i]);
+            channel.Decode.Add(at);
+            channel.Composition.Add(composition);
+            channel.Durations.Add(0);              // filled below, once the successor is known
+        }
+
+        // Durations are the gap to the NEXT frame, so the previous chunk's last entry is only knowable now.
+        for (var i = Math.Max(from - 1, 0); i < channel.Decode.Count - 1; i++)
+        {
+            channel.Durations[i] = Math.Max(0, channel.Decode[i + 1] - channel.Decode[i]);
+        }
+
+        // The final entry has no successor yet. A fallback beats a zero, which reads as a truncated file;
+        // it is overwritten the moment another chunk arrives.
+        var last = channel.Decode.Count - 1;
+        channel.Durations[last] = channel.Step > 0 ? channel.Step
+            : last > 0 ? channel.Durations[last - 1]
+            : 1;
+        if (channel.Durations[last] <= 0) channel.Durations[last] = 1;
+
+        channel.Retimed = samples.Count;
     }
 
     /// <summary>Take one COPIED sample, with the timing derived for the whole track.</summary>
@@ -246,10 +325,10 @@ internal sealed class SegmentRunWriter(
     {
         channel.Emitted++;      // counted for the end-of-run line; a copy's TIMES never come from it
         channel.Pending.Add(new Pending(
-            Decode: channel.Decode![index],
-            Presentation: channel.Presentation![index],
-            Duration: channel.Durations![index],
-            Composition: channel.Composition![index],
+            Decode: channel.Decode[index],
+            Presentation: channel.Presentation[index],
+            Duration: channel.Durations[index],
+            Composition: channel.Composition[index],
             KeyFrame: channel.Track.Samples[index].KeyFrame,
             Data: data));
     }
@@ -536,17 +615,42 @@ internal sealed class SegmentRunWriter(
         /// <summary>A copied track's <c>stsd</c> entry, taken from the source. Null for a conversion.</summary>
         public byte[]? SampleEntry { get; init; }
 
-        /// <summary>A copied track's whole-track timing — see <see cref="Retime"/>. Null for a conversion.</summary>
-        public long[]? Presentation { get; set; }
+        /// <summary>
+        /// A copied track's derived timing, GROWING as the source is indexed — see <see cref="Retime"/>.
+        /// Empty for a conversion, whose frames carry their own times.
+        /// </summary>
+        public List<long> Presentation { get; } = [];
 
         /// <inheritdoc cref="Presentation" />
-        public long[]? Decode { get; set; }
+        public List<long> Decode { get; } = [];
 
         /// <inheritdoc cref="Presentation" />
-        public long[]? Composition { get; set; }
+        public List<long> Composition { get; } = [];
 
         /// <inheritdoc cref="Presentation" />
-        public long[]? Durations { get; set; }
+        public List<long> Durations { get; } = [];
+
+        /// <summary>How many of the track's samples have been given a decode time.</summary>
+        public int Retimed { get; set; }
+
+        /// <summary>The track's declared frame duration on this timeline; the last sample's fallback.</summary>
+        public long Step { get; set; }
+
+        /// <summary>
+        /// The presentation shift that makes every frame decodable before it is shown.
+        /// <para>
+        /// 🔴 <b>Taken from the FIRST chunk and never changed.</b> It is a property of the encoder's GOP
+        /// structure, not of a position in the file, and a shift that moved between chunks would put
+        /// neighbouring fragments on different timelines — the gap <c>media.md</c> warns about.
+        /// </para>
+        /// </summary>
+        public long Shift { get; set; }
+
+        /// <inheritdoc cref="Shift" />
+        public bool Shifted { get; set; }
+
+        /// <summary>Reported once per channel, so a pathological stream is one line rather than thousands.</summary>
+        public bool WarnedSeam { get; set; }
 
         /// <summary>How many output frames a CONVERTED channel has produced — the audio timeline's whole input.</summary>
         public long Emitted { get; set; }

@@ -96,6 +96,18 @@ internal sealed class MatroskaSampleReader(Stream source)
     /// <summary>The Cues element's absolute position, or -1 when the file declares none.</summary>
     private long _cuesAt = -1;
 
+    /// <summary>Where the next chunk of the walk resumes; -1 before it has started.</summary>
+    private long _resumeAt = -1;
+
+    /// <summary>Total samples recorded so far, across every chunk — what <see cref="MaxSamples"/> bounds.</summary>
+    private int _recorded;
+
+    /// <summary>The timestamp of the last cluster read, which is what a bounded walk stops against.</summary>
+    private long _lastClusterTicks;
+
+    /// <summary>True once the walk has reached the end of the segment: nothing more will ever be added.</summary>
+    public bool SamplesComplete { get; private set; }
+
     /// <summary>Nanoseconds per tick. Matroska's default, and what almost every real file uses.</summary>
     public long TimestampScaleNs { get; private set; } = 1_000_000;
 
@@ -408,12 +420,44 @@ internal sealed class MatroskaSampleReader(Stream source)
     /// user their video is broken when in fact they navigated away.
     /// </exception>
     public bool ReadSamples(IReadOnlySet<ulong> trackNumbers, CancellationToken cancellationToken = default)
-    {
-        if (_firstClusterAt < 0) return true;   // header-only file: no clusters, no samples, not an error
-        source.Position = _firstClusterAt;
+        => ReadSamplesUntil(trackNumbers, long.MaxValue, cancellationToken);
 
+    /// <summary>
+    /// The same walk, but STOPPING once it has read past <paramref name="untilTicks"/> — resumable, so a
+    /// producer can index the window it is about to write and come back for the rest.
+    ///
+    /// <para>
+    /// 🔴 <b>This is what keeps a whole-file walk off the first-paint path.</b> A run must index the samples
+    /// it is about to emit; it does not have to index the two hours after them, and doing so before writing
+    /// a single fragment is the walk the page waits out.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>It stops on a CLUSTER boundary, never inside one</b>, because a cluster is the only place this
+    /// reader can resume from: block times are relative to their cluster's timestamp, so a position halfway
+    /// through one means nothing on its own.
+    /// </para>
+    /// <para>
+    /// ⚠ Calls ACCUMULATE into <see cref="MatroskaTrack.Samples"/> — each one appends where the last stopped,
+    /// and the sample bound is counted across all of them. <see cref="SamplesComplete"/> is the only way to
+    /// know there is no more; an empty chunk is not evidence of the end.
+    /// </para>
+    /// </summary>
+    /// <param name="trackNumbers">The tracks worth recording. ⚠ The same set on every call, or a track that
+    /// joins late has a hole where the earlier chunks should be.</param>
+    /// <param name="untilTicks">Read at least up to this time on the file's own clock, then stop.</param>
+    /// <param name="cancellationToken">Checked once per cluster, as in the unbounded walk.</param>
+    public bool ReadSamplesUntil(IReadOnlySet<ulong> trackNumbers, long untilTicks,
+                                 CancellationToken cancellationToken = default)
+    {
+        if (SamplesComplete) return true;
+        if (_firstClusterAt < 0)
+        {
+            SamplesComplete = true;              // header-only file: no clusters, no samples, not an error
+            return true;
+        }
+
+        source.Position = _resumeAt >= 0 ? _resumeAt : _firstClusterAt;
         var wanted = Tracks.Where(t => trackNumbers.Contains(t.Number)).ToDictionary(t => t.Number);
-        var total = 0;
 
         while (source.Position < _segmentEnd)
         {
@@ -432,10 +476,15 @@ internal sealed class MatroskaSampleReader(Stream source)
             // on a file at rest (it is a live-muxing shape) and a wrong guess produces silent corruption.
             if (size < 0) return false;
 
-            if (!ReadCluster(Math.Min(payloadAt + size, _segmentEnd), wanted, ref total)) return false;
+            if (!ReadCluster(Math.Min(payloadAt + size, _segmentEnd), wanted, ref _recorded)) return false;
             if (!SkipTo(payloadAt + size)) break;
+
+            // Resume HERE next time — past a whole cluster, which is the only resumable point.
+            _resumeAt = source.Position;
+            if (_lastClusterTicks > untilTicks) return true;
         }
 
+        SamplesComplete = true;
         return true;
     }
 
@@ -453,6 +502,8 @@ internal sealed class MatroskaSampleReader(Stream source)
             {
                 case IdClusterTimestamp:
                     clusterTicks = (long)ReadUnsigned(size);
+                    // What a BOUNDED walk stops against — see ReadSamplesUntil.
+                    _lastClusterTicks = clusterTicks;
                     break;
 
                 case IdSimpleBlock:

@@ -336,16 +336,42 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
             var wanted = new HashSet<ulong>();
             if (video is not null) wanted.Add(video.Track.Number);
             if (audio is not null) wanted.Add(audio.Track.Number);
-            if (!reader.ReadSamples(wanted, cancellationToken))
-            {
-                owner.Report("segments: the source's sample index could not be read");
-                return;
-            }
-
             // The source's clock, stated exactly — a copied track is written on it. Both tracks are cut
             // against the SAME plan; the manifest declares one for the whole presentation.
             var timeline = SourceTimeline.For(reader.TimestampScaleNs);
             var startSeconds = request.Plan.StartOf(request.FirstSegment);
+
+            // 🔴 INDEX ONLY WHAT THIS RUN NEEDS TO BEGIN, and let the pump ask for the rest as it writes.
+            // Indexing the whole file first is a walk of every cluster to the end — on the request that
+            // gates first paint, since a page cannot play until the init segment lands and that request
+            // drives segment 0. ⚠ Returns whether it made PROGRESS, not whether it succeeded: a reader that
+            // has reached the end answers "no more" and the pump must not ask again.
+            var counted = 0;
+            bool Extend(double untilSeconds)
+            {
+                var before = Counted();
+                reader.ReadSamplesUntil(wanted, timeline.TicksAt(untilSeconds), cancellationToken);
+                var after = Counted();
+                counted = after;
+                return after > before;
+            }
+
+            int Counted()
+            {
+                var total = 0;
+                foreach (var track in reader.Tracks)
+                {
+                    if (wanted.Contains(track.Number)) total += track.Samples.Count;
+                }
+                return total;
+            }
+
+            // Far enough to open the first segment and still hold a sample of lookahead past it.
+            if (!Extend(startSeconds + (request.Plan.LengthOf(request.FirstSegment) * 2) + 1) && counted == 0)
+            {
+                owner.Report("segments: the source's sample index could not be read");
+                return;
+            }
 
             using var writer = new SegmentRunWriter(owner, request, timeline);
             var lead = (video ?? audio)!;
@@ -356,7 +382,8 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
             owner.Report($"segments: producing from seg{request.FirstSegment} "
                        + $"(sample {from} of {lead.Track.Samples.Count}, {how})");
 
-            writer.Run(source, video, audio, from, startSeconds, conversionOf: owner._conversion, cancellationToken);
+            writer.Run(source, video, audio, from, startSeconds, conversionOf: owner._conversion,
+                       extend: Extend, cancellationToken);
         }
 
         /// <summary>How one track travels, for the log — the line that says whether a codec is being spent.</summary>
