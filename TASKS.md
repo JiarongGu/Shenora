@@ -53,6 +53,13 @@ sample proves nothing. The suite is held out of the gate deliberately (`[Trait("
     with and without the live emulator gave ONE failure, on the first run, then eight clean. That is the
     entry's own warning working as intended — a healthy sample proves nothing.
   - **So the experiment is READY rather than done.** When it next bites, run `dev.mjs test clipboard`
-    several times with every qemu process stopped and again with one running, and compare the SPREAD.
-    ⚠ A wedged emulator from 12 Aug is still resident and cannot be killed — it needs a reboot, and
-    until then "no VM running" is not actually achievable on this box.
+    several times with no emulator serving and again with one running, and compare the SPREAD.
+  - 🔴 **THE "NEEDS A REBOOT" BLOCKER WAS WRONG, and the no-VM arm is available now.** The 12 Aug
+    qemu is a ZOMBIE, not a wedged VM: `taskkill /F` answers *"there is no running instance of the task"*
+    while the process object persists, CPU is frozen (0 s delta over 5 s), one thread sits in
+    `Wait/Unknown`, and **the SDK's `adb devices` lists nothing**. Its 5554/5555 listeners are stale
+    kernel socket state on an unreaped object. A reboot would clear the CORPSE; nothing needs it cleared,
+    because a dead process cannot write the clipboard. ⚠ It does survive `Stop-Process -Force` — that part
+    of the old note held; what did not is the conclusion drawn from it.
+  - ⚠ **Five more runs with nothing serving: all clean.** Adds to the sample and settles nothing, per this
+    entry's own rule — the fault is still not reproducing, which is what blocks it now.
