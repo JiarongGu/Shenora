@@ -135,7 +135,9 @@ internal static class SegmentRouteProbe
                     // ⚠ An app-level allow-list on top of the kit's containment. Forgetting a name here
                     // produces a 404 that reads as an engine fault — which has cost this sample three
                     // debugging rounds in one day, per ConversionRouteProbe's own warning.
-                    return name == Fixture || name == LongFixture ? Path.Combine(sourceRoot, name) : null;
+                    return name == Fixture || name == LongFixture || name == RemuxRouteProbe.BigFixture
+                        ? Path.Combine(sourceRoot, name)
+                        : null;
                 },
                 AllowedRoots = [sourceRoot],
                 CacheRoot = cache,

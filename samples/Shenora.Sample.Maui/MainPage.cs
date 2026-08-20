@@ -343,6 +343,20 @@ public sealed class MainPage : ContentPage
 							MauiProgram.Log(await SegmentRouteProbe.CheckAsync(
 								_webView, sourceRoot, MauiProgram.Log, SegmentRouteProbe.LongFixture));
 
+							// 🔴 AND THE SAME ROUTE OVER THE BIG FILM, because first-load cost is a question
+							// about SCALE and the fixtures above cannot answer it: both are seconds long, so
+							// a fast reading from them may only mean the file was small. This one is 78 MB /
+							// ~1000 s. ⚠ Staged rather than committed, so its absence SKIPS loudly.
+							if (RemuxRouteProbe.IsStaged(sourceRoot, RemuxRouteProbe.BigFixture))
+							{
+								MauiProgram.Log(await SegmentRouteProbe.CheckAsync(
+									_webView, sourceRoot, MauiProgram.Log, RemuxRouteProbe.BigFixture));
+							}
+							else
+							{
+								MauiProgram.Log($"SEGMENTS[{RemuxRouteProbe.BigFixture}]: SKIPPED — not staged");
+							}
+
 							// The SAME stream through the shipped `bindSegmentStream`, so the module an
 							// adopter gets is the one a device actually runs (D63). The hand-written check
 							// above stays as the control.
