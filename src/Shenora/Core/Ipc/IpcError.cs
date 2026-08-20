@@ -4,9 +4,8 @@ namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The structured error carried by a failed <see cref="IpcResponse"/>: <c>{ code, message?,
-/// parameters? }</c>. <see cref="Code"/> is an i18n key — the family convention is that the
-/// client translates <c>errors.{code}</c> with <see cref="Parameters"/> as interpolation values,
-/// so user-facing error text is produced client-side in the user's language.
+/// parameters? }</c>. <see cref="Code"/> is an i18n key — the client translates <c>errors.{code}</c>
+/// with <see cref="Parameters"/> as interpolation values, so user-facing text is produced client-side.
 /// <see cref="Message"/> is only the untranslated fallback for logs and development.
 /// </summary>
 public sealed class IpcError

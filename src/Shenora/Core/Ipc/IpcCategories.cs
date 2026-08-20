@@ -1,10 +1,8 @@
 namespace Shenora.Core.Ipc;
 
 /// <summary>
-/// Values of the <c>category</c> discriminator on host→client messages. Transports that
-/// multiplex responses and notifications over one channel (WebView2 postMessage, the
-/// server-backed profile's WebSocket) route on it. Lowercase by design — the source app used
-/// SCREAMING values, but the design contract (§5) fixed lowercase to match the
+/// Values of the <c>category</c> discriminator on host→client messages. Transports that multiplex
+/// responses and notifications over one channel route on it. Lowercase, matching the
 /// camelCase-everything wire convention (<see cref="IpcJson.Options"/>).
 /// </summary>
 public static class IpcCategories

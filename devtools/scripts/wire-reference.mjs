@@ -122,8 +122,14 @@ function scan(source, found) {
 
     // The summary's first sentence, read UPWARD through the doc comment. Prose beats a bare name: the
     // reader needs to know when to send `PLAYER_LOAD`, not that it exists.
+    // 🔴 NO LINE LIMIT, and the `break` below is the only terminator that is correct. This read upward at
+    // most 11 lines, which SILENTLY PUBLISHED A MID-SENTENCE FRAGMENT for any constant documented in more:
+    // the walk stopped inside the comment, so `summary` began mid-sentence and the first-sentence split
+    // below returned that. `ShellCapability.LocalFiles` shipped as "local content asks for this and falls
+    // back — …" in an adopter-facing reference. ⚠ `--check` CANNOT see it: it compares this output against
+    // the committed file, so a wrong extraction is stable and agrees with itself for ever.
     let summary = '';
-    for (let j = i - 1; j >= 0 && j > i - 12; j--) {
+    for (let j = i - 1; j >= 0; j--) {
       const text = lines[j].trim();
       if (!text.startsWith('///')) break;
       // ⚠ A `<see cref="X"/>` becomes X rather than nothing. Deleting it left "a response to a client

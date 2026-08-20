@@ -2,8 +2,8 @@
  * The page's half of the host's `SHENORA.DIALOGS` module — native file/folder/save dialogs, and the
  * capability gating that lets ONE bundle ship to every shell.
  *
- * Mirrors `Shenora.Core.Ipc.FileDialogModule`. The wire names here are pinned against the host's own
- * constants by `WireMirrorTests`, not by care.
+ * Mirrors `Shenora.Core.Ipc.FileDialogModule`, pinned against the host's own constants by
+ * `WireMirrorTests`.
  */
 import { useMemo } from 'react';
 import type { ShenoraBridge } from './bridge.js';
@@ -19,8 +19,8 @@ export interface FileDialogFilter {
 }
 
 /**
- * What EVERY dialog call takes. The per-dialog shapes below add what only that dialog can honour —
- * which is the point: a save-only field on a folder pick will not compile.
+ * What EVERY dialog call takes. The per-dialog shapes below add what only that dialog can honour, so a
+ * save-only field on a folder pick does not compile.
  */
 export interface FileDialogOptions {
   /** Dialog title. Omit for a neutral per-dialog default. */
@@ -84,7 +84,7 @@ export interface FileDialogResult {
   filePath?: string;
 }
 
-// A plain interface — NOT `extends Record<string, unknown>`, which widens `keyof TRequests & string`
+// ⚠ A plain interface — NOT `extends Record<string, unknown>`, which widens `keyof TRequests & string`
 // back to `string`, so a mistyped route compiles and every payload collapses to `unknown`.
 interface FileDialogRequests {
   OPEN_FILE: { options?: OpenFileOptions };
@@ -112,10 +112,9 @@ export class FileDialogs extends BaseModuleService<FileDialogRequests> {
   }
 
   /**
-   * Pick a folder. ⚠ DESKTOP only — gate on {@link FileDialogsHandle.canPickFolder}.
-   *
-   * On mobile "open folder" means the camera roll, the app's own space, or a scoped grant: the same
-   * word with a different guarantee, which is why there is no portable version of it.
+   * Pick a folder. ⚠ DESKTOP only — gate on {@link FileDialogsHandle.canPickFolder}. There is no
+   * portable version: on mobile "open folder" means the camera roll, the app's own space, or a scoped
+   * grant — the same word with a different guarantee.
    */
   openFolder(options?: OpenFolderOptions): Promise<FileDialogResult> {
     return this.send('OPEN_FOLDER', { payload: { options } });
@@ -134,9 +133,8 @@ export class FileDialogs extends BaseModuleService<FileDialogRequests> {
    * Pick a destination AND write `text` to it, in one call — the PORTABLE save, working everywhere
    * because the HOST does the writing.
    *
-   * ⚠ For text a page legitimately holds: an export, a report, a config. The content crosses the IPC
-   * envelope as JSON, so anything large or binary should be produced host-side and saved through the
-   * host's own `IFileDialogs.SaveAsync`, where it never enters a message.
+   * ⚠ The content crosses the IPC envelope as JSON, so anything large or binary should be produced
+   * host-side and saved through the host's own `IFileDialogs.SaveAsync` instead.
    */
   saveText(text: string, options?: SaveFileOptions): Promise<FileDialogResult> {
     return this.send('SAVE_TEXT', { payload: { text, options } });
@@ -170,16 +168,14 @@ export interface FileDialogsHandle {
  * ```
  *
  * ⚠ **Use these to decide what to RENDER, not what to catch.** A refused call rejects with
- * `IpcErrorCodes.capabilityNotSupported`, which is the honest answer to a question that should not
- * have been asked — the button should not have been there.
+ * `IpcErrorCodes.capabilityNotSupported` — the button should not have been there.
  *
  * ⚠ Every flag is `false` until the handshake has landed, so await `bridge.notifyReady()` before
  * rendering this tree — see {@link useShellInfo} for why the read is synchronous.
  */
 export function useFileDialogs(dialogs?: FileDialogs): FileDialogsHandle {
   const shell = useShellInfo();
-  // The service is stateless and holds only its module name, but a fresh instance per render would
-  // still make it useless as an effect dependency — the same reason useWindowMaximized caches one.
+  // Cached so it is usable as an effect dependency, not because the service is expensive.
   const client = useMemo(() => dialogs ?? new FileDialogs(), [dialogs]);
   const capabilities = shell?.capabilities;
 

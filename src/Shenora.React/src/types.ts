@@ -25,48 +25,33 @@ export const HANDSHAKE_TYPE = 'READY';
 export const IpcErrorCodes = {
   unknownError: 'UNKNOWN_ERROR',
   /**
-   * **No MODULE claimed the request** — nothing on the host answers that name. Parameters:
-   * `module`, `type`.
+   * **No MODULE claimed the request** — nothing host-side answers that name, i.e. the module was never
+   * registered. Parameters: `module`, `type`.
    *
-   * ⚠ Distinct from {@link noRoute}, and the split is what makes it actionable: this means the module
-   * was never registered host-side, while `noRoute` means it WAS and does not know that type. Opposite
-   * fixes — wire the module up, versus correct a route name — so collapsing both into `NO_HANDLER` with
-   * identical parameters leaves a dead page undiagnosable from the wire.
+   * ⚠ Distinct from {@link noRoute}, and opposite fixes: wire the module up, versus correct a route name.
    */
   noHandler: 'NO_HANDLER',
   /**
-   * **The module answered but has no route of that type.** Parameters: `module`, `type`.
-   *
-   * Seeing this is proof the module IS registered and mapped, which is exactly what {@link noHandler}
-   * cannot tell you — so this is a route-name problem, not a composition problem.
+   * **The module answered but has no route of that type** — so it IS registered, and this is a
+   * route-name problem. Parameters: `module`, `type`.
    */
   noRoute: 'NO_ROUTE',
-  /**
-   * A scope-routed module was called without a `scope`. Parameters: `module`.
-   *
-   * This was MISSING here while the host emitted it (P5.5 H6), so a scoped app could not match it by
-   * constant and had to hard-code the string — against documentation claiming the two sides mirror
-   * name-for-name. The mirror is now enforced by a test rather than by care.
-   */
+  /** A scope-routed module was called without a `scope`. Parameters: `module`. */
   scopeRequired: 'SCOPE_REQUIRED',
   missingPayloadValue: 'MISSING_PAYLOAD_VALUE',
   invalidPayloadValue: 'INVALID_PAYLOAD_VALUE',
   /**
    * The operation was cancelled — a NORMAL outcome, not a fault. Treat it as "show nothing": it is the
-   * one failure a UI should stay silent about. Previously indistinguishable from `UNKNOWN_ERROR`.
+   * one failure a UI should stay silent about.
    */
   operationCancelled: 'OPERATION_CANCELLED',
   /**
    * The shell has NO EXPRESSION of what was asked for — not a fault, and not something a retry fixes.
-   * Parameters: `capability` (a {@link ShellCapabilities} value).
+   * Parameters: `capability` (a {@link ShellCapabilities} value). Hide the control rather than showing
+   * an error: the capability is absent by design on that platform, not broken.
    *
-   * Treat it like `operationCancelled`: do not show a fault. The right response is to hide the control,
-   * because the capability is absent by design on that platform (a folder picker on a phone, for
-   * instance) rather than broken.
-   *
-   * ⚠ A page should not normally NEED this. The ready handshake advertises `ShellInfo.capabilities`
-   * precisely so one bundle can decide BEFORE it asks — `useFileDialogs().canPickFolder` is the
-   * intended path. This is the honest answer when a page asks anyway.
+   * ⚠ A page should not normally NEED this. The ready handshake advertises `ShellInfo.capabilities` so
+   * one bundle can decide BEFORE it asks — `useFileDialogs().canPickFolder` is the intended path.
    */
   capabilityNotSupported: 'CAPABILITY_NOT_SUPPORTED',
   /** Client-only: the request timed out waiting for a response. */
@@ -77,8 +62,7 @@ export const IpcErrorCodes = {
 
 /**
  * The codes that exist ONLY on the client — they never arrive from the host, but reject through the same
- * structured shape so app error handling stays uniform. Named here so the cross-language mirror check can
- * exclude them by intent rather than by a hard-coded list on the other side.
+ * structured shape. Named here so the cross-language mirror check excludes them by intent.
  */
 export const ClientOnlyIpcErrorCodes: readonly string[] = [
   IpcErrorCodes.timeout,
@@ -111,20 +95,8 @@ export interface IpcError {
 
 /**
  * What the host is and what it can do — the handshake's response data (mirror of the host's
- * `ShellInfo`).
- *
- * This is what lets ONE page ship to every shell. Render on the data rather than sniffing the
- * platform:
- *
- * ```tsx
- * const shell = useShellInfo();
- * return <>{shell?.capabilities.includes(ShellCapabilities.windowChrome) && <TitleBar />}</>;
- * ```
- *
- * A desktop shell that draws its own chrome advertises `windowChrome` and `dropZones`; a mobile one
- * has neither, and the same bundle renders correctly on both. Undefined means no host said
- * anything — a plain browser tab, or a host predating this — so treat absent as "assume nothing",
- * never as "assume desktop".
+ * `ShellInfo`), and what lets ONE page ship to every shell. Read it with `useShellInfo`, whose docs
+ * carry the rule for an absent one.
  */
 export interface ShellInfo {
   /** Short host identifier, for diagnostics (`"winforms"`, `"maui"`). Never branch on this — branch on the capabilities. */
@@ -147,24 +119,19 @@ export const ShellCapabilities = {
   tray: 'tray',
   /**
    * The host can put a FILE LIST on the clipboard, so the user can paste into Explorer, Finder or a
-   * file manager. No web API expresses this, and a phone's pasteboard has none — so it is the one part
-   * of the clipboard worth branching on.
+   * file manager. No web API expresses this, so it is the one part of the clipboard worth branching on.
    *
    * ⚠ It says nothing about the rest: text and bytes work everywhere, and the gesture-driven half is
-   * `navigator.clipboard`'s job, not the host's.
+   * `navigator.clipboard`'s job.
    */
   clipboardFiles: 'clipboardFiles',
   /**
-   * The host can serve LOCAL FILES to this page — media, images, documents, exports — through its resource
-   * interceptor. Pair it with {@link mediaUrl}.
+   * The host can serve LOCAL FILES to this page — media, images, documents, exports — through its
+   * resource interceptor. Pair it with `mediaUrl`.
    *
-   * A page cannot reach a local file itself on any shell (`file://` is blocked from a virtual-host origin,
-   * and would be the wrong answer anyway), so branch on this and fall back rather than rendering a player
-   * that can never load.
-   *
-   * ⚠ It says the host CAN serve, not what: routes, payload shape and allowed roots are the app's. And it
-   * deliberately tells you nothing about the URL SCHEME — {@link mediaUrl} is relative precisely so each
-   * shell supplies its own, and knowing it would put you back to branching on platform.
+   * ⚠ A page cannot reach a local file itself on any shell, so branch on this and fall back rather than
+   * rendering a player that can never load. It says the host CAN serve, not what: routes, payload shape
+   * and allowed roots are the app's, and it says nothing about the URL SCHEME.
    */
   localFiles: 'localFiles',
 } as const;
@@ -199,9 +166,8 @@ export interface IpcNotificationBatch {
 }
 
 /**
- * A client-side event on the event bus — an unbundled {@link IpcNotification} (or a locally
- * emitted event; the host-side `EventMessage` additionally carries id/timestamp, which don't
- * cross the wire).
+ * A client-side event on the event bus — an unbundled {@link IpcNotification}, or a locally emitted
+ * event. The host-side `EventMessage` additionally carries id/timestamp, which don't cross the wire.
  */
 export interface EventMessage<TPayload = unknown> {
   module: string;

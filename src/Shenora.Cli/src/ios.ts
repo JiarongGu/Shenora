@@ -1,14 +1,9 @@
 // The iOS loop: doctor · devices · simulators · deploy (simulator or hardware) · log · shot.
 //
-// 🔴 WHY THIS SHIPS. A hybrid framework's real measure is how little native work an adopting app has to
-// redo — and the device loop is part of that. Every check below exists because this kit hit the failure
-// it catches, on real hardware, and each one costs a day to rediscover.
-//
-// ⚠ It runs on this Mac, or on one reached over ssh through the `Target` seam (`./remote/`) — see
-// `docs/design/cli-remote.md`. The one thing that differs is signing: it needs the login keychain, which
-// an ssh session cannot reach (a different audit session), so a DEVICE build on a remote target hands off
-// through `target.gui` instead of `target.sh`. On a local Mac you are already in a GUI session, so nothing
-// extra happens there.
+// Runs on this Mac, or on one reached over ssh through the `Target` seam (`./remote/`) — see
+// `docs/design/cli-remote.md`. ⚠ Signing is the exception: it needs the login keychain, which an ssh
+// session cannot reach (a different audit session), so a DEVICE build on a remote target hands off through
+// `target.gui` instead of `target.sh`. A local Mac is already in a GUI session.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,20 +24,18 @@ interface Device {
 /**
  * Either the devices, or WHY we could not find out.
  *
- * 🔴 **The distinction is the whole point of this type.** Every failure used to collapse to an empty
- * array — devicectl missing, devicectl erroring, unparseable output — and the callers then said "no
- * iPhone is connected. Plug it in, unlock it, tap Trust." That is a confident statement about the user's
- * HARDWARE made when the truth is the tool failed, and this file's own doc already calls it "the single
- * worst answer this tool can give". It fixed ONE cause of it (the stdout pipe) and left the rest.
+ * 🔴 A failure that collapses to an empty array — devicectl missing, erroring, unparseable — makes the
+ * callers say "no iPhone is connected. Plug it in, unlock it, tap Trust": a confident statement about the
+ * user's HARDWARE made when the truth is that the tool failed.
  */
 export type DeviceLookup =
   | { ok: true; devices: Device[] }
   | { ok: false; detail: string };
 
 /**
- * Parse `devicectl list devices --json-output`. Split out because it is the half that can be tested off
- * macOS, and because an unparseable answer must be distinguishable from an empty one: a run with no
- * phones attached still writes a valid document with an empty array, so nothing parseable is a FAILURE.
+ * Parse `devicectl list devices --json-output`. An unparseable answer must be distinguishable from an
+ * empty one: a run with no phones attached still writes a valid document with an empty array, so nothing
+ * parseable is a FAILURE.
  */
 export function parseDeviceList(json: string): DeviceLookup {
   const start = json.indexOf('{');
@@ -73,23 +66,16 @@ export function parseDeviceList(json: string): DeviceLookup {
 /**
  * Connected iPhones, as devicectl reports them — or why the question could not be answered.
  *
- * 🔴 **The JSON goes to a TEMP FILE, never `/dev/stdout`.** That was the original shape and it reported
- * "no devices" with a paired iPhone 17 Pro sitting there — the single worst answer this tool can give,
- * because it looks like a fact about your phone rather than a bug in the reader. It survived because it
- * WORKS interactively: over ssh (or any tty) stdout is a terminal and the write lands, so every manual
- * check agreed with the code. Under `spawnSync` stdout is an anonymous pipe, `devicectl` cannot open it
- * the way it wants, and the command yields nothing — which this function could not distinguish from
- * "no devices attached".
- *
- * ⚠ The lesson generalises past this call: **a tool that only reads correctly from a terminal is broken
- * everywhere it actually runs.** Prefer a file an implementation cannot be clever about. And the answer
- * it gives now distinguishes the two cases, which is the other half of the same lesson.
+ * 🔴 **The JSON goes to a TEMP FILE, never `/dev/stdout`.** Over a tty stdout is a terminal and the write
+ * lands, so every manual check agrees; under `spawnSync` it is an anonymous pipe, `devicectl` cannot open
+ * it and yields nothing — indistinguishable from "no devices attached", the single worst answer this tool
+ * can give, because it looks like a fact about your phone rather than a bug in the reader.
  */
 function devices(target: Target): DeviceLookup {
   const out = `/tmp/shenora-devicectl-${process.pid}.json`;
   try {
-    // ⚠ stderr is CAPTURED rather than redirected to /dev/null: it is the only place devicectl says
-    // why it refused, and the callers now have somewhere to put that. `quiet` keeps it off a healthy run.
+    // ⚠ stderr is CAPTURED, not redirected to /dev/null: it is the only place devicectl says why it
+    // refused. `quiet` keeps it off a healthy run.
     const r = target.sh(`xcrun devicectl list devices --json-output ${q(out)}`, { quiet: true });
     if (r.status !== 0) {
       return { ok: false, detail: r.out.trim() || `xcrun devicectl exited ${r.status}` };
@@ -99,7 +85,6 @@ function devices(target: Target): DeviceLookup {
   } catch (error) {
     return { ok: false, detail: `could not run devicectl — ${(error as Error).message}` };
   } finally {
-    // A leftover temp file is not worth failing over.
     target.sh(`rm -f ${q(out)}`, { quiet: true });
   }
 }
@@ -107,15 +92,13 @@ function devices(target: Target): DeviceLookup {
 /**
  * How a phone is reachable, in the terms that decide whether you can deploy to it.
  *
- * 🔴 **`tunnelState` is NOT that, and reading it is why this printed `disconnected` beside a perfectly
- * usable phone.** The tunnel is a debug channel brought up ON DEMAND, so an idle device that is paired,
- * powered and on the same LAN reports `disconnected` — and the honest reading of that word is "go find a
- * cable", which cost a round here. **`pairingState` is the field that answers "can I deploy to this".**
+ * 🔴 **`pairingState` is the field that answers "can I deploy to this"; `tunnelState` is NOT.** The tunnel
+ * is a debug channel brought up ON DEMAND, so an idle device that is paired, powered and on the same LAN
+ * reports `disconnected` — and the honest reading of that word is "go find a cable".
  *
- * `transportType` is reported alongside it because it changes what you should expect rather than whether
- * it works: `localNetwork` is genuinely supported, and also the transport that drops mid-operation
- * (`peer is no longer reachable`) on anything long. Naming it lets a developer attribute that failure to
- * the transport instead of to their build.
+ * `transportType` is named alongside it because `localNetwork` is genuinely supported and also the
+ * transport that drops mid-operation (`peer is no longer reachable`), so a developer can attribute that
+ * failure to the transport instead of to their build.
  */
 export function describeConnection(connection: Record<string, any> | undefined): string {
   const pairing = String(connection?.pairingState ?? 'unknown');
@@ -125,8 +108,7 @@ export function describeConnection(connection: Record<string, any> | undefined):
 
 /**
  * Pick the device to act on. REFUSES to guess when several are connected — silently taking the first one
- * deploys to the wrong phone and you then debug the wrong build. The Android half of this kit learned
- * that expensively.
+ * deploys to the wrong phone and you then debug the wrong build.
  */
 function resolveDevice(target: Target, wanted: string | undefined): Device | null {
   const lookup = devices(target);
@@ -176,8 +158,8 @@ export function cmdSimulators(cfg: DeployConfig | null, args: readonly string[])
   const target = resolveTarget(cfg, args);
   if (!target) return;
   // The list and the filter are SEPARATE steps: piped through grep, a failed `xcrun` and a genuinely
-  // empty list both came back as '' — and "no simulators installed" beside a broken xcode-select sends
-  // the reader to install components they already have.
+  // empty list are both '' — and "no simulators installed" beside a broken xcode-select sends the reader
+  // to install components they already have.
   const list = target.sh('xcrun simctl list devices available', { quiet: true });
   if (list.status !== 0) {
     fail('could not list simulators — `xcrun simctl` itself failed.',
@@ -192,12 +174,10 @@ export function cmdDoctor(cfg: DeployConfig | null, args: readonly string[]): vo
   const target = resolveTarget(cfg, args);
   if (!target) return;
 
-  // 🔴 THE TRANSPORT IS DIAGNOSED FIRST, and this ordering is the whole value of a remote doctor. Every
-  // probe below asks the Mac a question and reads silence as "not installed" — so against a Mac that is
-  // merely ASLEEP this command prints `MISSING Xcode`, `MISSING .NET SDK`, `MISSING ios workload`, which
-  // is a confident and completely wrong report about a machine that is fine. One reachability question,
-  // asked before any of them, is the difference between that and "your Mac is not answering, here is
-  // which of the six causes it is".
+  // 🔴 THE TRANSPORT IS DIAGNOSED FIRST. Every probe below asks the Mac a question and reads silence as
+  // "not installed" — so against a Mac that is merely ASLEEP this command prints `MISSING Xcode`,
+  // `MISSING .NET SDK`, `MISSING ios workload`: a confident and completely wrong report about a machine
+  // that is fine.
   if (target.isRemote) {
     const host = resolveHost(cfg, args);
     if (host) {
@@ -211,11 +191,10 @@ export function cmdDoctor(cfg: DeployConfig | null, args: readonly string[]): vo
   }
 
   let ok = true;
-  // 🔴 COUNTED, because the worst outcome this command has is silence plus exit 0 — it reads as
-  // "nothing to report, everything is fine" and the operator moves on. Reported by the first adopter:
-  // `npx shenora ios doctor` printed nothing and succeeded while the same code through the binary
-  // printed the full report. Whatever swallows the output, a doctor that reported NOTHING has not
-  // examined anything, and must not say so with a zero exit.
+  // 🔴 COUNTED, because the worst outcome this command has is silence plus exit 0 — it reads as "nothing
+  // to report, everything is fine" and the operator moves on. Seen for real: `npx shenora ios doctor`
+  // printed nothing and succeeded while the same code through the binary printed the full report. A
+  // doctor that reported NOTHING has not examined anything, and must not say so with a zero exit.
   let written = 0;
   const line = (label: string, value: string, good = true): void => {
     console.log(`  ${good ? 'ok     ' : 'MISSING'} ${label.padEnd(20)} ${value}`);
@@ -223,8 +202,7 @@ export function cmdDoctor(cfg: DeployConfig | null, args: readonly string[]): vo
     if (!good) ok = false;
   };
 
-  // WHICH binary is answering — the first question when a report looks wrong or absent, and the one an
-  // operator cannot ask from outside (`npx` may resolve a different copy than the one just installed).
+  // WHICH binary is answering — `npx` may resolve a different copy than the one just installed.
   line('shenora cli', `${cliVersion()}  ${cliEntry()}`);
 
   const xcode = target.probe('xcodebuild -version | head -1');
@@ -236,10 +214,8 @@ export function cmdDoctor(cfg: DeployConfig | null, args: readonly string[]): vo
   const workload = target.probe('dotnet workload list 2>/dev/null | grep -i ios | head -1');
   line('ios workload', workload || '(run `dotnet workload install maui-ios`)', Boolean(workload));
 
-  // An "Apple Development" identity is what a DEVICE build signs with. Absent, the build fails late with
-  // a codesign error that reads as a project problem rather than a machine one.
   // Counted HERE, not with `grep -c`: grep exits 1 for zero matches, so a locked keychain (`security`
-  // failing outright) and a genuinely empty identity list were the same '' — and "none, go to Xcode
+  // failing outright) and a genuinely empty identity list are the same '' — and "none, go to Xcode
   // Settings" about a keychain problem sends the reader to a screen that is already correct.
   const identity = target.sh('security find-identity -v -p codesigning', { quiet: true });
   const identityCount = identity.status === 0 ? (identity.out.match(/Apple Development/g)?.length ?? 0) : 0;
@@ -250,10 +226,9 @@ export function cmdDoctor(cfg: DeployConfig | null, args: readonly string[]): vo
     identityCount > 0);
 
   // 🔴 A CERTIFICATE IS NOT AN ACCOUNT, AND NEITHER IS A PROFILE — all three decide whether a DEVICE
-  // build can sign, and the row above is the one that stays green longest. Measured on a Mac reporting
-  // `1 found` → `ready` that could not sign at all: valid certificate, a free personal team, and NO
-  // Xcode Apple ID and NO provisioning profiles. The build then dies on `No Accounts: Add a new account
-  // in Accounts settings` — after a full compile.
+  // build can sign. Measured on a Mac reporting `1 found` → `ready` that could not sign at all: valid
+  // certificate, free personal team, no Xcode Apple ID, no profiles. The build dies on `No Accounts: Add
+  // a new account in Accounts settings` — after a full compile.
   const signing = describeDeviceSigning({
     identities: identity.status === 0 ? identityCount : null,
     accounts: xcodeAccountCount(target),
@@ -262,9 +237,8 @@ export function cmdDoctor(cfg: DeployConfig | null, args: readonly string[]): vo
   line('device signing', signing.text, signing.good);
 
   // 🔴 PREDICTED, not discovered at minute twenty. Every row above can say `ok` on a Mac that cannot
-  // build at all: the workload and Xcode are each fine, and only their PAIRING fails, at build time.
-  // Measured: no workload band ships a pack for Xcode 26.3 (only 26.0, 26.6, 27.0), so `dotnet workload
-  // update` merely changes WHICH Xcode is demanded — the answer is to pin a band the Xcode satisfies.
+  // build at all: the workload and Xcode are each fine and only their PAIRING fails, at build time.
+  // `dotnet workload update` merely changes WHICH Xcode is demanded; pin a band the Xcode satisfies.
   const sdk = xcodeSdkVersion(target);
   const bands = cfg ? iosBindingBands(target, iosTfmOf(cfg)) : [];
   if (sdk && bands.length > 0) {
@@ -286,9 +260,8 @@ export function cmdDoctor(cfg: DeployConfig | null, args: readonly string[]): vo
     }
   }
 
-  // ⚠ A devicectl failure is reported as a failure here too, and NOT as `good: false`: doctor answers
-  // "can this machine build and deploy", and a device is optional for that — the simulator path works
-  // without one. Saying the reader broke is information; failing the whole check over it is not.
+  // ⚠ A devicectl failure is REPORTED but not `good: false` — doctor answers "can this machine build and
+  // deploy", and a device is optional for that: the simulator path works without one.
   const lookup = devices(target);
   line('device',
     !lookup.ok
@@ -307,8 +280,8 @@ export function cmdDoctor(cfg: DeployConfig | null, args: readonly string[]): vo
   console.log(ok ? '\nshenora: ready.' : '\nshenora: not ready — see MISSING above.');
   if (!ok) process.exitCode = 1;
 
-  // The invariant, checked last: a report of nothing is never a pass. Written to STDERR on purpose —
-  // if stdout is what went missing, saying so on stdout would vanish with it.
+  // A report of nothing is never a pass. On STDERR: if stdout is what went missing, saying so on stdout
+  // would vanish with it.
   if (written === 0) {
     console.error('\nshenora: doctor examined nothing — this is a BUG in the tool or its packaging, '
       + 'not a clean bill of health.');
@@ -331,19 +304,17 @@ function compareVersions(a: string, b: string): number {
 /**
  * The newest installed binding band the Xcode can actually satisfy, or null when none can.
  *
- * 🔴 THE ASYMMETRY IS THE WHOLE FIX, and it is measured rather than reasoned. The SDK picks the NEWEST
- * installed bindings, so on a Mac whose Xcode is older than them every build dies on a wall of
- * `MT4162 … not available in iOS 26.2 (introduced in 26.4)` — and `MtouchLink=SdkOnly` cannot help,
- * because `ManagedRegistrar` walks every binding regardless. But:
+ * 🔴 The SDK picks the NEWEST installed bindings, so on a Mac whose Xcode is older than them every build
+ * dies on a wall of `MT4162 … not available in iOS 26.2 (introduced in 26.4)` — and `MtouchLink=SdkOnly`
+ * cannot help, because `ManagedRegistrar` walks every binding regardless. The asymmetry is the fix:
  *
  *     bindings NEWER than the SDK → impossible (they name APIs that do not exist)
  *     bindings OLDER than the SDK → fine (everything they name still exists)
  *
- * so pinning `TargetPlatformVersion` to the newest band at-or-below the SDK builds, links, signs and
- * installs on hardware. Verified on Xcode 26.3 with bands 26.0/26.6/27.0 installed: 26.0 works.
+ * Verified on Xcode 26.3 with bands 26.0/26.6/27.0 installed: pinning `TargetPlatformVersion` to 26.0
+ * builds, links, signs and installs on hardware.
  *
- * ⚠ A dev-loop unblock, and the choice must be VISIBLE — silently building against old bindings would
- * hide a missing API until runtime. An App Store build should still match the pair.
+ * ⚠ The choice must be VISIBLE — silently building against old bindings hides a missing API until runtime.
  */
 export function pickBindingBand(bands: string[], sdkVersion: string): string | null {
   const usable = bands.filter((b) => compareVersions(b, sdkVersion) <= 0);
@@ -352,14 +323,13 @@ export function pickBindingBand(bands: string[], sdkVersion: string): string | n
 }
 
 /**
- * Can this Mac sign for a DEVICE? Pure, so the rule is testable off macOS — the platform half is two
- * lookups either side of it.
+ * Can this Mac sign for a DEVICE?
  *
  * 🔴 The three facts are not interchangeable and only one of them is what `security find-identity`
  * answers. A CERTIFICATE proves a key exists; an ACCOUNT is what `-allowProvisioningUpdates` needs to
- * MINT or refresh a profile; a PROFILE is what the device demands at install. Certificate-only is the
- * trap this exists for, because it is also the state a working machine decays into: a free personal
- * team's profile expires after 7 days, and refreshing it needs the account that is missing.
+ * MINT or refresh a profile; a PROFILE is what the device demands at install. Certificate-only is also
+ * the state a working machine decays into: a free personal team's profile expires after 7 days, and
+ * refreshing it needs the account that is missing.
  *
  * @param identities how many codesigning identities the keychain holds; null when `security` failed.
  * @param accounts   Xcode Apple IDs; null when the preference could not be read.
@@ -377,8 +347,8 @@ export function describeDeviceSigning(
   if (accounts === 0) {
     return {
       text: profiles > 0
-        // A profile without an account works until it expires and can never be refreshed — worth a
-        // distinct message, because "it built yesterday" is exactly how this is discovered.
+        // A profile without an account works until it expires and can never be refreshed — "it built
+        // yesterday" is how this is discovered.
         ? `❌ no Xcode Apple ID — ${profiles} profile(s) will work until they expire and cannot be refreshed`
         : '❌ certificate but NO Xcode Apple ID and no profiles — a device build dies at signing, after '
           + 'the full compile. Xcode > Settings > Accounts, add your Apple ID.',
@@ -388,8 +358,8 @@ export function describeDeviceSigning(
   return {
     text: profiles > 0
       ? `${accounts} account(s), ${profiles} profile(s)`
-      // An account with no profile is FINE: -allowProvisioningUpdates mints one. Said plainly so the
-      // zero does not read as the failure above.
+      // An account with no profile is FINE: -allowProvisioningUpdates mints one, so the zero must not
+      // read as the failure above.
       : `${accounts} account(s), no profile yet — one is minted on the first device build`,
     good: true,
   };
@@ -399,8 +369,8 @@ export function describeDeviceSigning(
  * The iOS binding bands installed for this TFM's .NET version, from the SDK's own packs directory
  * (`Microsoft.iOS.Sdk.net10.0_26.0` → `26.0`).
  *
- * ⚠ Filtered by the NET version on purpose: a machine carrying `net9.0_18.0` beside `net10.0_26.5`
- * would otherwise offer a band that cannot build this app at all.
+ * ⚠ Filtered by the NET version: a machine carrying `net9.0_18.0` beside `net10.0_26.5` would otherwise
+ * offer a band that cannot build this app at all.
  */
 function iosBindingBands(target: Target, tfm: string): string[] {
   const net = /^net(\d+\.\d+)/.exec(tfm)?.[1];
@@ -427,20 +397,17 @@ function xcodeAccountCount(target: Target): number | null {
 /**
  * How many accounts that preference actually names.
  *
- * 🔴 **It counts ENTRIES, not email addresses, and the first version counted emails.** Xcode does not
- * store the address here — a signed-in account prints as `identifier = "4F2E7F1A-…"`, a UUID — so a
- * regex looking for `"…@…"` found nothing and `doctor` reported **no Apple ID on a Mac where one was
- * signed in**. That is the worst kind of wrong for a doctor: it sends someone to fix what is already
- * fixed, and it keeps saying so afterwards.
+ * 🔴 **It counts ENTRIES, not email addresses.** Xcode does not store the address here — a signed-in
+ * account prints as `identifier = "4F2E7F1A-…"`, a UUID — so a regex looking for `"…@…"` finds nothing and
+ * `doctor` reports **no Apple ID on a Mac where one is signed in**, sending someone to fix what is
+ * already fixed.
  *
- * ⚠ The key EXISTS with an empty list when no account is signed in (`"IDE.Identifiers.Prod" = ( );`),
- * which is why presence of the preference proves nothing and the parenthesised list has to be read.
- * Pure, so both directions are pinned by a test rather than by a Mac.
+ * ⚠ The key EXISTS with an empty list when no account is signed in (`"IDE.Identifiers.Prod" = ( );`), so
+ * presence of the preference proves nothing and the parenthesised list has to be read.
  */
 export function countXcodeAccounts(raw: string): number {
   // ⚠ Records inside the LIST, not brace groups anywhere: the value is a plist dict, so its own outer
-  // braces are always there and counting those reported one account for an empty list — the exact
-  // false-positive this function exists to avoid, reached from the other side.
+  // braces are always there and counting those reports one account for an empty list.
   const open = raw.indexOf('(');
   const close = raw.lastIndexOf(')');
   if (open < 0 || close < open) return 0;
@@ -450,8 +417,7 @@ export function countXcodeAccounts(raw: string): number {
 
 /** Installed provisioning profiles across BOTH stores Xcode has used. */
 function provisioningProfileCount(target: Target): number {
-  // `os.homedir()` would answer about THIS machine, not the target's — `echo $HOME` asks the Mac
-  // actually doing the build, local or remote alike.
+  // `os.homedir()` would answer about THIS machine; `echo $HOME` asks the Mac doing the build.
   const home = target.probe('echo $HOME');
   if (!home) return 0;
   const stores = [
@@ -460,8 +426,6 @@ function provisioningProfileCount(target: Target): number {
   ];
   let found = 0;
   for (const dir of stores) {
-    // An unreadable store counts as none — `target.exists`/`target.list` already treat failure that
-    // way, and the caller's message covers both.
     if (target.exists(dir)) {
       found += target.list(dir).filter((f) => f.endsWith('.mobileprovision')).length;
     }
@@ -491,34 +455,27 @@ function simulatorRid(): string {
   return process.arch === 'arm64' ? 'iossimulator-arm64' : 'iossimulator-x64';
 }
 
-/**
- * The project directory ON THE BUILD MACHINE. Local matches `projectDir(cfg)` exactly — same machine,
- * same answer. A remote target's checkout is a SEPARATE tree the adopter keeps in sync themselves (there
- * is no push step yet), so this takes `cfg.remote.dir` when set, or guesses `~/<basename of cfg.root>` —
- * resolved via `echo $HOME` rather than `os.homedir()`, which would answer about THIS machine.
- */
+/** `$HOME` per remote host, memoised — see {@link remoteRoot}. */
 const remoteHomes = new Map<string, string>();
 
 /**
  * The REPOSITORY ROOT on the build machine — the counterpart of `cfg.root`, not of `projectDir`.
  *
- * 🔴 The distinction cost a real remote build. Collapsed into one helper, the local answer was the
- * PROJECT's directory and the remote answer was the REPO ROOT, and handing the root to `dotnet build`
- * builds whatever solution sits there: the first remote run went off to compile the Windows sample and
- * the test project, and failed with `NETSDK1100: To build a project targeting Windows on this operating
- * system` — an error about a project nobody asked for, on a machine that was working perfectly.
+ * 🔴 Handing the root to `dotnet build` builds whatever solution sits there: on this kit's own tree that
+ * is the Windows sample and the test project, failing with `NETSDK1100: To build a project targeting
+ * Windows on this operating system` — an error about a project nobody asked for, on a machine that is
+ * working perfectly. Takes `cfg.remote.dir` when set, else `~/<basename of cfg.root>`.
  */
 function remoteRoot(cfg: DeployConfig, target: Target): string {
   const dir = cfg.remote?.dir?.trim();
   if (dir) return dir;
 
-  // ⚠ Memoised per host: this is called from findApp, build, publish and the artifact checks, and every
-  // miss is a fresh ssh connection at roughly two seconds.
+  // ⚠ Memoised per host: called from findApp, build, publish and the artifact checks, and every miss is
+  // a fresh ssh connection at roughly two seconds.
   //
   // 🔴 **A FAILURE IS NOT CACHED.** Caching one makes a single transient probe — a dropped connection, a
-  // Mac still waking — permanent for the life of the process: every later call reads the cached empty
-  // and reports "could not read the home directory" about a machine that is now answering perfectly.
-  // Found by the flow tests, where one unscripted probe poisoned every case after it.
+  // Mac still waking — permanent for the life of the process: every later call reads the cached empty and
+  // reports "could not read the home directory" about a machine that is now answering perfectly.
   let home = remoteHomes.get(target.label);
   if (!home) {
     home = target.probe('echo $HOME');
@@ -526,8 +483,7 @@ function remoteRoot(cfg: DeployConfig, target: Target): string {
   }
   // 🔴 An empty probe must NOT become a path. `''` + '/' + basename is `/MyApp` — an absolute path at the
   // filesystem root, which exists nowhere, so every later check answers "not found" and the command
-  // reports a missing build rather than a connection that failed. A wrong answer beats no answer only
-  // when it is wrong loudly.
+  // reports a missing build rather than a connection that failed.
   if (!home) {
     fail(`could not read the home directory on ${target.label}.`,
       '  Set "remote": { "dir": "…" } to the checkout\'s path on that machine, or check the connection'
@@ -540,9 +496,8 @@ function remoteRoot(cfg: DeployConfig, target: Target): string {
 /**
  * What to hand `dotnet build`/`publish` — the PROJECT, never the directory above it.
  *
- * ⚠ `cfg.project` may itself name a directory (the SDK accepts one), which is why this joins rather than
- * assuming a `.csproj`. What it must never do is stop at the repo root: `dotnet build <root>` builds the
- * solution found there, which on this kit's own tree means the Windows sample and the test project.
+ * ⚠ `cfg.project` may itself name a directory (the SDK accepts one), so this joins rather than assuming a
+ * `.csproj`. It must never stop at the repo root — see {@link remoteRoot}.
  */
 export function buildProject(cfg: DeployConfig, target: Target): string {
   if (!target.isRemote) return path.join(cfg.root, cfg.project);
@@ -560,22 +515,17 @@ export function buildDir(cfg: DeployConfig, target: Target): string {
 }
 
 /**
- * Is the artifact newer than the build claiming it? Same purpose as `findPackage` on the Android side:
- * the output directory is never cleaned between runs, so without this a build that produced nothing
- * hands back the previous run's output.
+ * Is the artifact newer than the build claiming it? The output directory is never cleaned between runs,
+ * so without this a build that produced nothing hands back the previous run's output.
  *
- * 🔴 **It asks the WHOLE bundle, and the previous version's rule was measured false.** That rule was
- * "a `.app`'s own mtime can survive a rebuild, so read its Info.plist, which is rewritten every build".
- * The first half is true; the second is not. On a real Mac, immediately after a successful incremental
- * build, the `.app` was 34 seconds old and its `Info.plist` was **3.9 days** old — so this refused a
- * perfectly good build with "nothing was produced this time", which is a confident statement about a
- * build that had just succeeded on screen. Neither file is a clock; the newest thing anywhere inside is.
+ * 🔴 **It asks the WHOLE bundle, not the `.app` or its `Info.plist`.** Measured on a real Mac immediately
+ * after a successful incremental build: the `.app` was 34 seconds old and its `Info.plist` **3.9 days** —
+ * so reading either one refuses a build that had just succeeded on screen. Neither file is a clock; the
+ * newest thing anywhere inside is.
  *
- * ⚠ **The one-second allowance is now a THIRTY-second one, and only for a remote target.** Two machines
- * means two clocks: this stamps `builtAfter` here and reads mtimes there. Measured skew against the
- * Mac in question was 2 s, in the forgiving direction — but nothing guarantees the sign, and an NTP
- * correction mid-build is exactly the kind of thing that would make this reject one build in a hundred
- * for no visible reason. It only has to be tight enough to catch "yesterday's leftover".
+ * ⚠ **The allowance is THIRTY seconds for a remote target, one locally.** Two machines means two clocks:
+ * `builtAfter` is stamped here and the mtimes are read there. Measured skew was 2 s in the forgiving
+ * direction, but nothing guarantees the sign. It only has to catch "yesterday's leftover".
  */
 export function builtBy(target: Target, full: string, builtAfter?: number): boolean {
   if (builtAfter === undefined) return true;
@@ -588,10 +538,10 @@ export function builtBy(target: Target, full: string, builtAfter?: number): bool
 
 /** The built .app, FOUND rather than composed: the bundle name follows the assembly, not the project. */
 export function findApp(target: Target, cfg: DeployConfig, rid: string, builtAfter?: number): string | null {
-  // `buildDir`, not `path.dirname` — see `projectDir`'s doc: a `project` naming a DIRECTORY resolved to
-  // the PARENT, so this looked for the .app one level too high and answered "not built" about a built
-  // app. `buildDir` also redirects to the BUILD MACHINE's own tree when `target` is remote — `cfg.root`
-  // names a path on the machine running this CLI, which is the wrong one once that isn't the Mac.
+  // `buildDir`, not `path.dirname` — see `projectDir`'s doc: a `project` naming a DIRECTORY resolves to
+  // the PARENT, which looks for the .app one level too high and answers "not built" about a built app.
+  // `buildDir` also redirects to the BUILD MACHINE's tree when `target` is remote; `cfg.root` names a
+  // path on the machine running this CLI.
   const dir = target.join(buildDir(cfg, target), 'bin', cfg.configuration, iosTfmOf(cfg), rid);
   if (!target.exists(dir)) return null;
   const app = target.list(dir).find((e) => e.endsWith('.app'));
@@ -605,7 +555,6 @@ export function findApp(target: Target, cfg: DeployConfig, rid: string, builtAft
  * entitlements and embedded profile. Checked BEFORE install, because one that cannot launch installs
  * perfectly happily and then does nothing: a Live Activity shows as an empty capsule while every
  * ActivityKit call reports success. **A simulator cannot catch this** — it does not enforce code signing.
- * This kit shipped that bug and spent three device round-trips finding it.
  */
 export function checkExtensions(target: Target, app: string): { checked: number; problems: string[] } {
   const plugins = target.join(app, 'PlugIns');
@@ -618,8 +567,8 @@ export function checkExtensions(target: Target, app: string): { checked: number;
     if (!target.exists(target.join(appex, 'embedded.mobileprovision'))) {
       problems.push(`${entry}: no embedded.mobileprovision — it installs and never runs.`);
     }
-    // `codesign` failing to RUN is not a fact about the extension — the install diagnostic below has
-    // the rule. Both outcomes still block the install; only the named cause differs.
+    // `codesign` failing to RUN is not a fact about the extension. Both outcomes block the install; only
+    // the named cause differs.
     const entitlements = target.sh(`codesign -d --entitlements - ${q(appex)}`, { quiet: true });
     if (entitlements.status !== 0) {
       problems.push(`${entry}: codesign could not read it `
@@ -640,26 +589,23 @@ export function build(target: Target, cfg: DeployConfig, rid: string, signing: s
   if (!project) return false;      // remoteRoot already reported why
   const command = `dotnet build ${q(project)} -c ${q(cfg.configuration)} `
     + `-f ${q(iosTfmOf(cfg))} -p:RuntimeIdentifier=${q(rid)}${signing}${extra} 2>&1 | tail -40`;
-  // 🔴 Signing needs the login keychain, and an ssh session is a different audit session — codesign
-  // then fails `errSecInternalComponent` (see `SshTarget.gui`'s own doc for how this was proven). A
-  // local Mac is already in a GUI session, so only a REMOTE build that actually signs needs the
-  // hand-off; the simulator path calls this with an empty `signing` and never triggers it.
+  // 🔴 Signing needs the login keychain, and an ssh session is a different audit session — codesign fails
+  // `errSecInternalComponent` (see `SshTarget.gui`). Only a REMOTE build that signs needs the hand-off;
+  // the simulator path passes an empty `signing`.
   const r = signing && target.isRemote
     ? target.gui(command, { tag: 'device-build' })
     : target.sh(command, { cwd: dir });
 
   // 🔴 A GUI build's output must be PRINTED here, because `gui` cannot stream: its script runs detached
-  // in another session, so the log only exists as a return value. Missing this, a failed device build
-  // printed the single line "the build failed — see the output above" with nothing above it — a tool
-  // reporting a failure it declines to explain, which is worse than crashing. Hit on the first real
-  // signed build; the publish path already did this and this one did not.
+  // in another session, so the log only exists as a return value. Without this a failed device build
+  // prints "the build failed — see the output above" with nothing above it — a tool reporting a failure
+  // it declines to explain.
   if (target.isRemote && signing && r.out.trim()) console.log(r.out.trimEnd());
 
   if (r.status === 0) return true;
 
-  // Signing's own most common failure, and the message is opaque about the cause: it means no profile on
-  // this Mac matches THIS bundle id, not that none exist. Without an Apple ID signed into Xcode there is
-  // nothing that can create one, which is why `doctor` reports that as a MISSING row.
+  // The message is opaque about its cause: it means no profile on this Mac matches THIS bundle id, not
+  // that none exist. Without an Apple ID signed into Xcode there is nothing that can create one.
   if (/Could not find any available provisioning profiles/i.test(r.out)) {
     console.error('\nshenora: no provisioning profile on that Mac covers this app.');
     console.error(`  It means no profile matches ${cfg.bundleId} — not that the Mac has none at all.`);
@@ -669,8 +615,6 @@ export function build(target: Target, cfg: DeployConfig, rid: string, signing: s
     console.error('  `shenora ios doctor` reports the account and profile count before a build.');
     return false;
   }
-  // The Xcode gate is common enough, and its message specific enough, to name the escape hatch here
-  // rather than leave an adopter to find it. Detected from the SDK's own wording.
   // Both shapes of the same mismatch: the up-front gate says "requires Xcode", and past it the linker
   // says MT4162 (a binding naming an API this Xcode never shipped).
   if (/requires Xcode/i.test(r.out) || /MT4162/.test(r.out)) {
@@ -678,16 +622,12 @@ export function build(target: Target, cfg: DeployConfig, rid: string, signing: s
     const sdk = xcodeSdkVersion(target);
     const band = sdk ? pickBindingBand(iosBindingBands(target, iosTfmOf(cfg)), sdk) : null;
     if (band) {
-      // 🔴 A DEVICE build IS possible — measured, not reasoned. The SDK picks the NEWEST bindings, and
-      // older ones are fine because every API they name still exists; pinning the band is the fix, and
-      // it is named here rather than left as "use the simulator".
+      // 🔴 A DEVICE build IS possible — see `pickBindingBand`.
       console.error(`  This Mac's Xcode SDK is ${sdk}, and it CAN build against bindings ${band}.`);
-      // 🔴 IN THE PROJECT, not on the command line, and the difference is not style. `-p:` sets a GLOBAL
-      // MSBuild property, which propagates into every project in the graph — including the plain
-      // `net10.0` ones, which have no target platform at all. They then fail with
-      // `MSB4184 … "targetPlatformIdentifier" cannot have zero length`, an error naming neither iOS nor
-      // the version that caused it. Measured against a real Mac, after this command had confidently
-      // recommended exactly that.
+      // 🔴 IN THE PROJECT, not on the command line. `-p:` sets a GLOBAL MSBuild property, which
+      // propagates into every project in the graph — including the plain `net10.0` ones, which have no
+      // target platform at all. They then fail with `MSB4184 … "targetPlatformIdentifier" cannot have
+      // zero length`, an error naming neither iOS nor the version that caused it.
       console.error(`  Set it in your iOS head's .csproj, where it applies to that project ALONE:`);
       console.error(`    <TargetPlatformVersion>${band}</TargetPlatformVersion>`);
       console.error('  then build with:');
@@ -710,45 +650,31 @@ export function build(target: Target, cfg: DeployConfig, rid: string, signing: s
 }
 
 /**
- * `shenora ios build` — a DISTRIBUTABLE, which is the one thing `cap build` does that this CLI did not.
+ * `shenora ios build` — a DISTRIBUTABLE.
  *
- * <p>
- * 🔴 **It is `dotnet publish`, not `dotnet build`, and the difference is the whole command.** `deploy`
- * builds a debug app and pushes it at a device; this produces the artifact you hand to someone else — a
- * Release build, trimmed and AOT-compiled by the iOS SDK's own defaults, with `ArchiveOnBuild` so the
- * SDK packages an `.ipa` rather than leaving a `.app` tree.
- * </p>
+ * 🔴 **`dotnet publish`, not `dotnet build`.** `deploy` builds a debug app and pushes it at a device; this
+ * produces the artifact you hand to someone else — Release, trimmed and AOT-compiled by the iOS SDK's own
+ * defaults, with `ArchiveOnBuild` so the SDK packages an `.ipa` rather than leaving a `.app` tree.
  *
- * <p>
- * ⚠ **Release is the DEFAULT here and Debug is not merely slower — it is a different artifact.** A Debug
- * iOS build carries the interpreter and a development provisioning profile; shipping one is the mistake
- * this command exists to make unlikely. `--configuration` overrides it, and the config's own
- * `configuration` (which defaults to Debug for the dev loop) is deliberately IGNORED.
- * </p>
- *
- * <p>
- * ⚠ **There is no simulator distributable.** `--simulator` is refused by name — measured, not assumed:
- * the SDK answers *"A runtime identifier for a device architecture must be specified in order to publish
- * this project"*, and only after a full restore.
- * </p>
+ * ⚠ **Release is the DEFAULT and Debug is a different artifact**, carrying the interpreter and a
+ * development provisioning profile. `--configuration` overrides it; the config's own `configuration`
+ * (Debug, for the dev loop) is IGNORED.
  */
 export function cmdBuild(cfg: DeployConfig, args: string[]): void {
   const target = resolveTarget(cfg, args);
   if (!target) return;
   if (!requireFields(cfg, ['project'])) return;
-  // Refuse a non-iOS TFM HERE rather than letting the SDK say `NETSDK1147: install the android
-  // workload` twenty lines into a build — see `platformTfm`.
+  // Refuse a non-iOS TFM HERE rather than letting the SDK say `NETSDK1147: install the android workload`
+  // twenty lines into a build — see `platformTfm`.
   if (!platformTfm(cfg, 'ios')) return;
 
   const { own, passthrough } = splitArgs(args);
   const extra = shellPassthrough(passthrough);
   const configuration = argValue(own, '--configuration') ?? 'Release';
 
-  // 🔴 REFUSED UP FRONT, and this is a MEASURED behaviour rather than a guard on principle: the iOS SDK
-  // will not publish a simulator RID at all — *"A runtime identifier for a device architecture must be
-  // specified in order to publish this project"*. Passing it through means a full restore and forty
-  // lines of MSBuild before that sentence appears. There is no simulator distributable; a simulator
-  // build is `shenora ios deploy --simulator`.
+  // 🔴 THERE IS NO SIMULATOR DISTRIBUTABLE, and this is measured: the iOS SDK will not publish a
+  // simulator RID at all — *"A runtime identifier for a device architecture must be specified in order to
+  // publish this project"* — and only says so after a full restore and forty lines of MSBuild.
   if (own.includes('--simulator')) {
     fail('there is no simulator distributable — the iOS SDK refuses to publish a simulator architecture.',
       '  For the dev loop use `shenora ios deploy --simulator`; `build` produces a DEVICE artifact.');
@@ -757,8 +683,8 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
 
   const rid = 'ios-arm64';
   console.log(`shenora: publishing ${cfg.project} (${iosTfmOf(cfg)}, ${rid}, ${configuration})…`);
-  // Stamped BEFORE the publish, exactly as the Android side does: the output directory is never
-  // cleaned between runs, so an artifact older than this belongs to a previous one.
+  // Stamped BEFORE the publish: the output directory is never cleaned between runs, so an artifact older
+  // than this belongs to a previous one.
   const startedAt = Date.now();
   const projDir = buildDir(cfg, target);
   const project = buildProject(cfg, target);
@@ -766,10 +692,9 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
   const publish = `cd ${q(projDir)} && dotnet publish ${q(project)} -c ${q(configuration)} `
     + `-f ${q(iosTfmOf(cfg))} -p:RuntimeIdentifier=${q(rid)} -p:ArchiveOnBuild=true${extra} 2>&1 | tail -40`;
 
-  // 🔴 A DEVICE artifact, so this SIGNS — which means it needs the login keychain, which an ssh session
-  // cannot reach (a different audit session; `codesign` answers `errSecInternalComponent`). Same wall as
-  // `deploy --device`, and it was missed here at first precisely because this command reads as "just a
-  // build": `ios-arm64` is the only RID it accepts, so there is no unsigned path through it at all.
+  // 🔴 A DEVICE artifact, so this SIGNS and needs the login keychain an ssh session cannot reach — the
+  // same wall as `deploy --device`. `ios-arm64` is the only RID this command accepts, so there is no
+  // unsigned path through it at all.
   const r = target.isRemote
     ? target.gui(publish, { tag: 'publish', timeoutMs: 30 * 60_000 })
     : target.sh(publish, { cwd: projDir });
@@ -781,13 +706,13 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
   }
 
   // 🔴 REPORT THE ARTIFACT, and refuse to claim success without finding one. `dotnet publish` exits 0
-  // having produced nothing more than once in this repo's history (a skipped target with a satisfied
-  // incremental check), and "publish succeeded" with no file is the least actionable message possible.
+  // having produced nothing when a target is skipped on a satisfied incremental check, and "publish
+  // succeeded" with no file is the least actionable message possible.
   const outDir = target.join(projDir, 'bin', configuration, iosTfmOf(cfg), rid, 'publish');
   const artifact = findArtifact(target, outDir, startedAt) ?? findArtifact(target, target.dirname(outDir), startedAt);
   if (!artifact) {
     // Say STALE when a leftover is what was found — "no artifact appeared" beside a directory visibly
-    // holding one is the most confusing message this tool could print (the Android fix, ported).
+    // holding one is the most confusing message this tool could print.
     const stale = findArtifact(target, outDir) ?? findArtifact(target, target.dirname(outDir));
     fail(stale
       ? `the publish reported success but the only artifact under ${outDir} predates this build `
@@ -808,14 +733,12 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
 
 /**
  * The publish output, **`.ipa` first**: an archive is the distributable, and a `.app` beside it is what
- * the SDK leaves when signing could not produce one. Returning the `.app` in that case is deliberate —
- * it lets `cmdBuild` say "this is not distributable, here is why" instead of "nothing was produced",
- * which are different problems with different fixes.
+ * the SDK leaves when signing could not produce one. The `.app` is still returned, so `cmdBuild` can say
+ * "this is not distributable, here is why" instead of "nothing was produced" — different problems with
+ * different fixes.
  *
- * @param builtAfter Epoch ms; an artifact older than this is STALE and is not returned — the guard
- *   `findPackage` carries on the Android side, ported after the identical incident class was confirmed
- *   here (the file's own history: a publish "exits 0 having produced nothing"). A stale `.ipa` beside a
- *   fresh `.app` yields the `.app` — this run's real output beats the previous run's archive.
+ * @param builtAfter Epoch ms; an artifact older than this is STALE and is not returned. A stale `.ipa`
+ *   beside a fresh `.app` yields the `.app` — this run's real output beats the previous run's archive.
  */
 export function findArtifact(target: Target, dir: string, builtAfter?: number): string | null {
   if (!target.exists(dir)) return null;
@@ -838,14 +761,13 @@ function sizeOf(target: Target, artifact: string): string {
 /**
  * Did `simctl boot` fail only because the device was ALREADY booted?
  *
- * 🔴 That case is a success for our purposes and is the entire reason the old code wrote `|| true` — but
- * `|| true` cannot tell it apart from a name that does not exist, so a typo became a silent install onto
- * some other running simulator. Matching the state message keeps the idempotent case working while
- * letting a real failure through.
+ * 🔴 That case is a success here, but `|| true` cannot tell it apart from a name that does not exist — so
+ * a typo becomes a silent install onto some other running simulator. Matching the state message keeps the
+ * idempotent case working while letting a real failure through.
  *
- * ⚠ Matched loosely (case-insensitive, on the distinctive phrase) because this is Apple's wording and
- * not a contract: a future rewording must fail LOUDLY — an unrecognised message is treated as a genuine
- * failure, which costs a redundant error on a booted device and never costs a wrong install.
+ * ⚠ Matched loosely (case-insensitive, on the distinctive phrase) because this is Apple's wording and not
+ * a contract: an unrecognised message is treated as a genuine failure, which costs a redundant error on a
+ * booted device and never costs a wrong install.
  */
 export function isAlreadyBooted(output: string): boolean {
   return /current state:\s*Booted/i.test(output);
@@ -863,8 +785,7 @@ export function cmdDeploy(cfg: DeployConfig, args: string[]): void {
 }
 
 /**
- * The simulator half — no signing, no provisioning, no 7-day profile. This is the loop most work should
- * use; hardware is for what only hardware can answer (background playback, real codecs, thermals).
+ * The simulator half — no signing, no provisioning, no 7-day profile.
  */
 function deployToSimulator(target: Target, cfg: DeployConfig, args: string[], extra: string): void {
   const rid = simulatorRid();
@@ -882,16 +803,14 @@ function deployToSimulator(target: Target, cfg: DeployConfig, args: string[], ex
   }
   console.log(`shenora: ${target.basename(app)}`);
 
-  // ⚠ `open -a Simulator` is what actually SHOWS the window. A booted device with no UI installs and
-  // launches perfectly happily, which looks exactly like nothing happened.
+  // ⚠ `open -a Simulator` is what SHOWS the window. A booted device with no UI installs and launches
+  // perfectly happily, which looks exactly like nothing happened.
   const name = argValue(args, '--simulator');
   if (name) {
-    // 🔴 THE BOOT'S FAILURE USED TO BE SWALLOWED by `|| true`, which was there for a real reason —
-    // booting an ALREADY-booted simulator exits non-zero — but it swallowed a MISTYPED NAME with it. The
-    // run then carried on to `install booted` and landed on whatever else happened to be running: you
-    // debug the wrong build, on a device you did not choose. This CLI refuses to guess in exactly this
-    // situation twice already (`resolveDevice` here, `resolveDevice` on the Android side); the simulator
-    // path was the one place it guessed.
+    // 🔴 THE BOOT'S FAILURE IS CHECKED, not swallowed by `|| true`. Booting an ALREADY-booted simulator
+    // exits non-zero, but so does a MISTYPED NAME — and swallowing both carries on to `install booted`
+    // and lands on whatever else happened to be running: you debug the wrong build, on a device you did
+    // not choose.
     const boot = target.sh(`xcrun simctl boot ${q(name)}`, { quiet: true });
     if (boot.status !== 0 && !isAlreadyBooted(boot.out)) {
       fail(`could not boot the simulator ${JSON.stringify(name)}.`,
@@ -901,10 +820,8 @@ function deployToSimulator(target: Target, cfg: DeployConfig, args: string[], ex
   }
   target.sh('open -a Simulator || true', { quiet: true });
 
-  // 🔴 ADDRESS THE NAMED DEVICE, not `booted`. Even with the boot check above, `booted` is the wrong
-  // target whenever a name was given: two simulators can be running, and `booted` then means "whichever
-  // simctl picks". Naming one is the only way to be sure the thing you installed is the thing you are
-  // looking at.
+  // 🔴 ADDRESS THE NAMED DEVICE, not `booted`. Two simulators can be running, and `booted` then means
+  // "whichever simctl picks" — so what you installed need not be what you are looking at.
   const simTarget = name ?? 'booted';
   if (target.sh(`xcrun simctl install ${q(simTarget)} ${q(app)} 2>&1 | tail -10`).status !== 0) {
     fail('install failed.',
@@ -921,13 +838,11 @@ function deployToSimulator(target: Target, cfg: DeployConfig, args: string[], ex
 }
 
 /**
- * Did the app SURVIVE its launch? Reported honestly, with the crash if not.
+ * Did the app SURVIVE its launch? Reported with the crash if not.
  *
  * 🔴 **`simctl launch` prints a pid and exits 0 for an app that dies immediately**, so "launched" is not
- * evidence of "running" — and this command said *"running in the simulator"* about a build that crashed
- * on startup every single time. Caught by screenshotting the result: the simulator was sitting on its
- * home screen while the CLI reported success. That is precisely the false-success class this tool's own
- * README claims to have closed, arrived at from a direction none of the existing checks watched.
+ * evidence of "running": this command said *"running in the simulator"* about a build that crashed on
+ * startup every single time, while the simulator sat on its home screen.
  *
  * ⚠ The pid is a HOST pid — `simctl` runs simulator processes on the Mac itself — so `ps` can answer.
  */
@@ -935,8 +850,7 @@ function stillRunning(target: Target, launchOutput: string, cfg: DeployConfig): 
   const pid = /:\s*(\d+)\s*$/m.exec(launchOutput.trim())?.[1];
   if (!pid) return true;      // Nothing to check against; do not invent a failure.
 
-  // A crash-on-startup is over in well under a second; this is long enough to catch it and short enough
-  // not to be felt.
+  // A crash-on-startup is over in well under a second.
   const alive = target.sh(`sleep 3; ps -p ${q(pid)} > /dev/null 2>&1 && echo alive || echo gone`,
     { quiet: true, timeoutMs: 60_000 });
   if (!/gone/.test(alive.out)) return true;
@@ -947,11 +861,10 @@ function stillRunning(target: Target, launchOutput: string, cfg: DeployConfig): 
     `xcrun simctl spawn booted log show --last 2m --predicate ${q(simulatorLogPredicate(cfg.bundleId))}`
     + ` 2>/dev/null | tail -25`);
 
-  // 🔴 A metadata-token failure is a MIXED BUILD, and it does not look like one. Hit for real: after
-  // pinning TargetPlatformVersion the app died on `Token … is not valid in the scope of module
+  // 🔴 A metadata-token failure is a MIXED BUILD, and the plausible reading is the wrong one. After
+  // pinning TargetPlatformVersion the app dies on `Token … is not valid in the scope of module
   // Microsoft.iOS.dll`, which reads as "these bindings are missing an API" — the very thing the pin's own
-  // warning primes you to expect. It was neither: `obj/` still held metadata from the previous band, and
-  // deleting it fixed it outright. Named here because the plausible reading is the wrong one.
+  // warning primes you to expect. It is `obj/` still holding metadata from the previous band.
   if (/is not valid in the scope of module|ResolveFullTokenReference/i.test(crash)) {
     console.error('\n  That is a MIXED BUILD, not a missing API — the two look identical from here.');
     console.error('  Something in obj/ was compiled against a different iOS binding version. If you have');
@@ -975,7 +888,7 @@ export function deployToDevice(target: Target, cfg: DeployConfig, args: string[]
   if (!device) return;
 
   // CodesignProvision=Automatic + an Apple Development key is what lets an adopter reach a phone with NO
-  // Xcode project of their own — the whole point of this command.
+  // Xcode project of their own.
   const signing = ` -p:CodesignProvision=Automatic -p:CodesignKey=${q('Apple Development')}`;
   const startedAt = Date.now();
   if (!build(target, cfg, 'ios-arm64', signing, extra)) return;
@@ -1004,10 +917,9 @@ export function deployToDevice(target: Target, cfg: DeployConfig, args: string[]
   console.log('\nshenora: installing…');
   const install = target.sh(`xcrun devicectl device install app --device ${q(device.id)} ${q(app)} 2>&1 | tail -20`);
   if (install.status !== 0) {
-    // 🔴 NAME THE CAUSE THE OUTPUT ACTUALLY SHOWS. This printed the code-signing hint for every failure,
-    // including a Wi-Fi drop mid-transfer ("the peer is no longer reachable") — sending the reader to
-    // Settings > Device Management to fix a network problem. A diagnostic that confidently names the
-    // wrong cause is worse than none, and this repo has a rule about it.
+    // 🔴 NAME THE CAUSE THE OUTPUT ACTUALLY SHOWS. A single code-signing hint covers a Wi-Fi drop
+    // mid-transfer ("the peer is no longer reachable") too, sending the reader to Settings > Device
+    // Management to fix a network problem.
     if (/no longer reachable|unable to locate a device|ControlChannelConnectionError/i.test(install.out)) {
       fail('the device dropped off mid-install — this is a TRANSPORT failure, not a signing one.',
         '  Wi-Fi pairing is unreliable for transfers this size. Plug the phone in over USB and retry;\n'
@@ -1025,8 +937,8 @@ export function deployToDevice(target: Target, cfg: DeployConfig, args: string[]
   if (launch.status !== 0) {
     // 🔴 A LOCKED PHONE IS THE COMMONEST LAUNCH FAILURE AND THE LEAST OBVIOUS FROM THE OUTPUT — the real
     // reason is four nested error frames down, under `FBSOpenApplicationServiceErrorDomain`, while the
-    // top line just says the request failed. Everything up to this point (build, sign, install) has
-    // already SUCCEEDED, so a bare "launch failed" reads as a code problem.
+    // top line says only that the request failed. Build, sign and install have already SUCCEEDED, so a
+    // bare "launch failed" reads as a code problem.
     if (/could not be, unlocked|BSErrorCodeDescription = Locked/i.test(launch.out)) {
       fail('the phone is locked, so iOS refused to launch the app.',
         '  Unlock it and run this again — everything else (build, sign, install) already succeeded.');
@@ -1039,33 +951,16 @@ export function deployToDevice(target: Target, cfg: DeployConfig, args: string[]
 }
 
 /**
- * The app's own output.
- *
- * 🔴 **A SIMULATOR, A DEVICE AND THIS MAC ARE THREE DIFFERENT LOGS, and reading the wrong one is silent.**
- * This originally ran a bare `log show`, which reads THE MAC'S OWN unified log — so it answered with a
- * header and nothing under it whichever target you had just deployed to. That reads as "my app logged
- * nothing", the one conclusion guaranteed to send you looking in the wrong place. Caught 2026-08-09 by
- * running it against a real iPhone that was demonstrably logging.
- *
- * ⚠ FILTER BEFORE TAILING. A process-wide predicate is ~99% platform chatter, so `tail -n` over the raw
- * stream shows a screen of noise with none of the app's own lines — which looks exactly like a broken log
- * sink. This kit rebuilt that same mistake once per harness before writing it down.
- */
-/**
  * The NSPredicate that finds one app's lines in a booted simulator's unified log.
  *
  * 🔴 **`CONTAINS[c]`, and the `[c]` is the whole command working.** NSPredicate's `CONTAINS` is
  * case-SENSITIVE. The search term comes off a bundle id — lower case by convention — while
- * `processImagePath` carries the ASSEMBLY name, so `com.example.myapp` searched a path spelled
- * `MyApp.app/MyApp` and matched nothing at all. Measured on the simulator 2026-08-09: **1 line of output
- * (the header alone) against 20,352 with `[c]`.**
+ * `processImagePath` carries the ASSEMBLY name, so `com.example.myapp` searches a path spelled
+ * `MyApp.app/MyApp` and matches nothing at all. Measured on the simulator: **1 line of output (the header
+ * alone) against 20,352 with `[c]`.**
  *
- * The symptom is the one this command exists to prevent: a header printed with nothing under it reads as
- * *"my app logged nothing"*, not as *"your log reader is broken"* — the same shape as the device-side
- * `| head` trap the README describes.
- *
- * Extracted so it is testable off macOS, like {@link withPipefail}: a guarantee only asserted on the
- * machine that rarely runs the suite is one nobody is watching.
+ * A header printed with nothing under it reads as *"my app logged nothing"*, not as *"your log reader is
+ * broken"* — which is the failure this whole command exists to prevent.
  */
 export function simulatorLogPredicate(bundleId: string): string {
   const leaf = bundleId.split('.').pop() || bundleId;
@@ -1081,17 +976,13 @@ export type SimulatorLogOutcome =
 /**
  * Turn the log read's exit status and output into the three things that can have happened.
  *
- * 🔴 **The status used to be DISCARDED entirely**, one line below a device branch that carefully
- * distinguishes SIGPIPE from a real failure. So a run with no booted simulator printed the "last N
- * lines from …" header and then nothing, and exited 0 — which reads as *"my app logged nothing"* rather
- * than *"your log reader could not run"*. That is verbatim the confusion
- * {@link simulatorLogPredicate}'s own doc says this command exists to avoid, reproduced for a different
- * cause a few lines away from where it is described.
+ * 🔴 **The STATUS must not be discarded.** A run with no booted simulator prints the "last N lines from …"
+ * header, then nothing, and exits 0 — which reads as *"my app logged nothing"* rather than *"your log
+ * reader could not run"*.
  *
- * ⚠ **EMPTY is not FAILURE, and the two need different words.** A booted simulator whose app has not
- * run in the window legitimately matches nothing; saying "could not read the log" there would send
- * someone hunting a broken tool. Extracted so all three are testable off macOS, like
- * {@link withPipefail} and {@link simulatorLogPredicate}.
+ * ⚠ **EMPTY is not FAILURE, and the two need different words.** A booted simulator whose app has not run
+ * in the window legitimately matches nothing; "could not read the log" there sends someone hunting a
+ * broken tool.
  */
 export function describeLogOutcome(status: number, out: string, minutes = 10): SimulatorLogOutcome {
   if (status !== 0) {
@@ -1107,10 +998,7 @@ export function describeLogOutcome(status: number, out: string, minutes = 10): S
     : { kind: 'ok', text };
 }
 
-/**
- * How long a device console stays attached. Startup is what it exists to show, and the sample's probes
- * are done inside a second — this is generous rather than tuned.
- */
+/** How long a device console stays attached. Startup is what it exists to show. */
 const LOG_CONSOLE_SECONDS = 25;
 
 export function cmdLog(cfg: DeployConfig, args: string[]): void {
@@ -1122,25 +1010,22 @@ export function cmdLog(cfg: DeployConfig, args: string[]): void {
   if (args.includes('--device')) {
     const device = resolveDevice(target, argValue(args, '--device'));
     if (!device) return;
-    // RELAUNCHES, deliberately. A reader that attached to an already-running app misses every line
-    // written during startup, which for this kit is where the probes report.
+    // RELAUNCHES: a reader that attaches to an already-running app misses every line written during
+    // startup, which is where the probes report.
     console.log(`shenora: relaunching ${cfg.bundleId} on ${device.name} with a console attached…\n`);
-    // 🔴 STREAMED, not captured: `--console`'s whole point is watching startup happen live, and a
-    // captured run prints nothing until the process exits — which for a console attach is never. A
-    // streamed run returns no output to parse, so the status check below is all there is.
-    // 🔴 **BOUNDED BY TIME, because `head` does not stop it.** `head -N` closes the pipe after N lines,
-    // and `devicectl --console` does not die of the SIGPIPE — it stays attached to the phone, so the
-    // pipeline never ends and the command hangs until something outside kills it. Measured: this ran for
-    // a full five minutes after printing its 40 lines. A console attach is bounded by how long you want
-    // to watch, not by how much it says.
+    // 🔴 STREAMED, not captured: a captured run prints nothing until the process exits, which for a
+    // console attach is never. A streamed run returns no output to parse, so the status check below is
+    // all there is.
+    // 🔴 **BOUNDED BY TIME, because `head` does not stop it.** `head -N` closes the pipe after N lines and
+    // `devicectl --console` does not die of the SIGPIPE — it stays attached to the phone, so the pipeline
+    // never ends. Measured: five minutes of hanging after printing its 40 lines.
     const r = target.sh(`timeout ${LOG_CONSOLE_SECONDS} xcrun devicectl device process launch --console `
       + `--terminate-existing --device ${q(device.id)} ${q(cfg.bundleId)} 2>&1 | head -${q(lines)}`,
       { stream: true, timeoutMs: (LOG_CONSOLE_SECONDS + 30) * 1000 });
 
-    // ⚠ THREE statuses mean success here, and getting this wrong prints a scary message after a run that
-    // worked — which it did, every time, before the list was complete. `124` is `timeout` firing, which
-    // is the NORMAL end; `141` is SIGPIPE from `head` closing first, which happens when the app is
-    // chatty; `0` is the app exiting on its own.
+    // ⚠ THREE statuses mean success here, and a short list prints a scary message after a run that
+    // worked. `124` is `timeout` firing, the NORMAL end; `141` is SIGPIPE from `head` closing first, when
+    // the app is chatty; `0` is the app exiting on its own.
     if (r.status !== 0 && r.status !== 141 && r.status !== 124) {
       fail('could not attach a console to the device.',
         '  Check the app is installed (`shenora ios deploy`), and that the phone is unlocked.');
@@ -1149,10 +1034,10 @@ export function cmdLog(cfg: DeployConfig, args: string[]): void {
   }
 
   console.log(`shenora: last ${lines} lines from ${cfg.bundleId} (booted simulator)\n`);
-  // `simctl spawn booted` runs the query INSIDE the simulator. Without it this is the host's log.
-  // QUIET, so the three outcomes below decide what the user sees: `log show`'s own stderr is noisy on
-  // a perfectly good run, which is why it was being discarded — but discarding the STATUS with it is
-  // what made a missing simulator indistinguishable from a quiet app.
+  // 🔴 `simctl spawn booted` runs the query INSIDE the simulator; without it this reads THIS MAC's own
+  // unified log and answers with a header and nothing under it, whichever target you deployed to.
+  // QUIET, so the three outcomes below decide what the user sees — `log show`'s stderr is noisy on a
+  // perfectly good run, but discarding the STATUS with it makes a missing simulator look like a quiet app.
   const r = target.sh(`xcrun simctl spawn booted log show --last 10m --style compact `
     + `--predicate ${q(simulatorLogPredicate(cfg.bundleId))} 2>/dev/null | tail -${q(lines)}`,
     { quiet: true });
@@ -1166,9 +1051,8 @@ export function cmdLog(cfg: DeployConfig, args: string[]): void {
  * `shenora ios push` — put this working tree on the Mac.
  *
  * 🔴 **Without this every other remote command is a claim about code that may not be there.** The Mac
- * built whatever its checkout happened to hold, and nothing said so: a build succeeds, an app installs,
- * and it is last week's. The one failure mode a device loop must not have is being confidently wrong
- * about WHICH code ran.
+ * builds whatever its checkout happens to hold and nothing says so: a build succeeds, an app installs,
+ * and it is last week's.
  */
 export function cmdPush(cfg: DeployConfig, args: string[]): void {
   const target = resolveTarget(cfg, args);
@@ -1224,12 +1108,8 @@ export function cmdProvision(cfg: DeployConfig, args: string[]): void {
 }
 
 /**
- * `shenora ios exec <command…>` — run something on the build machine.
- *
- * ⚠ It lives with the iOS verbs rather than beside the device inspector, and the reason is that it acts
- * on the MAC. It resolves its target exactly as `build` and `deploy` do — same `--host`, same config,
- * same diagnosis when the Mac will not answer — so grouping it with commands about a phone made the
- * inspector mean two unrelated things.
+ * `shenora ios exec <command…>` — run something on the build machine. Resolves its target exactly as
+ * `build` and `deploy` do: same `--host`, same config, same diagnosis when the Mac will not answer.
  *
  * Runs DIRECTLY rather than through the inspect service, so it needs nothing listening. The service
  * carries the same capability for its operator page, gated to loopback.
@@ -1261,8 +1141,8 @@ export function cmdShot(cfg: DeployConfig, args: string[]): void {
   if (!target) return;
   const out = argValue(args, '-o') ?? 'shenora-sim.png';
   // 🔴 The simulator is on the TARGET, so the PNG lands there. Written straight to `out` on a remote Mac
-  // it would sit in that Mac's home directory while this command cheerfully printed a local-looking
-  // filename — a screenshot you cannot look at, reported as a success. Stage it there, then pull it here.
+  // it sits in that Mac's home directory while this command prints a local-looking filename — a
+  // screenshot you cannot look at, reported as a success. Stage it there, then pull it here.
   const staged = target.isRemote ? `/tmp/shenora-shot-${Date.now()}.png` : out;
 
   if (target.sh(`xcrun simctl io booted screenshot ${q(staged)}`).status !== 0) {

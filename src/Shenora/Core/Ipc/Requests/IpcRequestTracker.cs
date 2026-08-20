@@ -5,24 +5,13 @@ namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The <see cref="IIpcRequestTracker"/> implementation: one lock over in-memory state, an immutable
-/// <see cref="IpcRequestStatus"/> snapshot published on every announced transition.
+/// <see cref="IpcRequestStatus"/> snapshot published on every announced transition. State does not
+/// survive a restart.
 /// <para>
-/// 🔴 <b>The grace period is the whole design, and it is why this class is small.</b> It tracks every
-/// request automatically and stays SILENT until one outlives
-/// <see cref="IpcRequestTrackerOptions.GracePeriod"/>, so the fast case — nearly every case — never
-/// reaches the wire. That is what removes the judgement call a module author would otherwise have to make
-/// about whether their route is "long-running".
-/// </para>
-/// <para>
-/// ⚠ <b>What the fast case costs, since it runs for EVERY request:</b> <see cref="Begin"/> allocates an
-/// entry, a linked <see cref="CancellationTokenSource"/>, a one-shot grace timer and its state;
-/// <see cref="Finish"/> disposes the timer and the CTS and removes the entry. Cheap and bounded, but not
-/// "one dictionary insert". If it ever shows up in a profile, the timer is the piece to attack — one
-/// shared timer wheel rather than one per request.
-/// </para>
-/// <para>
-/// State is in-memory only and does not survive a restart, which is correct for a thing whose entire
-/// subject is requests currently in flight.
+/// 🔴 <b>The grace period is the whole design.</b> Every request is tracked automatically — paying an
+/// entry, a linked <see cref="CancellationTokenSource"/> and a one-shot timer — and the tracker stays
+/// SILENT until one outlives <see cref="IpcRequestTrackerOptions.GracePeriod"/>, so the fast case,
+/// nearly every case, never reaches the wire.
 /// </para>
 /// </summary>
 public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
@@ -75,18 +64,15 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
         lock (_lock)
         {
             entry.Sequence = _nextSequence++;
-            // Last writer wins on a duplicate id. A client that reuses an id is already ambiguous on the
-            // response path; refusing here would fail the DISPATCH over a bookkeeping detail.
+            // Last writer wins on a duplicate id: refusing here would fail the DISPATCH over a
+            // bookkeeping detail.
             _entries[request.Id] = entry;
 
-            // ⚠ Scheduled, never awaited, and it publishes NOTHING if the request beats it. Zero means
-            // announce on the next tick rather than never — a caller asking for no grace still wants the
-            // snapshot.
-            //
-            // Created AND assigned under the lock, because Finish disposes this field: a concurrent finish
-            // landing between the insert and the assignment would see null, dispose nothing and remove the
-            // entry, and the assignment would then hand a live timer to a dead entry that nothing will ever
-            // dispose. The callback takes _lock itself, so a zero grace period simply waits for this one.
+            // Scheduled, never awaited, and it publishes NOTHING if the request beats it. Zero grace
+            // means announce on the next tick rather than never.
+            // ⚠ Created AND assigned under the lock, because Finish disposes this field: a concurrent
+            // finish landing in between would see null and remove the entry, leaving a live timer on a
+            // dead entry that nothing will ever dispose.
             entry.Announce = _options.TimeProvider.CreateTimer(
                 static state => ((IpcRequestTracker)((object[])state!)[0]).Announce((string)((object[])state!)[1]),
                 new object[] { this, request.Id },
@@ -98,8 +84,7 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
     }
 
     /// <summary>
-    /// The grace period expired with the request still running: tell the page, once. Everything after this
-    /// point for this request is ordinary published state.
+    /// The grace period expired with the request still running: tell the page, once.
     /// </summary>
     private void Announce(string id)
     {
@@ -127,8 +112,8 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
             if (progress is not null) entry.Progress = progress;
             if (detail is not null) entry.Detail = detail;
 
-            // SILENT while un-announced: the request is still inside its grace period, and the page has
-            // never heard of it. The value is kept, so the first announced snapshot carries the latest.
+            // SILENT while un-announced — the page has never heard of this request. The value is kept,
+            // so the first announced snapshot carries the latest.
             if (!entry.Announced) return;
 
             var now = _options.TimeProvider.GetUtcNow();
@@ -145,11 +130,9 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
     /// safe no-op, which is what makes "complete on dispose + fail in the catch" safe.
     /// <para>
     /// ⚠ <b>Returns whether it ACTUALLY transitioned the entry, and a caller that reports an outcome must
-    /// propagate that rather than infer one.</b> A caller's own permission check runs under a different
-    /// lock acquisition, so by the time this one runs something else may have finished the request —
-    /// and a finished entry can be GONE rather than merely changed (the un-announced fast path below, and
-    /// <see cref="PruneHistory"/> at a small <see cref="IpcRequestTrackerOptions.MaxHistory"/>), so
-    /// "no entry" cannot be read as "I did it".
+    /// propagate that rather than infer one.</b> A finished entry can be GONE rather than merely changed
+    /// (the un-announced fast path below, and <see cref="PruneHistory"/>), so "no entry" cannot be read
+    /// as "I did it".
     /// </para>
     /// </summary>
     private bool Finish(string id, IpcRequestState state, IpcError? error)
@@ -166,18 +149,15 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
             entry.FinishedAt = _options.TimeProvider.GetUtcNow();
             entry.Announce?.Dispose();
             entry.Announce = null;
-            // On BOTH exits, not just the fast path below: the linked source holds a live registration
-            // on the host's lifetime token, and an announced entry retained in history kept it alive
-            // until eviction — up to MaxHistory of them at steady state. A racing Cancel is already
-            // guarded (its cts.Cancel() sits in a try/catch for exactly this finished-first flip), and
-            // the eviction paths disposing it AGAIN is fine — CTS.Dispose is idempotent.
+            // On BOTH exits, not just the fast path below: the linked source holds a live registration on
+            // the host's lifetime token, so an announced entry retained in history would keep it alive
+            // until eviction. Double disposal is fine — CTS.Dispose is idempotent.
             entry.Cts?.Dispose();
 
             if (!entry.Announced)
             {
                 // 🔴 THE FAST PATH, and the point of the whole design: nobody was ever told this request
-                // existed, so there is nothing to tell them about its end and nothing worth retaining.
-                // It leaves without touching the wire at all.
+                // existed, so it leaves without touching the wire at all.
                 _entries.Remove(id);
                 return true;
             }
@@ -205,17 +185,14 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
         }
 
         // Token FIRST, so a body observing it sees the cancellation rather than racing a
-        // finished-then-cancelled flip. ⚠ This runs the token's callbacks SYNCHRONOUSLY on this thread,
-        // and one of them may finish the request — which is why the answer below has to come from the
-        // transition itself.
+        // finished-then-cancelled flip. ⚠ Its callbacks run SYNCHRONOUSLY here and one of them may finish
+        // the request.
         try { cts?.Cancel(); }
         catch (Exception ex) { Log(() => "[Shenora] Request cancel signal failed.", ex); }
 
-        // The check above and this transition are two separate lock acquisitions — deliberately, because
-        // CancellationTokenSource.Cancel must not run under the lock (its callbacks re-enter this type).
-        // So the SECOND one's outcome is the only one still true by the time this returns: report it, never
-        // the first. Inferring it from a missing entry would answer "cancelled" for a request that
-        // COMPLETED, since an un-announced finish removes the entry outright.
+        // Two lock acquisitions, because CancellationTokenSource.Cancel must not run under the lock (its
+        // callbacks re-enter this type). So the SECOND one's outcome is the only one still true here:
+        // report it, never the first check's.
         return Finish(requestId, IpcRequestState.Cancelled, null);
     }
 
@@ -227,9 +204,8 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
             var filtered = _entries.Values.Where(e => Matches(e, module, scope)).ToList();
 
             var inFlight = filtered.Where(e => e.State == IpcRequestState.Running).OrderBy(e => e.Sequence);
-            // Newest-finished first: a history view surfaces the most recent outcome. Sequence breaks ties
-            // deterministically, because TimeProvider.System has ~15.6 ms granularity on Windows and two
-            // same-tick finishes would otherwise fall back to dictionary order, which reshuffles on churn.
+            // Newest-finished first. Sequence breaks ties deterministically: the clock's granularity is
+            // coarse enough that two same-tick finishes would otherwise fall back to dictionary order.
             var finished = filtered.Where(e => e.State != IpcRequestState.Running)
                 .OrderByDescending(e => e.FinishedAt)
                 .ThenByDescending(e => e.Sequence);
@@ -256,7 +232,6 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
             }
         }
 
-        // Outside the lock, like every other emission here.
         EmitRemoved(removed);
     }
 
@@ -298,14 +273,11 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
             Type = IpcRequestEvents.Updated,
             Payload = status,
             Scope = entry.Scope,
-            // 🔴 A snapshot supersedes the snapshot before it — the one payload shape in the kit that
-            // may say so. Every transition publishes the WHOLE status and the client folds by id
-            // last-write-wins, so a buffered batch that drops the intermediate ones lands on exactly
-            // the state it would have reached the long way. ProgressInterval already thins a busy
-            // reporter; this bounds what a burst can put in ONE batch, which the throttle cannot.
-            //
-            // ⚠ Deliberately NOT set on Removed: its payload is a batch of ids, and each batch names
-            // DIFFERENT ids, so superseding one with another would silently lose removals.
+            // 🔴 A snapshot supersedes the snapshot before it: every transition publishes the WHOLE
+            // status and the client folds by id last-write-wins, so a batch that drops the intermediate
+            // ones lands on the same state.
+            // ⚠ Deliberately NOT set on Removed, whose payload is a batch of DIFFERENT ids — superseding
+            // one with another would silently lose removals.
             CoalesceKey = entry.Id,
         });
     }
@@ -388,10 +360,7 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
             tracker.Finish(RequestId, IpcRequestState.Failed, error);
         }
 
-        /// <summary>
-        /// Completes the request if nothing else finished it — so a route that simply returns is already
-        /// correct, and a `using` is the whole of the bookkeeping.
-        /// </summary>
+        /// <summary>Completes the request if nothing else finished it.</summary>
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _finished, 1) == 1) return;

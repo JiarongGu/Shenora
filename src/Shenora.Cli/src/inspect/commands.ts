@@ -34,9 +34,8 @@ const base = (args: readonly string[]): string => `http://127.0.0.1:${portOf(arg
 /**
  * Ask the running service something.
  *
- * ⚠ A connection refusal and a 404 collapse to the same answer deliberately: both mean "no service is
- * answering here", and the remediation is identical. Reporting them apart would ask the user to care
- * about a distinction that changes nothing they do.
+ * ⚠ A connection refusal and a 404 collapse to the same answer: both mean "no service is answering here",
+ * and the remediation is identical.
  */
 async function ask(args: readonly string[], path: string, body?: unknown): Promise<unknown | null> {
   try {
@@ -58,7 +57,6 @@ async function ask(args: readonly string[], path: string, body?: unknown): Promi
  * is silently rewritten on its way to argv: `k=>/chrome/i.test(k)` arrives as
  * `k=>C:/Program Files/Git/chrome/i.test(k)`. The device then answers *"missing ) after argument list"* —
  * an error about YOUR expression, describing text you did not type, with nothing pointing at the cause.
- * Measured while proving the inspector inside a WebView2 shell.
  *
  * ⚠ Nothing here can PREVENT it — the damage is done before `node` starts — so it is reported instead.
  * The tell is a Git installation path inside an expression, which nobody types on purpose.
@@ -105,8 +103,8 @@ export function cmdInspectServe(cfg: DeployConfig | null, args: readonly string[
       resolve();
     });
 
-    // 🔴 0.0.0.0, deliberately: the whole point is that a phone on the LAN can reach it. The privileged
-    // half is gated per-request on the peer's address, never on the bind address.
+    // 🔴 0.0.0.0, so a phone on the LAN can reach it. The privileged half is gated per-request on the
+    // peer's address, never on the bind address.
     server.listen(port, '0.0.0.0', () => {
       const addresses = lanAddresses();
       console.log(`\nshenora inspect — open this on the device you are diagnosing:\n`);

@@ -5,12 +5,10 @@ namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The request envelope a client sends to the host: <c>{ id, module, type, scope?, payload?,
-/// timestamp }</c>. Ported from the primary desktop sibling's contract assembly — two shipped
-/// family apps already speak this shape (docs/DECISIONS.md D11). Transport-neutral: the same
-/// envelope travels over WebView2 postMessage, HTTP, or a mobile shell's native channel (D16).
-///
-/// Property names are pinned with <see cref="JsonPropertyNameAttribute"/> so the wire contract
-/// holds under ANY serializer options, not only <see cref="IpcJson.Options"/>.
+/// timestamp }</c>. Transport-neutral — the same envelope travels over WebView2 postMessage, HTTP, or a
+/// mobile shell's native channel (D11/D16). Property names are pinned with
+/// <see cref="JsonPropertyNameAttribute"/> so the wire contract holds under ANY serializer options, not
+/// only <see cref="IpcJson.Options"/>.
 /// </summary>
 public sealed class IpcRequest
 {
@@ -33,9 +31,8 @@ public sealed class IpcRequest
     public required string Type { get; init; }
 
     /// <summary>
-    /// Optional app-defined routing scope — the generalization of one sibling's per-profile
-    /// routing field (design contract §5). Apps that partition state into scoped containers
-    /// route on it; apps without scoping leave it null.
+    /// Optional app-defined routing scope. Apps that partition state into scoped containers route on
+    /// it; apps without scoping leave it null.
     /// </summary>
     [JsonPropertyName("scope")]
     public string? Scope { get; init; }

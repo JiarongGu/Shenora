@@ -6,11 +6,10 @@ using Shenora.Core.Ipc;
 namespace Shenora;
 
 /// <summary>
-/// The standard IPC composition, formalizing the pattern the sample app proved: a feature contributes
-/// its facade through DI (<see cref="AddIpcModule{TFacade}"/>, from wherever it registers its
-/// services), and the dispatcher is registered once with the
-/// family's §5 pipeline order encoded — error handler → app middleware → registered facades.
-/// This replaces the source app's static mutable service registry with plain DI enumeration.
+/// The standard IPC composition: a feature contributes its facade through DI
+/// (<see cref="AddIpcModule{TFacade}"/>, from wherever it registers its services), and the dispatcher
+/// is registered once with the §5 pipeline order encoded — error handler → app middleware →
+/// registered facades.
 /// </summary>
 public static class IpcServiceCollectionExtensions
 {
@@ -29,12 +28,10 @@ public static class IpcServiceCollectionExtensions
 
     /// <summary>
     /// Map an IPC module onto the built app's dispatcher — the <c>app.MapControllers()</c> of this kit
-    /// (D64). <typeparamref name="TModule"/> is resolved from the app's provider, so a module with
-    /// dependencies needs no factory here.
+    /// (D64). <typeparamref name="TModule"/> is resolved from the app's provider.
     /// <para>
-    /// ⚠ <b>Use this for a module that could not be registered before the app was built</b> — the classic
-    /// case being one that needs the live window, which is why LATE MAPPING is supported and the pipeline
-    /// is thread-safe. A module with no such constraint is better registered at build time with
+    /// ⚠ <b>For a module that could not be registered before the app was built</b> — typically one
+    /// needing the live window. A module with no such constraint is better registered at build time with
     /// <see cref="AddIpcModule{TFacade}"/>, where the duplicate-module guard runs at composition instead
     /// of on first dispatch.
     /// </para>
@@ -51,9 +48,8 @@ public static class IpcServiceCollectionExtensions
 
     /// <summary>
     /// Map every DI-registered <see cref="IIpcModule"/> onto the dispatcher, in registration order.
-    /// Resolves the facades NOW — safe from application code that already holds a built provider, but
-    /// see <see cref="MapRegisteredModulesLazily"/> for the version <see cref="UseMessageDispatcher"/>
-    /// must use.
+    /// Resolves the facades NOW, so call it only from code that already holds a built provider — see
+    /// <see cref="MapRegisteredModulesLazily"/> for the version <see cref="UseMessageDispatcher"/> uses.
     /// </summary>
     public static IMessageDispatcher MapRegisteredModules(this IMessageDispatcher dispatcher, IServiceProvider services)
     {
@@ -72,15 +68,11 @@ public static class IpcServiceCollectionExtensions
     /// Map the DI-registered facades through ONE terminal middleware that resolves them on the FIRST
     /// dispatch instead of at composition time.
     /// <para>
-    /// This is not a micro-optimization, it is a deadlock fix (P5.5 H2). Resolving facades inside the
-    /// <see cref="IMessageDispatcher"/> singleton factory means calling back into the provider WHILE
-    /// that singleton is still being constructed. Any facade whose dependency graph reaches
-    /// <see cref="IMessageDispatcher"/> — the documented seam for cross-module <c>SendAsync</c>, so a
-    /// perfectly ordinary thing to inject — re-enters the same factory. Microsoft DI's cycle detection
-    /// is call-site based and cannot see a factory delegate re-entering the provider, and the
-    /// singleton is not in the resolved-services cache yet, so the factory simply runs again:
-    /// unbounded recursion, <see cref="StackOverflowException"/>, process death with no exception and
-    /// no log line. By the first dispatch the singleton is cached, so the same graph resolves fine.
+    /// 🔴 <b>Lazy because eager is a <see cref="StackOverflowException"/> with no diagnostic.</b>
+    /// Resolving facades inside the <see cref="IMessageDispatcher"/> singleton factory re-enters that
+    /// factory for any facade whose graph reaches <see cref="IMessageDispatcher"/> — the documented
+    /// cross-module <c>SendAsync</c> seam. Microsoft DI's cycle detection cannot see a factory delegate
+    /// re-entering the provider, so it is process death with no exception and no log line.
     /// </para>
     /// </summary>
     internal static IMessageDispatcher MapRegisteredModulesLazily(this IMessageDispatcher dispatcher, IServiceProvider services)
@@ -88,14 +80,10 @@ public static class IpcServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(services);
 
-        // PublicationOnly, never the default mode: the default CACHES a thrown exception for the life
-        // of the Lazy (the ScopedContainerRouter pitfall), and this factory throws for a composition
-        // mistake — a duplicate ModuleName, one facade's DI factory failing once. Cached, that single
-        // throw would answer EVERY later request to every DI-registered module with UNKNOWN_ERROR for
-        // the process life. PublicationOnly re-runs the factory on the next dispatch instead: a
-        // transient failure heals, a persistent one reports itself fresh each time. Racing first
-        // dispatches may each build the map — one wins, the extras are discarded, and the build has
-        // no side effects beyond resolving singletons DI already caches.
+        // ⚠ PublicationOnly, never the default mode, which CACHES a thrown exception for the life of the
+        // Lazy: one composition mistake would then answer EVERY later request to every DI-registered
+        // module with UNKNOWN_ERROR for the process life. Racing first dispatches may each build the
+        // map — one wins, and the build has no side effects beyond resolving singletons DI caches.
         var facades = new Lazy<IReadOnlyDictionary<string, IIpcModule>>(() =>
         {
             var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -120,16 +108,13 @@ public static class IpcServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Reject two facades claiming the same module name. Mapping is first-match-wins, so the second
-    /// facade's ENTIRE route table was silently unreachable and nothing logged it (P5.5 H2) — a
-    /// library module and an app module both called "APP" would have looked like a routing mystery.
+    /// Reject two facades claiming the same module name: mapping is first-match-wins, so the second
+    /// facade's ENTIRE route table would be silently unreachable.
     /// <para>
-    /// Where this surfaces depends on the path, and the difference is worth knowing:
-    /// <see cref="MapRegisteredModules"/> throws at COMPOSITION, while
-    /// <see cref="MapRegisteredModulesLazily"/> cannot detect it until the first dispatch — and since
-    /// <see cref="MessageDispatcher.DispatchAsync"/> never throws by contract, it arrives there as a
-    /// logged <see cref="IpcErrorCodes.UnknownError"/> response with the detail kept host-side. So on
-    /// the lazy path the guarantee is "diagnosable", not "fails at startup".
+    /// ⚠ Where it surfaces depends on the path. <see cref="MapRegisteredModules"/> throws at
+    /// COMPOSITION; <see cref="MapRegisteredModulesLazily"/> cannot detect it until the first dispatch,
+    /// where the never-throws contract turns it into a logged
+    /// <see cref="IpcErrorCodes.UnknownError"/> response — diagnosable, not fail-at-startup.
     /// </para>
     /// </summary>
     private static void GuardDuplicateModule(Dictionary<string, string> seen, IIpcModule facade)
@@ -152,46 +137,31 @@ public static class IpcServiceCollectionExtensions
     /// then <paramref name="configure"/> (logging, app middleware, a scoped router, ad-hoc
     /// routes), then every DI-registered facade. Transports resolve <see cref="IMessageDispatcher"/>
     /// and feed requests in.
-    /// <para>
-    /// <paramref name="configure"/> receives the INTERFACE, not the concrete dispatcher (P5.5 H6): every
-    /// mapping helper now composes on <see cref="IMessageDispatcher"/>, so nothing needs the concrete
-    /// type — and taking it here would have kept propagating the very downcast this change removes.
-    /// </para>
     /// </summary>
     public static IServiceCollection UseMessageDispatcher(
         this IServiceCollection services, Action<IServiceProvider, IMessageDispatcher>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // 🔴 THIS METHOD NAMES NO FEATURE, which is the D65 rule it exists to demonstrate: a CORE must
-        // not know the names of the features built on it. The dispatcher composes whatever `IIpcModule`s
-        // are REGISTERED; which ones exist is each feature's own business, registered from the feature
-        // itself (`UseMediaPlayer`) or from the shell that can satisfy it (`AddShenoraFileDialogs`,
-        // called by the shells because only a platform knows whether it has native dialogs).
+        // 🔴 THIS METHOD NAMES NO FEATURE (D65): a CORE must not know the names of the features built on
+        // it. The dispatcher composes whatever `IIpcModule`s are REGISTERED; which ones exist is each
+        // feature's own business. ⚠ Hardcoding one here fails without looking like a layering mistake —
+        // composing IPC over a bare `ServiceCollection` is a legitimate shape, so a feature whose
+        // dependencies are not all optional turns every such composition into UNKNOWN_ERROR.
         //
-        // ⚠ Hardcoding a feature here fails in a way that does not look like a layering mistake:
-        // composing IPC over a bare `ServiceCollection` with no builder behind it is a legitimate shape,
-        // so a feature whose dependencies are not all optional turns every such composition into
-        // UNKNOWN_ERROR. The fix is never "resolve that one optionally too" — it is to stop the core
-        // reaching downward at all.
-        //
-        // TryAdd, so this is IDEMPOTENT: `Build()` calls it for every app (D64 — IPC is a core, and a
-        // framework that needs to be asked for its own wire is not on by default), and an app calling it
-        // explicitly to pass `configure` must WIN rather than register a second dispatcher.
-        // ⚠ The explicit call has to come FIRST for that, which it does: `Build()` defaults last.
+        // TryAdd, so this is IDEMPOTENT: `Build()` calls it for every app (D64), and an app calling it
+        // explicitly to pass `configure` must WIN rather than register a second dispatcher — which needs
+        // the explicit call FIRST, and `Build()` defaults last.
         services.TryAddSingleton<IMessageDispatcher>(sp =>
         {
             // GetService, not GetRequiredService: composing IPC over a bare ServiceCollection with no
-            // IEventBus behind it is a legitimate shape (five composition tests do it), and the tracker
-            // needs a bus. An app that registered one — AddShenoraRequests, which Build() calls for every
-            // app — gets tracking; one that did not, dispatches untracked exactly as before.
+            // IEventBus behind it is a legitimate shape, and the tracker needs a bus. Without one,
+            // requests dispatch untracked.
             IMessageDispatcher dispatcher = new MessageDispatcher(sp.GetService<ILogger<MessageDispatcher>>(),
                                                                   sp.GetService<IIpcRequestTracker>());
             dispatcher.UseErrorHandler();
             configure?.Invoke(sp, dispatcher);
-            // LAZILY — resolving facades here would re-enter this very factory for any facade whose
-            // graph reaches IMessageDispatcher, which is a StackOverflow with no diagnostic. See
-            // MapRegisteredModulesLazily.
+            // LAZILY — see MapRegisteredModulesLazily; eager resolution here is a silent StackOverflow.
             return dispatcher.MapRegisteredModulesLazily(sp);
         });
         return services;

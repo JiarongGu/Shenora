@@ -22,9 +22,8 @@ export interface CaptionButtonRect {
   height: number;
 }
 
-// A plain interface — NOT `extends Record<string, unknown>` (P5.5 H6). That widened
-// `keyof TRequests & string` to `string`, so a mistyped route compiled and every payload collapsed to
-// `unknown`: the kit's own service was demonstrating the anti-pattern the base class exists to prevent.
+// ⚠ A plain interface — NOT `extends Record<string, unknown>`, which widens `keyof TRequests & string`
+// back to `string`, so a mistyped route compiles and every payload collapses to `unknown`.
 interface WindowRequests {
   MINIMIZE: void;
   TOGGLE_MAXIMIZE: void;
@@ -83,19 +82,16 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
   }
 
   /**
-   * Tell the host where the page drew its caption buttons, so the OS can treat them as the real
-   * thing — chiefly so Windows 11 offers **Snap Layouts** on the maximize button, which a page-drawn
-   * button never gets otherwise.
+   * Tell the host where the page drew its caption buttons, so the OS treats them as the real thing —
+   * chiefly so Windows 11 offers **Snap Layouts** on the maximize button.
    *
-   * Two consequences worth knowing before calling this. The host takes over CLICKS in those rects
-   * (the OS stops delivering them to the page), so your `onClick` handlers stop firing there — the
-   * host performs minimize/maximize/close itself, through the same commands. And CSS `:hover` stops
-   * firing too, so subscribe to the host's caption-button state to render hot/pressed; it is also the
-   * only way to stay hot while the pointer is over the snap flyout, which is a different window.
+   * ⚠ The host then takes over CLICKS in those rects and performs minimize/maximize/close itself, so
+   * your `onClick` handlers stop firing there. CSS `:hover` stops firing too — subscribe to the host's
+   * caption-button state to render hot/pressed, which is also the only way to stay hot while the
+   * pointer is over the snap flyout, a different window.
    *
-   * Re-send on every layout change (a resize, a theme that changes button size): the rectangles are a
-   * snapshot, and a stale one moves the hit-test off the button the user can see. Pass an empty array
-   * to hand every pixel back to the page.
+   * ⚠ Re-send on every layout change: the rectangles are a snapshot, and a stale one moves the
+   * hit-test off the button the user can see. Pass an empty array to hand the pixels back to the page.
    */
   setCaptionButtons(buttons: CaptionButtonRect[]): Promise<void> {
     return this.send('SET_CAPTION_BUTTONS', { payload: { buttons } });
@@ -103,14 +99,13 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
 }
 
 /**
- * The max/restore-glyph resync pattern from the source app: the authoritative maximize state,
- * re-queried when a resize SETTLES (a maximize/restore always resizes the window, and the DOM has no
- * other signal for the manual work-area maximize). Failures (plain browser, no host) leave it false.
+ * The authoritative maximize state, re-queried when a resize SETTLES — a maximize/restore always
+ * resizes the window, and the DOM has no other signal for the manual work-area maximize. Failures
+ * (plain browser, no host) leave it false.
  *
- * Read once immediately, then on the TRAILING edge of a 100 ms debounce — not once per `resize`
- * event, which a window drag fires ~180 times in three seconds. Coalescing is the correct semantics
- * here, not just the cheap one: maximize/restore is a single step, so only the end state matters. Do
- * not build on intermediate values during a drag; there are none.
+ * ⚠ Read once immediately, then only on the TRAILING edge of a 100 ms debounce, so there are no
+ * intermediate values during a drag to build on. Maximize/restore is a single step; only the end
+ * state exists.
  */
 export function useWindowMaximized(commands?: WindowCommands): boolean {
   const [maximized, setMaximized] = useState(false);
@@ -128,11 +123,8 @@ export function useWindowMaximized(commands?: WindowCommands): boolean {
       );
     };
 
-    // DEBOUNCED (P5.5 H2). `resize` fires continuously while a window is dragged — roughly 180 events
-    // over a 3-second drag — and each one used to start a full IPC round-trip, every one of them
-    // arming a 30-second timeout timer. The state that matters only changes at the END of a resize
-    // (maximize/restore is a single step), so the trailing edge is not just cheaper, it is the correct
-    // semantics. 100 ms matches the drop-zone bounds sync.
+    // `resize` fires continuously while a window is dragged, and each event undebounced is a full IPC
+    // round-trip arming its own 30-second timeout timer. 100 ms matches the drop-zone bounds sync.
     const refresh = debounce(query, 100);
     query(); // the initial read is immediate — nothing to coalesce yet
     window.addEventListener('resize', refresh);

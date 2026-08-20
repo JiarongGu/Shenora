@@ -12,24 +12,20 @@ import {
  * The imperative half of the segment route (D71 piece 4b): open a `SourceBuffer`, feed it, and stop when
  * the platform says stop.
  *
- * 🔴 **Everything here was written against measurements rather than against the specification**, because
- * three implementations disagree in ways the spec permits and none of it is guessable:
+ * 🔴 **Three implementations disagree in ways the spec permits, so none of this is guessable** — the
+ * measurements are in `docs/design/media.md`:
  *
- * - **Attachment is not portable.** iOS takes `srcObject` — a `ManagedMediaSource` is a valid
- *   `MediaSourceHandle` — and Chromium refuses it outright ("not of type '(MediaSourceHandle or
- *   MediaStream)'"), wanting an object URL. Feature-detected, not branched on the shell: which one works
- *   is a property of the MediaSource, not of the OS.
+ * - **Attachment is not portable.** iOS takes `srcObject` (a `ManagedMediaSource` is a valid
+ *   `MediaSourceHandle`); Chromium refuses it and wants an object URL. Feature-detected, not branched on
+ *   the shell: which one works is a property of the MediaSource, not of the OS.
  * - **The codecs are read from the init segment, never assumed.** The track set is a fact about the
  *   DEVICE, not the source: the same file yields a two-track init on iOS and a video-only one on Android,
  *   which cannot decode its AC-3 soundtrack. A mismatch kills the FIRST append and plays nothing.
- * - **The streaming gate is real on iOS and absent elsewhere.** `endstreaming` fires once enough is
- *   buffered (measured: at 60 s, not at 6 s), and fetching past it is the misuse `ManagedMediaSource`
- *   exists to detect. A plain `MediaSource` has neither event nor a `streaming` property, and its absence
- *   means "always streaming" — never "never asked".
+ * - **The streaming gate is real on iOS and absent elsewhere.** Fetching past `endstreaming` is the
+ *   misuse `ManagedMediaSource` exists to detect. A plain `MediaSource` has neither the event nor a
+ *   `streaming` property, and its absence means "always streaming" — never "never asked".
  *
- * ⚠ **The dependencies are INJECTABLE so this is testable without a browser.** jsdom has no MediaSource,
- * and "cannot be verified anywhere this repo runs" was true of the whole file until the seams below
- * existed. A fake source and a fake fetch drive every branch here.
+ * The dependencies below are injectable, so a fake source and a fake fetch drive every branch here.
  */
 export interface SegmentBinderOptions {
   /** The playlist URL. Segment URIs are resolved relative to it. */
@@ -47,11 +43,7 @@ export interface SegmentBinderOptions {
   /** Defaults to `URL.createObjectURL`. Only used when `srcObject` is refused. */
   createObjectURL?: (source: object) => string;
 
-  /**
-   * Defaults to `URL.revokeObjectURL`. The pair to {@link createObjectURL}, and injectable for the same
-   * reason: without it the failure paths that must revoke — a source that closes before opening, a
-   * codec the device refuses — cannot be asserted, only hoped for.
-   */
+  /** Defaults to `URL.revokeObjectURL`. The pair to {@link createObjectURL}. */
   revokeObjectURL?: (url: string) => void;
 
   /** Stop fetching once this many seconds are buffered ahead. Defaults to 30. */
@@ -76,21 +68,17 @@ export interface SegmentBinding {
 }
 
 /**
- * How long to wait for the attached MediaSource to reach `open`.
- *
- * Attachment is local and immediate — there is no network in it — so this is a deadline for "something
- * is wrong", not a budget. It exists because the alternative to a deadline here is an await that never
- * returns: the element can refuse or tear down an attachment without ever raising an event this side
- * can name.
+ * How long to wait for the attached MediaSource to reach `open`. Attachment is local and immediate, so
+ * this is a deadline for "something is wrong": the element can refuse or tear down an attachment
+ * without raising any event this side can name, and the await would never return.
  */
 const ATTACH_TIMEOUT_MS = 10_000;
 
 /**
  * Thrown for every reason a stream cannot start, so a caller has one thing to catch.
  *
- * ⚠ **Not literally every reason** — a `TypeError` from the manifest fetch failing at the network layer,
- * and a `RangeError` from a truncated init segment, both propagate as themselves. Catch broadly if you
- * need to be exhaustive.
+ * ⚠ **Not literally every reason** — a `TypeError` from the manifest fetch and a `RangeError` from a
+ * truncated init segment propagate as themselves. Catch broadly if you need to be exhaustive.
  */
 export class SegmentBinderError extends Error {
   constructor(message: string) {
@@ -122,11 +110,7 @@ function bufferedAhead(element: HTMLMediaElement): number {
  * Resolves once the init segment has been appended — the point after which the element can play — and
  * goes on fetching in the background until every segment is in or {@link SegmentBinding.dispose} is called.
  *
- * ⚠ **There is deliberately NO `useSegmentStream` hook.** This needs no React — it takes an element and
- * returns a handle, exactly as `mediaUrl` takes a path and returns a string — so a hook would add a
- * lifecycle without adding a capability. The case that would earn one is an app wanting load/error
- * state as component state, and the shape of that hook depends on what such an app actually asks for;
- * inventing it first is how a seam nothing consults gets built (D63). Call this from an effect.
+ * There is no `useSegmentStream` hook: this needs no React, so call it from an effect.
  */
 export async function bindSegmentStream(options: SegmentBinderOptions): Promise<SegmentBinding> {
   const {
@@ -141,16 +125,10 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
   const say = (line: string) => onDiagnostic?.(line);
 
   /**
-   * A FAILURE, as opposed to a trace line.
-   *
-   * 🔴 **`onDiagnostic` is optional, so failures used to go nowhere by default.** A segment answering 500
-   * or an `appendBuffer` `QuotaExceededError` produced no console output, no rejection and no state
-   * change — playback simply stalled, with nothing anywhere to explain it. Every other error path in this
-   * package already defaults to `console.error` (`bridge.ts`'s `onPostError`, `store.ts`'s `onError`,
-   * `eventBus.ts`); this one was the exception.
-   *
-   * ⚠ Only when the app supplied NO handler. A caller that took `onDiagnostic` owns its reporting and
-   * must not be double-logged — the same rule the two sinks above follow.
+   * A FAILURE, as opposed to a trace line: reported to `console.error` when the app supplied no
+   * `onDiagnostic`, so a segment answering 500 or an `appendBuffer` `QuotaExceededError` cannot stall
+   * playback with nothing anywhere to explain it. A caller that took `onDiagnostic` owns its reporting
+   * and is not double-logged.
    */
   const fail = (line: string) => (onDiagnostic ? onDiagnostic(line) : console.error(`[shenora] ${line}`));
 
@@ -195,19 +173,18 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
   }
 
   // ⚠ The object URL is minted BEFORE anything below can fail, so EVERY failure between the mint and
-  // the returned binding has to revoke it itself — bindSegmentStream has not returned, so the caller
-  // holds no binding to dispose, and the document keeps the MediaSource alive for its lifetime. That
-  // is three places, not one: the open wait, addSourceBuffer, and the init append.
+  // the returned binding must revoke it itself — the caller holds no binding to dispose yet, and the
+  // document keeps the MediaSource alive for its lifetime. Three places: the open wait,
+  // addSourceBuffer, and the init append.
   const revokeAndRethrow = (e: unknown): never => {
     if (objectUrl) revoke(objectUrl);
     throw e;
   };
 
-  // 🔴 `error` IS NOT A MediaSource EVENT. The spec fires `sourceopen`, `sourceended` and
-  // `sourceclose`, so the only rejection path here could never fire — and an attachment that CLOSES
-  // rather than opening (the element detached from the document before load, an attachment refused)
-  // left this await pending FOREVER: no error, no diagnostic, no way to reach dispose(), and the object
-  // URL never revoked. `sourceclose` is the real signal, and the deadline covers whatever is neither.
+  // 🔴 `error` IS NOT A MediaSource EVENT — the spec fires `sourceopen`, `sourceended` and
+  // `sourceclose`. An attachment that CLOSES rather than opening (the element detached before load, an
+  // attachment refused) leaves this await pending FOREVER on any other listener: no error, no
+  // diagnostic, no way to reach dispose(). The deadline covers whatever is neither.
   await new Promise<void>((res, rej) => {
     if (source.readyState === 'open') return res();
 
@@ -230,8 +207,7 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
 
   let buffer: SourceBuffer;
   try {
-    // Throws synchronously for a codecs string this implementation refuses — a real case, per the
-    // remarks on codec derivation above.
+    // Throws synchronously for a codecs string this implementation refuses.
     buffer = source.addSourceBuffer(mime);
   } catch (e) {
     revokeAndRethrow(e);
@@ -248,9 +224,8 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
    * Append one buffer and settle when the source buffer says so.
    *
    * 🔴 **Both listeners come off on EITHER outcome.** `{ once: true }` removes only the listener that
-   * FIRES, and the success path fires `updateend` — so the `error` listener stayed attached, once per
-   * appended segment, each retaining a settled `rej` closure. A two-hour stream at six-second segments
-   * accumulates ~1,200 dead listeners on one `SourceBuffer`, none of which `dispose()` could shed, and a
+   * FIRES, and the success path fires `updateend` — so with it the `error` listener stays attached once
+   * per appended segment, each retaining a settled `rej` closure that `dispose()` cannot shed, and one
    * later real `error` invokes every one of them.
    */
   const append = (bytes: Uint8Array) => new Promise<void>((res, rej) => {
@@ -280,9 +255,9 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
   /**
    * Fetch and append whatever {@link nextSegment} asks for, one at a time.
    *
-   * ⚠ Re-entrancy is guarded rather than queued: this is driven by element events that fire far faster
-   * than an append completes, and two concurrent `appendBuffer` calls on one SourceBuffer throw
-   * `InvalidStateError` — which surfaces as a stall with no obvious cause.
+   * ⚠ Re-entrancy is guarded rather than queued: element events fire far faster than an append
+   * completes, and two concurrent `appendBuffer` calls on one SourceBuffer throw `InvalidStateError`,
+   * which surfaces as a stall with no obvious cause.
    */
   const pump = async () => {
     if (pumping || disposed) return;
@@ -300,8 +275,8 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
         const response = await doFetch(resolve(manifestUrl, entry.uri));
         if (disposed) return;
         if (!response.ok) {
-          // 503 is the host saying "still producing", which is a WAIT and not a failure — the route
-          // answers it deliberately rather than 404ing a source that is merely not ready.
+          // 503 is the host saying "still producing" — a WAIT, not a failure. The route answers it
+          // rather than 404ing a source that is merely not ready yet.
           fail(`segments: ${entry.uri} answered ${response.status}`);
           break;
         }

@@ -19,12 +19,9 @@ export interface ShenoraStoreIo<TState = unknown> {
    * action can fully decide by itself. The host stays authoritative for everything a `snapshot`/`on`
    * reducer covers; this is for state the ACTION already knows and the host would only echo back.
    *
-   * 🔴 **Reach for it only when the host has no event to tell you.** This used to be documented with
-   * the kit's own `clearFinished` doing an optimistic prune, and that example was WITHDRAWN: the
-   * moment `REQUEST_REMOVED` existed, the local prune became a second thing deciding which rows are
-   * gone, able to disagree with the host about it. If the host emits an event for the change, let the
-   * reducer own it — an optimistic path beside a wire event is a divergence waiting to happen, not a
-   * latency win.
+   * 🔴 **Reach for it only when the host has no event to tell you.** If one exists, let the reducer
+   * own it: an optimistic path beside a wire event is a second thing deciding the same state, and it
+   * can disagree with the host.
    */
   setState: (reduce: (state: TState) => TState) => void;
 }
@@ -38,16 +35,12 @@ export interface ShenoraStoreSnapshot<TState> {
   apply: (state: TState, data: unknown) => TState;
 }
 
-/** Inputs for {@link createShenoraStore}. */
 /**
  * Is the fresh selector result the same VALUE as the previous one, for re-render purposes?
  *
  * `Object.is` plus ONE level of own-key comparison. The shallow step is what lets an inline selector
  * that derives a new object work — `s => ({ count: s.lines.length })` builds a different object every
- * call, and without this every call would look like a change and loop.
- *
- * ⚠ Deliberately one level. Deep equality would make an unchanged NESTED value hide a changed outer
- * one only by cost, and a store whose selectors need deep comparison is selecting too much.
+ * call, and without it every call would look like a change and loop.
  */
 function equivalent(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
@@ -62,6 +55,7 @@ function equivalent(a: unknown, b: unknown): boolean {
     && Object.is((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
 }
 
+/** Inputs for {@link createShenoraStore}. */
 export interface ShenoraStoreOptions<TState, TActions> {
   /** State before anything has arrived. */
   initial: TState;
@@ -69,9 +63,9 @@ export interface ShenoraStoreOptions<TState, TActions> {
   /**
    * Load the CURRENT state when the first component subscribes.
    *
-   * Not optional in spirit, even though it is in the type: a component that mounts while work is
-   * already in flight has MISSED the events, and a stream cannot be replayed. Snapshot-then-deltas
-   * is the contract; deltas alone silently work only for whoever was watching from the start.
+   * ⚠ Optional in the type only. A component that mounts while work is already in flight has MISSED
+   * those events and a stream cannot be replayed, so deltas alone work silently only for whoever was
+   * watching from the start.
    */
   snapshot?: ShenoraStoreSnapshot<TState>;
 
@@ -108,28 +102,19 @@ export interface ShenoraStore<TState, TActions> {
 }
 
 /**
- * A store fed by one module's host event stream, shared by every component that reads it.
- *
- * This is the shape a desktop app needs and the one three sibling apps each hand-built before it
- * existed here — see `.claude/knowledge/generic-library.md`'s worked example for that survey. It exists
- * because status- and progress-driven UI is inherently MANY-WATCHERS: a full panel and a compact
- * progress strip want the same live state, and without a shared store each re-implements the wiring,
- * each opens its own subscription, and each starts empty.
+ * A store fed by one module's host event stream, shared by every component that reads it — for the
+ * status- and progress-driven UI that is inherently many-watchers, where a full panel and a compact
+ * progress strip want the same live state.
  *
  * What it guarantees:
  * - **One subscription per event type, however many components read it.** Mounting N components does
  *   not open N subscriptions; unmounting the last one tears them down.
  * - **A late mounter sees current state**, via {@link ShenoraStoreOptions.snapshot} on the first
- *   subscription. This is the part that cannot be retrofitted by subscribing harder.
- * - **No state library.** Built on React's `useSyncExternalStore`, which exists for exactly this and
- *   is tearing-free under concurrent rendering. The kit imposes no store dependency (D13's spirit —
- *   apps bring their own); every sibling reached for the same one, and baking that in would have been
- *   solving their stack rather than their problem.
- * - **Reducers are PURE and isolated**: they take state + payload and return state, so a store is
- *   testable with no bridge, and a throwing reducer is reported rather than corrupting shared state.
- *
- * Headless (D13/D21): the kit ships the MECHANISM. What an operation is — its phases, its progress
- * shape, whether it queues — stays in the app; there is deliberately no job/queue/progress type here.
+ *   subscription.
+ * - **No state library.** Built on React's `useSyncExternalStore`, so it is tearing-free under
+ *   concurrent rendering and imposes no store dependency on the app.
+ * - **Reducers are PURE and isolated**: state + payload in, state out, so a store is testable with no
+ *   bridge and a throwing reducer is reported rather than corrupting shared state.
  *
  * @example
  * const useDeploy = createShenoraStore('DEPLOY', {
@@ -158,8 +143,8 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
   let state = initial;
   let snapshotLoaded = false;
   // Bumped on detach. A snapshot response from an earlier subscriber epoch resolving late must be
-  // DROPPED: the current epoch has (or will have) its own, fresher request, and applying the old
-  // body after the new one is a lost update wearing a success path.
+  // DROPPED — the current epoch has its own fresher request, and applying the old body over the new
+  // one is a lost update wearing a success path.
   let snapshotEpoch = 0;
   const listeners = new Set<() => void>();
   let unsubscribes: (() => void)[] = [];
@@ -179,16 +164,15 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
     try {
       setState(reduce(state, event.payload as never, event));
     } catch (error) {
-      // A throwing reducer must not corrupt shared state or break the other subscribers — the same
-      // guarded-callback rule the host applies to app code (Shenora.AppCallback).
+      // A throwing reducer must not corrupt shared state or break the other subscribers.
       report(error, { module, type });
     }
   };
 
   const loadSnapshot = (): void => {
     if (!snapshot || snapshotLoaded) return;
-    snapshotLoaded = true; // set BEFORE awaiting: two components mounting in the same tick must not
-    // both fire the request (React StrictMode double-invokes effects, which is precisely this case).
+    snapshotLoaded = true; // set BEFORE awaiting: two components mounting in the same tick (React
+    // StrictMode double-invokes effects) must not both fire the request.
     const epoch = snapshotEpoch;
     bridge()
       .invoke<unknown>(module, snapshot.type, { payload: snapshot.payload, scope })
@@ -203,8 +187,8 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
         },
         (error: unknown) => {
           if (epoch !== snapshotEpoch) return;
-          // Allow a later retry: a snapshot that failed because the host was not ready yet should not
-          // leave the store permanently empty for the rest of the session.
+          // Allow a later retry: a snapshot that failed because the host was not ready yet must not
+          // leave the store permanently empty.
           snapshotLoaded = false;
           report(error, { module, type: snapshot.type });
         },
@@ -221,18 +205,16 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
   const detach = (): void => {
     for (const off of unsubscribes) off();
     unsubscribes = [];
-    // The next mount must RE-LOAD: with no bus subscription live, everything the host emits from
-    // here on is missed, so the snapshot the flag was guarding is stale the moment this returns.
-    // The flag exists to dedupe same-tick double-mounts (StrictMode), not to span subscriber epochs —
-    // and the epoch bump orphans any request still in flight, so its late answer cannot clobber the
-    // next epoch's fresher one.
+    // The next mount must RE-LOAD: with no bus subscription live, everything the host emits from here
+    // on is missed, so the snapshot the flag was guarding is stale the moment this returns. The epoch
+    // bump orphans any request still in flight, so its late answer cannot clobber the next one.
     snapshotLoaded = false;
     snapshotEpoch++;
   };
 
   const subscribe = (listener: () => void): (() => void) => {
-    // ONE subscription per event type for the whole store — the property that makes this worth
-    // existing. The first listener attaches; the last one to leave detaches.
+    // ONE subscription per event type for the whole store: the first listener attaches, the last one
+    // to leave detaches.
     if (listeners.size === 0) attach();
     listeners.add(listener);
     return () => {
@@ -253,26 +235,14 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
   /**
    * Subscribe to the store, optionally through a selector.
    *
-   * 🔴 **The selector is RE-RUN every time and the previous RESULT is reused when equivalent.** It used
-   * to be memoized against STATE identity alone, which looked like the careful thing and was wrong: a
-   * selector whose closure changed while the state did not returned the PREVIOUS selector's value. A
-   * list row doing `useShenoraRequests(s => s.byId[id])` whose `id` prop changes — virtualised reuse, a
-   * route change — rendered the previous row's data until some unrelated event replaced the state.
-   *
-   * ⚠ <b>Two requirements pull against each other and both are met by comparing RESULTS rather than
-   * inputs.</b> `useSyncExternalStore` re-renders whenever `getSnapshot` returns something new by
-   * `Object.is`, so:
-   * <list type="bullet">
-   * <item>keying the cache on STATE alone gives stale values when the selector changes — the bug above;</item>
-   * <item>keying it on the SELECTOR too loops forever for an inline selector that derives a new object
-   * (`s => ({ count: s.lines.length })`) — a fresh identity each render, a fresh object each call.
-   * zustand v5 has exactly that behaviour and answers it with an opt-in `useShallow`.</item>
-   * </list>
-   * Comparing the RESULT shallowly gives both: a derived object that is field-for-field the same reuses
-   * the previous reference and does not re-render, while a genuinely different row does.
+   * 🔴 **The selector is RE-RUN every time and the previous RESULT is reused when equivalent** — never
+   * cached against the state or the selector, both of which fail silently. Keying on STATE alone
+   * returns the PREVIOUS selector's value when the closure changes (a list row doing
+   * `s => s.byId[id]` whose `id` prop changes renders the previous row's data); keying on the SELECTOR
+   * too loops forever for an inline selector that derives a new object (`s => ({ n: s.lines.length })`).
    */
   function useStore<TSelected>(selector?: (value: TState) => TSelected): TState | TSelected {
-    // The last result handed to React. Reused whenever the fresh one is equivalent, which is what keeps
+    // The last result handed to React, reused whenever the fresh one is equivalent — what keeps
     // getSnapshot stable without pinning it to an input that can go stale.
     const previous = useRef<{ value: unknown } | null>(null);
 

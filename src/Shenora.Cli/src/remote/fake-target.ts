@@ -1,15 +1,6 @@
-// A scriptable stand-in for a build machine, so the DEVICE FLOW can be tested without one.
-//
-// 🔴 Why this exists. Everything from "run a command" downwards was proven against a real Mac once, by
-// hand, in one session. That is not repeatable and it is not a gate: the next change to `ios.ts` gets no
-// warning at all unless someone happens to have hardware plugged in. This fake makes every step up to
-// the hardware boundary assertable here — WHICH commands ran, in WHICH order, through WHICH transport —
-// so the only thing left unknown is whether the Mac obeys them.
-//
-// ⚠ It is deliberately NOT a mock framework. It records calls and answers from a script, because the
-// questions worth asking are "did the signing build go through `gui` rather than `sh`" and "was the
-// project named rather than the checkout root" — both of which are answered by looking at the recorded
-// command strings.
+// A scriptable stand-in for a build machine, so the DEVICE FLOW can be tested without one: WHICH commands
+// ran, in WHICH order, through WHICH transport. What it cannot answer is whether the Mac obeys them —
+// `docs/design/cli-remote.md` has the split.
 import type { GuiRunOptions, Target, TargetRunOptions } from './target.js';
 import type { RunResult } from '../exec.js';
 

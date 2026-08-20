@@ -3,12 +3,11 @@ import { getBridge, type ShenoraBridge } from './bridge.js';
 import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
 
 /**
- * The module the player speaks on. Matches `MediaPlayerOptions.Access.Module` on the host (the
- * containment/module boundary every media delivery path shares — `MediaAccessOptions`, D71), which
+ * The module the player speaks on. Matches `MediaPlayerOptions.Access.Module` on the host, which
  * defaults to the same string — change one and you must change the other.
  *
- * ⚠ The `SHENORA.` prefix is RESERVED for the kit's own modules (D64), beside the handshake's bare
- * `SHENORA`. It exists so your app stays free to own a module called plainly `MEDIA`.
+ * ⚠ The `SHENORA.` prefix is RESERVED for the kit's own modules (D64), so your app stays free to own
+ * a module called plainly `MEDIA`.
  */
 export const MEDIA_PLAYER_MODULE = 'SHENORA.MEDIA';
 
@@ -35,11 +34,6 @@ export const MEDIA_PLAYER_STATUS = 'PLAYER_STATUS';
  * A CONVERSION's events, on the same module. **A wire contract** mirrored from C#
  * `MediaConversionEvents` — a conversion outlives the request that started it, so the page learns from
  * these rather than from a response.
- *
- * ⚠ These were named in the host and in the docs (a page "waits on READY before setting its element's
- * src, and branches on FAILED's reason") while existing NOWHERE on this side, so every page that used
- * them typed the raw strings — the divergence `WireMirrorTests` exists to prevent, in the one family
- * the mirror did not cover. Added 2026-08-18.
  */
 export const MediaConversionEvents = {
   /** Fraction complete: `{ source, progress }`. Throttle in the app if the engine is chatty. */
@@ -57,8 +51,8 @@ export const MediaConversionEvents = {
 export const MediaConversionErrorCodes = {
   /**
    * The output would have lost a stream, so nothing was cached; the event carries `dropped`, the codecs.
-   * ⚠ It means "not playable HERE" rather than always "not supported" — a run configured with no
-   * conversion seam never asked the platform.
+   * ⚠ It means "not playable HERE", not always "not supported" — a run configured with no conversion
+   * seam never asked the platform.
    */
   unsupportedCodec: 'UNSUPPORTED_CODEC',
 } as const;
@@ -66,8 +60,8 @@ export const MediaConversionErrorCodes = {
 /**
  * What the element is doing, in the host's vocabulary (`MediaPlayerState`).
  *
- * ⚠ `opening` and `buffering` are distinct, matching the host: opening is "no position yet", buffering is
- * "had one and it stopped moving". Collapsing them makes a UI extrapolate a position that is not advancing.
+ * ⚠ `Opening` and `Buffering` are distinct: opening is "no position yet", buffering is "had one and it
+ * stopped moving". Collapsing them makes a UI extrapolate a position that is not advancing.
  */
 export type MediaPlayerReportState =
   | 'Empty' | 'Opening' | 'Paused' | 'Playing' | 'Buffering' | 'Ended' | 'Failed';
@@ -103,28 +97,19 @@ export interface UseMediaPlayerOptions {
  * ```
  *
  * **That is the whole page-side integration.** No `src`, no play button wiring, no state machine — the app
- * calls `IMediaPlayer.OpenAsync/PlayAsync` in C#, and this drives the element to match. The page keeps what
- * it is good at (rendering) and gives up what it was never good at (deciding whether a file can be played
- * at all, which needs a probe and a device capability query).
- *
- * ⚠ **The host half needs nothing from you.** The reports posted here are an ordinary IPC message
- * (`PLAYER_REPORT` on {@link MEDIA_PLAYER_MODULE}) and the kit's own `MediaPlayerModule` answers it,
- * registered by the media feature itself. If you wrote that route by hand against a build from before
- * 2026-08-07, **delete it** — two facades on one module is a duplicate the host rejects.
+ * calls `IMediaPlayer.OpenAsync/PlayAsync` in C#, and this drives the element to match. The host half
+ * needs nothing from you: the kit's own `MediaPlayerModule` answers the reports posted here.
  *
  * ⚠ **The element must exist when this effect first runs.** `ref.current` is read once, and a `useRef`
  * object is stable, so an element rendered CONDITIONALLY (`{ready && <video ref={ref} />}`) mounts after
- * the effect and never binds — silently. Render the element unconditionally and hide it with CSS, or key
- * the component so the hook remounts with it.
+ * the effect and never binds — silently. Render it unconditionally and hide it with CSS, or key the
+ * component so the hook remounts with it.
  *
- * ⚠ **It reports on TRANSITIONS, never on `timeupdate`.** That event fires ~4×/second and forwarding it
- * would cost battery and IPC to tell the host something it can extrapolate from a position and a rate. If
- * you need a moving scrubber, read `element.currentTime` in your own render loop — locally, at the rate you
- * actually redraw.
+ * ⚠ **It reports on TRANSITIONS, never on `timeupdate`**, which fires ~4×/second. For a moving scrubber,
+ * read `element.currentTime` in your own render loop.
  *
  * ⚠ **Autoplay policies still apply.** A `PLAYER_PLAY` arriving before any user gesture can be refused by
- * the browser, and the element reports `Failed`. That is the platform's rule, not the kit's, and the host
- * hears about it rather than silently believing playback started.
+ * the browser, and the element then reports `Failed` rather than the host believing playback started.
  */
 export function useMediaPlayer(
   ref: RefObject<HTMLMediaElement | null>,
@@ -137,8 +122,7 @@ export function useMediaPlayer(
     if (!element) return;
     const link = bridge ?? getBridge();
 
-    // The element is the only clock: the host asks IT for position rather than tracking its own, so a
-    // report always carries what the element actually believes.
+    // The element is the only clock: the host tracks no position of its own.
     const report = (state: MediaPlayerReportState, error?: string) => {
       const duration = Number.isFinite(element.duration) ? element.duration : null;
       const payload: MediaPlayerReport = {
@@ -150,11 +134,10 @@ export function useMediaPlayer(
       link.post(module, MEDIA_PLAYER_REPORT, { payload });
     };
 
-    // The PENDING start-at seek, if any. 🔴 It has to be cancellable: `{ once: true }` removes a listener
-    // only when it FIRES, and a second PLAYER_LOAD calls `element.load()`, which aborts the first load so
-    // its `loadedmetadata` never comes. The stale listener then survives and runs on the NEXT track's
-    // metadata — so loading A at 10:00 and then B at 0:00 starts B ten minutes in, because B sets no
-    // listener of its own and A's is still attached.
+    // The PENDING start-at seek, if any. 🔴 It has to be cancellable: `{ once: true }` removes a
+    // listener only when it FIRES, and a second PLAYER_LOAD aborts the first load so its
+    // `loadedmetadata` never comes. The stale listener then runs on the NEXT track's metadata — load A
+    // at 10:00 then B at 0:00 and B starts ten minutes in.
     let pendingSeek: (() => void) | null = null;
     const cancelPendingSeek = () => {
       if (pendingSeek) element.removeEventListener('loadedmetadata', pendingSeek);
@@ -180,10 +163,9 @@ export function useMediaPlayer(
       }),
       eventBus.subscribe(module, MediaPlayerCommands.play, () => {
         // A rejected play() is an autoplay refusal, and the host must hear it rather than assume success.
-        // ⚠ Read `.name` STRUCTURALLY rather than testing `instanceof Error`: the value browsers reject
-        // with is a DOMException, which is not an Error subclass everywhere (jsdom's is not), and a page
-        // can reject with anything at all. The name is the stable, app-safe part — `NotAllowedError` is
-        // what an autoplay block actually says, and it is the one an adopter will want to branch on.
+        // ⚠ Read `.name` STRUCTURALLY, never via `instanceof Error`: browsers reject with a
+        // DOMException, which is not an Error subclass everywhere (jsdom's is not). `NotAllowedError`
+        // is what an autoplay block says, and the name an adopter branches on.
         void element.play().catch((cause: unknown) => {
           const name = (cause as { name?: unknown } | null)?.name;
           report('Failed', typeof name === 'string' && name ? name : 'PlayRejected');
@@ -207,7 +189,7 @@ export function useMediaPlayer(
     ];
 
     // ── element → host ────────────────────────────────────────────────────────────────────────────
-    // Transitions only. `timeupdate` is deliberately absent — see the remarks.
+    // Transitions only — no `timeupdate`, see the remarks.
     const listeners: Array<[keyof HTMLMediaElementEventMap, () => void]> = [
       ['loadedmetadata', () => report('Paused')],
       ['canplay', () => report(element.paused ? 'Paused' : 'Playing')],
@@ -222,17 +204,13 @@ export function useMediaPlayer(
     for (const [event, handler] of listeners) element.addEventListener(event, handler);
 
     // 🔴 REPORT WHEN THE PAGE IS ABOUT TO BE HIDDEN, or the host's position is whatever the last
-    // TRANSITION left — which for steady playback is the moment it started.
+    // TRANSITION left — for steady playback, the moment it started. The user then backgrounds mid-film
+    // and `BackgroundPlaybackTransfer` resumes from the beginning. The platform's `pause` does fire,
+    // but not in time to cross IPC before the process is frozen.
     //
-    // Measured on an Android emulator 2026-08-15: with transition-only reporting the page sat at 19.79 s
-    // while the host believed 0.01 s, and `BackgroundPlaybackTransfer` handed the native player 0.01 s.
-    // The user backgrounds mid-film and resumes from the beginning. The platform's `pause` at background
-    // time does fire, but not in time to cross IPC before the process is frozen.
-    //
-    // ⚠ `visibilitychange` rather than `pagehide`: this fires while the document is still alive and the
-    // bridge can still post, and it is the signal both mobile shells raise on the way to the background.
-    // It costs ONE report per background — nothing like `timeupdate`'s ~4/second, which is why that one
-    // is still deliberately absent.
+    // ⚠ `visibilitychange` rather than `pagehide`: it fires while the document is still alive and the
+    // bridge can still post, and both mobile shells raise it on the way to the background. ONE report
+    // per background, not `timeupdate`'s ~4/second.
     const onHidden = () => {
       if (document.visibilityState !== 'hidden') return;
       report(element.paused ? (element.ended ? 'Ended' : 'Paused') : 'Playing');
@@ -251,8 +229,8 @@ export function useMediaPlayer(
 /**
  * A short, stable reason from `MediaError`.
  *
- * ⚠ Deliberately NOT `error.message`: browsers put decoder internals and sometimes the full URL in it, and
- * this string crosses to the host and can reach a log. The host applies the same rule to platform errors.
+ * ⚠ Never `error.message`: browsers put decoder internals and sometimes the full URL in it, and this
+ * string crosses to the host and can reach a log.
  */
 function mediaErrorReason(element: HTMLMediaElement): string {
   switch (element.error?.code) {

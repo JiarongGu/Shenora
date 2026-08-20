@@ -19,17 +19,12 @@ export interface DropZoneFileDrop {
  * Inputs for {@link useDropZone}.
  *
  * No ordering constraint against `notifyReady()`: the host clears zones when a new DOCUMENT starts
- * loading, not on the handshake, so this hook's `REGISTER` cannot be wiped by a reset that arrives
- * after it. (It could, until the reset moved off the handshake — React runs CHILD effects before
- * PARENT effects, which made losing the registration the default outcome rather than bad luck.)
+ * loading, not on the handshake, so this hook's `REGISTER` cannot be wiped by a later reset.
  */
 export interface UseDropZoneOptions {
   /** The element the native overlay tracks. */
-  // `RefObject` is IMPORTED, not read off the UMD global `React`. Writing `React.RefObject` here
-  // emitted a `.d.ts` that names `React` with no import, so it only resolved when the consumer's
-  // program happened to contain `@types/react` globally — a consumer with `"types": ["node"]` got
-  // TS2503 out of a declaration file they cannot edit. Found by the P6.4 adapter probe; P6.1's npm
-  // consumer missed it because its own tsconfig pulled `@types/react` in.
+  // ⚠ `RefObject` is IMPORTED, never `React.RefObject` — that emits a `.d.ts` naming `React` with no
+  // import, so it resolves only for a consumer whose program already has `@types/react` globally.
   targetRef: RefObject<HTMLElement | null>;
   /** Called with the dropped OS file paths. */
   onDrop: (files: string[], drop: DropZoneFileDrop) => void;
@@ -39,11 +34,10 @@ export interface UseDropZoneOptions {
    * does not re-register the zone, which is what "stable" means here. */
   zoneId?: string;
   /**
-   * Class toggled on the element while a file drag hovers the zone. UNSTYLED — headless (D13):
-   * the library ships no CSS; style it in the app. Default `"shenora-drop-hover"`.
-   * ⚠ Read on the FIRST render only, like {@link UseDropZoneOptions.zoneId}: the hover effect
-   * captures it for its cleanup while the drop path reads it live, so a mid-hover change would add one
-   * class and remove another, leaving the first stuck on the element. Switch it by remounting.
+   * Class toggled on the element while a file drag hovers the zone. UNSTYLED — the library ships no
+   * CSS; style it in the app. Default `"shenora-drop-hover"`.
+   * ⚠ Read on the FIRST render only, like {@link UseDropZoneOptions.zoneId}: a mid-hover change would
+   * add one class and remove another, leaving the first stuck on the element. Switch it by remounting.
    */
   dropClassName?: string;
   /** The bridge to speak over. Default: the shared default bridge. */
@@ -54,9 +48,7 @@ export interface UseDropZoneOptions {
    * Where a failed REGISTER / UPDATE / SHOW / UNREGISTER is reported. Default: `console.error`.
    *
    * ⚠ Worth routing somewhere real, because a failure here is INVISIBLE in the UI: the page renders
-   * exactly as it should and files simply do not drop. This hook was the last error path in the package
-   * that could only ever reach the console — `bridge.ts`'s `onPostError`, `store.ts`'s `onError` and
-   * `segmentBinder.ts`'s `onDiagnostic` all take an app sink.
+   * exactly as it should and files simply do not drop.
    */
   onError?: (error: unknown, route: string) => void;
 }
@@ -65,21 +57,14 @@ const newZoneId = (): string => randomId('drop-zone-');
 
 /**
  * **The file-drop API for a Shenora page. Do not use the DOM's own drop event for files —
- * it is not an alternative here, it is the thing this exists to replace.**
+ * it is not an alternative here, it is the thing this exists to replace.** A page-side `onDrop` gets a
+ * `File` whose only accessor is its CONTENT, so every dropped file is copied into the renderer and
+ * across the IPC boundary before the app knows whether it wants any of them. This gives you `string[]`
+ * OS paths instead — open lazily, stream, hash incrementally, move or link without copying.
  *
- * A page-side `onDrop` gets a `File` handle whose only accessor is its CONTENT. In a shell
- * architecture the page is UI and the host does the file work, so those bytes have to be read into
- * the renderer and then pushed across the IPC boundary: a full copy of every dropped file, EAGERLY,
- * at drop time, before the app knows whether it wants any of them. Drop 200 files to filter by
- * extension and you pay for all 200; drop a multi-GB asset and you pay that, to reach a file the
- * host could have opened off the same disk. This hook gives you `string[]` paths instead — open
- * lazily, stream, hash incrementally, move or link without copying, watch for changes.
- *
- * Sync a native drop-zone overlay to a page element, ported from the primary desktop sibling
- * (its fix-history comments kept below): the host positions a transparent WinForms overlay
- * over the element to capture REAL OS file paths — including drags started while the app is in
- * the background. Bounds re-sync (debounced) on resize/scroll/intersection changes; the host
- * converts the CSS rect to physical pixels per-monitor.
+ * The host positions a transparent native overlay over the element to capture those paths, including
+ * for drags started while the app is in the background. Bounds re-sync (debounced) on
+ * resize/scroll/intersection changes; the host converts the CSS rect to physical pixels per-monitor.
  *
  * How the visibility dance works: mouse leaves the element → SHOW (overlay up, ready to catch a
  * drag); mouse enters → the host hides the overlay (hover effects keep working); an inactive
@@ -89,17 +74,12 @@ const newZoneId = (): string => randomId('drop-zone-');
 export function useDropZone(options: UseDropZoneOptions): void {
   const { targetRef, enabled = true } = options;
   // ⚠ LAZY, because `useRef(newZoneId())` evaluates its argument on EVERY render and keeps only the
-  // first — so the generator ran a `crypto.randomUUID()` per render of every drop zone, for a value
-  // used once. The empty string is a safe sentinel: a generated id is never empty, and a caller who
-  // passes `zoneId: ''` short-circuits the `??` and so still never reaches the generator.
+  // first. The empty string is a safe sentinel: a generated id is never empty, and a caller passing
+  // `zoneId: ''` short-circuits the `??` and so still never reaches the generator.
   const zoneIdRef = useRef('');
   if (zoneIdRef.current === '') zoneIdRef.current = options.zoneId ?? newZoneId();
 
-  // ⚠ Read ONCE, like the id, and unlike `onDrop`/`bridge` below which track the latest value. That is
-  // deliberate rather than an oversight: the hover effect captures this class for its cleanup, while
-  // the FILE_DROP effect reads it live, so a value that could change mid-hover would let one path add
-  // class A and another remove class B — leaving A stuck on the element with no drag in progress. The
-  // default is a constant, so unlike the id there is nothing here worth making lazy.
+  // Read ONCE, unlike `onDrop`/`bridge` below which track the latest value — see the option's docs.
   const dropClassRef = useRef(options.dropClassName ?? 'shenora-drop-hover');
   const onDropRef = useRef(options.onDrop);
   onDropRef.current = options.onDrop;
@@ -108,9 +88,7 @@ export function useDropZone(options: UseDropZoneOptions): void {
   const bus = options.bus ?? defaultEventBus;
 
   // Tracks the latest handler (like `onDrop`), so a cleanup that runs long after mount still reports
-  // through the sink the app has NOW. Only when the app supplied none does this log — a caller that
-  // took `onError` owns its reporting and must not be double-logged, the rule the package's other
-  // three sinks follow.
+  // through the sink the app has NOW. Logs only when the app supplied none.
   const onErrorRef = useRef(options.onError);
   onErrorRef.current = options.onError;
   const reportRef = useRef<(error: unknown, route: string) => void>(() => {});
@@ -119,13 +97,12 @@ export function useDropZone(options: UseDropZoneOptions): void {
       ? onErrorRef.current(error, route)
       : console.error(`[shenora] drop-zone ${route} failed:`, error);
 
-  // Make the ref's CONTENT reactive (P5.5 H2). `targetRef` is a stable object, so effects keyed on it
-  // run exactly once — and if `targetRef.current` was null on that run (a conditionally-rendered
-  // target, or any order where the ref is attached after the first commit) the effect bailed out and
-  // NEVER re-ran: the zone was silently dead for the component's whole life, with no error anywhere.
-  // A ref mutation triggers no render, so this effect deliberately has NO dependency array — it
-  // observes `current` after every commit. `setElement` with an unchanged value is a no-op in React,
-  // so this cannot loop.
+  // 🔴 Make the ref's CONTENT reactive. `targetRef` is a stable object, so an effect keyed on it runs
+  // exactly once — and if `targetRef.current` is null on that run (a conditionally-rendered target, or
+  // any order where the ref is attached after the first commit) the effect bails out and NEVER re-runs:
+  // the zone is silently dead for the component's whole life, with no error anywhere. A ref mutation
+  // triggers no render, so this effect has NO dependency array; `setElement` with an unchanged value is
+  // a React no-op, so it cannot loop.
   const [element, setElement] = useState<HTMLElement | null>(null);
   useEffect(() => {
     setElement(targetRef.current ?? null);
@@ -138,10 +115,9 @@ export function useDropZone(options: UseDropZoneOptions): void {
   const attemptedRef = useRef(false);
   // A REGISTER is in flight — guards against sending a duplicate before the first resolves.
   const registeringRef = useRef(false);
-  // Teardown epoch: the REGISTER ack must not apply after its zone was torn down — under
-  // StrictMode's mount-unmount-remount, a stale ack marked the DESTROYED zone "registered" and
-  // the overlay silently never existed again (found in review). Cleanup bumps the epoch; acks
-  // from an older epoch are ignored.
+  // Teardown epoch: a REGISTER ack must not apply after its zone was torn down. Under StrictMode's
+  // mount-unmount-remount a stale ack marks the DESTROYED zone "registered" and the overlay silently
+  // never exists again. Cleanup bumps the epoch; acks from an older epoch are ignored.
   const epochRef = useRef(0);
   const lastBoundsRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 
@@ -235,11 +211,10 @@ export function useDropZone(options: UseDropZoneOptions): void {
       element.removeEventListener('mouseleave', onMouseLeave);
       element.removeAttribute('data-drop-zone-id');
 
-      // Unregister whenever this effect tears down — on unmount OR when `enabled` flips false —
-      // unconditionally (not gated on the REGISTER ack) so an in-flight REGISTER is also torn
-      // down. The host's UnregisterZone no-ops if the overlay isn't there yet, and the ordered
-      // IPC channel processes the earlier REGISTER before this UNREGISTER (create-then-destroy,
-      // no orphan).
+      // Unregister whenever this effect tears down — on unmount OR when `enabled` flips false — and
+      // never gated on the REGISTER ack, so an in-flight REGISTER is torn down too. The host's
+      // UnregisterZone no-ops if the overlay isn't there yet, and the ordered IPC channel processes
+      // the earlier REGISTER first, so there is no orphan.
       if (attemptedRef.current) {
         (bridgeRef.current ?? getBridge())
           .invoke(DROP_ZONE_MODULE, 'UNREGISTER', { payload: { zoneId: zoneIdRef.current } })

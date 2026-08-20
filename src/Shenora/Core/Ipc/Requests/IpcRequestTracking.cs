@@ -1,12 +1,8 @@
 namespace Shenora.Core.Ipc;
 
 /// <summary>
-/// What a request is doing. The whole lifecycle, and deliberately no more of it than
-/// <c>XMLHttpRequest</c> has: a request is IN FLIGHT or DONE.
-/// <para>
-/// Crosses the wire as its camelCase name (<c>"running"</c>, <c>"completed"</c>, …) for free —
-/// <see cref="IpcJson"/> already installs a camelCase <c>JsonStringEnumConverter</c>.
-/// </para>
+/// What a request is doing: IN FLIGHT or DONE. Crosses the wire as its camelCase name
+/// (<c>"running"</c>, <c>"completed"</c>, …) — <see cref="IpcJson"/> installs the converter.
 /// </summary>
 public enum IpcRequestState
 {
@@ -19,26 +15,25 @@ public enum IpcRequestState
     /// <summary>Answered with a structured error (<see cref="IpcRequestStatus.Error"/>). Terminal.</summary>
     Failed,
 
-    /// <summary>Aborted — <c>XMLHttpRequest.abort()</c>'s outcome. A normal result, not a fault. Terminal.</summary>
+    /// <summary>Aborted. A normal result, not a fault. Terminal.</summary>
     Cancelled,
 }
 
 /// <summary>
-/// How far a request has got, in the APP's own unit — never a kit-assumed percent. The same shape
-/// <c>ProgressEvent</c> carries (<c>loaded</c>/<c>total</c>), plus the unit the web platform leaves implicit.
+/// How far a request has got, in the APP's own unit — never a kit-assumed percent, and never clamped
+/// or validated.
 /// </summary>
 /// <param name="Value">How far along, in the app's own unit.</param>
 /// <param name="Total">
-/// The denominator when one is known. <c>null</c> means there is NO known total — an absolute count with
-/// nothing to divide by — never zero. A UI renders a ratio when this is set and a bare figure otherwise.
+/// The denominator when one is known. ⚠ <c>null</c> means there is NO known total — an absolute count
+/// with nothing to divide by — never zero.
 /// </param>
-/// <param name="Unit">App-defined (<c>"bytes"</c>, <c>"files"</c>, …); the kit ships no taxonomy of units.</param>
+/// <param name="Unit">App-defined (<c>"bytes"</c>, <c>"files"</c>, …); the kit interprets it not at all.</param>
 public sealed record IpcProgress(double Value, double? Total = null, string? Unit = null);
 
 /// <summary>
 /// Human-facing text the HOST must never format itself: an untranslated fallback plus an app i18n key
-/// and interpolation parameters — the same <c>{code, parameters}</c> shape as <see cref="IpcError"/>,
-/// applied to labels instead of errors. The app renders; the kit only carries the pieces (headless, D13).
+/// and interpolation parameters — the same <c>{code, parameters}</c> shape as <see cref="IpcError"/>.
 /// </summary>
 /// <param name="Text">Untranslated fallback, for logs/dev or an app with no i18n layer.</param>
 /// <param name="Key">The app's own i18n key (e.g. <c>"import.stage.upload"</c>).</param>
@@ -51,23 +46,20 @@ public sealed record IpcLabel(
 /// <summary>
 /// One in-flight (or recently finished) request, as the page sees it.
 /// <para>
-/// 🔴 <b>One identity, end to end (D66).</b> Every field here except the state comes from the request
-/// itself — <see cref="Id"/> IS <see cref="IpcRequest.Id"/>, <see cref="Type"/> IS
-/// <see cref="IpcRequest.Type"/>, and <see cref="Scope"/>/<see cref="StartedAt"/> are the request's own
-/// <c>Scope</c> and <c>Timestamp</c> — so a page has nothing to correlate. What is genuinely new is the
-/// LIVE STATE of a request that outlived its own send, which is why the type exists and why it carries
-/// nothing else.
+/// 🔴 <b>One identity, end to end (D66).</b> Every field except the state comes from the request itself
+/// — <see cref="Id"/>, <see cref="Type"/>, <see cref="Scope"/> and <see cref="StartedAt"/> are the
+/// request's own — so a page has nothing to correlate.
 /// </para>
 /// </summary>
 public sealed record IpcRequestStatus
 {
-    /// <summary>The REQUEST's own id (<see cref="IpcRequest.Id"/>). One identity, end to end.</summary>
+    /// <summary>The REQUEST's own id (<see cref="IpcRequest.Id"/>).</summary>
     public required string Id { get; init; }
 
     /// <summary>The module the request targeted.</summary>
     public required string Module { get; init; }
 
-    /// <summary>The action within that module — what used to be a separately-declared "kind".</summary>
+    /// <summary>The action within that module.</summary>
     public required string Type { get; init; }
 
     /// <summary>The request's own routing scope, echoed so a scoped store can filter.</summary>
@@ -107,8 +99,7 @@ public static class IpcRequestEvents
     /// <summary>
     /// One or more request ids left the tracker with no corresponding <see cref="Updated"/> snapshot —
     /// history eviction and <c>CLEAR_FINISHED</c>. Payload is <c>{ requestIds: string[] }</c>, a BATCH;
-    /// a client folds it by deleting those ids. Emitted with no scope (global), because a removal can span
-    /// scopes and deleting an id a subscriber never had is a harmless no-op.
+    /// a client folds it by deleting those ids. Emitted with no scope (global).
     /// </summary>
     public const string Removed = "REQUEST_REMOVED";
 }
@@ -116,16 +107,12 @@ public static class IpcRequestEvents
 /// <summary>
 /// The live view of requests that outlived their own send: what is in flight, and the ability to abort one.
 /// <para>
-/// <b>There is no <c>Start</c> and nothing to declare.</b> Every request is tracked automatically from the
-/// moment it is dispatched — which is what lets the GRACE PERIOD work, and what removes the judgement call
-/// a module author used to have to make at authoring time about whether their route was "long-running".
-/// Only the clock knows that, and only at run time.
+/// <b>There is nothing to declare.</b> Every request is tracked from the moment it is dispatched, and the
+/// GRACE PERIOD decides which ones the page ever hears about.
 /// </para>
 /// <para>
 /// ⚠ <b>Host-initiated work does NOT belong here</b> (D66). A scheduled or recovered mission has no request
-/// behind it, so it reports on its own event stream — see <c>MissionEvents</c>. Squeezing it into a
-/// request-shaped hole is what gave the old design two unrelated things in one bucket, and is why neither
-/// of them had a good name.
+/// behind it, so it reports on its own event stream — see <c>MissionEvents</c>.
 /// </para>
 /// </summary>
 public interface IIpcRequestTracker
@@ -141,9 +128,9 @@ public interface IIpcRequestTracker
     IReadOnlyList<IpcRequestStatus> GetAll(string? module = null, string? scope = null);
 
     /// <summary>
-    /// Abort a request in flight — <c>XMLHttpRequest.abort()</c>. Cancels the token the route is running
-    /// under, then records <see cref="IpcRequestState.Cancelled"/>. Returns false, changing nothing, for an
-    /// unknown id or one already finished.
+    /// Abort a request in flight: cancels the token the route runs under, then records
+    /// <see cref="IpcRequestState.Cancelled"/>. Returns false, changing nothing, for an unknown id or one
+    /// already finished.
     /// </summary>
     bool Cancel(string requestId);
 
@@ -163,8 +150,7 @@ public interface IIpcRequestTracker
 }
 
 /// <summary>
-/// A request's tracking scope for as long as it is in flight. Disposing it completes the request, so the
-/// ordinary <c>using</c> shape is already correct for a route that simply returns.
+/// A request's tracking scope for as long as it is in flight. Disposing it completes the request.
 /// </summary>
 public interface IIpcRequestScope : IDisposable
 {

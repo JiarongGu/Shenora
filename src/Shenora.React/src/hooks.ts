@@ -6,11 +6,9 @@ import type { EventMessage, ShellInfo } from './types.js';
 /**
  * Host access for components: the (default) bridge and whether a host transport exists.
  *
- * ⚠ The result is MEMOIZED, and that is not a micro-optimisation. A fresh object every render is a
- * fresh dependency for every `useEffect`/`useMemo`/`useCallback` that lists it, so the natural
- * `const shenora = useShenora(); useEffect(…, [shenora])` re-runs on EVERY render — a subscribe/
- * unsubscribe cycle per frame in the worst case. The identity changes only when the bridge itself does,
- * or when `isAvailable` flips as a host attaches, which are the two moments a consumer means to react to.
+ * ⚠ The result is MEMOIZED, and not as a micro-optimisation. A fresh object every render is a fresh
+ * dependency for every hook that lists it, so `useEffect(…, [shenora])` would re-run on EVERY render.
+ * The identity changes only when the bridge does, or when `isAvailable` flips as a host attaches.
  */
 export function useShenora(): { isAvailable: boolean; bridge: ShenoraBridge } {
   const bridge = getBridge();
@@ -31,28 +29,21 @@ export function useShenora(): { isAvailable: boolean; bridge: ShenoraBridge } {
  * handshake that has not finished. **Treat absent as "assume nothing", never as "assume desktop".**
  *
  * ⚠ **Await `bridge.notifyReady()` before rendering the tree that depends on this.** The value is read
- * SYNCHRONOUSLY from the bridge's cache, deliberately — a capability learned after layout is a visible
- * flash — which means this hook does not re-render when a handshake lands later. A component mounted
- * mid-handshake sees `undefined` and keeps seeing it, which is the documented "assume nothing" tree
- * rather than a wrong one, but it is not the tree you wanted.
- *
- * ⚠ This hook was referenced by two doc examples in this package for several releases before it
- * existed — `bridge.shell` was the only way to read it. If you wrote that workaround, this replaces it.
+ * SYNCHRONOUSLY from the bridge's cache — a capability learned after layout is a visible flash — so
+ * this hook does NOT re-render when a handshake lands later. A component mounted mid-handshake sees
+ * `undefined` and keeps seeing it: the "assume nothing" tree, not the one you wanted.
  */
 export function useShellInfo(bridge?: ShenoraBridge): ShellInfo | undefined {
   return (bridge ?? getBridge()).shell;
 }
 
 /**
- * Subscribe to one (module, type) event for the component's lifetime, ported from the primary
- * desktop sibling. The handler receives the unwrapped payload (plus the full event). DEVIATION
- * from the source: instead of a deps array re-subscribing on change, the latest handler is kept
- * in a ref — no re-subscribe churn, no stale-closure trap.
+ * Subscribe to one (module, type) event for the component's lifetime. The handler receives the
+ * unwrapped payload plus the full event, and is kept in a ref rather than in the effect key — no
+ * re-subscribe churn, no stale-closure trap.
  *
- * Pass `scope` for a scoped app: the wire carries a scope and the host keys on it, but this hook had
- * no way to express one, so a component in profile A also woke for profile B's events with no filter
- * available (P5.5 H6). Omitting it still means "every scope", and a global (scope-less) event still
- * reaches a scoped subscriber — the host's rule, mirrored.
+ * Pass `scope` for a scoped app, or a component in profile A also wakes for profile B's events.
+ * Omitting it means "every scope", and a global (scope-less) event still reaches a scoped subscriber.
  */
 export function useShenoraEvent<TPayload = unknown>(
   module: string,
@@ -87,10 +78,10 @@ export interface ShenoraQueryResult<TData> {
 }
 
 /**
- * Fetch-on-mount over the bridge: `invoke` + `{data, error, loading, refetch}`. Deliberately
- * minimal — no caching, no dedup, no background refresh (headless, D13): apps with data-layer
- * needs bring their own query library and call `bridge.invoke` from it. The payload participates
- * in the effect key BY VALUE (JSON), so inline object literals don't refetch every render.
+ * Fetch-on-mount over the bridge: `invoke` + `{data, error, loading, refetch}`. Minimal — no caching,
+ * no dedup, no background refresh; an app with data-layer needs brings its own query library and calls
+ * `bridge.invoke` from it. The payload participates in the effect key BY VALUE (JSON), so an inline
+ * object literal does not refetch every render.
  */
 export function useShenoraQuery<TData = unknown, TPayload = unknown>(
   module: string,
@@ -117,8 +108,8 @@ export function useShenoraQuery<TData = unknown, TPayload = unknown>(
 
   useEffect(() => {
     if (!enabled) {
-      // A fetch in flight when enabled flipped false was marked stale by the cleanup — without
-      // this, `loading` would stay true forever (a spinner that never stops).
+      // The cleanup marked any in-flight fetch stale, so without this `loading` would stay true
+      // forever: a spinner that never stops.
       setState((previous) => (previous.loading ? { ...previous, loading: false } : previous));
       return;
     }
@@ -128,11 +119,8 @@ export function useShenoraQuery<TData = unknown, TPayload = unknown>(
       .invoke<TData, TPayload>(module, type, { payload: payloadRef.current, scope })
       .then(
         (data) => { if (!stale) setState({ data, error: undefined, loading: false }); },
-        // KEEP the previous data alongside the error (P5.5 H2). This used to set `data: undefined`, so
-        // a failed REFETCH — a transient host hiccup, one timed-out call — blanked data the UI was
-        // already showing correctly, turning a recoverable error into an empty screen. The caller has
-        // both fields and can decide: render stale data with an error banner, or hide it. Blanking it
-        // for them removes that choice. (A first fetch has no previous data, so it is unaffected.)
+        // KEEP the previous data alongside the error, so a failed REFETCH does not blank a screen the
+        // UI was showing correctly. The caller has both fields and decides which to render.
         (error: Error) => { if (!stale) setState((previous) => ({ data: previous.data, error, loading: false })); },
       );
     return () => { stale = true; };

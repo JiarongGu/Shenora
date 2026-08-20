@@ -14,10 +14,9 @@ export interface TargetRunOptions {
   /**
    * Let the command write straight to this terminal instead of being captured.
    *
-   * 🔴 For anything that STREAMS. `ios log --device` attaches a console to a relaunching app and its
-   * whole value is watching startup happen; captured, it prints nothing until the app exits, which for a
-   * console attach is never. A streamed run cannot report its own output — {@link RunResult.out} is
-   * empty by design — so nothing may parse it.
+   * 🔴 For anything that STREAMS: captured, a console attach prints nothing until the process exits, which
+   * is never. ⚠ A streamed run cannot report its own output — {@link RunResult.out} is empty by design —
+   * so nothing may parse it.
    */
   stream?: boolean;
 }
@@ -31,10 +30,9 @@ export interface GuiRunOptions {
 /**
  * A machine that can run commands — this one, or a Mac on the LAN.
  *
- * 🔴 **The filesystem members are here for the same reason `sh` is.** `ios.ts` used to ask `/bin/sh`
- * about Xcode and `node:fs` about the build output in adjacent lines, which is only correct while both
- * are the same machine. Splitting them is most of what makes a remote mode possible, and a call to
- * `fs.existsSync` on a path that lives on the target is now the bug this interface exists to prevent.
+ * 🔴 **The filesystem members are here for the same reason `sh` is.** Asking `/bin/sh` about Xcode and
+ * `node:fs` about the build output is only correct while both are the same machine — a call to
+ * `fs.existsSync` on a path that lives on the target is the bug this interface exists to prevent.
  */
 export interface Target {
   /** For messages: "this machine", or the host as configured. Never a path or a key. */
@@ -47,11 +45,10 @@ export interface Target {
   /**
    * Join path segments the way the TARGET spells them.
    *
-   * 🔴 `path.join` is wrong for a remote target and `path.posix.join` is wrong for a local one, so
-   * neither can be hardcoded. On Windows `path.join` emits backslashes, which corrupt a path the moment
-   * it is interpolated into a command running on the Mac; but a LOCAL target's paths are this machine's,
-   * and forcing posix on them yields `C:\dir/file` — which works when passed to `fs`, and does not match
-   * anything a caller compares it against.
+   * 🔴 `path.join` is wrong for a remote target and `path.posix.join` is wrong for a local one, so neither
+   * can be hardcoded. On Windows `path.join` emits backslashes, which corrupt a path the moment it is
+   * interpolated into a command running on the Mac; forcing posix on a LOCAL path yields `C:\dir/file`,
+   * which works when passed to `fs` and matches nothing a caller compares it against.
    */
   join(...parts: string[]): string;
   /** The last segment of a target path. */
@@ -66,12 +63,9 @@ export interface Target {
   /**
    * The newest modification time ANYWHERE under a directory, epoch ms — or the file's own.
    *
-   * 🔴 Exists because no single file inside a build output is a reliable clock. Measured on a real Mac:
-   * after a successful incremental build the `.app` directory was 34 seconds old and the `Info.plist`
-   * inside it was **3.9 days** old, so a freshness check reading the plist declared a good build stale
-   * and refused to install it. A directory's own mtime is no better — it changes only when an entry is
-   * added or removed, so a rebuild that rewrites existing files leaves it untouched. "Did anything get
-   * written?" has to ask about everything.
+   * 🔴 No single file inside a build output is a reliable clock, and a directory's own mtime is no better —
+   * it changes only when an entry is added or removed, so a rebuild that rewrites existing files leaves it
+   * untouched. "Did anything get written?" has to ask about everything (measurements: `builtBy`).
    */
   newestMtimeMs(path: string): number | null;
   /** Copy a local file TO the target. */
@@ -100,7 +94,7 @@ export function withCwd(command: string, cwd?: string): string {
   return cwd ? `cd ${q(cwd)} && ${command}` : command;
 }
 
-/** This machine. Every method is what `ios.ts` did inline before the seam existed. */
+/** This machine. */
 export class LocalTarget implements Target {
   readonly label = 'this machine';
   readonly isRemote = false;
@@ -125,8 +119,7 @@ export class LocalTarget implements Target {
     return r.status === 0 ? (r.stdout ?? '').trim() : '';
   }
 
-  // This machine's own spelling. On the Mac this IS posix; the difference only shows up under the tests,
-  // which run on Windows.
+  // This machine's own spelling. On the Mac this IS posix.
   join(...parts: string[]): string { return path.join(...parts); }
   basename(p: string): string { return path.basename(p); }
   dirname(p: string): string { return path.dirname(p); }
@@ -156,8 +149,7 @@ export class LocalTarget implements Target {
       const stat = fs.statSync(target);
       if (!stat.isDirectory()) return stat.mtimeMs;
       let newest = stat.mtimeMs;
-      // Bounded by the tree itself; a `.app` is thousands of small files at worst, which is a few
-      // milliseconds of `stat` and only happens once per command.
+      // Bounded by the tree; a `.app` is thousands of small files at worst, once per command.
       for (const entry of fs.readdirSync(target, { withFileTypes: true, recursive: true })) {
         const full = path.join(entry.parentPath ?? target, entry.name);
         try {
@@ -171,8 +163,8 @@ export class LocalTarget implements Target {
     }
   }
 
-  // A local "copy across" is a copy. Both directions are the same operation; they stay separate so the
-  // call sites read the same against either target.
+  // Both directions are the same operation locally; they stay separate so the call sites read the same
+  // against either target.
   push(localPath: string, targetPath: string): boolean {
     return this.copy(localPath, targetPath);
   }

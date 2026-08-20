@@ -25,21 +25,17 @@ public enum WebViewRangeDelivery
     /// 8-11, and a player asking for a file's tail receives an empty body and retries forever.
     /// </para>
     /// <para>
-    /// 🔴 <b>THE SKIP IS A READ, AND IT CANNOT BE MADE A SEEK FROM THIS SIDE.</b> Measured: a
-    /// <c>Range: bytes=0-65535</c> on a 79 MiB film reads 82,843,185 bytes in 117,285 reads, 26–31 s. The
-    /// obvious fix — make the body seekable so the platform skips cheaply — was checked against the
-    /// platform and REFUTED: <c>Android.Runtime.InputStreamAdapter</c> (the Stream→InputStream binding,
-    /// decompiled from <c>Mono.Android.dll</c> 36.1.69) overrides only <c>Read</c>, so <c>skip()</c> falls
-    /// through to <c>java.io.InputStream</c>'s default, which reads into a throwaway buffer. The adapter
-    /// names neither <c>CanSeek</c> nor <c>Seek</c> anywhere in its IL. A seekable
-    /// <see cref="Shenora.Core.WebView.BoundedBodyStream"/> would therefore change nothing and add a state
-    /// the three shells do not expect.
+    /// 🔴 <b>THE SKIP IS A READ, AND IT CANNOT BE MADE A SEEK FROM THIS SIDE.</b> Making the body seekable
+    /// so the platform skips cheaply was checked against the platform and REFUTED:
+    /// <c>Android.Runtime.InputStreamAdapter</c> (the Stream→InputStream binding) overrides only
+    /// <c>Read</c> and names neither <c>CanSeek</c> nor <c>Seek</c> in its IL, so <c>skip()</c> falls
+    /// through to <c>java.io.InputStream</c>'s default, which reads into a throwaway buffer. Measurements:
+    /// <c>docs/design/mobile-shells.md</c>.
     /// </para>
     /// <para>
-    /// ⚠ <b>Do not "fix" it by serving cheap filler for the discarded prefix either</b>, tempting as it is
-    /// (the platform throws those bytes away, so zeros would do). It stakes correctness on the delivery
-    /// model being exactly "skip N, then stream" forever, and the failure mode if that ever changes is
-    /// this enum's own worst case: correct-looking bytes at the wrong offset, silently.
+    /// ⚠ <b>Do not "fix" it by serving cheap filler for the discarded prefix either.</b> That stakes
+    /// correctness on the delivery model being exactly "skip N, then stream" forever, and if it ever
+    /// changes the result is this enum's own worst case: correct-looking bytes at the wrong offset.
     /// </para>
     /// </summary>
     Unsliced,
@@ -61,12 +57,9 @@ public delegate Task<WebViewResourceResponse?> WebViewResourceMiddleware(
 
 /// <summary>
 /// A host that can answer its webview's resource requests — the seam a feature uses to serve bytes without
-/// knowing which webview it is talking to. Implemented once per shell (<c>Shenora.Windows</c>,
-/// <c>Shenora.Android</c>, <c>Shenora.iOS</c>).
-/// <para>
-/// A page cannot reach a local file directly on ANY shell — <c>file://</c> is blocked from a virtual-host
-/// origin — so an interceptor is how local content reaches a page at all.
-/// </para>
+/// knowing which webview it is talking to. Implemented once per shell. A page cannot reach a local file
+/// directly on ANY shell (<c>file://</c> is blocked from a virtual-host origin), so an interceptor is how
+/// local content reaches a page at all.
 /// <para>
 /// ⚠ Middleware that turns a request path into a FILE path must resolve it through
 /// <see cref="WebViewFiles.ResolveContained"/>. A hand-rolled check misses <c>%2e%2e%2f</c> traversal and
@@ -78,8 +71,7 @@ public interface IWebViewInterceptor
 {
     /// <summary>
     /// How this platform delivers a ranged body — a fact about the platform, not a preference.
-    /// <b>A handler must honour it</b>; see <see cref="WebViewRangeDelivery"/> for what goes wrong
-    /// otherwise.
+    /// <b>A handler must honour it</b>; see <see cref="WebViewRangeDelivery"/>.
     /// </summary>
     WebViewRangeDelivery RangeDelivery { get; }
 
@@ -90,21 +82,15 @@ public interface IWebViewInterceptor
     /// </summary>
     /// <param name="middleware">
     /// ⚠ Runs on whatever thread the platform raises its event on, and must not block: the webview cannot
-    /// paint while it waits. Return quickly, or return a response whose stream produces bytes lazily — the
-    /// platforms support a deferred body for exactly this.
+    /// paint while it waits. Do the slow work BEFORE the request, or hand back a response whose stream
+    /// produces bytes lazily.
     /// <para>
     /// 🔴 <b>On the MOBILE shells the cost of blocking is not a pause, it is a DEADLOCK.</b> Both mobile
     /// platforms need the status line and headers by the time the platform event returns, so the shell
-    /// (<c>MobileWebViewInterceptor</c>) resolves this pipeline SYNCHRONOUSLY
-    /// (<c>GetAwaiter().GetResult()</c>) on the main thread. A middleware that <c>await</c>s anything whose
-    /// continuation is posted back to that thread — any <c>await</c> without <c>ConfigureAwait(false)</c> —
-    /// therefore waits on a thread only it could free. ⚠ The symptom names nothing: on iOS the app stays
-    /// alive, the request is the last line it ever logs, and every later native evaluation simply never
-    /// answers.
-    /// </para>
-    /// <para>
-    /// So: do the slow work BEFORE the request (warm a cache at startup), or hand back a lazy body and do
-    /// it as the platform reads; <c>ConfigureAwait(false)</c> on any await inside the middleware itself.
+    /// resolves this pipeline SYNCHRONOUSLY on the main thread — any <c>await</c> inside a middleware
+    /// without <c>ConfigureAwait(false)</c> waits on a thread only it could free. ⚠ The symptom names
+    /// nothing: on iOS the app stays alive, the request is the last line it ever logs, and every later
+    /// native evaluation simply never answers.
     /// </para>
     /// </param>
     IDisposable Use(WebViewResourceMiddleware middleware);

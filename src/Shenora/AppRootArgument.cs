@@ -1,14 +1,12 @@
 namespace Shenora;
 
 /// <summary>
-/// Resolves the install ROOT the app should treat as its base directory.
-///
-/// In the family's packaged loose-folder bundles a native launcher lives at the install root and
-/// the runtime exe lives in a subfolder (<c>libs/</c>), so <c>AppContext.BaseDirectory</c> (the
-/// exe's own folder) would repoint every install-relative path at the subfolder. The launcher
-/// passes the true install root via <c>--app-root "&lt;path&gt;"</c>; this helper reads it,
-/// falling back to the caller's fallback when the flag is absent (a dev run or a direct
-/// double-click of the runtime exe). Feed the result into <see cref="ShenoraPathsOptions.ExplicitRoot"/>.
+/// Resolves the install ROOT the app should treat as its base directory. In a packaged loose-folder
+/// bundle the native launcher lives at the install root and the runtime exe in a subfolder
+/// (<c>libs/</c>), so <c>AppContext.BaseDirectory</c> would repoint every install-relative path at the
+/// subfolder; the launcher passes the true root via <c>--app-root "&lt;path&gt;"</c>. Falls back when the
+/// flag is absent (a dev run, or a direct double-click of the runtime exe). Feed the result into
+/// <see cref="ShenoraPathsOptions.ExplicitRoot"/>.
 /// </summary>
 public static class AppRootArgument
 {

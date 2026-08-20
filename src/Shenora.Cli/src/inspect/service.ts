@@ -1,8 +1,7 @@
 // The inspect service: a queue the DEVICE drains, and an operator half that never leaves this box.
 //
-// 🔴 Why a separate service rather than a route in the app: it runs arbitrary JS in whatever page polls
-// it, which must never be reachable in a product binary — and a diagnostic hosted inside the thing being
-// diagnosed dies with it, exactly when you need it. See `docs/design/cli-remote.md`.
+// 🔴 It runs arbitrary JS in whatever page polls it, so it must never be reachable in a product binary.
+// See `docs/design/cli-remote.md`.
 import http from 'node:http';
 import os from 'node:os';
 import type { Target } from '../remote/target.js';
@@ -180,7 +179,7 @@ export function createInspectService(options: InspectServiceOptions): { server: 
 
   const server = http.createServer((req, res) => {
     void handle(req, res).catch(() => {
-      // A handler must never take the service down — the whole point is being up when nothing else is.
+      // A handler must never take the service down — it has to be up when nothing else is.
       if (!res.headersSent) send(res, 500, { error: 'inspect failed' });
       else res.end();
     });

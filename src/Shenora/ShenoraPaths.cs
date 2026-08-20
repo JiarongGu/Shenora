@@ -1,12 +1,11 @@
 namespace Shenora;
 
 /// <summary>
-/// Inputs for <see cref="ShenoraPaths.Resolve"/>. All family-proven conventions, parameterized.
+/// Inputs for <see cref="ShenoraPaths.Resolve"/>.
 /// <para>
-/// A <c>record</c> so callers can use <c>with</c> (P5.5 H6): the <c>--app-root</c> merge in
-/// <see cref="ShenoraApplication"/> hand-copied all six properties into a new instance, which means a
-/// SEVENTH option added here would have been silently dropped whenever that flag was passed — a
-/// data-loss bug whose only symptom is an option quietly not applying.
+/// ⚠ A <c>record</c> so callers merge with <c>with</c>: the <c>--app-root</c> merge in
+/// <see cref="ShenoraApplication"/> once hand-copied every property, so a new option added here was
+/// silently dropped whenever that flag was passed.
 /// </para>
 /// </summary>
 public sealed record ShenoraPathsOptions
@@ -24,8 +23,7 @@ public sealed record ShenoraPathsOptions
 
     /// <summary>
     /// Env var name the HOST sets when spawning a child process so both share one data dir
-    /// (e.g. <c>MYAPP_DATA_DIR</c>) — without it each exe resolves its own and shared stores
-    /// diverge (a live incident in the source app).
+    /// (e.g. <c>MYAPP_DATA_DIR</c>) — ⚠ without it each exe resolves its own and shared stores diverge.
     /// </summary>
     public string? DataEnvironmentVariable { get; init; }
 
@@ -43,16 +41,15 @@ public sealed record ShenoraPathsOptions
 }
 
 /// <summary>
-/// The app's on-disk layout authority — the ONE place that computes where things live, so nothing
-/// does ad-hoc <c>Path.Combine</c> against scattered bases. Anchored at the PORTABLE bundle root
-/// (beside the exe/launcher) so copying the app folder moves all its data with it — deliberately
-/// NOT <c>%APPDATA%</c> (roaming, scattered, non-portable; the family rule). Apps that want an
-/// installed-style data home (<c>%LocalAppData%</c>) opt in by passing it through the data env
-/// var / an explicit override instead.
-///
+/// The app's on-disk layout authority — the ONE place that computes where things live. Anchored at the
+/// PORTABLE bundle root (beside the exe/launcher) so copying the app folder moves all its data with it,
+/// NOT <c>%APPDATA%</c>; an app wanting an installed-style data home passes it through the data env var
+/// or an explicit override.
+/// <para>
 /// Root resolution order: <see cref="ShenoraPathsOptions.ExplicitRoot"/> (the <c>--app-root</c>
 /// launcher arg) → the root env var → libs-parent detection (exe inside <c>libs/</c> ⇒ parent)
 /// → the base directory itself. Data: the data env var → <c>&lt;root&gt;/data</c>.
+/// </para>
 /// </summary>
 public sealed class ShenoraPaths
 {
@@ -74,8 +71,8 @@ public sealed class ShenoraPaths
 
     /// <summary>
     /// A purpose-named area under <see cref="DataDir"/> (e.g. <c>config</c>, <c>db</c>, <c>cache</c>,
-    /// <c>logs</c>, <c>webview2</c>), created on first access. Apps define their own area names —
-    /// the framework deliberately ships none (no app vocabulary in the library).
+    /// <c>logs</c>, <c>webview2</c>), created on first access. Apps define their own area names; the
+    /// framework ships none.
     /// </summary>
     public string DataArea(string name)
     {
@@ -100,15 +97,12 @@ public sealed class ShenoraPaths
             ? dataOverride
             : Path.Combine(root, opt.DataFolderName);
 
-        // ABSOLUTIZE both, once, here (P5.5 H2). A relative root or data override — a launcher passing
-        // `--app-root ..\install`, or an app config holding a relative path — otherwise makes every
-        // derived path follow the PROCESS WORKING DIRECTORY. That matters because this kit moves the
-        // CWD itself: the file dialogs deliberately set RestoreDirectory = false (directory memory is
-        // ours, per-key and cross-session), so the first Open/Save dialog relocates the CWD to whatever
-        // the user browsed to — and from then on the SAME DataDir string resolves to a different
-        // physical folder, splitting the app's data mid-session. It also defeats
-        // SingleInstanceGuard's channel hashing: two spellings of one install hash differently, so a
-        // second instance can start against the single-writer WebView2 folder.
+        // 🔴 ABSOLUTIZE both, once, here. A relative root or data override otherwise makes every derived
+        // path follow the PROCESS WORKING DIRECTORY — and this kit MOVES the CWD: the file dialogs set
+        // RestoreDirectory = false, so the first Open/Save relocates it and the same DataDir string then
+        // resolves to a different physical folder, splitting the app's data mid-session. It also defeats
+        // SingleInstanceGuard's channel hashing, letting a second instance start against the
+        // single-writer WebView2 folder.
         return new ShenoraPaths(
             Path.GetFullPath(root),
             Path.GetFullPath(data),

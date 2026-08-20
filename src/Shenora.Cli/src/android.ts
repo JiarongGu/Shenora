@@ -1,12 +1,7 @@
 // The Android half of the last mile: build, install, launch, read the log.
 //
-// 🔴 WHY IT IS SMALLER THAN THE iOS HALF, AND WHY IT IS NOT NOTHING. `adb` already does install and
-// launch, so this does not exist to wrap them — it exists for the four things that are NOT `adb`:
-// resolving a JDK, running `dotnet build -t:Install` with the right target and RID, refusing to guess
-// between two attached devices, and reading a log that `adb` will happily return EMPTY.
-//
-// ⚠ Unlike `ios.ts` this must run on WINDOWS, which is where most .NET Android work happens. Everything
-// here goes through `run`/`captureRun` (spawn, no shell) rather than `sh`, because `sh` needs `/bin/sh`.
+// ⚠ Unlike `ios.ts` this must run on WINDOWS. Everything here goes through `run`/`captureRun` (spawn, no
+// shell) rather than `sh`, because `sh` needs `/bin/sh`.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -16,10 +11,10 @@ import { platformTfm, projectDir, requireFields, type DeployConfig } from './con
 /**
  * Where `adb` is.
  *
- * ⚠ **`ANDROID_HOME` is not enough on Windows**, which is where most .NET Android work happens: the SDK
- * installed by Visual Studio lands in `%LOCALAPPDATA%\Android\Sdk` and sets no environment variable at
- * all. Without that fallback `android doctor` reports "adb NOT FOUND" on a machine that has it — a true
- * statement about PATH read as a missing SDK. Measured here on 2026-08-09.
+ * ⚠ **`ANDROID_HOME` is not enough on Windows**: the SDK installed by Visual Studio lands in
+ * `%LOCALAPPDATA%\Android\Sdk` and sets no environment variable at all. Without that fallback
+ * `android doctor` reports "adb NOT FOUND" on a machine that has it — a true statement about PATH read as
+ * a missing SDK.
  */
 export function adbCandidates(env: NodeJS.ProcessEnv = process.env): string[] {
   const exe = process.platform === 'win32' ? 'adb.exe' : 'adb';
@@ -39,10 +34,9 @@ function adbPath(): string {
 /**
  * A usable JDK, from `JAVA_HOME` or from where the tooling actually puts one.
  *
- * 🔴 **Resolving it rather than demanding it is the point of this CLI.** The Android build needs a JDK
- * and reports its absence from deep inside an MSBuild target as a Java error — which reads as a broken
- * SDK, not as "set JAVA_HOME". Android Studio ships a JDK in `jbr/` and sets no variable, so the
- * overwhelmingly common case is a machine that HAS one and cannot say where.
+ * 🔴 The Android build needs a JDK and reports its absence from deep inside an MSBuild target as a Java
+ * error — which reads as a broken SDK, not as "set JAVA_HOME". Android Studio ships one in `jbr/` and sets
+ * no variable, so the common case is a machine that HAS one and cannot say where.
  *
  * ⚠ Returns null rather than throwing: `doctor` wants to REPORT it, `deploy` wants to stop with a fix.
  */
@@ -70,9 +64,9 @@ export interface AndroidDevice {
 /**
  * Parse `adb devices`.
  *
- * ⚠ **`offline` and `unauthorized` are KEPT rather than filtered**, because they are the two states a
- * developer needs told about: an unauthorized device is waiting for a "trust this computer" tap on the
- * phone, and silently ignoring it produces "no devices" while one is plainly attached.
+ * ⚠ **`offline` and `unauthorized` are KEPT rather than filtered.** An unauthorized device is waiting for
+ * a "trust this computer" tap on the phone, and silently ignoring it produces "no devices" while one is
+ * plainly attached.
  */
 export function parseDevices(out: string): AndroidDevice[] {
   return out.split(/\r?\n/)
@@ -85,9 +79,9 @@ export function parseDevices(out: string): AndroidDevice[] {
 }
 
 /**
- * Pick the device to act on. REFUSES to guess when several are attached — the iOS half learned this and
- * the reason is identical: silently taking the first deploys to the wrong one and you debug the wrong
- * build. It bites harder here, because an emulator and a phone are routinely attached at once.
+ * Pick the device to act on. REFUSES to guess when several are attached — silently taking the first
+ * deploys to the wrong one and you debug the wrong build, and here an emulator and a phone are routinely
+ * attached at once.
  */
 function resolveDevice(wanted: string | undefined): AndroidDevice | null {
   const r = captureRun(adbPath(), ['devices']);
@@ -149,8 +143,7 @@ export function cmdDevices(): void {
 export function cmdDeploy(cfg: DeployConfig, args: string[]): void {
   if (!requireFields(cfg, ['project', 'bundleId'])) return;
   if (!platformTfm(cfg, 'android')) return;
-  // Same globally-documented `--` the build command honours; `own` also keeps `argValue` from reading a
-  // passthrough token as a device serial, which is the iOS half's measured trap.
+  // Reading from `own` keeps `argValue` from taking a passthrough token as a device serial.
   const { own, passthrough } = splitArgs(args);
   const device = resolveDevice(argValue(own, '--device'));
   if (!device) return;
@@ -180,7 +173,7 @@ export function cmdDeploy(cfg: DeployConfig, args: string[]): void {
   }
 
   // `monkey` rather than `am start`: it needs only the package id and the LAUNCHER category, so the
-  // adopter never has to name an activity class that MAUI generates.
+  // adopter never names an activity class that MAUI generates.
   const launch = run(adbPath(), ['-s', device.serial, 'shell', 'monkey',
     '-p', cfg.bundleId, '-c', 'android.intent.category.LAUNCHER', '1'], { quiet: true });
   if (launch.status !== 0) {
@@ -197,8 +190,7 @@ export function cmdDeploy(cfg: DeployConfig, args: string[]): void {
  * 🔴 **FILTER FIRST, TAIL HERE.** `adb logcat -t N` applies `-t` to the RAW buffer and only then the
  * filterspec, so `-t 60 -s SHENORA:V` reliably prints NOTHING once sixty lines of platform chatter have
  * gone by — which reads exactly like "my app logged nothing". This dumps the filtered buffer and slices
- * in the tool. The iOS half has the same rule for a different reason, and the meta-lesson is that a rule
- * written about one harness does not protect the next one.
+ * in the tool.
  */
 export function cmdLog(cfg: DeployConfig, args: string[]): void {
   const device = resolveDevice(argValue(args, '--device'));
@@ -206,17 +198,11 @@ export function cmdLog(cfg: DeployConfig, args: string[]): void {
   const lines = Number(argValue(args, '-n') ?? '80') || 80;
   const all = args.includes('--all');
 
-  // 🔴 BY PID, NOT BY TAG, and this is the design decision in the command.
-  //
-  // A tag filter needs to know how the app logs, and there is no right answer: a MAUI app using
-  // `Console.WriteLine` lands under `DOTNET`, one using `Android.Util.Log` lands under whatever tag it
-  // chose. Measured here — this kit's own sample uses the second, so a `DOTNET` default showed the
-  // runtime's cryptography chatter and none of the app's verdicts, which reads as "my app logged
-  // nothing".
-  //
-  // The PID has neither problem: it is every line the APP wrote under ANY tag, and it excludes a STALE
-  // instance — a previously-launched copy flooding the buffer is a trap this repo has already paid for
-  // twice, on both mobile platforms.
+  // 🔴 BY PID, NOT BY TAG. A tag filter needs to know how the app logs and there is no right answer: a
+  // MAUI app using `Console.WriteLine` lands under `DOTNET`, one using `Android.Util.Log` under whatever
+  // tag it chose — so a `DOTNET` default shows the runtime's cryptography chatter and none of the app's
+  // verdicts, which reads as "my app logged nothing". The PID is every line the APP wrote under ANY tag,
+  // and it excludes a STALE instance flooding the buffer.
   let filter: string[] = [];
   let how = 'everything';
   if (!all) {
@@ -225,8 +211,8 @@ export function cmdLog(cfg: DeployConfig, args: string[]): void {
       filter = [`--pid=${pid}`];
       how = `pid ${pid}`;
     } else {
-      // Not running: fall back to the tag, and SAY which one, because "nothing" is about to be a
-      // legitimate answer and the reader needs to know why.
+      // Not running: fall back to the tag and SAY which one — "nothing" is about to be a legitimate
+      // answer and the reader needs to know why.
       filter = ['-s', `${cfg.androidLogTag}:V`, 'AndroidRuntime:E'];
       how = `tag ${cfg.androidLogTag} — ${cfg.bundleId} is not running`;
     }
@@ -256,19 +242,14 @@ function appPid(serial: string, packageId: string): string | null {
 /**
  * A distributable. `-p:AndroidPackageFormat=aab` for Play, the default `apk` for anything else.
  *
- * ⚠ Release is the default for the same reason as iOS: a Debug Android build is a different artifact,
- * signed with the debug keystore and not installable as an update over a release one.
+ * ⚠ Release is the default: a Debug Android build is a different artifact, signed with the debug keystore
+ * and not installable as an update over a release one.
  */
 export function cmdBuild(cfg: DeployConfig, args: string[]): void {
   if (!requireFields(cfg, ['project'])) return;
   if (!platformTfm(cfg, 'android')) return;
-  // 🔴 `--` IS DOCUMENTED GLOBALLY — the help text says "anything after `--` goes straight to
-  // `dotnet build`" directly beneath these Android commands — and this half silently dropped it. Half
-  // live, too: `--aab` was still read from the flat array, so the flag someone typed BEFORE `--` worked
-  // while everything after it vanished, which is the hardest version to notice.
-  //
-  // ⚠ An ARRAY, spread into `run`'s argv. No shell, so nothing re-splits an argument containing a space
-  // — the iOS half has to quote for `sh`, this one simply does not have the problem.
+  // ⚠ An ARRAY, spread into `run`'s argv. No shell, so nothing re-splits an argument containing a space —
+  // the iOS half has to quote for `sh`, this one does not have the problem.
   const { own, passthrough } = splitArgs(args);
   const configuration = argValue(own, '--configuration') ?? 'Release';
   const aab = own.includes('--aab');
@@ -276,8 +257,8 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
 
   console.log(`shenora: publishing ${cfg.project} (${cfg.androidTfm}, ${configuration}`
     + `${aab ? ', aab' : ''})…`);
-  // Stamped BEFORE the publish: anything in the output directory older than this belongs to a previous
-  // run, and the SDK does not clean between them.
+  // Stamped BEFORE the publish: the SDK does not clean between runs, so anything in the output directory
+  // older than this belongs to a previous one.
   const startedAt = Date.now();
   const r = run('dotnet', [
     'publish', path.join(cfg.root, cfg.project),
@@ -291,14 +272,14 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
     return;
   }
 
-  // `projectDir`, not `path.dirname` — a `project` naming a DIRECTORY resolved one level too high and
-  // this reported "no .apk appeared" about a folder that never could hold one (see its doc).
+  // `projectDir`, not `path.dirname` — a `project` naming a DIRECTORY resolves one level too high, which
+  // reports "no .apk appeared" about a folder that never could hold one (see its doc).
   const dir = path.join(projectDir(cfg), 'bin', configuration, cfg.androidTfm, 'publish');
   const format = aab ? 'aab' : 'apk';
   const artifact = findPackage(dir, format, startedAt) ?? findPackage(path.dirname(dir), format, startedAt);
   if (!artifact) {
-    // Name what was looked for AND why an existing file might have been rejected — "no .apk appeared"
-    // beside a directory visibly containing one is the most confusing message this tool could print.
+    // Say STALE when a leftover is what was found — "no .apk appeared" beside a directory visibly
+    // containing one is the most confusing message this tool could print.
     const stale = findPackage(dir, format) ?? findPackage(path.dirname(dir), format);
     fail(stale
       ? `the publish reported success but the only .${format} under ${dir} predates this build `
@@ -315,14 +296,13 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
 /**
  * The publish output, for the format that was actually ASKED FOR.
  *
- * Within a format, **`-Signed.apk` first**: the SDK leaves both and the unsigned one installs nowhere,
- * so handing back the wrong file is a failure the adopter meets minutes later, on a device.
+ * Within a format, **`-Signed.apk` first**: the SDK leaves both and the unsigned one installs nowhere, so
+ * handing back the wrong file is a failure the adopter meets minutes later, on a device.
  *
- * 🔴 **ACROSS formats it never substitutes, and that is the fix.** This used to try `-Signed.apk` before
- * anything else unconditionally — so `android build --aab`, run in a directory still holding an APK from
- * an earlier publish, reported that APK as the artifact, complete with its size. The user uploads it to
- * Play believing it is the bundle they just built. An adjacent file is not an answer to a different
- * question.
+ * 🔴 **ACROSS formats it never substitutes.** Preferring `-Signed.apk` unconditionally makes
+ * `android build --aab`, run in a directory still holding an APK from an earlier publish, report that APK
+ * as the artifact complete with its size — and the user uploads it to Play believing it is the bundle they
+ * just built.
  *
  * @param dir Directory to look in.
  * @param format What the caller built — `'aab'` accepts only a bundle, `'apk'` only an APK.
@@ -340,8 +320,8 @@ export function findPackage(dir: string, format: 'apk' | 'aab' = 'apk', builtAft
 
   const full = path.join(dir, pick);
   if (builtAfter !== undefined) {
-    // A whole second of slack: mtime resolution varies by filesystem, and a build that legitimately
-    // finishes in the same tick as the start stamp must not be called stale.
+    // A whole second of slack: mtime resolution varies by filesystem, and a build finishing in the same
+    // tick as the start stamp must not be called stale.
     try {
       if (fs.statSync(full).mtimeMs < builtAfter - 1000) return null;
     } catch {
@@ -355,7 +335,7 @@ export function findPackage(dir: string, format: 'apk' | 'aab' = 'apk', builtAft
  * Can this machine build and deploy Android at all?
  *
  * ⚠ It asks about the MACHINE, so it must not need a config — "can this box do it?" is the question
- * someone has BEFORE they have a project wired, the same reason `ios doctor` is machine-only.
+ * someone has BEFORE they have a project wired.
  */
 export function cmdDoctor(): void {
   const rows: [string, string][] = [];
@@ -370,10 +350,8 @@ export function cmdDoctor(): void {
   const adb = captureRun(adbPath(), ['version']);
   rows.push(['adb', adb.status === 0 ? (adb.out.split(/\r?\n/)[0] ?? 'ok').trim() : 'NOT FOUND']);
 
-  // 🔴 The JDK is the one that fails LATE and confusingly: the Android build needs it and reports a
-  // Java error deep in an MSBuild target rather than "no JDK", so it reads as a broken SDK. Reported as
-  // RESOLVED rather than as `JAVA_HOME`, because the common case is a machine that has one and does not
-  // say so — and `deploy` uses the same resolution, so this row is the truth `deploy` will act on.
+  // Reported as RESOLVED rather than as `JAVA_HOME` — `deploy` uses the same resolution, so this row is
+  // the truth `deploy` will act on. See `resolveJdk` for what its absence looks like.
   const jdk = resolveJdk();
   rows.push(['jdk', jdk ?? 'NOT FOUND — set JAVA_HOME to a JDK 17+ (Android Studio ships one in `jbr`)']);
 

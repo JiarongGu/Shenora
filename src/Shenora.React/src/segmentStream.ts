@@ -2,16 +2,8 @@
  * The page half of the host's segment route (D71 piece 4) — reading the manifest it serves, choosing the
  * MediaSource this browser actually has, and deciding what to fetch next.
  *
- * 🔴 **Everything in this module is PURE, and the split is deliberate.** The DECISIONS live here, where a
- * test pins them exactly, and `segmentBinder.ts` holds the imperative half — creating a `SourceBuffer`,
- * appending bytes, listening to element events. That is the same division `SegmentGrid` makes on the host
- * side, for the same reason.
- *
- * ⚠ **"The imperative half cannot be verified anywhere this repo runs" was true and is no longer.** jsdom
- * still has no MediaSource and both real implementations still live on devices — but the binder takes its
- * source and its fetch as PARAMETERS, so a fake drives every branch of it. What a fake cannot say is
- * whether a real implementation accepts the bytes; that is measured on hardware and recorded in
- * `docs/design/media.md`.
+ * Everything here is PURE: the decisions live in this module and `segmentBinder.ts` holds the
+ * imperative half — creating a `SourceBuffer`, appending bytes, listening to element events.
  */
 
 /**
@@ -19,8 +11,8 @@
  * `{routePath}${SEGMENT_REMOTE_PREFIX}{handle}/index.m3u8`.
  *
  * 🔴 **A page cannot name a remote url, only a handle.** The host's `MediaSourceRegistry` issues one when
- * the app authorises a source, and the route accepts nothing else — which is what stops a page reaching an
- * address the host can see and it cannot. Mirrors `SegmentStreamOptions.RemotePrefix`.
+ * the app authorises a source, and the route accepts nothing else. Mirrors
+ * `SegmentStreamOptions.RemotePrefix`.
  */
 export const SEGMENT_REMOTE_PREFIX = '~remote/';
 
@@ -49,8 +41,8 @@ export interface SegmentManifest {
    * The initialisation segment (`#EXT-X-MAP`), which carries the tracks and their decoder configuration.
    *
    * ⚠ **Null means the playlist declared none, and that is not playable through MediaSource** — a fragment
-   * repeats no configuration, so appending one without this produces a silent decode error. The kit's host
-   * route always writes it; a foreign playlist may not.
+   * repeats no configuration, so appending one without this is a silent decode error. The kit's host route
+   * always writes it; a foreign playlist may not.
    */
   initUri: string | null;
   /** The longest a segment may be, from `#EXT-X-TARGETDURATION`. */
@@ -59,11 +51,9 @@ export interface SegmentManifest {
 }
 
 /**
- * Parse the subset of HLS the host emits. Deliberately NOT a general playlist parser: this reads what
- * `SegmentStream` writes, and anything it does not understand is ignored rather than guessed at.
+ * Parse the subset of HLS the host's `SegmentStream` emits — not a general playlist parser.
  *
- * ⚠ Unknown tags are skipped silently BY DESIGN — a playlist gains tags over time and a parser that threw
- * on the first one it had not met would break on a host newer than the page.
+ * ⚠ An unknown tag is SKIPPED, never an error, so a host newer than the page still parses.
  */
 export function parseManifest(text: string): SegmentManifest {
   const segments: SegmentEntry[] = [];
@@ -111,20 +101,13 @@ export interface MediaSourceGlobals {
 /**
  * Which MediaSource to use — **`ManagedMediaSource` first where it exists**.
  *
- * 🔴 **The order is the decision, and it is not "newest wins".** iOS on iPhone has only
- * `ManagedMediaSource`; Android has only `MediaSource`. Where BOTH exist the managed one is still preferred,
- * because it is the one that tells the page when the platform actually wants data — a page that streams
- * regardless is what the managed variant was introduced to stop.
+ * 🔴 **iOS has ONLY `ManagedMediaSource` and Android has ONLY `MediaSource`**, so a binder that knows
+ * just `window.MediaSource` does nothing at all on iOS. Where both exist the managed one still wins:
+ * it is the one that says when the platform actually wants data. (Measured — `docs/design/media.md`.)
  *
- * ✅ **Measured rather than assumed** (iPhone 16 Pro simulator, iOS 26, 2026-08-14): `window.MediaSource` is
- * `false` there and `ManagedMediaSource` is `true`. So on iOS this is not a preference at all — **a binder
- * that only knows `window.MediaSource` does nothing**, and the naming here is what makes one bundle work on
- * both shells.
- *
- * ⚠ **`'managed'` carries an obligation, which is why this returns a KIND rather than just a constructor.**
- * A managed source only wants data between its `startstreaming` and `endstreaming` events, and fetching
- * outside that window is the thing it exists to prevent. A caller that ignores the kind has not merely
- * missed an optimisation.
+ * ⚠ **`'managed'` carries an obligation, which is why this returns a KIND and not a constructor.** A
+ * managed source only wants data between its `startstreaming` and `endstreaming` events, and fetching
+ * outside that window is the misuse it exists to detect.
  */
 export function pickMediaSource(globals: MediaSourceGlobals): MediaSourceKind {
   if (typeof globals.ManagedMediaSource === 'function') return 'managed';
@@ -154,24 +137,22 @@ export interface FetchPolicy {
 /**
  * The next segment index to fetch, or null for "nothing right now".
  *
- * 🔴 **Every branch here is a decision whose failure is SILENT in a browser**, which is why it is a pure
- * function with a test rather than an `if` inside an event handler:
+ * 🔴 **Every branch is a decision whose failure is SILENT in a browser:**
  *
- * - **Not streaming → null.** A managed source that is fetched while it said stop is the exact misuse it
- *   exists to detect, and on iOS the penalty is the platform tearing the source down.
- * - **Enough buffered → null.** Fetching further ahead than the policy asks does not make playback smoother;
- *   it fills a quota, and a `QuotaExceededError` on append arrives as a stall with no obvious cause.
- * - **Otherwise the segment CONTAINING `currentTime`, or the first unappended one after it.** Starting from
- *   "the next index after the last one appended" instead is what breaks seeking: after a jump the last
- *   append is nowhere near where the user is now.
+ * - **Not streaming → null.** On iOS the penalty for fetching past `endstreaming` is the platform
+ *   tearing the source down.
+ * - **Enough buffered → null.** Fetching further ahead fills a quota, and a `QuotaExceededError` on
+ *   append arrives as a stall with no obvious cause.
+ * - **Otherwise the segment CONTAINING `currentTime`, or the first unappended one after it** — never
+ *   "the next index after the last append", which breaks seeking.
  */
 export function nextSegment(state: FetchState, policy: FetchPolicy): number | null {
   if (!state.streaming) return null;
   if (state.bufferedAhead >= policy.targetAheadSeconds) return null;
   if (policy.segments.length === 0) return null;
 
-  // Walk the playlist's own durations rather than assuming a fixed grid: the LAST segment is short, so
-  // dividing by the target duration puts the tail index past the end.
+  // Walk the playlist's own durations rather than assuming a fixed grid: the LAST segment is short,
+  // so dividing by the target duration puts the tail index past the end.
   let at = 0;
   let index = 0;
   for (; index < policy.segments.length; index++) {
@@ -187,16 +168,14 @@ export function nextSegment(state: FetchState, policy: FetchPolicy): number | nu
 }
 
 /**
- * The MIME type to open a `SourceBuffer` with.
+ * The MIME type to open a `SourceBuffer` with. The default is H.264 High 4.0 plus AAC-LC.
  *
  * ⚠ **The codecs parameter is REQUIRED, not decorative.** `addSourceBuffer('video/mp4')` throws
- * `NotSupportedError` on every implementation — the buffer has to know what it is about to be fed before the
- * init segment arrives. The default is H.264 High 4.0 plus AAC-LC.
+ * `NotSupportedError` on every implementation — the buffer has to know what it is about to be fed
+ * before the init segment arrives.
  *
- * 🔴 **And the default is a DEFAULT rather than a guarantee, because the host copies whatever the source
- * already holds** (D76): a segment's picture keeps the profile and level the original encoder chose, and an
- * HEVC source arrives as `hvc1` and not `avc1` at all. The family is what an implementation actually checks,
- * so an H.264 source of any profile plays through the default — **an HEVC one needs its own string**, e.g.
+ * ⚠ The default is not a guarantee: the host copies whatever the source already holds (D76), so an
+ * **HEVC source arrives as `hvc1` and needs its own string**, e.g.
  * `segmentMimeType('hvc1.1.6.L93.B0,mp4a.40.2')`.
  */
 export function segmentMimeType(codecs = 'avc1.640028,mp4a.40.2'): string {
@@ -207,16 +186,10 @@ export function segmentMimeType(codecs = 'avc1.640028,mp4a.40.2'): string {
  * Read the codecs parameter out of an initialisation segment, so the `SourceBuffer` is opened for the
  * tracks it will actually be fed.
  *
- * 🔴 **The TRACK SET is the part that must be right, and getting it wrong is fatal rather than
- * degraded.** Measured against Chromium 151 on the kit's own segments: a video-only init segment
- * appended to a buffer opened with the two-track default (`avc1.640028,mp4a.40.2`) fails the FIRST
- * append and plays nothing at all — while the same bytes with `avc1.640015` play. A source with no
- * soundtrack is ordinary, so a fixed default cannot serve both.
- *
- * ⚠ **The profile and level, by contrast, are barely checked.** The same measurement fed High 2.1
- * content to a buffer opened as Baseline 3.0 (`avc1.42E01E`) and it played. That is why this returns a
- * precise string when the configuration is there to read and a family default when it is not: precision
- * where it is free, and never a guess about which tracks exist.
+ * 🔴 **The TRACK SET must be right, and getting it wrong is fatal rather than degraded**: a video-only
+ * init segment appended to a buffer opened with the two-track default fails the FIRST append and plays
+ * nothing. A source with no soundtrack is ordinary, so no fixed default serves both. (The profile and
+ * level, by contrast, are barely checked — `docs/design/media.md` has the measurements.)
  *
  * @param init The bytes of the `#EXT-X-MAP` segment.
  * @returns A codecs string for {@link segmentMimeType}, or null when no track could be read — the caller
@@ -226,8 +199,8 @@ export function codecsFromInitSegment(init: Uint8Array): string | null {
   const view = new DataView(init.buffer, init.byteOffset, init.byteLength);
   const codecs: string[] = [];
 
-  /** Bytes are read through the view rather than by index: `noUncheckedIndexedAccess` types `init[i]`
-   * as possibly-undefined, and a `!` on every read would hide the one that IS out of range. */
+  /** Read through the view, not by index: a `!` on every `init[i]` would hide the one that IS out of
+   * range, where `getUint8` throws. */
   const u8 = (at: number) => view.getUint8(at);
   const fourcc = (at: number) => String.fromCharCode(u8(at), u8(at + 1), u8(at + 2), u8(at + 3));
   const hex2 = (n: number) => n.toString(16).padStart(2, '0');
@@ -252,9 +225,8 @@ export function codecsFromInitSegment(init: Uint8Array): string | null {
 
   /** The `avcC`/`hvcC`/`esds` inside a sample entry, whose own fields come first. */
   const configuration = (format: string, start: number, end: number): string => {
-    // Measured against the host's own init segment: an `avc1` entry holds 132 bytes of content and a
-    // 54-byte `avcC`, so the child boxes start 78 in — the 8-byte SampleEntry base (6 reserved + a data
-    // reference index) plus VisualSampleEntry's 70. An `mp4a` entry is that base plus 20.
+    // The child boxes start after the sample entry's own fields: the 8-byte SampleEntry base
+    // (6 reserved + a data reference index) plus VisualSampleEntry's 70, or plus 20 for `mp4a`.
     const visual = format === 'avc1' || format === 'avc3' || format === 'hvc1' || format === 'hev1';
     const at = start + (visual ? 78 : 28);
     let derived = '';
@@ -278,8 +250,8 @@ export function codecsFromInitSegment(init: Uint8Array): string | null {
         derived = `${format}.${spaces}${idc}.${(reversed >>> 0).toString(16).toUpperCase()}.` +
                   `${tier ? 'H' : 'L'}${level}`;
       } else if (type === 'esds' && s + 21 <= end) {
-        // The object type indication, then the audio object type from the DecoderSpecificInfo's first
-        // 5 bits. Only AAC is ever copied here, so the walk stays a search rather than a full parser.
+        // The audio object type, from the DecoderSpecificInfo's first 5 bits. Only AAC is ever copied
+        // here, so the walk stays a search rather than a full descriptor parser.
         for (let p = s; p + 2 < end; p++) {
           if (u8(p) === 0x04 && u8(p + 2) === 0x40) {
             derived = `mp4a.40.${u8(p + 3) || 2}`;

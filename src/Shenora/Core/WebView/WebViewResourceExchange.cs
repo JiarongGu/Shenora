@@ -2,9 +2,6 @@ using System.Globalization;
 
 namespace Shenora.Core.WebView;
 
-// Portable contracts — "URI plus headers in, status plus content-type plus a stream out" — so they live
-// in Core and every shell's request-interception seam can use them (D19/D20).
-
 /// <summary>
 /// The request a deferred-scheme handler is answering. It carries the request HEADERS: without
 /// <c>Range</c> a handler cannot know what byte offset was asked for nor answer <c>206</c>, so a page
@@ -17,8 +14,7 @@ public sealed class WebViewResourceRequest
     /// <c>https://host/#/library</c> arrives with <c>Fragment = "#/library"</c> and
     /// <c>AbsolutePath = "/"</c>, so a resolver reading <see cref="System.Uri.AbsolutePath"/> is fine and
     /// one reading <c>ToString()</c> or <c>PathAndQuery</c> mis-resolves. That safe reading also HIDES the
-    /// fragment, so log the whole <see cref="System.Uri"/> when a document request surprises you — see
-    /// <see cref="IsRootWithFragment"/>.
+    /// fragment, so log the whole <see cref="System.Uri"/> when a document request surprises you.
     /// </summary>
     public required Uri Uri { get; init; }
 
@@ -38,23 +34,13 @@ public sealed class WebViewResourceRequest
     /// <summary>
     /// True when <paramref name="uri"/> asks for the site ROOT <b>and</b> carries a <c>#fragment</c> — the
     /// shape a hash-routed page reloads at (<c>https://host/#/library</c>), which both mobile shells
-    /// repair with no app code. ⚠ <b>The break is the platform's, not this kit's</b>: MAUI's request→asset
-    /// mapping removes a query string and not a fragment, so <c>/#zzz</c> looks for an asset literally
-    /// named <c>#zzz</c>, and Chromium turns that bodyless, MIME-less 404 into
-    /// <c>ERR_INVALID_RESPONSE</c>. Measured on MAUI 10.0.20 / WebView 110, against a build with no
-    /// interceptor constructed at all:
-    /// <code>
-    /// reload at                     MAUI's own shouldInterceptRequest answered
-    /// ─────────                     ─────────────────────────────────────────
-    /// https://host/                 200 text/html
-    /// https://host/?x=1             200 text/html   ← a QUERY is stripped correctly
-    /// https://host/index.html       200 text/html
-    /// https://host/#zzz             404  → ERR_INVALID_RESPONSE
-    /// https://host/#/library        404
-    /// </code>
+    /// repair with no app code. The break is the platform's: MAUI's request→asset mapping removes a query
+    /// string and not a fragment, so <c>/#zzz</c> looks for an asset literally named <c>#zzz</c> and
+    /// Chromium turns that bodyless 404 into <c>ERR_INVALID_RESPONSE</c> (measured on MAUI 10.0.20 /
+    /// WebView 110). Scoped to the root path — <c>/index.html#x</c> is not claimed.
     /// <para>
     /// ⚠ A repair must not read the bundle INSIDE the handler: that deadlocks iOS's main thread. Read at
-    /// construction. Scoped to the root path — <c>/index.html#x</c> was never tested and is not claimed.
+    /// construction.
     /// </para>
     /// </summary>
     /// <param name="uri">The request URI. A relative URI is never one of these, and answers false.</param>
@@ -72,8 +58,8 @@ public sealed class WebViewResourceRequest
 
 /// <summary>
 /// The response a deferred-scheme handler returns: a status, headers, and a CONTENT STREAM — a stream
-/// rather than a <c>byte[]</c>, so serving a 4 GB file does not materialise 4 GB. Use the factories:
-/// they set the status line and the headers that belong with it.
+/// rather than a <c>byte[]</c>, so serving a 4 GB file does not materialise 4 GB. Use the factories,
+/// which set the status line and the headers that belong with it.
 /// </summary>
 public sealed class WebViewResourceResponse
 {
@@ -83,8 +69,7 @@ public sealed class WebViewResourceResponse
     /// disposes it only if handing it over failed (a webview torn down mid-flight).
     /// <para>
     /// ⚠ The per-shell arms differ in when they close it, and iOS never disposes a body at all — see
-    /// <c>docs/design/mobile-shells.md</c>. That is why the rule is stated as ownership rather than as a
-    /// disposal step you could mirror.
+    /// <c>docs/design/mobile-shells.md</c>.
     /// </para>
     /// </summary>
     public required Stream Content { get; init; }
@@ -247,14 +232,13 @@ public readonly record struct WebViewByteRange(long From, long To)
 
         if (from < 0) return false;
         // An EXPLICITLY inverted range (bytes=20-10) is malformed. The guard is on `toText`, not on the
-        // computed value: for an open-ended range past the end, `to` is already the last byte and would
-        // look inverted while being well-formed.
+        // computed value: for an open-ended range past the end, `to` is already the last byte.
         if (toText.Length > 0 && to < from) return false;
 
         if (from >= totalLength)
         {
             // Well-formed but outside the resource: the caller must answer 416. NOT clamped — clamping
-            // the START would silently serve bytes nobody asked for, with no error.
+            // the START would silently serve bytes nobody asked for.
             range = new WebViewByteRange(from, to);
             return true;
         }

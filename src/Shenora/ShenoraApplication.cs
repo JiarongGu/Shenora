@@ -17,9 +17,8 @@ public sealed class ShenoraApplicationOptions
 
     /// <summary>
     /// Path-layout inputs. When <see cref="ShenoraPathsOptions.ExplicitRoot"/> is unset, a
-    /// <c>--app-root</c> command-line value (the family's launcher contract, see
-    /// <see cref="AppRootArgument"/>) fills it in automatically; an app-set value wins over the
-    /// argument (setting it is an explicit opt-out of the launcher contract).
+    /// <c>--app-root</c> command-line value (see <see cref="AppRootArgument"/>) fills it in
+    /// automatically; an app-set value wins over the argument.
     /// </summary>
     public ShenoraPathsOptions? Paths { get; init; }
 
@@ -82,13 +81,12 @@ public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
     /// <code>
     /// using var app = builder.Build();
     /// app.UseFiles(new WebViewFileOptions { … });   // order matters, like app.UseAuthentication()
-    /// app.UseMediaPlayer();                          // no `services` argument — the app holds the provider
+    /// app.UseMediaPlayer();
     /// app.Run();
     /// </code>
     /// <para>
     /// A shell hands this to each webview as it builds one, so an app never calls
-    /// <see cref="Core.WebView.WebViewPipeline.ApplyTo"/> itself. On the desktop it travels through
-    /// <c>WebViewHostOptions.Pipeline</c>; on mobile the interceptor takes it directly.
+    /// <see cref="Core.WebView.WebViewPipeline.ApplyTo"/> itself.
     /// </para>
     /// </summary>
     public Core.WebView.WebViewPipeline Pipeline =>
@@ -119,22 +117,17 @@ public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
         var pathsOptions = options.Paths ?? new ShenoraPathsOptions();
         if (string.IsNullOrEmpty(pathsOptions.ExplicitRoot))
         {
-            // The launcher's --app-root fills ExplicitRoot only when the app left it unset (an
-            // app-set root is an explicit opt-out). Empty sentinel = flag absent or blank.
+            // Empty sentinel = flag absent or blank.
             var argRoot = AppRootArgument.Resolve(args, string.Empty);
             if (argRoot.Length > 0)
             {
-                // `with`, not a hand-copied initializer (P5.5 H6). The previous version restated all six
-                // properties, so adding a seventh option to ShenoraPathsOptions would have silently
-                // dropped it for every launch that passed --app-root.
                 pathsOptions = pathsOptions with { ExplicitRoot = argRoot };
             }
         }
 
         var paths = ShenoraPaths.Resolve(pathsOptions, baseDirectory, options.GetEnvironmentVariable);
-        // Environment detection anchors at the resolved ROOT (not the exe folder): in packaged
-        // bundles the .dev marker sits at the install root beside the launcher — the folder the
-        // user sees — not in libs/ beside the runtime exe.
+        // Anchored at the resolved ROOT, not the exe folder: in packaged bundles the .dev marker sits at
+        // the install root beside the launcher, not in libs/ beside the runtime exe.
         var environment = ShenoraEnvironment.Detect(paths.RootDir, options.GetEnvironmentVariable);
         var name = options.ApplicationName
             ?? System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name
@@ -145,23 +138,12 @@ public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// Invoke <see cref="IShenoraLifecycleHook.OnStarting"/> on every registered hook, in
-    /// registration order. <b>IDEMPOTENT — the second call does nothing.</b>
+    /// registration order. <b>IDEMPOTENT — the second call does nothing</b>, because a platform-owned
+    /// loop offers several plausible places to start from and some of them re-enter (an activity's
+    /// <c>OnCreate</c>/<c>OnResume</c> fire per activity instance).
     /// <para>
-    /// A runner calls this for you; call it DIRECTLY only from a host whose PLATFORM owns the loop
-    /// and therefore cannot use <see cref="Run"/> (a mobile activity).
-    /// <para>
-    /// WHY IDEMPOTENT, stated accurately after trying to reproduce the case on a device. A
-    /// platform-owned loop offers several plausible places to start from, and some of them re-enter:
-    /// an activity's <c>OnCreate</c>/<c>OnResume</c> fire per activity instance, and a host may be
-    /// re-shown without the process ever dying. Re-running hooks there is the class of bug
-    /// <c>WinFormsBootstrap.Initialize</c> already exists to prevent — a second init re-registered
-    /// all three exception channels and every later exception raised two dialogs.
-    /// **What is NOT the justification:** MAUI's own <c>Window.Created</c>. Measured on Android
-    /// (<c>samples/Shenora.Sample.Maui</c>): MAUI's Window is process-scoped and its MainActivity
-    /// declares <c>ConfigurationChanges</c> for orientation/UI-mode, so a config change recreates
-    /// nothing and <c>Window.Created</c> fired exactly once across a home-and-return. The guard is
-    /// cheap insurance for the wirings that DO re-enter, not a fix for that one.
-    /// </para>
+    /// A runner calls this for you; call it DIRECTLY only from a host whose PLATFORM owns the loop and
+    /// therefore cannot use <see cref="Run"/> (a mobile activity).
     /// </para>
     /// <para>
     /// NOT guarded: a hook that cannot start is a startup failure and the app must see it. Pair it
@@ -184,21 +166,17 @@ public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
     /// </summary>
     public void Stop()
     {
-        // A stop BEFORE any start must not latch. Latching on it was the first cut, and the
-        // idempotency test caught it: a platform that signals "stopped" before it ever signalled
-        // "started" (an activity destroyed during a failed launch) would have permanently disarmed
-        // the real shutdown that came later. Nothing has started, so nothing has stopped.
+        // ⚠ A stop BEFORE any start must not latch: a platform that signals "stopped" before it ever
+        // signalled "started" (an activity destroyed during a failed launch) would otherwise permanently
+        // disarm the real shutdown that came later.
         if (!_started || _stopped) return;
         _stopped = true;
-        // Reverse order, each guarded — the family's never-block-close discipline. `_hooks` is null
-        // only if Start threw before assigning it; there is then nothing to stop.
+        // `_hooks` is null only if Start threw before assigning it; there is then nothing to stop.
         var hooks = _hooks ?? [];
         for (var i = hooks.Length - 1; i >= 0; i--)
         {
-            // Through the ONE owner rather than a bare `catch { }`: swallowing is right here (a hook must
-            // never block shutdown) but swallowing SILENTLY is not — "my cleanup did not run" had no
-            // diagnostic at all. `AppCallback.Run` keeps the swallow and routes the exception to the
-            // app's own log sink, itself guarded.
+            // Through AppCallback rather than a bare `catch { }`: a hook must never block shutdown, but
+            // swallowing SILENTLY leaves "my cleanup did not run" with no diagnostic at all.
             AppCallback.Run(() => hooks[i].OnStopping(this), ex =>
                 Services.GetService<ILoggerFactory>()?.CreateLogger<ShenoraApplication>()
                     .LogError(ex, "A lifecycle hook threw while stopping; shutdown continued."));
@@ -221,13 +199,11 @@ public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
     /// <summary>
     /// Dispose the service provider (and with it every owned singleton).
     /// <para>
-    /// Prefer <see cref="DisposeAsync"/> when any singleton might be async-only: Microsoft DI's
+    /// ⚠ Prefer <see cref="DisposeAsync"/> when any singleton might be async-only: Microsoft DI's
     /// synchronous <c>Dispose</c> THROWS <see cref="InvalidOperationException"/> for a captured
-    /// disposable that implements only <see cref="IAsyncDisposable"/>. Shenora's own
-    /// <c>RenderSession</c> and <c>StreamingSession</c> are exactly that shape, so registering one as a
-    /// singleton used to crash the documented <c>using var app = builder.Build(); app.Run();</c>
-    /// shutdown — after the message loop had already exited, i.e. a crash dialog on every clean quit
-    /// with no way for a consumer to work around it (P5.5 H2).
+    /// disposable that implements only <see cref="IAsyncDisposable"/> — which <c>RenderSession</c> and
+    /// <c>StreamingSession</c> are, so a <c>using var app</c> shutdown crashes after the message loop
+    /// has already exited.
     /// </para>
     /// </summary>
     public void Dispose() => _provider.Dispose();

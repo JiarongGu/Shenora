@@ -18,16 +18,13 @@ export function parseHostSpec(spec: string): RemoteHost | null {
 /**
  * The Mac to drive, from — in order — `--host`, `SHENORA_IOS_HOST`, then the config's `remote` block.
  *
- * ⚠ **The environment variable is listed second on purpose.** A host is a fact about your network, and a
- * public repo should not carry one; the env var lets a shared `shenora.deploy.json` stay neutral while
- * each developer points at their own Mac.
+ * ⚠ **The environment variable outranks the config.** A host is a fact about your network and a public
+ * repo should not carry one, so a shared `shenora.deploy.json` can stay neutral while each developer
+ * points at their own Mac.
  */
 export function resolveHost(cfg: DeployConfig | null, args: readonly string[]): RemoteHost | null {
-  // 🔴 The KEY has to be settable beside the host, and separately from the config file. Found by using
-  // this for real: `shenora.deploy.json` is normally TRACKED, a project-scoped ssh key is good practice
-  // (the family's own harness uses one), and without this the only way to name that key was to commit
-  // the hostname and account next to it. A tool whose only configured path leaks is a tool people
-  // configure wrongly.
+  // 🔴 The KEY has to be settable separately from the config file: `shenora.deploy.json` is normally
+  // TRACKED, so naming a project-scoped key there means committing the hostname and account next to it.
   const key = argValue(args, '--key') ?? process.env.SHENORA_IOS_KEY?.trim() ?? undefined;
   const withKey = (host: RemoteHost | null): RemoteHost | null =>
     host && (key ? { ...host, key } : host);
@@ -43,11 +40,9 @@ export function resolveHost(cfg: DeployConfig | null, args: readonly string[]): 
 /**
  * Where iOS work should run: the configured Mac, or this machine when it IS one.
  *
- * 🔴 **This replaced a bare `process.platform === 'darwin'` check, and the difference is the whole
- * feature.** That test asked "is the machine running this CLI a Mac?", which is only the right question
- * while there is nowhere else for the work to go. The kit's target adopter is on Windows with a Mac on
- * the LAN, so the honest question is "is there a Mac I can reach?" — and the answer can be yes on a
- * machine that could never answer the old one.
+ * 🔴 The question is **"is there a Mac I can reach?"**, not `process.platform === 'darwin'`. The kit's
+ * target adopter is on Windows with a Mac on the LAN, so the answer can be yes on a machine that is not
+ * one itself.
  *
  * @returns a target, or null when there is neither (already reported).
  */
@@ -91,10 +86,10 @@ export interface HostDiagnosis {
 /**
  * Ask the Mac to say `ok`, and classify a refusal into something actionable.
  *
- * 🔴 **The classification is the point, not the reachability test.** "Cannot connect" sends a developer
- * round a loop of six unrelated fixes — a sleeping Mac, Remote Login off, a key never authorised, an
- * `.local` name that does not resolve, a full auth-retry budget, no ssh client at all — and the evidence
- * that tells them apart is already in ssh's stderr. Reporting only pass/fail throws it away.
+ * 🔴 **The CLASSIFICATION is the value here, not the reachability test.** "Cannot connect" sends a
+ * developer round a loop of six unrelated fixes — a sleeping Mac, Remote Login off, a key never
+ * authorised, an `.local` name that does not resolve, a full auth-retry budget, no ssh client at all — and
+ * the evidence that tells them apart is already in ssh's stderr.
  *
  * ⚠ `.local` deserves its own sentence when the NAME is what failed: an mDNS name is answered by the
  * device itself, so "cannot resolve" means it is asleep or multicast is not crossing the network. It is
@@ -111,8 +106,8 @@ export function diagnoseHost(host: RemoteHost): HostDiagnosis {
 }
 
 /**
- * Turn ssh's own words into a verdict. Pure, so `host.test.ts` can hold every branch still without a Mac
- * — which matters because these are the branches nobody can reproduce on demand.
+ * Turn ssh's own words into a verdict. Pure, because these are the branches nobody can reproduce on
+ * demand.
  */
 export function classifySshFailure(detail: string, host: RemoteHost, label: string): HostDiagnosis {
   const target = { label };
@@ -148,11 +143,10 @@ export function classifySshFailure(detail: string, host: RemoteHost, label: stri
       'Do not diagnose this with ping — macOS often drops ICMP, so silence proves nothing.',
     ]);
   }
-  // 🔴 CHECKED BEFORE `permission denied`, because ssh reports BOTH: a key file it could not open, and
-  // then the refusal that follows from having no key to offer. Matching the refusal first tells you to
-  // authorise a key on the MAC when the file is missing on THIS machine — advice that sends you to the
-  // wrong computer entirely. Found the first time this ran against a real Mac, against a config naming a
-  // key that had been renamed.
+  // 🔴 CHECKED BEFORE `permission denied`, because ssh reports BOTH: a key file it could not open, then
+  // the refusal that follows from having no key to offer. Matching the refusal first tells you to authorise
+  // a key on the MAC when the file is missing on THIS machine — advice that sends you to the wrong
+  // computer entirely.
   if (/identity file (.+) not accessible|no such identity/i.test(detail)) {
     const named = /identity file (.+?) not accessible/i.exec(detail)?.[1]?.trim();
     return say('no-key-file', `the ssh key${named ? ` ${named}` : ''} does not exist on this machine.`, [

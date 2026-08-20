@@ -26,20 +26,15 @@ public sealed class IpcNotification
     public string? Scope { get; init; }
 
     /// <summary>
-    /// HOST-SIDE ONLY — never serialized, and deliberately absent from the TS mirror. While this
-    /// notification is still buffered, a later one with the same <see cref="Module"/>,
-    /// <see cref="Type"/>, <see cref="Scope"/> and key REPLACES it
-    /// (<see cref="NotificationPump.TryDrainBatch"/>); null means it is never dropped.
+    /// HOST-SIDE ONLY — never serialized, and deliberately absent from the TS mirror, because the
+    /// coalescing has already happened by the time a batch leaves. While this notification is still
+    /// buffered, a later one with the same <see cref="Module"/>, <see cref="Type"/>,
+    /// <see cref="Scope"/> and key REPLACES it (<see cref="NotificationPump.TryDrainBatch"/>); null means
+    /// it is never dropped.
     /// <para>
-    /// It does not cross the wire because by the time a batch leaves, the coalescing has already
-    /// happened — the client receives the survivor and has nothing left to decide. Sending it would
-    /// publish an internal buffering hint as wire contract and invite a client to re-implement a
-    /// policy the host already applied.
-    /// </para>
-    /// <para>
-    /// Only a FULL-SNAPSHOT payload may set it — see
-    /// <see cref="Shenora.Core.Events.EventMessage.CoalesceKey"/>, which is where it comes from for a
-    /// notification forwarded off the bus.
+    /// ⚠ Only a FULL-SNAPSHOT payload may set it — see
+    /// <see cref="Shenora.Core.Events.EventMessage.CoalesceKey"/>, where a forwarded bus notification
+    /// gets it from.
     /// </para>
     /// </summary>
     [JsonIgnore]

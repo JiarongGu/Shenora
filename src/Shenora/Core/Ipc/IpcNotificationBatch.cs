@@ -3,17 +3,12 @@ using System.Text.Json.Serialization;
 namespace Shenora.Core.Ipc;
 
 /// <summary>
-/// The host→client push envelope: <c>{ category: "notification", id, payload: [...],
-/// timestamp }</c> where <c>payload</c> is the batched <see cref="IpcNotification"/> array.
-/// Hosts queue notifications and flush on an interval (~50 ms, the number measured in two family
-/// apps) so event bursts don't flood the bridge; a single notification still ships as a batch of
-/// one. <c>category</c> alone discriminates, which is what lets this exact envelope ride any
-/// transport — WebView2 postMessage today, the server-backed profile's WebSocket, a mobile
-/// shell's channel (docs/DECISIONS.md D16).
-///
-/// DEVIATION from the primary desktop sibling: its batch was wrapped in a synthetic module/type
-/// pair only because its client also received unbatched single notifications; Shenora's contract
-/// is always-batched, so that wrapper is gone (design contract §5).
+/// The host→client push envelope: <c>{ category: "notification", id, payload: [...], timestamp }</c>
+/// where <c>payload</c> is the batched <see cref="IpcNotification"/> array. Hosts queue notifications
+/// and flush on an interval so event bursts don't flood the bridge. 🔴 <b>Notifications are ALWAYS a
+/// batch</b> — a single one still ships as a batch of one, so <c>category</c> alone discriminates,
+/// which is what lets this exact envelope ride any transport: WebView2 postMessage, a WebSocket, a
+/// mobile shell's channel (D16).
 /// </summary>
 public sealed class IpcNotificationBatch
 {

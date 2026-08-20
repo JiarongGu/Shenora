@@ -5,17 +5,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Shenora.Core.Events;
 
 /// <summary>
-/// The <see cref="IEventBus"/> implementation (see the interface for the matching semantics).
-/// Ported from the primary desktop sibling: lock-free concurrent registries plus a
-/// per-subscription match cache — pattern evaluation is memoized per distinct event key
-/// (<c>module.type[.scope]</c>), so hot repeated events skip re-matching every subscription.
-/// Matching handlers run concurrently (<c>Task.WhenAll</c>); a failing handler is logged and
-/// isolated. All registration state is per-instance — static mutable registries were one of the
-/// source gaps this extraction fixes.
-///
-/// The match cache holds one entry per subscription × distinct event key for the subscription's
-/// lifetime, so keep the KEY SPACE bounded: scopes and types should be drawn from small sets
-/// (profiles, windows, feature areas — the family usage), not per-entity or per-request ids.
+/// The <see cref="IEventBus"/> implementation (see the interface for the semantics): lock-free
+/// concurrent registries plus a per-subscription match cache, so hot repeated events skip re-matching
+/// every subscription. Matching handlers run concurrently (<c>Task.WhenAll</c>); a failing handler is
+/// logged and isolated.
+/// <para>
+/// ⚠ The match cache holds one entry per subscription × distinct event key for the subscription's
+/// lifetime, so keep the KEY SPACE bounded: scopes and types drawn from small sets (profiles, windows,
+/// feature areas), never per-entity or per-request ids.
+/// </para>
 /// </summary>
 public sealed class EventBus : IEventBus
 {
@@ -53,9 +51,7 @@ public sealed class EventBus : IEventBus
 
     /// <summary>
     /// Removes one subscription, once. Idempotent by an <see cref="Interlocked"/> latch rather than by
-    /// relying on the dictionaries' remove being harmless: the id is a fresh GUID per subscription, so a
-    /// second dispose could not currently hit someone else's — but that is a property of the ID FORMAT,
-    /// and a gate should not depend on a detail three methods away.
+    /// relying on the id format staying unique three methods away.
     /// </summary>
     private sealed class Subscription(EventBus owner, string id) : IDisposable
     {
@@ -78,11 +74,9 @@ public sealed class EventBus : IEventBus
         // Human-readable prefix + guid: the id doubles as a diagnostic label in logs.
         var subscriptionId = $"{modulePattern}.{typePattern}.{scopePattern ?? "*"}_{Guid.NewGuid()}";
 
-        // ORDER MATTERS: _patterns is what EmitAsync ENUMERATES, so it must be published LAST (P5.5 H6).
-        // Published first, a concurrent emit could see the pattern and then miss the handler or the match
-        // cache that had not been written yet — and it would `continue`, whose comment claims that can
-        // only mean "concurrently unsubscribed". Registering in reverse makes the comment true: by the
-        // time a subscription is visible to an emit, everything it needs is already there.
+        // ORDER MATTERS: _patterns is what EmitAsync ENUMERATES, so it is published LAST. Published
+        // first, a concurrent emit could see the pattern and then miss the handler or the match cache
+        // that had not been written yet.
         _handlers[subscriptionId] = handler;
         _matchCache[subscriptionId] = new ConcurrentDictionary<string, bool>();
         _patterns[subscriptionId] = (modulePattern, typePattern, scopePattern);
@@ -90,10 +84,9 @@ public sealed class EventBus : IEventBus
     }
 
     /// <summary>
-    /// Unregister everything the subscription owns. Reverse of <see cref="SubscribeCore"/>'s ordering
-    /// comment: <c>_patterns</c> goes FIRST, because it is what <see cref="EmitAsync(EventMessage)"/>
-    /// enumerates — so an emit racing a dispose stops matching before the handler it would have called
-    /// disappears.
+    /// Unregister everything the subscription owns, in the reverse order of
+    /// <see cref="SubscribeCore"/>: <c>_patterns</c> FIRST, so an emit racing a dispose stops matching
+    /// before the handler it would have called disappears.
     /// </summary>
     private void RemoveCore(string subscriptionId)
     {
@@ -107,9 +100,8 @@ public sealed class EventBus : IEventBus
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        // '\0'-joined so arbitrary app strings can't collide (module/type/scope are all
-        // app-defined; a '.'-joined key would make ("APP","TASK","s1") and ("APP","TASK.s1")
-        // the same cache entry — and the cache is permanent per subscription).
+        // '\0'-joined so arbitrary app strings can't collide: a '.'-joined key would make
+        // ("APP","TASK","s1") and ("APP","TASK.s1") the same permanent cache entry.
         var eventKey = $"{message.Module}\0{message.Type}\0{message.Scope}";
 
         var matched = new List<Func<EventMessage, Task>>();
@@ -122,8 +114,8 @@ public sealed class EventBus : IEventBus
             {
                 var moduleMatch = pattern.Module == "*" || pattern.Module == message.Module;
                 var typeMatch = pattern.Type == "*" || pattern.Type == message.Type;
-                // Scope semantics kept from the source: an unscoped subscription sees every
-                // scope, and a scope-less (global) event reaches scoped subscriptions too.
+                // An unscoped subscription sees every scope, and a scope-less (global) event reaches
+                // scoped subscriptions too.
                 var scopeMatch = string.IsNullOrEmpty(pattern.Scope) || pattern.Scope == "*"
                     || string.IsNullOrEmpty(message.Scope) || pattern.Scope == message.Scope;
                 matches = moduleMatch && typeMatch && scopeMatch;
@@ -142,10 +134,8 @@ public sealed class EventBus : IEventBus
     /// <inheritdoc />
     public Task EmitAsync(string module, string type, object? payload = null, string? scope = null)
     {
-        // Guard HERE too (P5.5 H6). The envelope overload validates via `required` + the checks in
-        // SubscribeCore's mirror, but this convenience overload accepted an empty module or type and
-        // built a message that could never match any subscription — a silently undeliverable event,
-        // which is exactly the class of failure this bus is supposed to make impossible.
+        // Guard HERE too: an empty module or type builds a message that could never match any
+        // subscription — a silently undeliverable event.
         ArgumentException.ThrowIfNullOrEmpty(module);
         ArgumentException.ThrowIfNullOrEmpty(type);
         return EmitAsync(new EventMessage { Module = module, Type = type, Payload = payload, Scope = scope });
@@ -159,13 +149,9 @@ public sealed class EventBus : IEventBus
         => Forget(EmitAsync(module, type, payload, scope));
 
     /// <summary>
-    /// The whole body of the fire-and-forget contract, in one place so it cannot be half-kept.
-    /// <see cref="InvokeSafely"/> already contains every handler failure, so the task cannot fault
-    /// because of a subscriber — but "cannot fault" is a claim about TODAY's implementation, and the
-    /// interface now promises it to callers. So observe the task anyway: if this bus ever grows a
-    /// path that faults, it surfaces as a log line instead of an unobserved-task crash on the
-    /// finalizer thread. Argument validation is NOT swallowed — it throws synchronously out of
-    /// <c>Emit</c>, before there is a task at all, because an empty module is a caller bug.
+    /// Observe the emit task, so a future faulting path surfaces as a log line and not an unobserved-task
+    /// crash on the finalizer thread. Argument validation is not swallowed: it throws synchronously out of
+    /// <c>Emit</c>, before there is a task at all.
     /// </summary>
     private void Forget(Task emitting)
     {

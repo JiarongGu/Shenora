@@ -9,28 +9,22 @@ namespace Shenora.Core.Ipc;
 public sealed class ScopedContainerRouterOptions
 {
     /// <summary>
-    /// Populates a NEW scope's service collection — called once per scope id, on first use.
-    /// The scope id is app-defined (<see cref="IpcRequest.Scope"/>: a profile, a workspace, a
-    /// document…). Validate the id here and throw <see cref="ShenoraException"/> (e.g. a
-    /// SCOPE_NOT_FOUND code) to reject unknown scopes — the pipeline's error mapping turns it
-    /// into the structured wire error. Keep it fast: requests for the scope wait on it (the
-    /// source app blocked here deliberately, for message ordering); heavy initialization
-    /// belongs in <see cref="OnScopeCreated"/>, fire-and-forget where possible.
+    /// Populates a NEW scope's service collection — called once per scope id, on first use. The scope id
+    /// is app-defined (<see cref="IpcRequest.Scope"/>: a profile, a workspace, a document…). Validate it
+    /// here and throw <see cref="ShenoraException"/> to reject an unknown one. Keep it fast — requests
+    /// for the scope wait on it; heavy initialization belongs in <see cref="OnScopeCreated"/>.
     /// <para>
-    /// EACH SCOPE IS A ROOT PROVIDER, not a DI child scope — so <c>AddScoped</c> registered here
+    /// ⚠ EACH SCOPE IS A ROOT PROVIDER, not a DI child scope — so <c>AddScoped</c> registered here
     /// behaves as a SINGLETON for that scope's whole lifetime, and <c>AddTransient</c> disposables it
-    /// resolves are held until the scope is disposed. That is usually what an app wants (the scope IS
-    /// the lifetime boundary), but it is the opposite of what <c>AddScoped</c> means everywhere else in
-    /// Microsoft DI, so it is worth stating rather than discovering.
+    /// resolves are held until the scope is disposed.
     /// </para>
     /// </summary>
     public required Action<string, IServiceCollection> ConfigureScope { get; init; }
 
     /// <summary>
-    /// Runs once per scope after its provider is built — the generalization of everything the
-    /// source app hardcoded post-build (schema migrations, plugin loading, crash-resume sweeps).
-    /// A throw here fails the scope's creation (and the triggering request) — isolate anything
-    /// that must never block a scope from opening, as the source did.
+    /// Runs once per scope after its provider is built (schema migrations, plugin loading, crash-resume
+    /// sweeps). ⚠ A throw here fails the scope's creation AND the triggering request — isolate anything
+    /// that must never block a scope from opening.
     /// </summary>
     public Action<string, IServiceProvider>? OnScopeCreated { get; init; }
 }
@@ -42,14 +36,8 @@ public sealed class ScopedContainerRouterOptions
 /// and requests for modules declared via <see cref="MapModule{TFacade}"/> resolve their facade from the
 /// request's scope container. Wire it in with
 /// <see cref="ScopedContainerRouterExtensions.UseScopedRouter"/>, after the error handler.
-/// <para>
-/// Three properties that are easy to lose and each cost a real defect where they were missing: a scoped
-/// module called WITHOUT a scope answers a structured <see cref="IpcErrorCodes.ScopeRequired"/> rather
-/// than falling through to a confusing NO_HANDLER; exceptions flow to the pipeline's error mapping
-/// instead of a local catch that would leak <c>ex.Message</c>; and scope creation is SINGLE-FLIGHT,
-/// because a bare <c>GetOrAdd</c> can build two providers under a first-request race and drop one
-/// undisposed.
-/// </para>
+/// A scoped module called WITHOUT a scope answers a structured
+/// <see cref="IpcErrorCodes.ScopeRequired"/> rather than falling through.
 /// </summary>
 public sealed class ScopedContainerRouter : IDisposable
 {
@@ -64,10 +52,9 @@ public sealed class ScopedContainerRouter : IDisposable
     public ScopedContainerRouter(ScopedContainerRouterOptions options, ILogger<ScopedContainerRouter>? logger = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        // `required` only forces the caller to WRITE the initializer, not to write a non-null value —
-        // and an explicit `ConfigureScope = null!` (or a field that happened to be null) surfaced as an
-        // NRE from inside scope creation, which the pipeline's error mapping then reported to the client
-        // as UNKNOWN_ERROR: a composition bug disguised as a runtime failure (P5.5 H3).
+        // ⚠ `required` only forces the caller to WRITE the initializer, not to write a non-null value —
+        // and a null one surfaces as an NRE inside scope creation, which the pipeline's error mapping
+        // then reports as UNKNOWN_ERROR: a composition bug disguised as a runtime failure.
         ArgumentNullException.ThrowIfNull(options.ConfigureScope, $"{nameof(options)}.{nameof(options.ConfigureScope)}");
         _logger = logger ?? NullLogger<ScopedContainerRouter>.Instance;
     }
@@ -89,9 +76,7 @@ public sealed class ScopedContainerRouter : IDisposable
     public bool IsScopedModule(string module) => module is not null && _facadeResolvers.ContainsKey(module);
 
     /// <summary>
-    /// The ids of every scope container currently alive — the seam for app-side sweeps (the
-    /// source hardcoded a close-all-secondary-windows walk here; apps enumerate and act on
-    /// their own services instead).
+    /// The ids of every scope container currently alive — the seam for app-side sweeps.
     /// </summary>
     public IReadOnlyCollection<string> ActiveScopes => _scopes.Keys.ToArray();
 
@@ -104,9 +89,9 @@ public sealed class ScopedContainerRouter : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentException.ThrowIfNullOrEmpty(scopeId);
 
-        // Lazy with ExecutionAndPublication = exactly one build per scope id even when the first
-        // requests race; a bare GetOrAdd(factory) can run the factory twice and silently drop
-        // one fully built provider without disposing it.
+        // ⚠ ExecutionAndPublication = exactly one build per scope id even when the first requests race.
+        // A bare GetOrAdd(factory) can run the factory twice and silently drop one built provider
+        // without disposing it.
         var lazy = _scopes.GetOrAdd(scopeId,
             id => new Lazy<ServiceProvider>(() => CreateScope(id), LazyThreadSafetyMode.ExecutionAndPublication));
         try
@@ -141,8 +126,7 @@ public sealed class ScopedContainerRouter : IDisposable
     }
 
     /// <summary>
-    /// Drop a scope's container (e.g. the scoped entity was deleted or closed) and dispose it —
-    /// the next request for the id builds a fresh one.
+    /// Drop a scope's container and dispose it — the next request for the id builds a fresh one.
     /// </summary>
     public void InvalidateScope(string scopeId)
     {
@@ -156,9 +140,8 @@ public sealed class ScopedContainerRouter : IDisposable
     /// <summary>
     /// The routing middleware (signature-compatible with <see cref="MessageMiddleware"/>):
     /// non-scoped modules fall through; scoped modules require a scope and resolve their facade
-    /// from the scope container (an unresolved facade falls through, keeping composition open).
-    /// Exceptions (incl. <see cref="ScopedContainerRouterOptions.ConfigureScope"/> validation)
-    /// propagate to the pipeline's error mapping — register the router after
+    /// from the scope container (an unresolved facade falls through). ⚠ Exceptions propagate to the
+    /// pipeline's error mapping, so register this after
     /// <see cref="MessageDispatcherExtensions.UseErrorHandler"/>.
     /// </summary>
     public async Task<IpcResponse?> HandleAsync(IpcRequest request, Func<Task<IpcResponse?>> next,
@@ -184,13 +167,11 @@ public sealed class ScopedContainerRouter : IDisposable
         }
         catch (ObjectDisposedException) when (!_disposed)
         {
-            // The scope was invalidated (or disposed) BETWEEN us fetching its container and resolving
-            // from it — a normal race, because InvalidateScope is a documented app-facing call that can
-            // fire while requests are in flight (P5.5 H6). It used to surface as UNKNOWN_ERROR, telling
-            // the client something broke when the correct answer is simply to use the rebuilt scope.
+            // The scope was invalidated between fetching its container and resolving from it — a normal
+            // race, since InvalidateScope is app-facing and can fire while requests are in flight.
             // GetScopeServices already removed the dead entry, so ONE retry builds a fresh container; a
             // second failure is a real fault and propagates. Guarded on !_disposed so a router shutting
-            // down does not spin rebuilding scopes it is trying to tear down.
+            // down does not spin rebuilding scopes it is tearing down.
             _logger.LogDebug("Scope {Scope} was invalidated mid-request; rebuilding for {Module}/{Type}",
                 request.Scope, request.Module, request.Type);
             facade = _facadeResolvers[request.Module](GetScopeServices(request.Scope));
@@ -224,10 +205,9 @@ public sealed class ScopedContainerRouter : IDisposable
     {
         try
         {
-            // Observe Value unconditionally: an IN-FLIGHT creation (IsValueCreated still false)
-            // must be waited for and disposed, or the provider it finishes building leaks
-            // untracked — two live containers over single-writer resources.
-            // A FAILED creation rethrows here and there is nothing to dispose.
+            // ⚠ Value observed unconditionally: an IN-FLIGHT creation (IsValueCreated still false) must
+            // be waited for and disposed, or the provider it finishes building leaks untracked. A FAILED
+            // creation rethrows here and there is nothing to dispose.
             lazy.Value.Dispose();
         }
         catch (Exception ex)
@@ -241,8 +221,8 @@ public sealed class ScopedContainerRouter : IDisposable
 public static class ScopedContainerRouterExtensions
 {
     /// <summary>
-    /// Route scope-carrying requests through <paramref name="router"/>. Family order: error
-    /// handler → logging → app middleware → THIS → global facades.
+    /// Route scope-carrying requests through <paramref name="router"/>, after the error handler and
+    /// before the global facades.
     /// </summary>
     public static IMessageDispatcher UseScopedRouter(this IMessageDispatcher dispatcher, ScopedContainerRouter router)
     {

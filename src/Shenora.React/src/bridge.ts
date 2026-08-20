@@ -19,7 +19,7 @@ export interface ShenoraBridgeOptions {
   /**
    * The channel to the host. Default: whichever Shenora host this page is in — WebView2 postMessage
    * on the desktop shell, `HybridWebView` on the MAUI shell — else null (plain browser). Supply your
-   * own for another shell (a WebSocket, D16) or a scripted fake for tests/preview harnesses.
+   * own for another shell, or a scripted fake for tests and preview harnesses.
    */
   transport?: ShenoraTransport | null;
 
@@ -30,27 +30,25 @@ export interface ShenoraBridgeOptions {
   defaultTimeoutMs?: number;
 
   /**
-   * Pure-UI development seam: answers requests when NO transport exists (plain browser tab —
-   * component/layout work without the desktop host). Return the response data (or a promise;
-   * throw to reject). Generalized from the source app's hardcoded dev mocks: the mocks are app
-   * schema, so the app supplies them — gate with `import.meta.env.DEV` at the call site so
-   * production stays hard-failing.
+   * Pure-UI development seam: answers requests when NO transport exists (a plain browser tab).
+   * Return the response data, or a promise; throw to reject.
+   *
+   * ⚠ Gate the call site with `import.meta.env.DEV` so production stays hard-failing.
    */
   fallback?: (request: IpcRequest) => unknown;
 
   /**
    * Where a FAILED {@link ShenoraBridge.post} is reported. Default: `console.error`.
    *
-   * A one-way send has no promise to reject, so without this its failures would be invisible — and an
-   * unmatched response is dropped silently by the inbound handler, which is exactly how a feature
-   * "just stops working" with nothing to grep for. Route it into the app's logger/toast instead.
+   * ⚠ Route it into the app's logger or toast. A one-way send has no promise to reject, so its
+   * failures are otherwise invisible.
    */
   onPostError?: (error: PostFailure) => void;
 
   /**
    * How many unawaited {@link ShenoraBridge.post} ids to remember for error reporting. Default 256.
-   * Capped (drop-oldest) so a host that never answers cannot grow the set without bound — the same
-   * shape as the host's own bounded notification queue. Evicting an id only loses its error report.
+   * Capped drop-oldest, so a host that never answers cannot grow the set without bound; evicting an
+   * id only loses its error report.
    */
   maxTrackedPosts?: number;
 }
@@ -94,10 +92,10 @@ const isThenable = (value: unknown): value is PromiseLike<unknown> =>
   && typeof (value as { then?: unknown }).then === 'function';
 
 /**
- * The client side of the Shenora IPC contract, ported from the primary desktop sibling:
- * correlated request/response over a pluggable transport, category routing of host messages
- * (`ipc` → resolve the pending call, `notification` → unbundle the batch into the event bus),
- * per-request timeout, the ready handshake, and a browser fallback seam for pure-UI development.
+ * The client side of the Shenora IPC contract: correlated request/response over a pluggable
+ * transport, category routing of host messages (`ipc` → resolve the pending call, `notification` →
+ * unbundle the batch into the event bus), per-request timeout, the ready handshake, and a browser
+ * fallback seam for pure-UI development.
  *
  * Most apps use the lazy default instance via {@link getBridge}/{@link configureBridge}; create
  * instances directly for tests or multi-transport setups.
@@ -109,7 +107,7 @@ export class ShenoraBridge {
   private readonly fallback?: (request: IpcRequest) => unknown;
   private readonly pending = new Map<string, PendingRequest>();
   // Ids of one-way sends, kept ONLY so a failed response can be reported instead of vanishing.
-  // Insertion-ordered and capped: a Map is used for its ordered keys, not for the values.
+  // A Map for its insertion-ordered keys, so the cap can evict the oldest.
   private readonly unawaited = new Map<string, { module: string; type: string }>();
   private readonly maxTrackedPosts: number;
   private readonly onPostError: (failure: PostFailure) => void;
@@ -133,9 +131,7 @@ export class ShenoraBridge {
 
   /**
    * True when this bridge can actually send: a transport to a host exists AND the bridge has not been
-   * disposed. It used to ignore `disposed`, so a stale reference to a bridge that `configureBridge`
-   * replaced still reported itself available while every `invoke` on it rejected with `NO_TRANSPORT` —
-   * the exact case the disposed check in `invoke` exists for (P5.5 H2).
+   * disposed. The check to make on a reference that may have outlived a {@link configureBridge} swap.
    */
   get isAvailable(): boolean {
     return !this.disposed && this.transport !== null;
@@ -152,9 +148,8 @@ export class ShenoraBridge {
     options: InvokeOptions<TPayload> = {},
   ): Promise<TData> {
     if (this.disposed) {
-      // Fail fast: the transport subscription is gone, so a response could never correlate —
-      // without this the call would burn the full timeout (stale references after
-      // configureBridge replaced the default are the typical way here).
+      // Fail fast: the transport subscription is gone, so a response could never correlate and the
+      // call would otherwise burn the full timeout.
       return Promise.reject(new ShenoraError({
         code: IpcErrorCodes.noTransport,
         message: `Bridge disposed — ${module}.${type} cannot be sent.`,
@@ -180,17 +175,11 @@ export class ShenoraBridge {
         } catch (error) {
           return Promise.reject(error);
         }
-        // A fallback may be async (a scripted preview harness commonly is), and this path used to
-        // bypass the timeout entirely — so a fallback that never settled hung the caller forever, with
-        // none of the diagnostics the real path gives (P5.5 H2). Only a thenable needs racing; a plain
-        // value is already settled.
+        // An async fallback is raced against the timeout too, or one that never settles hangs the
+        // caller forever. Only a thenable needs racing; a plain value has already settled.
         if (!isThenable(result)) return Promise.resolve(result as TData);
-        // ⚠ The loser's timer must be CLEARED, as every other path in this file does — the real invoke's
-        // timeout handler, its transport-throw catch, its response path and `dispose`. Leaving it holds a
-        // live timer per call for the full timeout
-        // (30 s by default), each holding its closure. Harmless to a caller, because `race` has already
-        // settled and has a rejection handler attached either way, but it is the same "one site out of
-        // N" shape the rest of this file is careful about, and it keeps timers pending in a test run.
+        // ⚠ The loser's timer is cleared in `finally` — otherwise every call holds a live timer, and
+        // its closure, for the full timeout.
         let timer: ReturnType<typeof setTimeout> | undefined;
         return Promise.race([
           Promise.resolve(result) as Promise<TData>,
@@ -238,28 +227,17 @@ export class ShenoraBridge {
   /**
    * Send WITHOUT awaiting a reply, and return the request id.
    *
-   * This is the default shape for a desktop shell, and {@link invoke} is the special case — see
-   * `docs/DECISIONS.md` D23. Two reasons: a correlated call carries a deadline
-   * (30 s by default) and real work does not; and request/response is UI-THREAD-COUPLED here by
-   * design, because the dispatch pipeline preserves the caller's synchronization context so facades
-   * can touch the window. Reserve `invoke` for calls that are quick AND safe on the UI thread — the
-   * window commands are the model — and post everything else, streaming results back as notifications.
+   * This is the default shape for a desktop shell and {@link invoke} is the special case (D23):
+   * reserve `invoke` for calls that are quick AND safe on the host's UI thread, and post everything
+   * else, streaming results back as notifications.
    *
-   * ⚠ Posting is only HALF of freeing the UI thread. The host still dispatches on the UI thread
-   * whether or not the client awaits, so a handler that does heavy work synchronously stalls the
-   * window either way. The other half is the host's: return from the route immediately and stream.
+   * A failed response is reported through `onPostError` (default `console.error`) rather than
+   * dropped. The id is remembered for that — see {@link ShenoraBridgeOptions.maxTrackedPosts}. No
+   * timer is set, so there is no deadline.
    *
-   * Failures are not silent. There is no promise to reject, so a failed response is reported through
-   * `onPostError` (default `console.error`) rather than being dropped the way an unmatched response
-   * otherwise is. ⚠ Reporting it means the id IS remembered — see {@link ShenoraBridgeOptions.maxTrackedPosts},
-   * which caps the set drop-oldest so a host that never answers cannot grow it without bound. No TIMER is
-   * set, though, so there is no deadline and nothing to fire later.
-   *
-   * No transport (a plain browser tab) is a silent no-op, matching the fire-and-forget contract —
-   * unlike `invoke`, there is no caller waiting to be told. **A DISPOSED bridge is the same silent
-   * no-op**, and that one can surprise: `invoke` on a disposed bridge rejects with `NO_TRANSPORT`
-   * while `post` just returns the id, so a stale reference kept across a `configureBridge` swap looks
-   * like it is still sending. `isAvailable` is the check.
+   * ⚠ No transport (a plain browser tab) is a silent no-op, and **so is a DISPOSED bridge** — where
+   * `invoke` would reject with `NO_TRANSPORT`, this just returns the id, so a stale reference kept
+   * across a {@link configureBridge} swap looks like it is still sending. `isAvailable` is the check.
    */
   post<TPayload = unknown>(module: string, type: string, options: PostOptions<TPayload> = {}): string {
     const request: IpcRequest<TPayload> = {
@@ -273,8 +251,7 @@ export class ShenoraBridge {
 
     if (this.disposed || !this.transport) return request.id;
 
-    // Remember it ONLY to report a failure. Drop-oldest at the cap so a host that never answers
-    // cannot grow this without bound; an evicted id simply loses its error report.
+    // Remembered ONLY to report a failure, drop-oldest at the cap.
     if (this.unawaited.size >= this.maxTrackedPosts) {
       const oldest = this.unawaited.keys().next();
       if (!oldest.done) this.unawaited.delete(oldest.value);
@@ -305,28 +282,19 @@ export class ShenoraBridge {
    * also the host's cue to reset per-page state. No-transport is a silent no-op so browser dev
    * doesn't error.
    *
-   * Ordering used to matter here and no longer does for drop zones: the host cleared the previous
-   * page's overlays on this handshake, so a `REGISTER` sent before `READY` was wiped even though it
-   * was acked. `DropZoneManager` now clears on DOCUMENT CHANGE instead, which cannot race the client.
-   * The general point still stands for any per-page state YOUR host resets here — a reset keyed on
-   * the handshake races anything the page sends before it, and in React that is structural rather
-   * than a mistake, because CHILD effects run before PARENT effects.
+   * ⚠ Any per-page state YOUR host resets on this handshake races whatever the page sent before it,
+   * and in React that is structural rather than bad luck: CHILD effects run before PARENT effects.
    *
-   * The returned promise REJECTS on a failed handshake (disposed bridge, timeout). Handle it —
+   * ⚠ The returned promise REJECTS on a failed handshake (disposed bridge, timeout). Handle it —
    * `void bridge.notifyReady()` turns that into an unhandled rejection, which in a WebView2 page is
    * a silent console error.
    */
   async notifyReady<TPayload = unknown>(payload?: TPayload): Promise<ShellInfo | undefined> {
     if (!this.transport) return undefined;
     // The host answers with what it IS and what it can do, so a page can render one tree on every
-    // shell instead of sniffing the platform. A host that says nothing (no descriptor configured, or
-    // one predating this) leaves it UNDEFINED — absent means "assume nothing", never "assume
-    // desktop".
-    //
-    // undefined rather than null on purpose: JSON null means absent on this wire and the client
-    // convention is undefined (see .claude/knowledge/ipc-contracts.md). Returning null broke two
-    // existing tests that assert this resolves to undefined, which is the convention catching a
-    // deviation exactly where it should.
+    // shell instead of sniffing the platform. A host that says nothing leaves it UNDEFINED (never
+    // null — JSON null means absent on this wire) — and absent means "assume nothing", never
+    // "assume desktop".
     const shell = await this.invoke<ShellInfo | undefined>(HANDSHAKE_MODULE, HANDSHAKE_TYPE, { payload });
     this.shellInfo = shell && typeof shell === 'object' && typeof shell.name === 'string'
       ? { name: shell.name, capabilities: Array.isArray(shell.capabilities) ? shell.capabilities : [] }
@@ -336,8 +304,8 @@ export class ShenoraBridge {
 
   /**
    * What the host said it was during {@link notifyReady} — undefined before the handshake, or when
-   * the host advertised nothing. Cached so components can read it synchronously while rendering,
-   * which is the whole point: a capability learned after layout is a flash.
+   * the host advertised nothing. Cached so components can read it synchronously while rendering; a
+   * capability learned after layout is a visible flash.
    */
   get shell(): ShellInfo | undefined {
     return this.shellInfo;
@@ -353,8 +321,7 @@ export class ShenoraBridge {
       entry.reject(new ShenoraError({ code: IpcErrorCodes.noTransport, message: 'Bridge disposed.' }));
       this.pending.delete(id);
     }
-    // Unawaited ids are pure bookkeeping with nothing to settle — drop them so a disposed bridge
-    // holds no references (this is the instance `configureBridge` replaces).
+    // Pure bookkeeping with nothing to settle — dropped so a disposed bridge holds no references.
     this.unawaited.clear();
   }
 
@@ -367,10 +334,9 @@ export class ShenoraBridge {
       return;
     }
 
-    // A literal `null` is VALID JSON, so it survives the parse and then `parsed.category` threw a
-    // TypeError — out of a transport listener, i.e. an uncaught page error with no caller to catch it
-    // (P5.5 H2). Primitives (`"str"`, `123`, `true`) never threw because property access on them just
-    // yields undefined; null and only null did. Anything that isn't an object simply isn't ours.
+    // ⚠ A literal `null` is VALID JSON and survives the parse, and property access on it throws —
+    // out of a transport listener, i.e. an uncaught page error with no caller to catch it. Anything
+    // that is not an object simply is not ours.
     if (parsed === null || typeof parsed !== 'object') return;
     const envelope = parsed as { category?: string };
 
@@ -379,10 +345,9 @@ export class ShenoraBridge {
       if (typeof response.id !== 'string') return;
       const entry = this.pending.get(response.id);
       if (!entry) {
-        // No pending call. Either this answers a one-way `post` — in which case a FAILURE must be
-        // surfaced, because there is no promise to reject and dropping it here is exactly how a
-        // feature "just stops working" with nothing to grep for — or it is a late/foreign response,
-        // which stays ignored.
+        // No pending call. Either this answers a one-way `post`, whose FAILURE must be surfaced
+        // because there is no promise to reject, or it is a late/foreign response, which stays
+        // ignored.
         const posted = this.unawaited.get(response.id);
         if (posted) {
           this.unawaited.delete(response.id);

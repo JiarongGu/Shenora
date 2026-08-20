@@ -3,24 +3,10 @@ namespace Shenora.Core.Shell;
 /// <summary>
 /// The shell-independent half of <see cref="IUiDispatcher"/>: everything about marshalling that is the
 /// CONTRACT rather than the platform, implemented once.
-///
 /// <para>
-/// 🔴 <b>A mirror is a rule that must be applied twice.</b> These invariants belong to the contract, so
-/// stating them once here is what stops two shells drifting apart on ordering, guarding, cancellation or
-/// failure shape — the same collapse <see cref="AppCallback"/> is.
-/// </para>
-///
-/// <para>
-/// <b>What a shell still owns</b> — three hooks, and nothing else: <see cref="State"/>,
-/// <see cref="IsOnUiThread"/>, and <see cref="TryPost"/>. Everything a caller can observe about ordering,
-/// guarding, cancellation and failure shape is decided here.
-/// </para>
-///
-/// <para>
-/// ⚠ <b>Public because the implementations live in OTHER assemblies</b> (<c>Shenora.Windows</c>, and
-/// <c>Shenora.Android</c>/<c>Shenora.iOS</c> through the shared <c>Shenora.Mobile</c> source), and a
-/// <c>ProjectReference</c> does not grant <c>protected</c> access across one — the same D19/D20 placement
-/// argument that makes <see cref="AppCallback"/> and <c>WinFormsUiDispatcher</c> public.
+/// 🔴 <b>A mirror is a rule that must be applied twice</b> — so a shell owns three hooks and nothing
+/// else (<see cref="State"/>, <see cref="IsOnUiThread"/>, <see cref="TryPost"/>), and everything a caller
+/// can observe about ordering, guarding, cancellation and failure shape is decided here.
 /// </para>
 /// </summary>
 public abstract class UiDispatcherBase : IUiDispatcher
@@ -44,11 +30,9 @@ public abstract class UiDispatcherBase : IUiDispatcher
     /// both are this base's job. Return false when the platform refused it.
     /// <para>
     /// ⚠ <b>Never throw.</b> A platform that throws on a torn-down target must catch it and report it
-    /// through <paramref name="failure"/>, because the two callers want different things from it:
-    /// <see cref="Post(Action)"/> answers a plain false (the target went down between the state check and
-    /// the post — tearing down, not an error), while <see cref="InvokeAsync{T}(Func{Task{T}}, CancellationToken)"/>
-    /// faults its task with it, so a caller awaiting a marshalled call learns what actually happened
-    /// rather than a synthesized stand-in.
+    /// through <paramref name="failure"/>: <see cref="Post(Action)"/> answers a plain false, while
+    /// <see cref="InvokeAsync{T}(Func{Task{T}}, CancellationToken)"/> faults its task with it so an
+    /// awaiting caller learns what actually happened.
     /// </para>
     /// </summary>
     /// <param name="work">The already-guarded delegate to marshal.</param>
@@ -84,14 +68,13 @@ public abstract class UiDispatcherBase : IUiDispatcher
     public bool Post(Func<Task> work)
     {
         ArgumentNullException.ThrowIfNull(work);
-        // The async body is awaited INSIDE a guarded async local function, so this is never a bare
-        // `BeginInvoke(async …)` / `Dispatch(async …)` — that shape drops the returned task and makes any
-        // fault an unobservable UI-thread crash.
+        // The async body is awaited INSIDE a guarded async local function, never a bare
+        // `BeginInvoke(async …)` — that shape drops the returned task and makes any fault an
+        // unobservable UI-thread crash.
         //
         // 🔴 The cast to Action is LOAD-BEARING. Written as `Post(() => _ = RunGuardedAsync(work))` the
         // lambda body is an EXPRESSION of type Task, so the compiler infers Func<Task> and this method
-        // calls ITSELF — unbounded recursion, and a StackOverflowException is uncatchable, so the host
-        // aborts with nothing to point at.
+        // calls ITSELF — unbounded recursion, and a StackOverflowException is uncatchable.
         return Post((Action)(() => { _ = RunGuardedAsync(work); }));
     }
 
@@ -115,7 +98,7 @@ public abstract class UiDispatcherBase : IUiDispatcher
         ArgumentNullException.ThrowIfNull(work);
 
         // Fail with the state's own meaning rather than hanging: a caller can retry a NotReady target but
-        // never a Gone one. A shell whose target has no pre-realized phase simply never reports NotReady.
+        // never a Gone one.
         switch (State)
         {
             case UiTargetState.Gone:
@@ -142,8 +125,7 @@ public abstract class UiDispatcherBase : IUiDispatcher
         else if (!TryPost(() => _ = RunAsync(), out var failure))
         {
             // Refused the work: nothing will ever run, so fail rather than hand back a task that never
-            // completes — the "never a task that simply never completes" rule the interface states for a
-            // Gone target. The platform's own exception when it had one, so the caller sees what happened.
+            // completes — with the platform's own exception when it had one.
             return Task.FromException<T>(failure ?? new ObjectDisposedException(TargetName,
                 "The UI thread refused the work — the target is gone."));
         }
@@ -162,8 +144,7 @@ public abstract class UiDispatcherBase : IUiDispatcher
         catch (Exception) { return fallback; }
     }
 
-    // Guarding an app callback, and guarding the SINK that reports its failure, are one rule with one
-    // owner. `AppCallback.RunAsync` keeps the `ConfigureAwait(true)` this path requires, and says why.
+    // `AppCallback.RunAsync` keeps the `ConfigureAwait(true)` this path requires, and says why.
     private void RunGuarded(Action work) => AppCallback.Run(work, _onPostFailure);
 
     private Task RunGuardedAsync(Func<Task> work) => AppCallback.RunAsync(work, _onPostFailure);

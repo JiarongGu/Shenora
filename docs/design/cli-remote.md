@@ -46,9 +46,11 @@ family before it was written down:
 - **`set -o pipefail` on the REMOTE string.** `exec.ts` already applies this locally; a remote command is a
   second, separate string that needs it just as much. Without it a piped `install | tail` reports tail's
   status and a rejected install is announced as a success.
-- **An 8 KB ceiling.** A remote command past roughly 8192 bytes is **silently truncated and can still exit
-  0** — the redirection falls off the end, so `base64 -d > file` prints the blob to stdout and reports
-  success. `SshTarget` refuses over the limit and tells you to push a file instead.
+- **An 8 KB ceiling, BISECTED: 8185 bytes runs, 8195 does not.** A remote command past it is **silently
+  truncated and can still exit 0** — the redirection falls off the end, so `base64 -d > file` prints the
+  blob to stdout and reports success. `SshTarget` refuses over the limit and tells you to push a file
+  instead. ⚠ The exact pair matters to anyone changing the batching: "roughly 8192" is not a figure you can
+  compute a safe chunk size from, and the failure gives no signal to test against.
 
 ### `gui` — the one that is not an optimisation
 

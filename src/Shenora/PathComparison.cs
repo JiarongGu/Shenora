@@ -10,18 +10,13 @@ namespace Shenora;
 /// allowed root of <c>…/files/public</c>, a request for <c>…/files/Public/secret</c> passes containment and
 /// is served out of a directory the app never allowed. Android's ext4/f2fs is case-sensitive; NTFS and
 /// APFS are case-insensitive by default, so the mistake is invisible on the two shells most likely to be
-/// developed on.
+/// developed on — <b>and a TEST CANNOT HOLD IT</b>, because on Windows the correct answer and the
+/// hardcoded one are the same value (verified by sabotage). Sharing the decision makes the divergence
+/// unrepresentable rather than merely detectable.
 /// <para>
-/// ⚠ <b>A TEST CANNOT HOLD THIS, which is why it is a shared member instead.</b> On Windows the correct
-/// answer and the hardcoded one are the same value, so a test asserting either agreement between two
-/// checks or a fixed outcome passes with the defect present — verified by sabotage. Sharing the decision
-/// makes the divergence unrepresentable rather than merely detectable.
-/// </para>
-/// <para>
-/// Internal: it is one line of policy, not surface an adopter should depend on. Both consumers
-/// (<c>Core.WebView.WebViewFiles</c> and <c>Engine.Files.PathClaims</c>) live in this assembly.
-/// ⚠ It is deliberately NOT used by <c>Shenora.Windows.WebViewResourceProvider</c>, which is Windows-only
-/// by construction and correct with the fixed value.
+/// Both consumers (<c>Core.WebView.WebViewFiles</c> and <c>Engine.Files.PathClaims</c>) live in this
+/// assembly, and the two checks are otherwise deliberately different. ⚠ NOT used by
+/// <c>Shenora.Windows.WebViewResourceProvider</c>, which is Windows-only by construction.
 /// </para>
 /// </remarks>
 internal static class PathComparison

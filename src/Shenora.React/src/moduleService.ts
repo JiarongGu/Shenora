@@ -1,10 +1,9 @@
 import { getBridge, type ShenoraBridge } from './bridge.js';
 
 /**
- * Base class for typed module services, ported from the primary desktop sibling: each backend
- * module gets one service subclass that binds the module name once and exposes app-typed
- * methods over {@link send}. Bind `TRequests` to the module's request map
- * (`{ [type]: payloadType }`) for compile-time payload checking:
+ * Base class for typed module services: each backend module gets one service subclass that binds the
+ * module name once and exposes app-typed methods over {@link send}. Bind `TRequests` to the module's
+ * request map (`{ [type]: payloadType }`) for compile-time payload checking:
  *
  * ```ts
  * interface NoteRequests { GET_ALL: void; ADD: { title: string } }
@@ -19,18 +18,11 @@ import { getBridge, type ShenoraBridge } from './bridge.js';
  * inference, so naming the response argument makes `TType` fall back to its DEFAULT — the union of every
  * key — and `payload` collapses to the union of every route's payload. The check silently stops
  * checking: `send<Note>('ADD', { payload: { notAField: 1 } })` compiles clean, while the same call
- * without the type argument is a TS2353. The response is inferred from the method's declared return
- * type instead, which every method here has anyway. `moduleService.test.ts` pins both halves.
+ * without the type argument is a TS2353. The response is inferred from the declared return type instead.
  *
- * DEVIATION from the source: its boolean/array/optional convenience wrappers were pure casts
- * around the same call — the response generic already expresses them, so they're gone.
- *
- * `TRequests extends object`, NOT `extends Record<string, unknown>` (P5.5 H6). The stricter bound was
- * unsatisfiable by a plain `interface` — interfaces get no implicit index signature — so the example
- * above and the README's snippet both failed with TS2344, on the first line an adopter copies. And
- * satisfying it the way the kit's own `windowCommands.ts` did (`interface X extends Record<string,
- * unknown>`) widened `keyof TRequests & string` back to `string`, so a mistyped request type compiled
- * and every payload collapsed to `unknown` — the flagship typed-service feature checking nothing at all.
+ * ⚠ `TRequests extends object`, never `extends Record<string, unknown>`: the stricter bound is
+ * unsatisfiable by a plain `interface` (TS2344 on the example above), and satisfying it by widening the
+ * request map widens `keyof TRequests & string` back to `string` — turning the payload check off again.
  */
 export abstract class BaseModuleService<TRequests extends object = Record<string, unknown>> {
   protected constructor(
@@ -46,13 +38,10 @@ export abstract class BaseModuleService<TRequests extends object = Record<string
   /**
    * The bridge this service speaks over — resolved on every access, never captured.
    *
-   * This used to be a constructor default (`bridge: ShenoraBridge = getBridge()`), which is evaluated
-   * at CONSTRUCTION: a service built before `configureBridge()` captured the old default, and
-   * `configureBridge` DISPOSES the bridge it replaces — so every later call from that service
-   * rejected with "Bridge disposed" for the rest of the session, with nothing to suggest why (P5.5
-   * H2). Module services are commonly module-level singletons, so constructing one before the app's
-   * startup configuration ran is the normal case, not an edge case. `useDropZone` already resolved
-   * lazily for exactly this reason; this matches it.
+   * 🔴 Never default it at CONSTRUCTION. Module services are commonly module-level singletons, so one
+   * is routinely built before `configureBridge()` runs — and `configureBridge` DISPOSES the bridge it
+   * replaces, so a captured default makes every later call reject with "Bridge disposed" for the rest
+   * of the session, with nothing to suggest why.
    */
   protected get bridge(): ShenoraBridge {
     return this.explicitBridge ?? getBridge();

@@ -1,11 +1,10 @@
 import type { IpcError } from './types.js';
 
 /**
- * The rejection type for every failed bridge call — the client mirror of the host's
- * `ShenoraException` (the `Error` suffix is the TS idiom; the C# type keeps the platform's
- * `Exception` suffix). Carries the structured code + parameters so callers translate
- * `errors.{code}` instead of matching message strings. Client-side failures (timeout, missing
- * transport) reject through this same shape with the client-reserved codes.
+ * The rejection type for every failed bridge call — the client mirror of the host's `ShenoraException`.
+ * Carries the structured code + parameters so callers translate `errors.{code}` instead of matching
+ * message strings. Client-side failures (timeout, missing transport) reject through this same shape
+ * with the client-reserved codes.
  */
 export class ShenoraError extends Error {
   /** Error code / i18n key (e.g. `"IMPORT_FAILED"`, `"TIMEOUT"`). */

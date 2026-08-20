@@ -3,17 +3,9 @@ namespace Shenora.Core.WebView;
 /// <summary>
 /// Response-header policy for anything a host serves to a page: MIME type and caching, by extension.
 /// <para>
-/// MOVED HERE FROM <c>Shenora.Windows</c> on 2026-08-04, and it was already the wrong home — a MIME map has
-/// nothing Windows-specific about it, and it only lived there because the packaged-bundle host was the first
-/// thing that needed one. Now every shell's resource interceptor needs it (D45), so it belongs beside the
-/// request and response types it describes. <c>internal</c> became public with the move: an app writing its
-/// own middleware needs to answer the same question.
-/// </para>
-/// <para>
-/// ⚠ <b>Media types were ADDED with the move, and their absence is the point.</b> This map was built for
-/// bundle assets — html, css, js, fonts — so it had no audio or video entries at all, and would have
-/// answered <c>application/octet-stream</c> for an mp4. A media element given octet-stream refuses to play,
-/// which is a failure that looks like a broken file rather than a missing table row.
+/// ⚠ <b>A missing entry is not a missing feature.</b> A media element given the
+/// <c>application/octet-stream</c> fallback refuses to play, which looks like a broken file rather than a
+/// missing table row.
 /// </para>
 /// </summary>
 public static class WebViewContentTypes
@@ -50,11 +42,8 @@ public static class WebViewContentTypes
             ".otf" => "font/otf",
             ".eot" => "application/vnd.ms-fontobject",
 
-            // Video. ⚠ `.mkv` and `.avi` are deliberately named rather than left to fall through: a page
-            // may well ask for one, and answering octet-stream makes the element refuse before it has even
-            // tried — which reads as a broken file. Naming them lets the element decide, and its refusal is
-            // then the honest "this platform cannot decode this", which is exactly the case
-            // `Shenora.Modules.Media`'s planner exists to answer.
+            // Video. ⚠ `.mkv` and `.avi` are named rather than left to fall through, so the element
+            // decides: its refusal is then an honest "this platform cannot decode this".
             ".mp4" or ".m4v" => "video/mp4",
             ".webm" => "video/webm",
             ".mov" => "video/quicktime",
@@ -79,16 +68,13 @@ public static class WebViewContentTypes
     }
 
     /// <summary>
-    /// The family's static caching policy: HTML (the entry document — its name never changes across
+    /// The caching policy for a BUNDLE: HTML (the entry document, whose name never changes across
     /// releases) is <c>no-cache</c>; everything else in a Vite-style bundle is content-hashed and safely
-    /// immutable. The source app served EVERYTHING immutable including <c>index.html</c> — a stale-bundle
-    /// trap after updates; fixed here.
+    /// immutable.
     /// <para>
-    /// ⚠ This is a BUNDLE policy and is wrong for user content. A file served from disk is not
-    /// content-hashed, so <c>immutable</c> would pin a stale copy in the webview's cache after the user
-    /// replaces the file. The file middleware therefore does not apply this — it sets no
-    /// <c>Cache-Control</c> at all and lets the app decide, which is why this stayed a separate method
-    /// rather than being folded into <see cref="FromPath"/>.
+    /// ⚠ <b>Wrong for user content</b>, which is why it is separate from <see cref="FromPath"/>: a file
+    /// served from disk is not content-hashed, so <c>immutable</c> would pin a stale copy in the webview's
+    /// cache after the user replaces the file. The file middleware sets no <c>Cache-Control</c> at all.
     /// </para>
     /// </summary>
     public static string CacheControlFromPath(string path)

@@ -3,16 +3,13 @@ using System.Text.Json.Serialization;
 
 namespace Shenora.Core.Shell;
 
-// Portable slices of the native-service contracts (D20). The rule for what lands here is NOT
-// "the signature happens to be platform-neutral" — it is "app logic must be able to compile off
-// Windows". Reveal-in-file-manager and launch-a-process are desktop-only CONCEPTS, so they stay on
-// the Windows-side IShellLauncher, which derives from IUrlLauncher; opening a URL and blocking the
-// UI are meaningful on any host, so they live here.
+// Portable slices of the native-service contracts (D20). The test for what lands here is not "the
+// signature happens to be platform-neutral" but "app logic must be able to compile off Windows".
 
 /// <summary>
-/// Open a URL in the user's browser. The portable slice of shell launching — a mobile or web host
-/// implements this even though it has no file manager and no process launcher. Depend on this from
-/// app logic; depend on <c>Shenora.Windows.IShellLauncher</c> only for the desktop-only operations.
+/// Open a URL in the user's browser. Depend on this from app logic; depend on
+/// <c>Shenora.Windows.IShellLauncher</c> only for the desktop-only operations (reveal in file manager,
+/// launch a process).
 /// </summary>
 public interface IUrlLauncher
 {
@@ -35,15 +32,14 @@ public interface IUiInteraction
 }
 
 /// <summary>
-/// Clipboard access. Fully portable in concept and in signature — every host has a clipboard.
-/// The desktop implementation runs each operation on a dedicated STA thread.
+/// Clipboard access. Fully portable — every host has a clipboard. The desktop implementation runs each
+/// operation on a dedicated STA thread.
 /// </summary>
 public interface IClipboardService
 {
     /// <summary>
     /// Put <paramref name="text"/> on the clipboard, replacing whatever was there. Shorthand for
-    /// <see cref="SetAsync"/> with only <see cref="ClipboardContent.Text"/> set — the overwhelmingly
-    /// common case, and it is the same operation, not a second mechanism.
+    /// <see cref="SetAsync"/> with only <see cref="ClipboardContent.Text"/> set.
     /// </summary>
     Task SetTextAsync(string text);
 
@@ -60,16 +56,14 @@ public interface IClipboardService
     /// Put <paramref name="content"/> on the clipboard, replacing whatever was there — <b>every format
     /// in ONE operation</b>.
     /// <para>
-    /// 🔴 <b>That atomicity is the reason this exists and it is not a convenience.</b> A clipboard holds
-    /// one item offering several representations, so each platform's <c>Set</c> REPLACES the lot: calling
-    /// a text setter and then an image setter leaves the image and silently discards the text. There was
-    /// no way to express "copy this as text AND as a picture", which is what an ordinary application's
-    /// Copy does, and the attempt failed without an error.
+    /// 🔴 <b>The ATOMICITY is why this exists.</b> A clipboard holds one item offering several
+    /// representations, so each platform's <c>Set</c> REPLACES the lot: calling a text setter and then an
+    /// image setter leaves the image and silently discards the text, with no error.
     /// </para>
     /// <para>
     /// ⚠ Throws <see cref="NotSupportedException"/> (via <see cref="ShellCapability.NotSupported"/>) when
-    /// the content asks for something this shell genuinely has no expression for — putting FILES on a
-    /// phone's clipboard, for instance. Nothing is written when it throws.
+    /// the content asks for something this shell has no expression for — FILES on a phone's clipboard, for
+    /// instance. Nothing is written when it throws.
     /// </para>
     /// </summary>
     Task SetAsync(ClipboardContent content);
@@ -79,15 +73,10 @@ public interface IClipboardService
 }
 
 /// <summary>
-/// One clipboard item and every representation it offers — the shape a native Copy actually has.
-/// <para>
-/// <b>Open by design.</b> <see cref="Text"/> and <see cref="Files"/> are named because every platform
-/// has a first-class API for them and they behave differently from bytes; everything else lives in
-/// <see cref="Formats"/> keyed by media type, so an app can carry its OWN representation — its document
-/// model, a private structure a paste can round-trip losslessly — without the kit becoming the registrar
-/// of every format anyone might want. Same reasoning as <see cref="ShellCapability"/>'s capability
-/// strings, and the same shape the web's own <c>ClipboardItem</c> uses.
-/// </para>
+/// One clipboard item and every representation it offers — the shape a native Copy actually has, and the
+/// shape the web's own <c>ClipboardItem</c> uses. <see cref="Text"/> and <see cref="Files"/> are named
+/// because every platform has a first-class API for them; everything else lives in <see cref="Formats"/>
+/// keyed by media type, so an app can carry its OWN representation.
 /// </summary>
 public sealed record ClipboardContent
 {

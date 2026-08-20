@@ -1,4 +1,4 @@
-// A Mac on the LAN, driven over ssh. The traps here were each measured before they were written down.
+// A Mac on the LAN, driven over ssh.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,10 +20,10 @@ export interface RemoteHost {
 const q = (s: string): string => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 /**
- * 🔴 **A remote command past this is SILENTLY TRUNCATED AND CAN STILL EXIT 0.** Bisected to the byte in
- * this family: 8185 B runs, 8195 B does not — and past the cliff a `printf … | base64 -d > file` loses its
- * redirection, prints the payload to stdout and reports success. Anything larger has to be a file
- * {@link SshTarget.push}ed across, so this refuses rather than letting a truncated command run.
+ * 🔴 **A remote command past this is SILENTLY TRUNCATED AND CAN STILL EXIT 0.** Bisected to the byte:
+ * 8185 B runs, 8195 B does not — and past the cliff a `printf … | base64 -d > file` loses its redirection,
+ * prints the payload to stdout and reports success. Anything larger has to be a file
+ * {@link SshTarget.push}ed across.
  */
 export const SSH_COMMAND_LIMIT = 8192;
 
@@ -40,12 +40,11 @@ function sleepSync(ms: number): void {
  * The body of a detached GUI script: run the work, then record that it finished.
  *
  * 🔴 **A SUBSHELL `( … )`, never a brace group `{ … }`.** The body sets `-e`; inside a brace group that
- * exits the whole remote shell on the first failing command, so the marker write below never runs — and a
- * FAILED build then looks exactly like a slow one until the poller gives up. Measured in this family: a
- * device build failed in four minutes and the watcher printed progress for another sixteen.
+ * exits the whole remote shell on the first failing command, so the marker write never runs and a FAILED
+ * build looks exactly like a slow one until the poller gives up — measured at a build failing in four
+ * minutes while the watcher printed progress for another sixteen.
  *
- * The marker write must therefore stay OUTSIDE the parentheses, and `$?` must be the subshell's status.
- * Pure so `ssh.test.ts` can hold that shape still.
+ * The marker write therefore stays OUTSIDE the parentheses, and `$?` must be the subshell's status.
  */
 export function guiScript(script: string, paths: { done: string; log: string }): string {
   return [
@@ -81,12 +80,10 @@ export class SshTarget implements Target {
   /**
    * Wrap a command for the remote LOGIN shell.
    *
-   * 🔴 Two things here are load-bearing and both were got wrong first:
-   *
-   * **`-l` (a login shell).** Without the profile a Homebrew or pkg-installed `dotnet` is not on PATH at
+   * 🔴 **`-l` (a login shell).** Without the profile a Homebrew or pkg-installed `dotnet` is not on PATH at
    * all, and the failure reads as "this Mac has no .NET" rather than "this shell cannot see it".
    *
-   * **Single quotes, not `JSON.stringify`.** ssh concatenates its arguments and hands the result to the
+   * 🔴 **Single quotes, not `JSON.stringify`.** ssh concatenates its arguments and hands the result to the
    * remote login shell, which expands `$VAR` itself BEFORE `bash -lc` ever runs. Double-quoted, a command
    * mentioning `$HOME` is expanded against the outer shell's empty environment and silently reads blank.
    */
@@ -121,18 +118,14 @@ export class SshTarget implements Target {
   }
 
   /**
-   * 🔴 **NO `pipefail` here, and the difference is not cosmetic — it is the local behaviour.**
-   * `exec.ts`'s local `probe` runs the command bare; this one routed through {@link sh}, which adds
-   * `set -o pipefail` to anything containing a pipe. That is right for a command whose failure matters
-   * and WRONG for a probe, where failure is an answer: `xcodebuild -version | head -1` makes `head`
-   * close the pipe after one line, `xcodebuild` dies of SIGPIPE, and pipefail promotes that to the
+   * 🔴 **NO `pipefail` here**, matching `exec.ts`'s local `probe`. It is right for a command whose failure
+   * matters and WRONG for a probe, where failure is an answer: `xcodebuild -version | head -1` makes
+   * `head` close the pipe after one line, `xcodebuild` dies of SIGPIPE, and pipefail promotes that to the
    * pipeline's status — so the probe returns '' and `doctor` reports **`MISSING Xcode` on a Mac with
    * Xcode 26.3 installed and working**.
    *
    * ⚠ It is also RACY, which is worse than being wrong: whether the producer notices the closed pipe
-   * depends on timing, so the same Mac answered correctly on one run and "not installed" on the next.
-   * The same shape as the donor harness's `bash -lc` vs `bash -s` divergence — one capability probe,
-   * two transports, two answers.
+   * depends on timing, so the same Mac answers correctly on one run and "not installed" on the next.
    */
   probe(command: string): string {
     const r = this.exec(command, { quiet: true, timeoutMs: 60_000 }, false);
@@ -152,8 +145,8 @@ export class SshTarget implements Target {
   }
 
   list(directory: string): string[] {
-    // `-1` one per line, `-A` so a dotfile is not silently missing. A failure is an empty directory to
-    // the caller, which matches the local implementation's catch.
+    // `-1` one per line, `-A` so a dotfile is not silently missing. A failure reads as an empty directory,
+    // matching the local implementation's catch.
     const out = this.probe(`ls -1A ${q(directory)} 2>/dev/null`);
     return out ? out.split('\n').map((l) => l.trim()).filter(Boolean) : [];
   }
@@ -164,7 +157,7 @@ export class SshTarget implements Target {
   }
 
   newestMtimeMs(p: string): number | null {
-    // ⚠ ONE round trip, deliberately: statting a bundle's files individually over ssh would be thousands
+    // ⚠ ONE round trip: statting a bundle's files individually over ssh would be thousands
     // of connections. `-exec … +` batches, and `tail -1` of a numeric sort is the newest.
     return this.seconds(
       `find ${q(p)} -exec stat -f %m {} + 2>/dev/null | sort -n | tail -1`);
@@ -202,10 +195,9 @@ export class SshTarget implements Target {
    * Run a script inside the Mac's LOGIN SESSION, where the keychain is reachable.
    *
    * 🔴 This exists for exactly one reason: **`codesign` cannot use a login-keychain key from an ssh
-   * session.** An ssh login is a different audit session, so signing dies with `errSecInternalComponent` —
-   * proven in this family by signing a copy of `/bin/echo`, which has nothing to do with any project and
-   * failed identically. `osascript` asks Terminal.app to run the script, Terminal is already in the user's
-   * Aqua session, and the keychain opens.
+   * session.** An ssh login is a different audit session, so signing dies with `errSecInternalComponent`
+   * whatever you sign — proven by signing a copy of `/bin/echo`. `osascript` asks Terminal.app to run the
+   * script, Terminal is already in the user's Aqua session, and the keychain opens.
    *
    * Its output CANNOT be streamed back — the script is detached in another session — so completion is a
    * marker file this polls for, and the log is read afterwards.
@@ -255,8 +247,8 @@ export class SshTarget implements Target {
   /**
    * Write a file on the target from a string.
    *
-   * ⚠ Via {@link push} rather than a heredoc, because a script big enough to be interesting is also big
-   * enough to meet {@link SSH_COMMAND_LIMIT} — which truncates and reports success.
+   * ⚠ Via {@link push} rather than a heredoc: a script big enough to be interesting is big enough to meet
+   * {@link SSH_COMMAND_LIMIT}, which truncates and reports success.
    */
   private write(targetPath: string, content: string): boolean {
     const tmp = path.join(os.tmpdir(), `shenora-stage-${path.basename(targetPath)}`);
@@ -273,14 +265,12 @@ export class SshTarget implements Target {
   }
 
   close(): void {
-    // One-shot connections only; nothing is held open.
+    // One-shot connections only; nothing is held open. A fresh connection costs ~1.8 s and a doctor run
+    // makes ten.
     //
-    // ⚠ A persistent `bash -l -s` worker is the obvious next optimisation — a fresh connection costs
-    // ~1.8 s and a doctor run makes ten — and it is deliberately NOT here. Its donor shipped a frame
-    // parser that hardcoded a zero exit status, so every failure sent over the worker reported SUCCESS
-    // while the same command over a one-shot connection failed correctly. That is the worst possible
-    // bug in a build tool, and it is worth several seconds not to have it. Add it with a test that
-    // asserts a FAILING command reports failure over both transports.
+    // ⚠ **A persistent `bash -l -s` worker needs a test that a FAILING command reports failure over both
+    // transports.** The donor implementation's frame parser hardcoded a zero exit status, so every failure
+    // sent over the worker reported SUCCESS while the same command over a one-shot connection failed.
   }
 }
 

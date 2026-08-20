@@ -1,11 +1,10 @@
 /**
- * Dev-only IPC + event-hub interceptor, ported from the primary desktop sibling (NEVER ship it
- * in prod — gate the single call site with `import.meta.env.DEV`).
+ * Dev-only IPC + event-hub interceptor. ⚠ NEVER ship it in prod — gate the single call site with
+ * `import.meta.env.DEV`.
  *
- * Why: during desktop-app testing the agent drives the UI over CDP, but native dialogs and
- * event-driven flows can't be exercised by clicking. This wraps the bridge's `invoke` (the IPC
- * seam) and the event bus's `emit` (the event hub) to (1) record + console.debug every
- * request/response/event into ring buffers, and (2) expose a window global so a CDP eval can
+ * For driving a page over CDP, where native dialogs and event-driven flows cannot be exercised by
+ * clicking. It wraps the bridge's `invoke` and the event bus's `emit` to (1) record + console.debug
+ * every request/response/event into ring buffers, and (2) expose a window global so a CDP eval can
  * invoke ANY IPC directly and await events:
  *
  *   window.__shenora.call('NOTES', 'ADD', { title: 'x' })   // drive an IPC, bypass the UI
@@ -52,12 +51,9 @@ export interface DevInterceptorOptions {
  * Install the interceptor. Idempotent across HMR and StrictMode's double-invoke.
  *
  * 🔴 **Idempotency is keyed on WHICH bridge and bus were wrapped, not on "something is installed".**
- * The wrapping mutates a specific `ShenoraBridge` INSTANCE, but the guard used to ask only whether the
- * window global existed — so `configureBridge()`, which disposes the default bridge and builds a new
- * one, left the interceptor pointing at the dead instance and a second install returning early without
- * wrapping the live one. The tool then looked installed and recorded NOTHING, while
- * `window.__shenora.call` drove a disposed bridge. A dev tool that fails silently is worse than one that
- * is absent, because its silence reads as "no traffic".
+ * The wrapping mutates a specific `ShenoraBridge` INSTANCE, so a guard that only asks whether the
+ * window global exists leaves the interceptor pointing at the bridge `configureBridge()` disposed:
+ * installed-looking, recording NOTHING, and its silence reads as "no traffic".
  */
 export function installDevInterceptor(options: DevInterceptorOptions = {}): void {
   if (typeof window === 'undefined') return;
@@ -65,12 +61,11 @@ export function installDevInterceptor(options: DevInterceptorOptions = {}): void
   const w = window as unknown as Record<string, unknown>;
 
   const ringSize = options.ringSize ?? 300;
-  // Resolved BEFORE the guard, because the guard's question is now about these two objects.
+  // Resolved BEFORE the guard, because the guard's question is about these two objects.
   const bridge = options.bridge ?? getBridge();
   const bus = options.bus ?? defaultEventBus;
 
-  // Same pair = the HMR/StrictMode case this exists for; wrapping twice would double every log line and
-  // stack a second recorder on the first.
+  // Same pair = the HMR/StrictMode case; wrapping twice doubles every log line.
   const installed = w[globalName] as { bridge?: unknown; eventBus?: unknown } | undefined;
   if (installed && installed.bridge === bridge && installed.eventBus === bus) return;
 

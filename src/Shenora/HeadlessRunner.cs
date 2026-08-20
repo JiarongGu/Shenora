@@ -15,11 +15,10 @@ public sealed class HeadlessRunnerOptions
     public CancellationToken StopToken { get; set; }
 
     /// <summary>
-    /// Also stop on SIGINT (Ctrl+C) and SIGTERM. On by default because the alternative is worse than
-    /// it looks: without it the runtime terminates the process on the signal, so
-    /// <see cref="IShenoraLifecycleHook.OnStopping"/> never runs and everything the family relies on
-    /// it for — releasing a lock, flushing state, letting a <c>--restarted</c> relaunch through —
-    /// is silently skipped. Set false only when the host already owns signal handling.
+    /// Also stop on SIGINT (Ctrl+C) and SIGTERM. On by default: ⚠ without it the runtime terminates the
+    /// process on the signal, so <see cref="IShenoraLifecycleHook.OnStopping"/> never runs and releasing
+    /// a lock, flushing state or letting a <c>--restarted</c> relaunch through is silently skipped. Set
+    /// false only when the host already owns signal handling.
     /// </summary>
     public bool StopOnProcessSignals { get; set; } = true;
 
@@ -34,17 +33,10 @@ public static class HeadlessHostExtensions
     /// Make this an application with NO UI loop: <see cref="ShenoraApplication.Run"/> invokes the
     /// lifecycle hooks and then blocks until a stop signal, with ordered shutdown after it.
     /// <para>
-    /// Why the kit ships this at all. <see cref="ShenoraApplication.Run"/> throws without an
-    /// <see cref="IShenoraRunner"/>, and the only implementation lived in <c>Shenora.Windows</c> —
-    /// so Core's application-host half was Windows-only IN PRACTICE even though every type in it is
-    /// portable, and the D3 transport spike had to bypass the builder entirely and wire DI by hand.
-    /// An app could always write the one-method interface itself; this removes the reason to.
-    /// </para>
-    /// <para>
-    /// WHAT THIS IS NOT FOR: a host whose PLATFORM owns the loop (a mobile activity, a MAUI app).
-    /// <see cref="IShenoraRunner.Run"/> is contractually "blocks until shutdown", which such a host
-    /// cannot honour — it needs its own runner that starts the hooks and returns. Said here rather
-    /// than discovered, because "headless" reads like it covers that case and it does not.
+    /// ⚠ <b>NOT for a host whose PLATFORM owns the loop</b> (a mobile activity, a MAUI app), even though
+    /// "headless" reads like it covers that case. <see cref="IShenoraRunner.Run"/> is contractually
+    /// "blocks until shutdown", which such a host cannot honour — it needs its own runner that starts the
+    /// hooks and returns.
     /// </para>
     /// </summary>
     public static ShenoraApplicationBuilder UseHeadless(this ShenoraApplicationBuilder builder,
@@ -60,9 +52,9 @@ public static class HeadlessHostExtensions
 }
 
 /// <summary>
-/// The no-UI run sequence: lifecycle hooks, block, ordered shutdown. Deliberately the same shape as
+/// The no-UI run sequence: lifecycle hooks, block, ordered shutdown. The same shape as
 /// <c>WinFormsRunner</c> minus everything Windows — the single-instance gate, process init and the
-/// message loop are that host's concerns, not this one's.
+/// message loop are that host's concerns.
 /// </summary>
 internal sealed class HeadlessRunner(HeadlessRunnerOptions options) : IShenoraRunner
 {
@@ -70,9 +62,8 @@ internal sealed class HeadlessRunner(HeadlessRunnerOptions options) : IShenoraRu
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        // The hook sequence itself belongs to ShenoraApplication — ordering, the start/stop asymmetry
-        // and idempotency are one contract, and two runners hand-rolling it was already one copy too
-        // many (a third, for a platform that owns its own loop, is what made this obvious).
+        // The hook sequence itself belongs to ShenoraApplication: ordering, the start/stop asymmetry and
+        // idempotency are one contract, not something each runner re-keeps.
         try
         {
             app.Start();
@@ -98,16 +89,15 @@ internal sealed class HeadlessRunner(HeadlessRunnerOptions options) : IShenoraRu
             {
                 foreach (var signal in new[] { PosixSignal.SIGINT, PosixSignal.SIGTERM })
                 {
-                    // Cancel = true is the load-bearing line: it tells the runtime NOT to terminate the
-                    // process itself, which is what gives the shutdown hooks below a chance to run at
-                    // all. Without it the default handler wins and the ordered shutdown is skipped.
+                    // 🔴 `Cancel = true` tells the runtime NOT to terminate the process itself, which is
+                    // what gives the shutdown hooks a chance to run at all.
                     signals.Add(PosixSignalRegistration.Create(signal, context =>
                     {
                         context.Cancel = true;
                         Log($"[Shenora] {context.Signal} received — stopping.");
                         // Guarded: the source is disposed the moment the wait below returns, and a
-                        // second signal arriving in that window would otherwise throw on a background
-                        // thread with nobody to catch it.
+                        // second signal arriving in that window would throw on a background thread with
+                        // nobody to catch it.
                         try { stop.Cancel(); }
                         catch (ObjectDisposedException) { }
                     }));

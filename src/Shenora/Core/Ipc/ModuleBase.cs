@@ -5,14 +5,10 @@ using Shenora.Core.Events;
 namespace Shenora.Core.Ipc;
 
 /// <summary>
-/// Base class for module facades, ported from the primary desktop sibling: routes each request
-/// to the implementation and standardizes the error boundary — an
-/// <see cref="ShenoraException"/> crosses as its structured error, anything else is logged
-/// host-side and crosses only as <see cref="IpcErrorCodes.UnknownError"/> plus the exception
-/// type name (the source leaked raw exception messages here; design contract §5 forbids that).
-/// A facade owns its whole module namespace: every request for the module gets a response from
-/// it, so unknown types should throw an <see cref="ShenoraException"/> rather than fall
-/// through.
+/// Base class for module facades: routes each request to the implementation and standardizes the error
+/// boundary through <see cref="IpcErrorMapping"/>, so raw exception text never crosses the wire.
+/// A facade owns its whole module namespace — every request for the module gets a response from it, so
+/// an unknown type should throw (see <see cref="UnknownType"/>) rather than fall through.
 /// </summary>
 public abstract class ModuleBase : IIpcModule
 {
@@ -20,15 +16,14 @@ public abstract class ModuleBase : IIpcModule
     private readonly IEventBus? _events;
 
     /// <summary>
-    /// The logger is optional so composition works without <c>AddLogging</c>; the bus is optional so a
-    /// facade that never publishes (and every unit test that constructs one bare) still works. A facade
-    /// that publishes WITHOUT a bus fails loudly at the call site. Neither is exposed as protected
-    /// surface: the sanctioned accessor for a route is the <c>context</c> parameter of
+    /// Both are optional so composition works without <c>AddLogging</c> and a facade that never
+    /// publishes still works; publishing WITHOUT a bus fails loudly at the call site. Neither is exposed
+    /// as protected surface — a route's sanctioned accessor is the <c>context</c> parameter of
     /// <see cref="RouteMessageAsync"/>.
     /// <para>
-    /// ⚠ <b>Request tracking is deliberately NOT a parameter here.</b> It belongs to the dispatch boundary
-    /// (<see cref="MessageDispatcher.DispatchAsync"/>), which no module can forget to opt into — as a
-    /// per-facade wiring obligation it was met by none and the feature was inert (D63).
+    /// ⚠ <b>Request tracking is deliberately NOT a parameter here</b> — it belongs to the dispatch
+    /// boundary (<see cref="MessageDispatcher.DispatchAsync"/>), which no module can forget to opt into
+    /// (D63).
     /// </para>
     /// </summary>
     protected ModuleBase(ILogger? logger = null, IEventBus? events = null)
@@ -49,25 +44,17 @@ public abstract class ModuleBase : IIpcModule
         {
             _logger.LogDebug("{Module} handling {Type}", ModuleName, request.Type);
 
-            // The request's tracking scope, if it was dispatched (D66). This module neither starts nor
-            // ends it — the DISPATCHER owns the whole lifetime, because it is the only place that sees
-            // every module and every outcome. All that happens here is picking it up so
-            // IModuleContext.Report needs no id and no wiring.
-            //
-            // Matched by id, never taken blindly: HandleMessageAsync is public and every facade unit
-            // test calls it directly, so an unmatched ambient must resolve to "not tracked" rather than
-            // to somebody else's request.
-            //
-            // Captured ONCE, here, rather than read per Report(): work this route hands off to the
-            // background keeps reporting against the request that started it, instead of reading an
-            // ambient that has long since moved on.
+            // The request's tracking scope, if it was dispatched (D66) — picked up here so
+            // IModuleContext.Report needs no id and no wiring. The DISPATCHER owns its lifetime.
+            // ⚠ Matched by id: HandleMessageAsync is public and callable outside dispatch, so an
+            // unmatched ambient must resolve to "not tracked" rather than to somebody else's request.
+            // Captured ONCE rather than read per Report(), so work this route hands off to the background
+            // keeps reporting against the request that started it.
             var context = new ModuleContext(ModuleName, request.Id, _logger, _events,
                                             IpcRequestScopeAccessor.For(request.Id));
 
-            // NO ConfigureAwait(false) — removed in P5.5 H6. It was the only one in the dispatch path and
-            // it CONTRADICTED the documented model: the pipeline preserves the synchronization context on
-            // purpose, because a facade routing a WINDOW command touches WinForms and must resume on the
-            // UI thread.
+            // No ConfigureAwait(false): the dispatch path preserves the synchronization context, because
+            // a facade routing a WINDOW command must resume on the UI thread.
             var data = await RouteMessageAsync(request, context, cancellationToken);
             return IpcResponse.CreateSuccess(request.Id, data);
         }
@@ -77,24 +64,17 @@ public abstract class ModuleBase : IIpcModule
         }
     }
 
-    /// <summary>
-    /// A route that returns nothing. Absorbed from the facades that each declared their own private
-    /// copy — including the SAMPLE app's, which is the tell that it was consumer-facing boilerplate
-    /// rather than an implementation detail (P5.5 H4.5).
-    /// </summary>
+    /// <summary>A route that returns nothing.</summary>
     protected static Task<object?> Done() => Task.FromResult<object?>(null);
 
     /// <summary>
     /// The terminator for an unrecognized request type: a structured <see cref="IpcErrorCodes.NoRoute"/>
-    /// carrying the module and type. Every module ended its switch with a hand-written copy of this,
-    /// so every consumer had to know the exact error shape to stay consistent with the framework.
+    /// carrying the module and type.
     /// <para>
-    /// 🔴 <b>It answers <see cref="IpcErrorCodes.NoRoute"/>, NOT <see cref="IpcErrorCodes.NoHandler"/>,
-    /// and the difference is an adopter's debugging time.</b> Reaching here proves the module IS
-    /// registered and mapped — the dispatcher found it and handed the request over. `NO_HANDLER` means
-    /// the opposite: nothing claimed the module name at all. Those need opposite fixes (correct a route
-    /// name, versus wire the module up), so answering both with `NO_HANDLER` and identical parameters
-    /// leaves the wire unable to tell them apart.
+    /// 🔴 <b>It answers <see cref="IpcErrorCodes.NoRoute"/>, NOT
+    /// <see cref="IpcErrorCodes.NoHandler"/>.</b> Reaching here proves the module IS registered and
+    /// mapped; <c>NO_HANDLER</c> means nothing claimed the module name at all. Those need opposite fixes,
+    /// so answering both the same way leaves the wire unable to tell them apart.
     /// </para>
     /// </summary>
     protected ShenoraException UnknownType(IpcRequest request)
@@ -109,18 +89,15 @@ public abstract class ModuleBase : IIpcModule
     /// operation returns nothing). Throw <see cref="ShenoraException"/> for every expected
     /// failure.
     /// <para>
-    /// <paramref name="context"/> is how a route EMITS (<see cref="IModuleContext.Publish"/>) — the
-    /// event path is the desktop default and the request path the special case, so it is in the
-    /// signature rather than behind a base-class member a route author may never find.
+    /// <paramref name="context"/> is how a route EMITS (<see cref="IModuleContext.Publish"/>) and
+    /// reports progress. <paramref name="cancellationToken"/> is the CALLER's lifetime, not a
+    /// per-request cancel — see <see cref="IMessageDispatcher.DispatchAsync"/>; an
+    /// <see cref="OperationCanceledException"/> out of here becomes
+    /// <see cref="IpcErrorCodes.OperationCancelled"/> rather than a fault.
     /// </para>
     /// <para>
-    /// <paramref name="cancellationToken"/> is the CALLER's lifetime, not a per-request cancel —
-    /// see <see cref="IMessageDispatcher.DispatchAsync"/>. Ignore it for quick synchronous work
-    /// (most window commands); observe it for anything that awaits, and an
-    /// <see cref="OperationCanceledException"/> out of here becomes
-    /// <see cref="IpcErrorCodes.OperationCancelled"/> rather than a fault. Work this route hands OFF
-    /// to run in the background outlives the request, so give that its own token — do not capture
-    /// this one and then wonder why a long operation dies when the page navigates.
+    /// ⚠ Work this route hands OFF to the background outlives the request, so give it its own token —
+    /// capturing this one kills a long operation the moment the page navigates.
     /// </para>
     /// </summary>
     protected abstract Task<object?> RouteMessageAsync(

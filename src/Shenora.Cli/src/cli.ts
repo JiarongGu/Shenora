@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// `shenora` — the kit's CLI, in the shape adopters already expect from a hybrid framework
-// (`cap run ios`, `electron .`). Its job is the LAST MILE: taking a built app all the way onto a
-// simulator or a real iPhone, with no Xcode project of the adopter's own.
+// `shenora` — the kit's CLI. Its job is the LAST MILE: taking a built app all the way onto a simulator or
+// a real iPhone, with no Xcode project of the adopter's own.
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -86,9 +85,8 @@ function needConfig(): DeployConfig | null {
   return null;
 }
 
-// ⚠ These ask about the MACHINE, so they must not require a config file. Gating them would hide the
-// answer behind the setup — and "can this Mac do it at all?" is the question someone has BEFORE they
-// have a project wired.
+// ⚠ These ask about the MACHINE, so they must not require a config file — "can this Mac do it at all?" is
+// the question someone has BEFORE they have a project wired.
 const MACHINE_ONLY = new Set(['doctor', 'devices', 'simulators']);
 
 const IOS_VERBS = new Set(['doctor', 'devices', 'simulators', 'build', 'deploy', 'log', 'shot', 'push', 'provision', 'exec']);
@@ -98,11 +96,10 @@ const INSPECT_VERBS = new Set(['serve', 'devices', 'report', 'eval']);
 /**
  * A verb this group does not have — reported BEFORE the config is looked for.
  *
- * 🔴 Ordering, and it is the CLI's own recurring defect in miniature: `needConfig()` used to run first,
- * so `shenora ios` typed in a directory with no config answered *"no shenora.deploy.json here or in any
- * parent directory"*. That is a true sentence about something the user did not ask about — they typed a
- * group name to see the verbs. A typo (`shenora ios delpoy`) got the same treatment, sending someone to
- * fix a config file that was fine.
+ * 🔴 Ordering: with `needConfig()` first, `shenora ios` typed in a directory with no config answers *"no
+ * shenora.deploy.json here or in any parent directory"* — a true sentence about something the user did not
+ * ask about. A typo (`shenora ios delpoy`) gets the same treatment, sending someone to fix a config file
+ * that was fine.
  */
 function unknownVerb(group: string, verb: string | undefined): void {
   console.error(verb
@@ -141,8 +138,7 @@ export function main(argv: string[]): void | Promise<void> {
 
   if (group === 'android') {
     if (!ANDROID_VERBS.has(verb ?? '')) return unknownVerb('android', verb);
-    // `doctor` and `devices` ask about the MACHINE, so they must not be gated on a config — same rule
-    // as the iOS half, for the same reason.
+    // `doctor` and `devices` are machine-only — see `MACHINE_ONLY`.
     if (verb === 'doctor') return androidDoctor();
     if (verb === 'devices') return androidDevices();
     const cfg = needConfig();
@@ -168,16 +164,15 @@ export function main(argv: string[]): void | Promise<void> {
     return cmdShot(cfg, args);
   }
 
-  // An unknown GROUP says so too, for the same reason the verbs do: bare usage with no message leaves
-  // the reader comparing their command against the whole help text to find the typo.
+  // An unknown GROUP is named too: bare usage with no message leaves the reader comparing their command
+  // against the whole help text to find the typo.
   if (group) console.error(`shenora: unknown command ${JSON.stringify(group)}\n`);
   console.log(USAGE);
   if (group) process.exitCode = 1;   // bare `shenora` is help, not an error
 }
 
-// 🔴 Run ONLY when this file is the program. It used to call `main` unconditionally at module scope,
-// which is why the routing above — the part every single command goes through — had no test at all:
-// importing it to test it would have RUN whatever the test runner's own argv happened to say.
+// 🔴 Run ONLY when this file is the program. Called unconditionally at module scope, importing the routing
+// above to TEST it would run whatever the test runner's own argv happened to say.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv.slice(2));
 }

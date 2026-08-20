@@ -3,14 +3,11 @@ using System.Text.Json;
 namespace Shenora.Core.Ipc;
 
 /// <summary>
-/// Reads typed values out of an <see cref="IpcRequest.Payload"/>. Ported from the primary
-/// desktop sibling with three deliberate changes: it is static (the source's DI interface
-/// wrapped a stateless helper — the type didn't earn its keep); failures throw
+/// Reads typed values out of an <see cref="IpcRequest.Payload"/>. Failures throw
 /// <see cref="ShenoraException"/> (<see cref="IpcErrorCodes.MissingPayloadValue"/> /
-/// <see cref="IpcErrorCodes.InvalidPayloadValue"/>) instead of <see cref="ArgumentException"/>,
-/// so payload misuse reaches the client structured and i18n-ready; and JSON <c>null</c> counts
-/// as missing — the family wire convention omits nulls (<see cref="IpcJson.Options"/>), so an
-/// explicit null and an absent key mean the same thing.
+/// <see cref="IpcErrorCodes.InvalidPayloadValue"/>), so payload misuse reaches the client structured and
+/// i18n-ready. ⚠ JSON <c>null</c> counts as MISSING — this wire omits nulls
+/// (<see cref="IpcJson.Options"/>), so an explicit null and an absent key mean the same thing.
 /// </summary>
 public static class PayloadHelper
 {
@@ -32,8 +29,8 @@ public static class PayloadHelper
         }
         catch (Exception ex)
         {
-            // The serializer's message (CLR type names, JSON paths) stays host-side in the inner
-            // exception — the wire message must not carry raw exception text (design §5).
+            // 🔴 The serializer's message (CLR type names, JSON paths) stays host-side in the INNER
+            // exception — the wire message must not carry raw exception text.
             throw new ShenoraException(IpcErrorCodes.InvalidPayloadValue,
                 new Dictionary<string, string> { ["key"] = key },
                 $"Invalid payload value '{key}'.", ex);
@@ -41,8 +38,8 @@ public static class PayloadHelper
     }
 
     /// <summary>
-    /// Read an optional value: <c>default</c> when the key is absent, JSON null, or the value
-    /// cannot convert (the source's lenient optional semantics, kept as-is).
+    /// Read an optional value: <c>default</c> when the key is absent, JSON null, or the value cannot
+    /// convert.
     /// </summary>
     public static T? GetOptionalValue<T>(JsonElement? payload, string key)
     {

@@ -12,10 +12,10 @@ const PROVISION_DIR = 'shenora-provision';
  * The stub's files, relative to `assets/ios-provision/`.
  *
  * 🔴 **A real Xcode project, because only Xcode can mint a profile.** The .NET iOS SDK CONSUMES a
- * provisioning profile and never creates one, so `deploy --device` on a bundle id nobody has provisioned
- * fails with *"Could not find any available provisioning profiles"* — an error about the app, caused by
- * the absence of a step the toolchain does not offer. `xcodebuild -allowProvisioningUpdates` is that
- * step, and it needs a project to run against; this is the smallest one that compiles.
+ * provisioning profile and never creates one, so `deploy --device` on an unprovisioned bundle id fails
+ * with *"Could not find any available provisioning profiles"* — an error about the app, caused by a step
+ * the toolchain does not offer. `xcodebuild -allowProvisioningUpdates` needs a project to run against;
+ * this is the smallest one that compiles.
  */
 const STUB_FILES = ['ShenoraProvision/main.swift', 'ShenoraProvision.xcodeproj/project.pbxproj'];
 
@@ -32,8 +32,8 @@ function uploadStub(target: Target, home: string): boolean {
     return fail(`the provisioning stub is missing from this install (${local}).`,
       '  Reinstall @shenora/cli — `assets/` ships with it.');
   }
-  // Rebuilt each time: it is 200 lines of disposable scaffolding, and a stale one is a silent
-  // difference between what this tool thinks it asked for and what Xcode read.
+  // Rebuilt each time: a stale stub is a silent difference between what this tool thinks it asked for and
+  // what Xcode read.
   if (target.sh(`rm -rf ${q(remote)} && mkdir -p ${q(`${remote}/ShenoraProvision`)}`
     + ` ${q(`${remote}/ShenoraProvision.xcodeproj`)}`, { quiet: true }).status !== 0) {
     return fail(`could not prepare ${remote} on ${target.label}.`);
@@ -70,11 +70,9 @@ export interface ProvisionResult {
 /**
  * The team to provision against — configured, or READ OFF the Mac's own signing certificate.
  *
- * 🔴 **Derived rather than required, and `config.ts` already argues why**: it deliberately carries no
- * machine-specific field, because "those are facts about the machine and the phone plugged into it, so
- * they are ASKED at run time". A team id is one of those, and it is worse than most — it identifies a
- * developer ACCOUNT, so writing it into a tracked `shenora.deploy.json` publishes it. Requiring it there
- * would mean either committing it or being unable to provision at all, which is the choice this avoids.
+ * 🔴 **Derived rather than required, because a team id identifies a developer ACCOUNT** and
+ * `shenora.deploy.json` is normally tracked — requiring it there means either committing it or being
+ * unable to provision at all.
  *
  * The id is the certificate's Organisational Unit, which is where Apple puts it.
  */
@@ -100,13 +98,13 @@ export function teamId(target: Target, configured: string | undefined): string |
 /**
  * Ask Xcode to create a profile for each bundle id.
  *
- * 🔴 **Through `target.gui`, never plain ssh, and this is the second reason `gui` exists.** Xcode's
- * stored Apple ID session has the same audit-session problem as the login keychain, so an ssh
- * `xcodebuild -allowProvisioningUpdates` cannot reach the account that would authorise the request.
+ * 🔴 **Through `target.gui`, never plain ssh.** Xcode's stored Apple ID session has the same audit-session
+ * problem as the login keychain, so an ssh `xcodebuild -allowProvisioningUpdates` cannot reach the account
+ * that would authorise the request.
  *
  * ⚠ **Every EXTENSION needs its own profile.** An app extension is provisioned separately from its
- * container, and forgetting it fails at the very end of a device install with an error naming the APP —
- * so the caller passes the extension ids too rather than discovering that twenty minutes later.
+ * container, and forgetting it fails at the very end of a device install with an error naming the APP — so
+ * the caller passes the extension ids too.
  */
 export function provisionBundleIds(target: Target, team: string, bundleIds: string[]): ProvisionResult | null {
   const home = target.probe('echo $HOME');
@@ -132,10 +130,9 @@ export function provisionBundleIds(target: Target, team: string, bundleIds: stri
     if (r.status === 0) minted.push(id);
   }
 
-  // 🔴 Report what is ON DISK, not what xcodebuild said. A build can succeed against a profile it
-  // already had, so a zero exit does not mean a profile now exists for the id that was asked for — and
-  // "provisioned successfully" followed by a device build failing for want of a profile is exactly the
-  // false success this whole CLI is built to avoid.
+  // 🔴 Report what is ON DISK, not what xcodebuild said. A build can succeed against a profile it already
+  // had, so a zero exit does not mean a profile now exists for the id that was asked for — and
+  // "provisioned successfully" followed by a device build failing for want of a profile is a false success.
   const have = installedProfileIds(target, home);
   const missing = bundleIds.filter((id) => !have.includes(id));
   return { minted, missing };

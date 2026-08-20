@@ -102,8 +102,8 @@ What a host advertises in its handshake, and what a page branches on instead of 
 | `ShellCapability.SavePicker` | `savePicker` | Choosing a save destination. |
 | `ShellCapability.SecondaryWindows` | `secondaryWindows` | Additional windows the app can open. |
 | `ShellCapability.Tray` | `tray` | A tray icon. |
-| `ShellCapability.ClipboardFiles` | `clipboardFiles` | A page needs this because no web API expresses it — and it is the one clipboard capability that genuinely differs by shell, since a phone's pasteboard has no file list at all. |
-| `ShellCapability.LocalFiles` | `localFiles` | local content asks for this and falls back — to an external handler, or to hiding the control — rather than showing a player that can never load. |
+| `ShellCapability.ClipboardFiles` | `clipboardFiles` | The host can put a FILE LIST on the clipboard, for the user to paste into a file manager — the one clipboard capability that genuinely differs by shell, since a phone's pasteboard has no file list. |
+| `ShellCapability.LocalFiles` | `localFiles` | The host can serve LOCAL FILES to the page through an IWebViewInterceptor — media, images, documents, generated exports. |
 
 ## Clipboard routes
 

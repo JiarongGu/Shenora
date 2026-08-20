@@ -25,8 +25,7 @@ public static class IpcJson
     {
         get
         {
-            // Double-checked against a volatile field — read on every Serialize call, so the common
-            // path must not take the lock.
+            // Double-checked against a volatile field: read on every Serialize call.
             if (_options is { } built) return built;
             lock (Gate) return _options ??= CreateOptions();
         }
@@ -39,18 +38,14 @@ public static class IpcJson
     /// <para>
     /// ⚠ Without one, every type resolves through the REFLECTION fallback — the metadata iOS strips (Mono
     /// AOT + trimming) — and a type it cannot resolve fails at RUNTIME, on a device, not at build time.
-    /// </para>
-    /// <para>
-    /// Contributed resolvers are consulted BEFORE the reflection fallback, so a generated context
-    /// wins for the types it knows. The kit ships no generated context for its OWN envelope types, so
-    /// <see cref="IpcRequest"/> and friends still resolve through reflection; an app can cover them by
-    /// including them in its own context.
+    /// Contributed resolvers are consulted BEFORE that fallback. The kit ships no generated context for
+    /// its own envelope types, so <see cref="IpcRequest"/> and friends still resolve through reflection.
     /// </para>
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// <see cref="Options"/> has already been built, so the chain is frozen. Registering too late
-    /// THROWS rather than being ignored: a silently-dropped resolver reappears as a stripped-metadata
-    /// failure on a device, which looks nothing like its cause.
+    /// <see cref="Options"/> has already been built, so the chain is frozen. Registering too late THROWS
+    /// rather than being ignored, because a dropped resolver reappears as a stripped-metadata failure on
+    /// a device, which looks nothing like its cause.
     /// </exception>
     public static void AddTypeInfoResolver(IJsonTypeInfoResolver resolver)
     {
@@ -78,8 +73,7 @@ public static class IpcJson
             Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
         };
 
-        // App resolvers FIRST, the reflection resolver LAST: a generated context must win for the types
-        // it knows, and DefaultJsonTypeInfoResolver is the fallback a trimmed iOS build cannot rely on.
+        // App resolvers FIRST, the reflection resolver LAST — see AddTypeInfoResolver.
         options.TypeInfoResolver = JsonTypeInfoResolver.Combine([.. AppResolvers, new DefaultJsonTypeInfoResolver()]);
         options.MakeReadOnly();
         return options;
@@ -96,7 +90,7 @@ public static class IpcJson
 
     /// <summary>
     /// Drop the built options and any contributed resolvers, so a test can exercise the registration
-    /// window. Nothing in the shipped surface can reach this.
+    /// window.
     /// </summary>
     internal static void ResetForTests()
     {

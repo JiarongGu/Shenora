@@ -4,18 +4,12 @@ namespace Shenora;
 
 /// <summary>
 /// Invoke APP-SUPPLIED code from a place where an escaping exception is fatal and uncatchable — a
-/// UI-thread event handler, a timer tick, a posted delegate, a dispose path. In all of those there is
-/// no caller left on the stack to catch anything.
+/// UI-thread event handler, a timer tick, a posted delegate, a dispose path.
 /// <para>
-/// <b>The rule this type owns:</b> <i>no app callback runs unguarded inside a WebView2/WinForms event
-/// handler</i>. SWALLOWING IS THE POLICY — the alternative to losing the callback's exception is losing
-/// the operation, the window, or the process. Callers that can report get an <c>onError</c> hook,
-/// itself guarded: a failure reporter that throws must not become the crash it was reporting.
-/// </para>
-/// <para>
-/// Public because its consumers are in OTHER packages (<c>Shenora.Windows</c>, and
-/// <c>Shenora.Android</c>/<c>Shenora.iOS</c> via <c>Shenora.Mobile</c>) and a <c>ProjectReference</c>
-/// does not grant <c>internal</c> access (D19/D20).
+/// 🔴 <b>No app callback runs unguarded inside a WebView2/WinForms event handler, and SWALLOWING IS THE
+/// POLICY</b> — there is no caller left on the stack, so the alternative to losing the callback's
+/// exception is losing the operation, the window, or the process. Callers that can report get an
+/// <c>onError</c> hook, itself guarded.
 /// </para>
 /// </summary>
 public static class AppCallback
@@ -46,13 +40,12 @@ public static class AppCallback
 
     /// <summary>
     /// <see cref="Run"/> for an ASYNC body: await it, swallow whatever it throws (after offering it to
-    /// <paramref name="onError"/>), and return whether it completed — the shape a fire-and-forget UI
-    /// post needs.
+    /// <paramref name="onError"/>), and return whether it completed.
     /// <para>
-    /// ⚠ <b><c>ConfigureAwait(true)</c> is LOAD-BEARING here and must not be "corrected".</b> Every
-    /// caller of this overload is already ON the UI thread and the continuation has to stay there: a
-    /// body that touches a control after resuming on a thread-pool thread is the cross-thread failure
-    /// the dispatcher exists to prevent. Opposite polarity from the rest of the kit's library code.
+    /// ⚠ <b><c>ConfigureAwait(true)</c> is LOAD-BEARING here and must not be "corrected"</b> — opposite
+    /// polarity from the rest of the kit's library code. Every caller is already ON the UI thread, and a
+    /// body that touches a control after resuming on a thread-pool thread is the cross-thread failure the
+    /// dispatcher exists to prevent.
     /// </para>
     /// </summary>
     /// <param name="work">The app-supplied async work to invoke.</param>
@@ -97,38 +90,19 @@ public static class AppCallback
     }
 
     /// <summary>
-    /// Write a diagnostic to an app-supplied sink — GUARDED and LAZY.
-    /// <para>
-    /// <b>An <see cref="ILogger"/> IS an app callback</b>, so it obeys the rule above. Several of these
-    /// sinks sit INSIDE a <c>catch</c> that exists to stop a failure escaping, so a throwing sink would
-    /// defeat the very guard it is reporting from.
-    /// </para>
-    /// <para>
-    /// <paramref name="message"/> is a <see cref="Func{TResult}"/> so the guard covers BUILDING the
-    /// message as well as writing it: several call sites interpolate WebView2/COM properties that throw
-    /// once the underlying object is gone. Laziness also honours <see cref="ILogger.IsEnabled"/>, so a
-    /// disabled level costs nothing at all.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>ONE shape, and it takes <see cref="ILogger"/>.</b> This used to take
-    /// <c>Action&lt;string&gt;</c>, which cannot carry a level, an event id, structured fields or the
-    /// EXCEPTION OBJECT — so every diagnostic reporting a caught failure had to interpolate it into a
-    /// string, losing its type, its stack and its inner chain, which is the identity a diagnostic exists
-    /// to preserve.
-    /// </para>
+    /// Write a diagnostic to an app-supplied sink — GUARDED and LAZY, because an <see cref="ILogger"/>
+    /// IS an app callback and several of these sinks sit INSIDE a <c>catch</c> that exists to stop a
+    /// failure escaping.
     /// </summary>
     /// <param name="sink">The app's logger. Null = do nothing, and do not build the message.</param>
-    /// <param name="message">Builds the line to write. Invoked inside the guard.</param>
+    /// <param name="message">
+    /// Builds the line to write, INSIDE the guard: call sites interpolate WebView2/COM properties that
+    /// throw once the underlying object is gone.
+    /// </param>
     /// <param name="level">
     /// Severity. Null (the default) picks it from <paramref name="exception"/>: <see cref="LogLevel.Debug"/>
-    /// for a plain trace, <see cref="LogLevel.Warning"/> when a failure is being reported.
-    /// <para>
-    /// ⚠ <b>That default is a POLICY and it lives here, once.</b> Warning is what "something unexpected
-    /// happened and we carried on" means, which is every swallowed failure in this kit — and it is the
-    /// level that survives an app's default <c>Information</c> filter, so a caught failure stays visible
-    /// while ordinary tracing does not. Every type's own <c>Log</c> helper would otherwise spell the rule
-    /// out again and they would drift apart.
-    /// </para>
+    /// for a plain trace, <see cref="LogLevel.Warning"/> when a failure is being reported — the level that
+    /// survives an app's default <c>Information</c> filter.
     /// </param>
     /// <param name="exception">The failure being reported, when there is one.</param>
     public static void Log(ILogger? sink, Func<string> message,
@@ -149,24 +123,13 @@ public static class AppCallback
 
     /// <summary>
     /// An <see cref="ILogger"/> that writes each formatted line to <paramref name="write"/> — for an app
-    /// whose sink IS a delegate (a console, a text box, a probe's transcript) and that has no logging
-    /// infrastructure to hand.
+    /// whose sink IS a delegate (a console, a text box, a probe's transcript).
     /// <para>
-    /// ⚠ <b>Not a substitute for a real provider.</b> It reports every level as enabled and keeps no
-    /// scopes, so an app already building an <see cref="ILoggerFactory"/> should pass its own logger and
-    /// get filtering, categories and structured fields — all of which this necessarily flattens to text.
-    /// </para>
-    /// <para>
-    /// The EXCEPTION is appended to the line rather than dropped: a delegate sink cannot carry one
-    /// alongside the message, and losing it would give back exactly the identity — type, stack, inner
-    /// chain — that taking <see cref="ILogger"/> here exists to preserve.
+    /// ⚠ <b>Not a substitute for a real provider:</b> it reports every level as enabled, keeps no scopes,
+    /// and flattens the exception into the line.
     /// </para>
     /// </summary>
     /// <param name="write">Where a formatted line goes. Called on whatever thread logged.</param>
-    /// <remarks>
-    /// A factory rather than a public class, so the adapter's shape stays off the SemVer surface while the
-    /// capability is reachable — the same reason <c>SegmentEngine.Default</c> is one.
-    /// </remarks>
     public static ILogger Logger(Action<string> write)
     {
         ArgumentNullException.ThrowIfNull(write);

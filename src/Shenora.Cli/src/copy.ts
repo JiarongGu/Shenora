@@ -1,11 +1,9 @@
 // `shenora copy` — stage the built web bundle into the app head, the step between `npm run build` and
 // any native build.
 //
-// 🔴 WHY IT IS A COMMAND AND NOT A README LINE. A .NET app head embeds its web assets at BUILD time, so
-// a stale bundle produces an app that runs perfectly and shows YESTERDAY'S UI — the single most
-// confusing failure in hybrid development, because nothing is broken. This kit already learned it once
-// on the desktop side, where `dev.mjs sample` had to start building the bundle first after a stale one
-// shipped. Making it an explicit, named step is what stops "did I rebuild the web?" being a question.
+// 🔴 A .NET app head embeds its web assets at BUILD time, so a stale bundle produces an app that runs
+// perfectly and shows YESTERDAY'S UI — the most confusing failure in hybrid development, because nothing
+// is broken.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fail, run } from './exec.js';
@@ -14,7 +12,7 @@ import { projectDir, requireFields, type DeployConfig } from './config.js';
 /**
  * Recursive copy, written out rather than `fs.cpSync`.
  * ⚠ `fs.cpSync` hard-crashes Node 24 on at least one machine this kit is developed on (a fail-fast
- * 0xC0000409, no exception to catch). A CLI that dies with no message is worse than a slower loop.
+ * 0xC0000409, no exception to catch).
  */
 function copyTree(from: string, to: string): number {
   let files = 0;
@@ -34,31 +32,28 @@ function copyTree(from: string, to: string): number {
 /**
  * The name this command drops in every bundle directory it creates.
  *
- * 🔴 It exists so the DELETE below can tell a directory this tool made from one the adopter did. Every
- * other guard here is about the path; this one is about the CONTENTS, and it is the only thing that can
- * catch a `webTarget` that is perfectly well-formed and simply points at the wrong place.
+ * 🔴 It exists so the DELETE below can tell a directory this tool made from one the adopter did — the only
+ * check that catches a `webTarget` which is perfectly well-formed and simply points at the wrong place.
  */
 const MARKER = '.shenora-bundle';
 
 /**
  * Where the bundle goes — or null, having explained why not.
  *
- * 🔴 <b>THIS COMMAND DELETES ITS DESTINATION</b>, so the destination has to be earned rather than
- * computed. `webTarget` and `project` both come from a JSON file the adopter edits, and neither was
- * checked; measured against a config root of `D:/adopter`, with the old code:
+ * 🔴 <b>THIS COMMAND DELETES ITS DESTINATION</b>, and `webTarget` and `project` both come from a JSON file
+ * the adopter edits. Unchecked, against a config root of `D:/adopter`:
  *
  *   webTarget: ""              -> deletes the app-head project directory, .csproj included
  *   webTarget: "Resources/Raw" -> deletes every MAUI raw asset: fonts, seed databases, licences
  *   webTarget: "../../.."      -> rmSync("D:\\")
  *   project:   "../x/A.csproj" -> escapes the config root entirely
  *
- * The first two are not attacks; they are an adopter reading "where the app head serves its bundle
- * from" and answering slightly wrong. That is the whole reason this refuses instead of trusting.
+ * The first two are not attacks — they are an adopter reading "where the app head serves its bundle from"
+ * and answering slightly wrong.
  */
 function resolveBundleTarget(cfg: DeployConfig): string | null {
   const root = path.resolve(cfg.root);
-  // `projectDir` (config.ts) owns the directory-or-file question. It was solved HERE first and the
-  // three build commands each kept the bug for a while, which is why it is one shared helper now.
+  // `projectDir` (config.ts) owns the directory-or-file question, in one shared helper.
   const appHead = projectDir(cfg);
   const to = path.resolve(appHead, cfg.webTarget);
 
@@ -101,13 +96,11 @@ export function cmdCopy(cfg: DeployConfig): void {
   const to = resolveBundleTarget(cfg);
   if (to === null) return;
 
-  // Replace rather than merge: a file deleted from the build must not survive in the app head, where it
-  // would still be served and would still be embedded in the next package.
+  // Replaced, not merged: a file deleted from the build must not survive in the app head, where it would
+  // still be served and still be embedded in the next package.
   //
-  // ⚠ But only a directory THIS COMMAND MADE. A well-formed `webTarget` aimed one level too high is
-  // still a delete of the adopter's own files, and no path check can see that — so an existing
-  // destination without the marker is refused rather than emptied. First run after an upgrade included:
-  // saying so once is much cheaper than the alternative it prevents.
+  // ⚠ But only a directory THIS COMMAND MADE — see `MARKER`. An existing destination without the
+  // marker is refused rather than emptied, first run after an upgrade included.
   if (fs.existsSync(to)) {
     if (!fs.existsSync(path.join(to, MARKER))) {
       fail(`${path.relative(cfg.root, to)} already exists and this command did not create it.`,
@@ -126,9 +119,8 @@ export function cmdCopy(cfg: DeployConfig): void {
 }
 
 /**
- * `sync` = copy + restore, the pair Capacitor's own `sync` names ("copy web assets AND update native
- * dependencies"). Kept as a separate verb rather than folded into `deploy` because restore is the slow
- * step and most inner-loop runs do not need it — a build after a package change does.
+ * `sync` = copy + restore — its own verb, because restore is the slow step and most inner-loop runs do not
+ * need it.
  */
 export function cmdSync(cfg: DeployConfig): void {
   if (!requireFields(cfg, ['project'])) return;
@@ -136,14 +128,8 @@ export function cmdSync(cfg: DeployConfig): void {
   else console.log('shenora: no webDir set — skipping the asset copy.');
 
   console.log('shenora: restoring…');
-  // 🔴 `run`, NOT `sh` — this whole command was unusable on Windows. `sh` spawns `/bin/sh`, which is not
-  // there, so `shenora sync` failed before `dotnet` was ever reached; and the only reason a shell was
-  // wanted here is `| tail -20`, which is trimming, not shelling. `run`'s own doc names this exact case:
-  // "Where output has to be trimmed, capture brings it into the tool and the filtering happens here."
-  //
-  // ⚠ Windows is not an edge case for this CLI — the Android half exists BECAUSE most .NET Android work
-  // happens there, and `sync` is a build-time command with nothing platform-specific about it. Its
-  // failure also pointed at output that did not exist: "see the output above", above nothing at all.
+  // 🔴 `run`, NOT `sh` — `sh` spawns `/bin/sh`, so this command fails on Windows before `dotnet` is ever
+  // reached. The only reason a shell was wanted is `| tail -20`, which `lastLines` does here.
   const r = run('dotnet', ['restore', path.join(cfg.root, cfg.project)], { cwd: cfg.root, quiet: true });
   const tail = lastLines(r.out, 20);
   if (tail) console.log(tail);
@@ -151,8 +137,7 @@ export function cmdSync(cfg: DeployConfig): void {
 }
 
 /**
- * The last `count` lines, as `| tail -n` gave us before the shell went away. Split out because it is the
- * behaviour that replaced a shell pipe, and a silent off-by-one here would quietly hide the error line a
+ * The last `count` lines, as `| tail -n` would give. ⚠ An off-by-one here silently hides the error line a
  * failed restore ends with.
  */
 export function lastLines(text: string, count: number): string {

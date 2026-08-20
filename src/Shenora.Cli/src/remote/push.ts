@@ -1,5 +1,4 @@
-// Getting the source ONTO the Mac. The step whose absence made every other remote command a lie about
-// which code it built.
+// Getting the source ONTO the Mac.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,19 +9,19 @@ import type { Target } from './target.js';
  * The files worth sending: everything git tracks, plus everything it would let you add.
  *
  * 🔴 **`git ls-files -co --exclude-standard`, not a directory walk.** Measured on this repo: 625 files
- * against 23,882 on disk. The difference is `bin/`, `obj/`, `node_modules/` and every other build output
- * — which must not travel, because copying a Windows `obj/` onto a Mac does not merely waste time, it
- * hands the Mac's build a stale intermediate stamped for another machine.
+ * against 23,882 on disk. The difference is `bin/`, `obj/`, `node_modules/` and every other build output —
+ * which must not travel, because copying a Windows `obj/` onto a Mac hands the Mac's build a stale
+ * intermediate stamped for another machine.
  *
- * ⚠ It also excludes anything gitignored, which is how `local/` — private by construction — stays here.
+ * ⚠ It also excludes anything gitignored, which is how `local/` stays here.
  *
  * @returns paths relative to the repo root, or null when this is not a git repo (already reported).
  */
 export function filesToPush(root: string): string[] | null {
   // 🔴 `core.quotePath=false`, or a non-ASCII filename BREAKS THE WHOLE PUSH. git quotes such paths by
   // default — `café.txt` comes back as `"caf\303\251.txt"` — and `tar -T` then looks for a file by that
-  // literal name, fails to stat it, and exits 2. So one accented character anywhere in an adopter's tree
-  // means nothing can be sent, and the error names a file that plainly exists. Verified both ways.
+  // literal name, fails to stat it, and exits 2. One accented character anywhere in an adopter's tree
+  // means nothing can be sent, and the error names a file that plainly exists.
   const listed = captureRun('git',
     ['-C', root, '-c', 'core.quotePath=false', 'ls-files', '-co', '--exclude-standard']);
   if (listed.status !== 0) {
@@ -42,23 +41,17 @@ export interface PushResult {
 }
 
 /**
- * What the last push sent, kept ON the target.
- *
- * ⚠ It lives beside the source rather than here because the question it answers is about THAT machine:
- * two developers pushing to one Mac, or the same one from two checkouts, each need the manifest that
- * matches what is actually on disk there.
+ * What the last push sent, kept ON the target — two developers pushing to one Mac, or one developer from
+ * two checkouts, each need the manifest matching what is actually on disk there.
  */
 const MANIFEST = '.shenora-push-manifest';
 
 /**
  * Paths already on the target that this push is responsible for.
  *
- * 🔴 **With no manifest yet, a git checkout's own INDEX is one** — and that case is not hypothetical, it
- * is the FIRST push into an existing checkout, which is how most people will start. Measured: pushing
- * today's tree over a checkout several weeks old left both halves of every renamed file, so
- * `IFileLockInspector` existed twice and the kit failed to compile with three errors on a tree that is
- * clean here. `git ls-files` names exactly what that older commit put there, which is exactly what may
- * need taking away.
+ * 🔴 **With no manifest yet, a git checkout's own INDEX is one** — the FIRST push into an existing
+ * checkout, which is how most people start. `git ls-files` names exactly what that older commit put
+ * there, which is exactly what may need taking away.
  *
  * ⚠ Tracked files only, so a build output or anything untracked is never a deletion candidate.
  */
@@ -73,19 +66,19 @@ function previousManifest(target: Target, remoteDir: string): string[] {
 /**
  * Delete what we sent last time and would not send now.
  *
- * 🔴 The delete list is `previous MINUS current`, so it can only ever name a file this tool put there.
- * Computed HERE rather than by a remote `find`, which would have to decide what belongs to us and would
- * get it wrong on a directory holding anything else.
+ * 🔴 The delete list is `previous MINUS current`, so it can only ever name a file this tool put there. A
+ * remote `find` would have to decide what belongs to us and would get it wrong on a directory holding
+ * anything else.
  */
 function removeStale(target: Target, remoteDir: string, current: string[], stamp: string): number {
   const keep = new Set(current);
   const previous = previousManifest(target, remoteDir);
 
   // 🔴 **REFUSE TO DELETE INTO A TREE THAT IS NOT THIS PROJECT.** With no manifest yet the previous list
-  // comes from the remote's own git index, which is right for a first push into this project's checkout
-  // and catastrophic if `remote.dir` names a DIFFERENT repository: every file that repo tracks would be
-  // "not in the current list", and therefore deleted. Overlap is the cheap test — two checkouts of the
-  // same project share paths, and two unrelated ones share essentially none.
+  // comes from the remote's own git index — right for a first push into this project's checkout, and
+  // catastrophic if `remote.dir` names a DIFFERENT repository: every file that repo tracks is "not in the
+  // current list", and therefore deleted. Two checkouts of one project share paths; two unrelated ones
+  // share essentially none.
   const overlap = previous.filter((f) => keep.has(f)).length;
   if (previous.length > 0 && overlap === 0) {
     console.error(`\nshenora: ${remoteDir} does not look like this project — nothing there matches any file`);
@@ -105,8 +98,8 @@ function removeStale(target: Target, remoteDir: string, current: string[], stamp
   try {
     fs.writeFileSync(listing, `${stale.join('\n')}\n`, 'utf8');
     if (!target.push(listing, remoteListing)) return 0;
-    // `-I{}` so a path containing a space is one argument; `rm -f` so an already-absent file is not an
-    // error — the manifest describes what we sent, not what survived.
+    // `-I{}` so a path containing a space is one argument; `rm -f` because the manifest describes what we
+    // sent, not what survived.
     target.sh(`cd ${q(remoteDir)} && xargs -I{} rm -f {} < ${q(remoteListing)}; rm -f ${q(remoteListing)}`,
       { quiet: true });
     return stale.length;
@@ -129,28 +122,23 @@ function writeManifest(target: Target, remoteDir: string, files: string[], stamp
 /**
  * Copy the working tree to the Mac.
  *
- * ⚠ **Uncommitted edits travel, deliberately.** The obvious implementation is `git push`, and it is the
- * wrong one for a dev loop: the Mac would build HEAD, so the fix you just made and have not committed
- * never arrives — the build reproduces the very error you were fixing, and "my fix did not work" is the
- * wrong but completely natural conclusion.
+ * ⚠ **Uncommitted edits travel.** `git push` would have the Mac build HEAD, so the fix you just made and
+ * have not committed never arrives — the build reproduces the very error you were fixing, and "my fix did
+ * not work" is the natural conclusion.
  *
- * 🔴 **It DELETES what it previously sent and would no longer send, and that is not tidiness.** The first
- * version only added and overwrote, on the reasoning that a tool should not `rm` over the network. It
- * broke the very first real build: the Mac's older checkout still held files this kit had since renamed,
- * so the push left both copies and `IFileLockInspector` existed twice — three compile errors in the KIT,
- * on a tree that builds cleanly here. **A stale source file is not clutter, it is a second definition**,
- * and the failure reads as "the framework is broken" rather than "your copy is stale".
+ * 🔴 **It DELETES what it previously sent and would no longer send.** Adding and overwriting only leaves
+ * the Mac's older checkout still holding files this tree has since renamed, so both copies survive: **a
+ * stale source file is not clutter, it is a second definition**, and the duplicate-symbol errors read as
+ * "the framework is broken" rather than "your copy is stale".
  *
- * ⚠ It removes **only paths the manifest IT wrote last time names**, never anything else on that machine.
- * A file the Mac has that this never sent is untouched, so pointing `remote.dir` at a directory holding
- * other things cannot lose them.
+ * ⚠ It removes **only paths the manifest IT wrote last time names**. A file the Mac has that this never
+ * sent is untouched, so pointing `remote.dir` at a directory holding other things cannot lose them.
  *
  * 🔴 **If the destination is a git checkout, its git metadata now DESCRIBES A TREE THAT IS NOT THERE.**
  * The files are current; `git log` still names whatever commit was checked out, and `git status` shows
- * every pushed file as modified. Two consequences worth knowing before they bite: reading `git log` on
- * the Mac to find out what you are building tells you the wrong thing, and a `git checkout -- .` there
- * silently reverts everything this sent. Prefer a directory that is NOT a checkout — set
- * `"remote": { "dir": … }` to a scratch path — if that matters to you.
+ * every pushed file as modified. So reading `git log` on the Mac to find out what you are building tells
+ * you the wrong thing, and a `git checkout -- .` there silently reverts everything this sent — point
+ * `"remote": { "dir": … }` at a scratch path if that matters.
  */
 export function pushTree(target: Target, root: string, remoteDir: string): PushResult | null {
   const files = filesToPush(root);
@@ -173,11 +161,11 @@ export function pushTree(target: Target, root: string, remoteDir: string): PushR
     // `-T` reads the list; `-C` makes every path relative to the repo root so it unpacks the same shape.
     // Spawned directly, no shell — `tar` is on PATH on Windows 10+ and on macOS.
     //
-    // 🔴 **The archive is named RELATIVELY, from a cwd of the temp directory.** GNU tar reads a colon in
-    // an archive name as an rsh-style `host:path`, so an absolute Windows path made it try to open a
-    // network connection to a host called `C` — `Cannot connect to C: resolve failed`, about a local
-    // file. `--force-local` fixes it for GNU tar and does not exist on the bsdtar that ships with
-    // Windows 10, so the portable answer is to leave the drive letter out of the argument entirely.
+    // 🔴 **The archive is named RELATIVELY, from a cwd of the temp directory.** GNU tar reads a colon in an
+    // archive name as an rsh-style `host:path`, so an absolute Windows path makes it open a network
+    // connection to a host called `C` — `Cannot connect to C: resolve failed`, about a local file.
+    // `--force-local` fixes that for GNU tar and does not exist on the bsdtar shipped with Windows 10, so
+    // the portable answer is to leave the drive letter out of the argument.
     const made = run('tar', ['-czf', path.basename(archive), '-C', root, '-T', path.basename(listFile)],
       { quiet: true, cwd: os.tmpdir() });
     if (made.status !== 0) {

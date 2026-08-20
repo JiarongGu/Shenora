@@ -5,9 +5,8 @@ export interface SubscribeOptions {
   /**
    * Only receive events carrying this app-defined scope. Omit to receive EVERY scope.
    *
-   * The semantics mirror the host's `EventBus` exactly, and both halves matter: an unscoped
-   * subscription sees every scope, AND a scope-less (global) event still reaches scoped subscribers —
-   * so an app-wide announcement is not swallowed by a per-scope listener.
+   * ⚠ Both halves of the host's `EventBus` rule apply: an unscoped subscription sees every scope, AND
+   * a scope-less (global) event still reaches scoped subscribers.
    */
   scope?: string;
 }
@@ -18,17 +17,13 @@ interface Subscription {
 }
 
 /**
- * The client-side event hub, ported from the primary desktop sibling: host notifications are
- * unbundled into it by the bridge, and app code (or the dev interceptor) can emit locally.
- * Event enums/maps are app schema, so apps layer their own typed wrappers on top (headless per D13).
- * A throwing handler is isolated: it never breaks the other subscribers or the emitter.
+ * The client-side event hub: the bridge unbundles each host notification BATCH into it, and app code
+ * (or the dev interceptor) can emit locally. Event enums and maps are app schema, so apps layer their
+ * own typed wrappers on top. A throwing handler is isolated — it never breaks the other subscribers
+ * or the emitter.
  *
- * Three subscription breadths, mirroring the host's `Shenora.IEventBus`: an exact
- * `(module, type)` pair, a whole {@link subscribeToModule | module}, or
- * {@link subscribeToAll | everything}. The broad two were added in P6.4 — the host had shipped them
- * from the start (`WebViewIpcBridge` itself consumes `SubscribeToAll`), so the client was the
- * asymmetric half of one concept and an observer that cannot enumerate the event vocabulary up front
- * had no supported expression at all.
+ * Three subscription breadths, mirroring the host's `Shenora.IEventBus`: an exact `(module, type)`
+ * pair, a whole {@link subscribeToModule | module}, or {@link subscribeToAll | everything}.
  */
 export class ShenoraEventBus {
   /** Exact `(module, type)` subscriptions, keyed by {@link eventKey}. */
@@ -55,8 +50,7 @@ export class ShenoraEventBus {
    * Subscribe to EVERY event from one module, whatever its type; returns the cleanup function.
    *
    * For a feature whose event vocabulary is open — plug-in-contributed types, a module that grows
-   * types over time — where enumerating pairs would mean editing the subscriber every time the host
-   * gains an event.
+   * types over time — where enumerating pairs means editing the subscriber for every new event.
    */
   subscribeToModule<TPayload = unknown>(
     module: string,
@@ -69,11 +63,9 @@ export class ShenoraEventBus {
   /**
    * Subscribe to EVERY event on the bus; returns the cleanup function.
    *
-   * The breadth is the point, so use it for cross-cutting observers — a diagnostics overlay, a
-   * telemetry tap, a bridge that folds the whole stream into another state library, or an adoption
-   * shim keeping a legacy "every host message" handler alive while individual features migrate onto
-   * exact pairs. It is NOT the way to consume one feature's events: prefer {@link subscribe}, which
-   * says what it listens for and does not wake for unrelated traffic.
+   * For cross-cutting observers — a diagnostics overlay, a telemetry tap, a bridge that folds the
+   * whole stream into another state library. ⚠ NOT the way to consume one feature's events: prefer
+   * {@link subscribe}, which says what it listens for and does not wake for unrelated traffic.
    */
   subscribeToAll<TPayload = unknown>(
     handler: (event: EventMessage<TPayload>) => void,
@@ -87,19 +79,17 @@ export class ShenoraEventBus {
   /**
    * Emit to every matching subscriber (see {@link SubscribeOptions.scope} for the scope rule).
    *
-   * Delivery order is stable: exact pair, then whole-module, then catch-all — narrowest first, so a
-   * broad observer never runs ahead of the feature code it is observing.
+   * Delivery order is stable and narrowest-first: exact pair, then whole-module, then catch-all.
    */
   emit(event: EventMessage): void {
     const exact = this.exact.get(eventKey(event.module, event.type));
     const byModule = this.byModule.get(event.module);
     if (!exact?.size && !byModule?.size && this.all.size === 0) return;
 
-    // Snapshot ALL THREE breadths before invoking any handler, not one at a time. A handler may
-    // subscribe or unsubscribe during delivery, and one event must reach exactly the subscribers
-    // that existed when it was emitted. Reading the broad collections lazily — after the exact
-    // handlers had already run — would let a handler that subscribes broadly while handling receive
-    // the very event it is handling. Copying per-set was enough while there was only one set.
+    // Snapshot ALL THREE breadths before invoking any handler, never one at a time: a handler may
+    // subscribe or unsubscribe during delivery, and one event must reach exactly the subscribers that
+    // existed when it was emitted. Reading the broad collections lazily would let a handler that
+    // subscribes broadly while handling receive the very event it is handling.
     for (const subscription of [...(exact ?? []), ...(byModule ?? []), ...this.all]) {
       if (!scopeMatches(subscription.scope, event.scope)) continue;
       try {
@@ -127,12 +117,6 @@ export class ShenoraEventBus {
    * - `(module)` — everything that would receive ANY event of that module: its exact-type
    *   subscriptions, its whole-module ones, and the catch-alls.
    * - `(module, type)` — everything that would receive that one pair.
-   *
-   * 🔴 **The one-argument form used to silently answer the GLOBAL total.** The guard read
-   * `if (module && type)`, so passing a module alone fell through to the count-everything branch — a
-   * plausible number, for a different question, with nothing to indicate the substitution. The fix is
-   * at RUNTIME rather than in an overload signature because this package ships JavaScript: a
-   * type-level restriction would leave a JS consumer receiving exactly the same wrong number.
    */
   getSubscriptionCount(module?: string, type?: string): number {
     if (module !== undefined && type !== undefined) {
@@ -164,7 +148,7 @@ function newSubscription<TPayload>(
   return { handler: handler as (event: EventMessage) => void, scope: options.scope };
 }
 
-/** Shared add-and-prune for the two keyed collections (an empty key is removed, as it always was). */
+/** Shared add-and-prune for the two keyed collections; an emptied key is removed. */
 function addTo(
   collection: Map<string, Set<Subscription>>,
   key: string,
@@ -185,17 +169,11 @@ function addTo(
 }
 
 /**
- * `'\0'`-joined, NOT `.`-joined (P5.5 H6).
+ * `'\0'`-joined, NOT `.`-joined, matching the host's `EventBus`.
  *
- * Module and type are both arbitrary app-defined strings, so a `.` separator makes
+ * 🔴 Module and type are both arbitrary app-defined strings, so a `.` separator makes
  * `("APP", "TASK.DONE")` and `("APP.TASK", "DONE")` the same key — one app's events silently delivered
- * to another's subscribers. The host's `EventBus` fixed exactly this and documented it; the client kept
- * the colliding form, so the two halves of one contract disagreed. `'\0'` cannot appear in a JS string
- * literal a developer types by accident, which is what makes it safe as a separator.
- *
- * The broad subscriptions use separate collections rather than a wildcard key. That is an
- * implementation choice here, not a correction of the host: the host's pattern matcher takes `"*"` and
- * that is fine, because a module or type named `*` is not a name any app has or wants.
+ * to another's subscribers. `'\0'` cannot appear in a string literal a developer types by accident.
  */
 function eventKey(module: string, type: string): string {
   return `${module}\0${type}`;

@@ -2,10 +2,9 @@ namespace Shenora.Core.Events;
 
 /// <summary>
 /// An in-process pub/sub event on the <see cref="IEventBus"/>: which module it originates from,
-/// what happened, optionally for which app-defined scope, with what data. This is the HOST-side
-/// event type — when an event is forwarded to a client it travels as the Shenora.Core.Ipc
-/// notification envelope (a transport bridge does the conversion), so this type deliberately
-/// carries no wire attributes.
+/// what happened, optionally for which app-defined scope, with what data. The HOST-side event type — a
+/// transport bridge converts it into the <c>Shenora.Core.Ipc</c> notification envelope, so this carries
+/// no wire attributes.
 /// </summary>
 public sealed class EventMessage
 {
@@ -28,22 +27,16 @@ public sealed class EventMessage
     public object? Payload { get; init; }
 
     /// <summary>
-    /// Optional: this event SUPERSEDES an earlier undelivered one carrying the same
-    /// module, type, scope and key. Null (the default) means every emit is its own event and none is
-    /// ever dropped.
+    /// Optional: this event SUPERSEDES an earlier undelivered one carrying the same module, type, scope
+    /// and key. Null (the default) means every emit is its own event and none is ever dropped.
     /// <para>
-    /// It is a declaration about the PAYLOAD, and only a full-snapshot payload may make it: keying a
-    /// delta ("+3 bytes") coalesces two increments into one and loses the other. The kit sets it on
-    /// <see cref="Shenora.Core.Ipc.IpcRequestEvents.Updated"/>, whose payload is a whole
-    /// <see cref="Shenora.Core.Ipc.IpcRequestStatus"/> that the client already folds last-write-wins —
-    /// so dropping an intermediate snapshot cannot change the state anyone ends up rendering.
+    /// 🔴 <b>Only a FULL-SNAPSHOT payload may set it.</b> Keying a delta ("+3 bytes") coalesces two
+    /// increments into one and loses the other.
     /// </para>
     /// <para>
-    /// ⚠ <b>Nothing coalesces on the BUS itself</b> — every subscriber sees every emit, because a bus
-    /// handler runs immediately and there is no window in which to supersede anything. The key is
-    /// honoured by a buffering consumer, which today means
-    /// <see cref="Shenora.Core.Ipc.NotificationPump"/>: it batches on a flush interval, and that
-    /// interval IS the window.
+    /// ⚠ <b>Nothing coalesces on the BUS itself</b> — a bus handler runs immediately, so every subscriber
+    /// sees every emit. The key is honoured by a buffering consumer, today
+    /// <see cref="Shenora.Core.Ipc.NotificationPump"/>, whose flush interval IS the window.
     /// </para>
     /// </summary>
     public string? CoalesceKey { get; init; }

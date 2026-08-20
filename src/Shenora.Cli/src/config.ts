@@ -1,4 +1,4 @@
-// The adopter's inputs. Deliberately tiny: everything else is derived, or asked of the machine.
+// The adopter's inputs — everything else is derived, or asked of the machine.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -11,11 +11,10 @@ export interface DeployConfig {
   /**
    * Target framework moniker for the **iOS** head.
    *
-   * ⚠ Unqualified for historical reasons, and that is exactly how it bites: beside `androidTfm` it
-   * reads as "the tfm", so an Android-only project sets it to `net10.0-android`, and `ios deploy` then
-   * builds the ANDROID target and dies on `NETSDK1147: install the android workload` — an error naming
-   * a workload nobody wants on a Mac, so it reads as a broken machine. {@link iosTfm} is the clear
-   * spelling; this stays as its fallback, and {@link platformTfm} refuses a mismatch by name.
+   * ⚠ Unqualified, and that is exactly how it bites: beside `androidTfm` it reads as "the tfm", so an
+   * Android-only project sets it to `net10.0-android` and `ios deploy` builds the ANDROID target.
+   * {@link iosTfm} is the clear spelling; this stays as its fallback, and {@link platformTfm} refuses a
+   * mismatch by name.
    */
   tfm: string;
   /** Target framework moniker for the iOS head. Preferred over the unqualified {@link tfm}. */
@@ -25,8 +24,8 @@ export interface DeployConfig {
   /**
    * Logcat tag the app writes under, so `android log` shows the app's story instead of platform chatter.
    *
-   * ⚠ It has a DEFAULT rather than being required, because the alternative is `--all` — and an adopter
-   * whose first `android log` returns a screen of system noise concludes the tool is broken.
+   * ⚠ It has a DEFAULT rather than being required: an adopter whose first `android log` returns a screen
+   * of system noise concludes the tool is broken.
    */
   androidLogTag: string;
   /** The app's bundle identifier — must match the project's ApplicationId. */
@@ -42,9 +41,8 @@ export interface DeployConfig {
   /**
    * A Mac on the LAN to run iOS work on, for the adopter who develops on Windows.
    *
-   * ⚠ **Consider NOT committing this.** A hostname and account name are facts about your network, and
-   * this file is usually tracked. `SHENORA_IOS_HOST=you@mac.local` and `--host` both take precedence, so
-   * a shared config can stay neutral while each developer points at their own machine.
+   * ⚠ **Consider NOT committing this** — a hostname and account name are facts about your network, and
+   * this file is usually tracked. `SHENORA_IOS_HOST=you@mac.local` and `--host` both take precedence.
    */
   remote?: {
     host: string;
@@ -75,10 +73,9 @@ const DEFAULTS: Omit<DeployConfig, 'root' | 'file'> = {
 /**
  * Read `shenora.deploy.json` from `startDir` or any parent — a monorepo runs its CLI from anywhere.
  *
- * ⚠ There is deliberately NO machine-specific field: no Xcode path, no signing identity, no device id.
- * Those are facts about the machine and the phone plugged into it, so they are ASKED at run time. A
- * config that records them goes stale the first time someone else clones the repo, and the failure then
- * reads as "the tool is broken" rather than "that is not your device".
+ * ⚠ There is NO machine-specific field: no Xcode path, no signing identity, no device id. Those are ASKED
+ * at run time — a config that records them goes stale the first time someone else clones the repo, and
+ * the failure then reads as "the tool is broken" rather than "that is not your device".
  */
 export function loadConfig(startDir: string = process.cwd()): DeployConfig | null {
   let dir = path.resolve(startDir);
@@ -89,9 +86,8 @@ export function loadConfig(startDir: string = process.cwd()): DeployConfig | nul
       try {
         raw = JSON.parse(fs.readFileSync(candidate, 'utf8')) as Partial<DeployConfig>;
       } catch (e) {
-        // ⚠ Unhandled, this surfaced as a bare Node ESM stack trace with the parse error buried in it —
-        // which reads as "the CLI is broken" rather than "your config has a typo". Found by writing a
-        // malformed file on purpose while testing on a real Mac.
+        // ⚠ Unhandled, this surfaces as a bare Node ESM stack trace with the parse error buried in it,
+        // which reads as "the CLI is broken" rather than "your config has a typo".
         console.error(`\nshenora: ${candidate} is not valid JSON.`);
         console.error(`  ${(e as Error).message}`);
         process.exitCode = 1;
@@ -105,8 +101,7 @@ export function loadConfig(startDir: string = process.cwd()): DeployConfig | nul
   }
 }
 
-/** Does this path exist AND name a directory? False for anything unreadable — a missing project is the
- * caller's problem to report, not this helper's to guess about. */
+/** Does this path exist AND name a directory? False for anything unreadable. */
 function isDirectory(candidate: string): boolean {
   try {
     return fs.statSync(candidate).isDirectory();
@@ -120,15 +115,10 @@ function isDirectory(candidate: string): boolean {
  *
  * 🔴 **`project` MAY NAME A DIRECTORY**, because `dotnet build`/`publish`/`restore` all accept one and
  * this CLI hands `cfg.project` straight to them. On a directory, `path.dirname` silently yields its
- * PARENT — so `project: "src/MyApp"` resolves to `src/`, and every consumer then looks one level too
- * high. `shenora copy` staged the bundle into the wrong folder and reported success; the three build
- * commands looked for their artifact under `src/bin/…`, found nothing, and reported "the publish
- * reported success but no .apk appeared" — a confident statement about your build, describing a
- * directory that was never going to hold one.
- *
- * ⚠ One helper because it was fixed ONCE, in `copy.ts`, and three other call sites kept the bug. The
- * shape of that miss is the CLI's recurring one: a signal meaning "I looked in the wrong place"
- * presented as a fact about the world.
+ * PARENT — so `project: "src/MyApp"` resolves to `src/` and every consumer looks one level too high:
+ * `shenora copy` stages the bundle into the wrong folder and reports success, and the build commands
+ * report "the publish reported success but no .apk appeared" about a directory that was never going to
+ * hold one. Use this everywhere rather than `path.dirname`.
  */
 export function projectDir(cfg: DeployConfig): string {
   const full = path.resolve(cfg.root, cfg.project);
@@ -144,10 +134,9 @@ export const iosTfmOf = (cfg: DeployConfig): string => cfg.iosTfm?.trim() || cfg
 /**
  * The TFM for the platform being built, refusing one that names a different platform.
  *
- * 🔴 A wrong answer here is only discovered by the SDK, minutes later, in the vocabulary of the wrong
- * platform: an `ios deploy` carrying `net10.0-android` dies on `NETSDK1147: the following workloads
- * must be installed: android`, which reads as a broken Mac rather than a config that could not express
- * two heads. Found by the first adopter taking a real app to a real iPhone.
+ * 🔴 A wrong answer here is otherwise discovered by the SDK, minutes later, in the vocabulary of the wrong
+ * platform: an `ios deploy` carrying `net10.0-android` dies on `NETSDK1147: the following workloads must
+ * be installed: android`, which reads as a broken Mac rather than a mis-set field.
  *
  * @returns the moniker, or null when it is missing or names the wrong platform (already reported).
  */

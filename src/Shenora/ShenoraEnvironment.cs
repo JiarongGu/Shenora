@@ -1,15 +1,10 @@
 namespace Shenora;
 
 /// <summary>
-/// The application's runtime environment — resolved ONCE and injected everywhere.
-///
-/// Dev-mode detection lives here and nowhere else: the source apps duplicated this check verbatim
-/// in four files (initializer, prewarmer, environment model, resource provider), which is exactly
-/// the kind of drift a framework exists to end. Development mode means either the standard
-/// environment variable says so (<c>DOTNET_ENVIRONMENT</c>, falling back to
-/// <c>ASPNETCORE_ENVIRONMENT</c>, the family's historical convention) or a <c>.dev</c> marker
-/// file sits next to the executable — the marker lets a packaged build be flipped into dev mode
-/// without touching the machine's environment.
+/// The application's runtime environment — resolved ONCE and injected everywhere, so dev-mode detection
+/// lives here and nowhere else. Development mode means either <c>DOTNET_ENVIRONMENT</c> (falling back to
+/// <c>ASPNETCORE_ENVIRONMENT</c>) says so, or a <c>.dev</c> marker file sits next to the executable —
+/// which is how a packaged build is flipped into dev mode without touching the machine's environment.
 /// </summary>
 public sealed class ShenoraEnvironment
 {
@@ -23,10 +18,10 @@ public sealed class ShenoraEnvironment
     }
 
     /// <summary>
-    /// The directory dev-mode detection anchored at — the RESOLVED APP ROOT when composed
-    /// through <c>ShenoraApplication.CreateBuilder</c> (in packaged bundles that's the install
-    /// root beside the launcher, where the <c>.dev</c> marker lives — not the exe's
-    /// <c>libs/</c> folder); plain <c>AppContext.BaseDirectory</c> in simple direct use.
+    /// The directory dev-mode detection anchored at — the RESOLVED APP ROOT when composed through
+    /// <c>ShenoraApplication.CreateBuilder</c> (in packaged bundles the install root beside the launcher,
+    /// where the <c>.dev</c> marker lives, not the exe's <c>libs/</c> folder); plain
+    /// <c>AppContext.BaseDirectory</c> in direct use.
     /// </summary>
     public string BaseDirectory { get; }
 

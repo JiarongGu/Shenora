@@ -1,16 +1,13 @@
 /**
  * Building the URL that lets a page render LOCAL content — media, images, documents, exports — that it
- * cannot reach directly.
- *
- * The host answers these through its resource interceptor; this module only builds the address, which is
- * why it is a pure function and not a hook. A hook (`useMediaSource`) can follow if an adopter wants
- * load/error state, but nothing needs one to start.
+ * cannot reach directly. The host answers these through its resource interceptor; this module only
+ * builds the address, which is why it is a pure function and not a hook.
  */
 
 /**
  * Build a URL the host's resource interceptor will answer: `<route>?<base64url of JSON>`.
  *
- * ⚠ **The result is RELATIVE, and that is the whole point.** Written as a path rather than with a scheme, it
+ * ⚠ **The result is RELATIVE, and that is load-bearing.** Written as a path rather than with a scheme, it
  * resolves against whatever origin the page is already served from — which means the browser hands the host
  * a URL each platform can actually decode:
  *
@@ -20,19 +17,16 @@
  * | Android | `https://0.0.0.1/media?…` — Android's media pipeline REFUSES a non-standard scheme |
  * | desktop | the app's virtual host |
  *
- * Both fixed forms fail on exactly one platform, in opposite directions, and registering the scheme rescues
- * neither: iOS cannot register a handler for `https`, and Android cannot register a scheme at all. Measured
- * on devices — so if you are tempted to hardcode `app://`, that is why not.
+ * 🔴 **So do not hardcode `app://`.** Either fixed form fails on exactly one platform, and registering the
+ * scheme rescues neither: iOS cannot register a handler for `https`, and Android cannot register a scheme
+ * at all.
  *
- * The PAYLOAD is opaque to this package: whatever you pass is JSON-encoded and handed to your own host-side
- * route, which decodes it. That keeps the kit out of your addressing scheme — a filename, an id, a container
- * preference, a cache key, several of them. The kit encodes; you decide what it means.
+ * The payload is opaque to this package — JSON-encoded and handed to your own host-side route, which
+ * decodes it. base64**url** specifically, so `+`, `/` and `=` cannot be re-interpreted by anything that
+ * parses URLs along the way.
  *
- * base64**url** specifically, so `+`, `/` and `=` cannot survive into a query string and be re-interpreted
- * by anything that parses URLs along the way.
- *
- * ⚠ An encoded payload costs debuggability — you cannot read the URL in a log any more. Have the host log
- * what it DECODED to: the response body cannot say, because an error body would leak paths.
+ * ⚠ An encoded payload costs debuggability: have the HOST log what it decoded to, because an error
+ * response body cannot say without leaking paths.
  *
  * @param payload Anything JSON-serialisable. Your host route decides what the shape means.
  * @param route The reserved path the host answers on. **Must not collide with a real asset in your bundle** —
@@ -60,8 +54,8 @@ export function mediaUrl(payload: unknown, route = 'media'): string {
  * The payload encoding on its own, for a caller that builds its own URL but wants the same wire format —
  * and so a host-side decoder has one documented thing to mirror.
  *
- * `TextEncoder` before `btoa` because `btoa` throws on any character above U+00FF: a payload carrying a
- * non-ASCII title or path would fail at the call site, which is a poor way to discover an encoding choice.
+ * ⚠ `TextEncoder` before `btoa`, which throws on any character above U+00FF — a payload carrying a
+ * non-ASCII title or path would fail at the call site.
  */
 export function encodeMediaPayload(payload: unknown): string {
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
@@ -72,9 +66,7 @@ export function encodeMediaPayload(payload: unknown): string {
 
 /**
  * Decode what {@link encodeMediaPayload} produced. Here for tests and for a page that round-trips its own
- * URLs; the real decoder is host-side, in whatever language the shell is written in.
- *
- * Padding is restored before decoding — base64url drops `=`, and `atob` requires it.
+ * URLs; the real decoder is host-side. Padding is restored first — base64url drops `=`, `atob` needs it.
  */
 export function decodeMediaPayload<T = unknown>(encoded: string): T {
   let padded = encoded.replace(/-/g, '+').replace(/_/g, '/');

@@ -1,10 +1,10 @@
 namespace Shenora.Core.Shell;
 
 /// <summary>
-/// State of an <see cref="IUiDispatcher"/>'s target. THREE states, not a bool: "not created yet" and
-/// "gone" demand different caller behaviour, and collapsing them is how a single availability flag
-/// re-breaks fixes that were earned the hard way (a pre-handle post that recursed without end; a
-/// pre-handle post that created a window handle on the wrong thread and killed its message pump).
+/// State of an <see cref="IUiDispatcher"/>'s target. 🔴 THREE states, not a bool: "not created yet" and
+/// "gone" demand different caller behaviour, and a single availability flag re-breaks two fixes earned
+/// the hard way — a pre-handle post that recursed without end, and one that created a window handle on
+/// the wrong thread and killed its message pump.
 /// </summary>
 public enum UiTargetState
 {
@@ -19,18 +19,14 @@ public enum UiTargetState
 }
 
 /// <summary>
-/// The ONE UI-thread marshalling seam — the alternative being the pattern hand-rolled per call site with
-/// mutually incompatible pre-handle policies, which is how two such copies came to carry real defects.
-/// See <c>docs/DECISIONS.md</c> D19/D20, and <c>.claude/knowledge/webview2-hosting.md</c> for the four
-/// invariants this owner keeps.
+/// The ONE UI-thread marshalling seam. Its invariants are in
+/// <c>.claude/knowledge/webview2-hosting.md</c>.
 /// <para>
-/// Portable on purpose: an app service that needs "run this on the UI thread" depends on this
-/// interface, not on WinForms, so the same logic runs on another shell. The Windows implementation is
-/// <c>Shenora.Windows.WinFormsUiDispatcher</c>, constructed PER CONTROL — auxiliary browser sessions
-/// marshal to their anchor form and secondary windows run their own message pumps, so one
-/// application-wide dispatcher would be wrong for both. <c>Shenora</c> deliberately registers NO
-/// default: it has no UI thread to dispatch to, and a silent no-op default would swallow UI work in a
-/// host that forgot to provide one.
+/// Portable on purpose: an app service that needs "run this on the UI thread" depends on this interface,
+/// not on WinForms. The Windows implementation is constructed PER CONTROL — auxiliary browser sessions
+/// marshal to their anchor form and secondary windows run their own message pumps. ⚠ <c>Shenora</c>
+/// registers NO default: a silent no-op default would swallow UI work in a host that forgot to provide
+/// one.
 /// </para>
 /// </summary>
 public interface IUiDispatcher
@@ -44,32 +40,27 @@ public interface IUiDispatcher
     /// <summary>
     /// Run <paramref name="work"/> on the UI thread: inline when already there, otherwise a
     /// NON-BLOCKING post (never a blocking invoke off the UI thread — that deadlock is a measured
-    /// application hang in this family).
+    /// application hang in this family). Never throws, including from the inline path.
     /// <para>
-    /// Returns TRUE when the work ran or was posted. Returns FALSE only when
-    /// <see cref="State"/> is not <see cref="UiTargetState.Ready"/> — the CALLER decides what that
-    /// means for it (drop and log, defer behind a flag, or apply directly); inspect
-    /// <see cref="State"/> to tell "not ready yet" from "gone". A false return NEVER means the work
-    /// failed: a posted body's failure happens after this returns, by definition.
+    /// TRUE when the work ran or was posted; FALSE only when <see cref="State"/> is not
+    /// <see cref="UiTargetState.Ready"/>, which the CALLER decides what to do about. ⚠ A false return
+    /// NEVER means the work failed: a posted body's failure happens after this returns.
     /// </para>
-    /// <para>Never throws — including from the inline path.</para>
     /// </summary>
     bool Post(Action work);
 
     /// <summary>
-    /// <see cref="Post(Action)"/> for an async body. This overload exists so no caller ever
-    /// hand-rolls a fire-and-forget async post: that is an <c>async void</c> continuation on the UI
-    /// thread whose exceptions are unobservable.
+    /// <see cref="Post(Action)"/> for an async body, so no caller hand-rolls a fire-and-forget async
+    /// post — that is an <c>async void</c> continuation on the UI thread whose exceptions are
+    /// unobservable.
     /// </summary>
     bool Post(Func<Task> work);
 
     /// <summary>
     /// Run on the UI thread and await completion. Faults with <see cref="ObjectDisposedException"/>
     /// when the target is <see cref="UiTargetState.Gone"/> and <see cref="InvalidOperationException"/>
-    /// when it is <see cref="UiTargetState.NotReady"/> — never a task that simply never completes.
-    /// The returned task observes <paramref name="cancellationToken"/>: an operation that accepts a
-    /// token and then ignores it cannot be cancelled when the UI thread is wedged, which turns a slow
-    /// call into a permanently leaked resource.
+    /// when it is <see cref="UiTargetState.NotReady"/> — never a task that simply never completes. The
+    /// returned task observes <paramref name="cancellationToken"/> even when the UI thread is wedged.
     /// </summary>
     Task InvokeAsync(Action work, CancellationToken cancellationToken = default);
 

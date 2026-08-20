@@ -12,14 +12,13 @@ public sealed record WebViewFileOptions
     /// <summary>
     /// The app's map from a request URI to a candidate path; null means "not mine" and the request falls
     /// through the rest of the pipeline to the platform. Required. Whatever it returns is still checked
-    /// against <see cref="AllowedRoots"/>, so a generous resolver cannot widen what is reachable.
+    /// against <see cref="AllowedRoots"/>.
     /// </summary>
     public Func<Uri, string?> Resolve { get; init; } = static _ => null;
 
     /// <summary>
-    /// The directories whose files may be served. <b>Empty means nothing is servable</b> — the alternative
-    /// default is the whole filesystem. This is the local half of the authorization problem: a media or
-    /// document URL carries a path supplied BY THE PAGE, so it is checked here rather than per shell (D45).
+    /// The directories whose files may be served. <b>Empty means nothing is servable</b>; a URL carries a
+    /// path supplied BY THE PAGE, so containment is checked here rather than per shell (D45).
     /// </summary>
     public IReadOnlyList<string> AllowedRoots { get; init; } = [];
 
@@ -31,11 +30,8 @@ public sealed record WebViewFileOptions
 }
 
 /// <summary>
-/// Serving local files to a page: path containment, and range-correct responses.
-/// <b>This is what makes <c>&lt;video&gt;</c>, <c>&lt;audio&gt;</c> and <c>&lt;img&gt;</c> work with no media
-/// package at all</b> (D45): it answers bytes, honours <c>Range</c> and reports a content type, knowing
-/// nothing about containers or codecs. Deciding what to do about a file the platform cannot decode is
-/// <c>Shenora.Modules.Media</c>'s job, added as a further middleware.
+/// Serving local files to a page: path containment, and range-correct responses. It answers bytes,
+/// honours <c>Range</c> and reports a content type, knowing nothing about containers or codecs (D45).
 /// </summary>
 public static class WebViewFiles
 {
@@ -49,8 +45,8 @@ public static class WebViewFiles
     /// <item>Require the result under an allowed root, <b>comparing with the separator appended</b> — without
     /// it, <c>/media-evil</c> passes as a child of <c>/media</c>.</item>
     /// </list>
-    /// ⚠ Returns null for every refusal and never says why: the caller answers a fixed 404, because a
-    /// distinguishable "forbidden" reply tells a page whether a path exists.
+    /// ⚠ Returns null for every refusal and never says why: a distinguishable "forbidden" reply tells a
+    /// page whether a path exists, so the caller answers a fixed 404.
     /// </summary>
     public static string? ResolveContained(string? requestedPath, IReadOnlyList<string> allowedRoots)
     {
@@ -105,8 +101,8 @@ public static class WebViewFiles
     /// sent. The caller has already authorised the path — this does not re-check.
     /// <para>
     /// ⚠ Under <see cref="WebViewRangeDelivery.Unsliced"/> the <c>Content-Range</c> describes
-    /// <c>{from}</c>→EOF rather than the range asked for: the platform truncates the front of the body itself
-    /// and streams the rest, so a header naming the requested END would be the inaccurate one.
+    /// <c>{from}</c>→EOF rather than the range asked for: the platform streams the rest of the body itself,
+    /// so a header naming the requested END would be the inaccurate one.
     /// </para>
     /// </summary>
     public static WebViewResourceResponse Serve(WebViewResourceRequest request, string path,
@@ -125,8 +121,7 @@ public static class WebViewFiles
         }
         catch (Exception)
         {
-            // No exception text on the wire, ever — a file handler's failure detail is the likeliest of
-            // all of them to carry a real path.
+            // No exception text on the wire, ever — see WebViewResourceResponse.NotFound.
             return WebViewResourceResponse.NotFound();
         }
 
@@ -137,14 +132,12 @@ public static class WebViewFiles
     /// The same answer for a body that is not a file: the status line, the range arithmetic and the
     /// <b>per-platform delivery rule</b>, over any producer of bytes — so
     /// 🔴 <see cref="WebViewRangeDelivery"/> has exactly ONE implementation. D44 is a measured platform fact
-    /// whose failure mode is silent: the wrong choice serves correct-looking bytes at the wrong offset,
-    /// playing every faststart file and breaking every file whose index sits at the end.
-    /// ⚠ Internal — a seam inside this assembly, not a surface for an app to compose against.
+    /// whose failure mode is silent; see that enum.
     /// </summary>
     /// <param name="request">The request, read for its <c>Range</c> header.</param>
     /// <param name="totalLength">
-    /// The WHOLE resource's length, even when a single window is sent — what <c>Content-Range</c> states,
-    /// and on some platforms the only place a media element learns its duration and seekable window (D71).
+    /// The WHOLE resource's length, even when a single window is sent — on some platforms the only place a
+    /// media element learns its duration and seekable window (D71).
     /// </param>
     /// <param name="contentType">The type of what is being SENT — for a computed body not the source
     /// file's, which a media element refuses before trying a byte.</param>
@@ -161,8 +154,8 @@ public static class WebViewFiles
 
         var rangeHeader = request.GetHeader("Range");
 
-        // No range, or one declined (multi-range, a non-`bytes` unit): answer the whole resource through
-        // `Ok`, which is what stamps `Accept-Ranges: bytes`.
+        // No range, or one declined (multi-range, a non-`bytes` unit): the whole resource, through `Ok`,
+        // which is what stamps `Accept-Ranges: bytes`.
         if (!WebViewByteRange.TryParse(rangeHeader, totalLength, out var range))
         {
             return read(0, totalLength) is { } whole
@@ -184,8 +177,7 @@ public static class WebViewFiles
 
     /// <summary>
     /// <c>Content-Length</c> explicitly rather than inferred from the stream: in the unsliced case the body
-    /// handed over is the whole file while the client receives <c>length - from</c> bytes, so a derived value
-    /// would advertise more than arrives.
+    /// handed over is the whole file while the client receives <c>length - from</c> bytes.
     /// </summary>
     private static Dictionary<string, string> ContentLength(long bytes) =>
         new(StringComparer.OrdinalIgnoreCase)
@@ -200,23 +192,15 @@ public static class WebViewFiles
     /// <see cref="FileStream"/> — the missing <c>using</c> is deliberate.</b> The platform reads
     /// <see cref="WebViewResourceResponse.Content"/> AFTER this returns, so disposing here would close the
     /// file before a byte was sent; a <see cref="MemoryStream"/> would materialise the whole window, which
-    /// under <see cref="WebViewRangeDelivery.Unsliced"/> IS the whole file (D44).
-    /// </para>
-    /// <para>
-    /// ⚠ <b>A lazy body moves EVERY mid-read failure past the committed headers, and that cannot be
-    /// eliminated.</b> A shrunk file, a pulled volume, a dropped share, a revoked permission — all of them
-    /// now surface when the PLATFORM pulls from the bound, after <see cref="ServeRange"/> has committed a
-    /// 200/206 and a <c>Content-Length</c> built from the stale length. What each shell does with such a
-    /// throw is the shell's own answer and only Android's is good — see
-    /// <see cref="BoundedBodyStream.Read"/>, with the per-shell arms in
-    /// <c>docs/design/mobile-shells.md</c>.
+    /// under <see cref="WebViewRangeDelivery.Unsliced"/> IS the whole file (D44). A mid-read failure
+    /// therefore surfaces past the committed headers — see <see cref="BoundedBodyStream.Read"/>.
     /// </para>
     /// <para>
     /// ⚠ <b>The handle stays open for as long as the platform holds the response</b>, including a request
-    /// the page ABANDONS before EOF (a seek away, a navigation). Hence <see cref="FileShare.Delete"/>
-    /// alongside <see cref="FileShare.Read"/> and NOT <see cref="FileShare.ReadWrite"/>: a concurrent
-    /// DELETE is safe (NTFS defers it until every handle closes), while a concurrent WRITE would tear the
-    /// bytes this handle is mid-read of.
+    /// the page ABANDONS before EOF. Hence <see cref="FileShare.Delete"/> alongside
+    /// <see cref="FileShare.Read"/> and NOT <see cref="FileShare.ReadWrite"/>: a concurrent DELETE is safe
+    /// (NTFS defers it until every handle closes), while a concurrent WRITE would tear the bytes this
+    /// handle is mid-read of.
     /// </para>
     /// </summary>
     private static Stream? Read(string path, long from, long count)
@@ -242,10 +226,10 @@ public static class WebViewFiles
 public static class WebViewInterceptorExtensions
 {
     /// <summary>
-    /// Serve local files through EVERY webview the app hosts — the <c>app.Use*()</c> phase (D64). Prefer
+    /// Serve local files through EVERY webview the app hosts — the <c>app.Use*()</c> phase (D64). ⚠ Prefer
     /// this over the per-interceptor overload below, which serves ONE webview: a secondary window or an
-    /// auxiliary session browser then silently gets nothing, and a window serving no routes looks exactly
-    /// like a window whose routes were never needed.
+    /// auxiliary session browser then silently gets nothing, and looks exactly like a window whose routes
+    /// were never needed.
     /// </summary>
     /// <returns>The app, so calls chain.</returns>
     public static ShenoraApplication UseFiles(this ShenoraApplication app, WebViewFileOptions options)
@@ -259,8 +243,7 @@ public static class WebViewInterceptorExtensions
     /// Serve local files through ONE <paramref name="interceptor"/>: the app supplies its route and roots,
     /// and this supplies containment, ranges and content types. An extension over the interceptor rather
     /// than a middleware the app constructs itself, so <see cref="IWebViewInterceptor.RangeDelivery"/> is
-    /// read from the platform and CANNOT be passed in wrong — a measured platform fact whose failure mode
-    /// is silent: every faststart file plays and every other one does not (D44).
+    /// read from the platform and cannot be passed in wrong (D44).
     /// </summary>
     /// <returns>Dispose to remove the route.</returns>
     public static IDisposable UseFiles(this IWebViewInterceptor interceptor, WebViewFileOptions options)
