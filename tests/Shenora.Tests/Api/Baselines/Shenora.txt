@@ -1077,9 +1077,9 @@ interface Shenora.Modules.Media.IMediaStreamConversionRun : System.IDisposable
   public abstract int OutputFramesPerPacket { get; }
 interface Shenora.Modules.Media.ISegmentEngine
   public abstract Shenora.Modules.Media.ISegmentRun? Start(Shenora.Modules.Media.SegmentRunRequest request)
-  public abstract Shenora.Modules.Media.SegmentPlan? PlanSegments(string source, double segmentSeconds, System.Threading.CancellationToken cancellationToken = default)
-  public abstract System.TimeSpan? DurationOf(string source)
-  public abstract bool HasPicture(string source)
+  public abstract Shenora.Modules.Media.SegmentPlan? PlanSegments(Shenora.Modules.Media.MediaByteSource source, double segmentSeconds, System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.TimeSpan? DurationOf(Shenora.Modules.Media.MediaByteSource source)
+  public abstract bool HasPicture(Shenora.Modules.Media.MediaByteSource source)
   public abstract bool HasRenderedPicture(string segment)
   public abstract bool IsAvailable { get; }
   public abstract string Describe()
@@ -1097,6 +1097,11 @@ sealed class Shenora.Modules.Media.MediaAccessOptions
   public required System.Func<System.Uri, string> Resolve { get; init; }
   public required string CacheRoot { get; init; }
   public string Module { get; init; }
+sealed class Shenora.Modules.Media.MediaByteSource
+  public override string ToString()
+  public required System.Func<System.Threading.CancellationToken, System.IO.Stream> Open { get; init; }
+  public required string Label { get; init; }
+  public static Shenora.Modules.Media.MediaByteSource ForFile(string path)
 static class Shenora.Modules.Media.MediaCapabilityExtensions
   public static Shenora.Modules.Media.MediaPlaybackPolicy WithDeviceEncoders(Shenora.Modules.Media.MediaPlaybackPolicy policy, Shenora.Modules.Media.IMediaCapability device, System.Collections.Generic.IReadOnlySet<Shenora.Modules.Media.MediaStreamKind>? convertible = null)
   public static System.Collections.Generic.IReadOnlySet<Shenora.Modules.Media.MediaStreamCodec> DecodableAudio(Shenora.Modules.Media.IMediaCapability device)
@@ -1425,6 +1430,7 @@ sealed class Shenora.Modules.Media.Mp4Remuxer : Shenora.Modules.Media.IMediaCont
   public string Container { get; }
 sealed class Shenora.Modules.Media.RemoteMediaSource : System.IEquatable<Shenora.Modules.Media.RemoteMediaSource>
   public Shenora.Modules.Media.RemoteMediaSource <Clone>$()
+  public System.Func<System.Threading.CancellationToken, System.IO.Stream>? Open { get; init; }
   public System.TimeSpan? Duration { get; init; }
   public bool Equals(Shenora.Modules.Media.RemoteMediaSource? other)
   public bool? HasPicture { get; init; }
@@ -1471,12 +1477,14 @@ sealed class Shenora.Modules.Media.SegmentPlan
   public static Shenora.Modules.Media.SegmentPlan Grid(double segmentSeconds, System.TimeSpan total)
   public static Shenora.Modules.Media.SegmentPlan? Cuts(System.Collections.Generic.IReadOnlyList<double> startSeconds, System.TimeSpan total)
 sealed class Shenora.Modules.Media.SegmentRunRequest : System.IEquatable<Shenora.Modules.Media.SegmentRunRequest>
-  public .ctor(string SourcePath, string Directory, bool HasPicture, int FirstSegment, Shenora.Modules.Media.SegmentPlan Plan, int Attempt)
+  public .ctor(Shenora.Modules.Media.MediaByteSource Source, string Directory, bool HasPicture, int FirstSegment, Shenora.Modules.Media.SegmentPlan Plan, int Attempt)
+  public Shenora.Modules.Media.MediaByteSource Source { get; init; }
   public Shenora.Modules.Media.SegmentPlan Plan { get; init; }
   public Shenora.Modules.Media.SegmentRunRequest <Clone>$()
   public bool Equals(Shenora.Modules.Media.SegmentRunRequest? other)
   public bool HasPicture { get; init; }
   public const string InitSegmentName = "init.mp4"
+  public const string PartialExtension = ".part"
   public const string SegmentExtension = ".m4s"
   public int Attempt { get; init; }
   public int FirstSegment { get; init; }
@@ -1486,8 +1494,7 @@ sealed class Shenora.Modules.Media.SegmentRunRequest : System.IEquatable<Shenora
   public static bool op_Equality(Shenora.Modules.Media.SegmentRunRequest? left, Shenora.Modules.Media.SegmentRunRequest? right)
   public static bool op_Inequality(Shenora.Modules.Media.SegmentRunRequest? left, Shenora.Modules.Media.SegmentRunRequest? right)
   public string Directory { get; init; }
-  public string SourcePath { get; init; }
-  public void Deconstruct(out string SourcePath, out string Directory, out bool HasPicture, out int FirstSegment, out Shenora.Modules.Media.SegmentPlan Plan, out int Attempt)
+  public void Deconstruct(out Shenora.Modules.Media.MediaByteSource Source, out string Directory, out bool HasPicture, out int FirstSegment, out Shenora.Modules.Media.SegmentPlan Plan, out int Attempt)
 static class Shenora.Modules.Media.SegmentStreamExtensions
   public static Shenora.Modules.Media.ISegmentStreamRoute UseSegmentStream(Shenora.Core.WebView.IWebViewInterceptor interceptor, Shenora.Modules.Media.ISegmentEngine engine, Shenora.Modules.Media.SegmentStreamOptions options, Microsoft.Extensions.Logging.ILogger? log = null)
 sealed class Shenora.Modules.Media.SegmentStreamOptions

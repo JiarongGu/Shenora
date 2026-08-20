@@ -59,6 +59,30 @@ knowable only once an encoder has produced output, and an init segment carrying 
 that opens and plays nothing. So the route answers `503 Retry-After: 1` for `init.mp4` until it lands, and a
 page following `#EXT-X-MAP` must tolerate that exactly as it does for a segment.
 
+### Every part is PUBLISHED, and that is worth a segment of startup
+
+🔴 **A run writes `seg{k}.m4s.part` and renames it into place once whole** (`SegmentRunRequest.PartialExtension`),
+so the final name appears only when the bytes are. `IsComplete` is then just "does it exist and is it
+non-empty" — the producer states the answer instead of the consumer inferring it.
+
+**What it replaced, and why the cost was invisible.** Completeness used to mean *the NEXT segment exists, or
+the run has ended* — the only signal available when a progressive muxer creates a file as it starts writing.
+But a page cannot play until `init.mp4` arrives, and that request drives segment 0: so nothing played until
+segment 0 **and** the opening of segment 1 had been produced. The whole second segment was latency nobody
+was reading. ⚠ It also survived every test, because a fake engine that writes all its segments and exits
+satisfies both rules at once; the pair that discriminates needs one published segment and a LIVE producer.
+
+**Two things fall out.** Crash recovery is now a sweep of `*.part` rather than deleting the
+highest-numbered segment on every open — that used to throw away a good segment almost every time, and
+could only ever see a torn file at the tail. And an out-of-order producer becomes expressible at all, since
+"which segments exist" stops having to be a contiguous run from the window start.
+
+⚠ **It narrows the picture-stall detector.** That check read a still-open first segment to catch an encoder
+writing no frames; a part being written is now hidden, so it catches only a finished window start with no
+picture. A run that publishes nothing at all falls to `WaitBudget` and answers `503` without advancing the
+encoder ladder. Reading the `.part` instead would judge a file mid-write, where "no picture yet" and "no
+picture ever" are the same bytes.
+
 ⚠ **A re-encoded track is cut on a whole number of seconds and a fractional grid is REFUSED, not rounded.**
 What makes a grid hittable is that both platform encoders emit a keyframe every second — a coupling that
 lives in those two files and nowhere else, which is why no forced-keyframe API was needed. A 2.5-second grid
@@ -89,6 +113,18 @@ There are two, and which one applies depends on whether the thing named is a pat
 | Named by | the page, via the app's `Resolve` | the app only — the page names a HANDLE |
 | Guarded by | `MediaAccessOptions.AllowedRoots` containment | `MediaSourceRegistry` — the handle was issued or it was not |
 | Fails closed as | empty roots serve nothing | no registry means no remote source at all |
+| Read through | `MediaByteSource.ForFile` | `RemoteMediaSource.Open`, the app's own |
+
+**Both doors hand the engine a `MediaByteSource` — a LABEL and an opener, never an address.** Where the
+bytes live is a transport question, so `ISegmentEngine` takes the opener and the kit ships no transport:
+a local file, a mounted LAN share and a ranged HTTP reader differ only in that function. ⚠ The stream it
+returns **must be seekable and report `Length`** — Matroska states where a frame lives rather than
+streaming it in order, so a forward-only body cannot be indexed at all; the engine refuses it by name
+rather than letting it read as a malformed container.
+
+⚠ **A remote source with no opener is refused at the MANIFEST.** The playlist is derived from the duration,
+which `RemoteMediaSource` lets the app supply — so serving one for bytes nobody can read hands the page a
+complete playlist whose every entry `503`s for ever.
 
 **Containment cannot guard a url**, which is why the second door is not the first one widened. `AllowedRoots`
 answers "is this path inside a directory I trust", and a url has no such relation to anything. The conversion
@@ -101,9 +137,12 @@ itself, with the host's network position. A handle that was never issued cannot 
 cannot express a source the app did not authorise. The predicate stays on the conversion route because it
 shipped there; new doors take the registry.
 
-⚠ **A url is a credential carrier, so it travels with a LABEL.** Diagnostics print the label and never the
-url. `Path.GetFileName` is not a substitute: it sanitises a path by splitting on separators, and a query
-string has none — so `?sig=…` survives it whole.
+⚠ **A url is a credential carrier, and the segment tier now handles that STRUCTURALLY rather than by care.**
+An engine is handed a `MediaByteSource`, which has a label and a function and no address at all — the app
+closes over its own url inside the opener, so there is nothing for a careless interpolation to reach.
+Diagnostics print the label. (`Path.GetFileName` was never a substitute: it sanitises a path by splitting on
+separators, and a query string has none, so `?sig=…` survives it whole. That is still true wherever a url
+is still handled directly — the conversion route's `AllowRemoteSource` predicate.)
 
 ## Delivery, and why registration ORDER is load-bearing (D73)
 

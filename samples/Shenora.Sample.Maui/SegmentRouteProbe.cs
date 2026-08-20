@@ -264,7 +264,7 @@ internal static class SegmentRouteProbe
         var engine = SegmentEngine.Default(conversion, AppCallback.Logger(log));
         if (!engine.IsAvailable) return "SEEK-RUN: SKIPPED — this shell registered no conversion";
 
-        var plan = engine.PlanSegments(source, 6.0);
+        var plan = engine.PlanSegments(MediaByteSource.ForFile(source), 6.0);
         if (plan is null || plan.Count < 2) return $"SEEK-RUN: SKIPPED — {Fixture} plans {plan?.Count ?? 0} segment(s)";
 
         // A directory of its own, so nothing already produced can answer this.
@@ -273,7 +273,7 @@ internal static class SegmentRouteProbe
         Directory.CreateDirectory(dir);
 
         const int first = 1;
-        using (var run = engine.Start(new SegmentRunRequest(source, dir, HasPicture: true, first, plan, Attempt: 0)))
+        using (var run = engine.Start(new SegmentRunRequest(MediaByteSource.ForFile(source), dir, HasPicture: true, first, plan, Attempt: 0)))
         {
             if (run is null) return "SEEK-RUN: FAIL — the engine would not start a run at segment 1";
             var deadline = DateTime.UtcNow.AddSeconds(60);
@@ -341,7 +341,7 @@ internal static class SegmentRouteProbe
         if (!File.Exists(source)) return $"REORDER: SKIPPED — {fixture} could not be staged";
 
         var engine = SegmentEngine.Default(conversion, AppCallback.Logger(log));
-        if (engine.DurationOf(source) is not { } duration || duration <= TimeSpan.Zero)
+        if (engine.DurationOf(MediaByteSource.ForFile(source)) is not { } duration || duration <= TimeSpan.Zero)
             return $"REORDER: SKIPPED — {fixture} declares no duration";
 
         var dir = Path.Combine(cache, "reorder-run");
@@ -350,7 +350,7 @@ internal static class SegmentRouteProbe
 
         // A GRID, deliberately: it is what makes the engine refuse to copy and spend the encoder.
         var plan = SegmentPlan.Grid(1.0, duration);
-        using (var run = engine.Start(new SegmentRunRequest(source, dir, HasPicture: true, 0, plan, Attempt: 0)))
+        using (var run = engine.Start(new SegmentRunRequest(MediaByteSource.ForFile(source), dir, HasPicture: true, 0, plan, Attempt: 0)))
         {
             if (run is null) return "REORDER: FAIL — the engine would not start a grid run";
             var deadline = DateTime.UtcNow.AddSeconds(120);

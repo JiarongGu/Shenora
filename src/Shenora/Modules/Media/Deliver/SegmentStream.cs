@@ -330,7 +330,7 @@ internal sealed class SegmentStream : IDisposable
         // Identity+length+mtime: replacing the source invalidates its segments rather than serving
         // yesterday's.
         var key = DerivedCacheKey.For(contained, info.Length, info.LastWriteTimeUtc, "hls");
-        return OpenSource(key, contained, Path.GetFileName(contained), null, null, cancellationToken);
+        return OpenSource(key, MediaByteSource.ForFile(contained), null, null, cancellationToken);
     }
 
     /// <summary>
@@ -345,16 +345,25 @@ internal sealed class SegmentStream : IDisposable
         var key = DerivedCacheKey.For(
             remote.Identity ?? remote.Url.AbsoluteUri, 0, DateTime.UnixEpoch, "hls-remote");
 
-        // 🔴 The LABEL is what every log line below prints. The url is never passed as one, because it
-        // routinely carries the caller's credentials — see RemoteMediaSource's remarks.
-        return OpenSource(key, remote.Url.AbsoluteUri, remote.Label,
-                          remote.Duration, remote.HasPicture, cancellationToken);
+        // 🔴 Producing needs BYTES, and only the app can fetch them: the kit ships no transport, so a source
+        // registered without an opener is one this route can serve a manifest for and never a segment. Said
+        // once, here, rather than discovered as a run that dies on every restart.
+        if (remote.Open is not { } open)
+        {
+            Log(() => $"segments: {remote.Label} was registered without an opener, so its bytes cannot be read"
+                    + " — set RemoteMediaSource.Open to a seekable stream over the transport");
+            return null;
+        }
+
+        // The LABEL is what every log line prints; the url never leaves the app's own closure.
+        var bytes = new MediaByteSource { Label = remote.Label, Open = open };
+        return OpenSource(key, bytes, remote.Duration, remote.HasPicture, cancellationToken);
     }
 
-    private Source? OpenSource(string key, string enginePath, string label, TimeSpan? knownDuration,
+    private Source? OpenSource(string key, MediaByteSource bytes, TimeSpan? knownDuration,
                                bool? knownPicture, CancellationToken cancellationToken)
     {
-        var path = enginePath;
+        var label = bytes.Label;
 
         lock (_gate)
         {
@@ -367,7 +376,7 @@ internal sealed class SegmentStream : IDisposable
         // a network header before the first manifest can be answered — twice, with the picture probe below
         // — and whoever registered the source usually knows both from the catalogue entry the url came
         // from. A supplied value is trusted: it is the app's own claim about its own media.
-        if ((knownDuration ?? _engine.DurationOf(path)) is not { } duration || duration <= TimeSpan.Zero)
+        if ((knownDuration ?? _engine.DurationOf(bytes)) is not { } duration || duration <= TimeSpan.Zero)
         {
             Log(() => $"segments: no duration for {label} — refusing");
             return null;
@@ -376,9 +385,9 @@ internal sealed class SegmentStream : IDisposable
         // 🔴 ONE plan object, used by the manifest AND handed to every run for this source. A playlist and a
         // producer that computed boundaries separately would disagree silently: the bytes stay valid, and a
         // seek lands at the wrong moment. Null means the engine will hit the grid, which is then the plan.
-        var plan = _engine.PlanSegments(path, _options.SegmentSeconds, cancellationToken)
+        var plan = _engine.PlanSegments(bytes, _options.SegmentSeconds, cancellationToken)
                    ?? SegmentPlan.Grid(_options.SegmentSeconds, duration);
-        var hasPicture = knownPicture ?? _engine.HasPicture(path);
+        var hasPicture = knownPicture ?? _engine.HasPicture(bytes);
 
         lock (_gate)
         {
@@ -394,14 +403,13 @@ internal sealed class SegmentStream : IDisposable
 
             var source = new Source
             {
-                Path = path,
-                Label = label,
+                Bytes = bytes,
                 Directory = directory,
                 Duration = duration,
                 Plan = plan,
                 HasPicture = hasPicture,
             };
-            DropUnfinishedTail(source);
+            DropPartials(source);
             _sources[key] = source;
 
             Log(() => $"segments: {label} {duration.TotalSeconds:0.00}s"
@@ -510,22 +518,18 @@ internal sealed class SegmentStream : IDisposable
     }
 
     /// <summary>
-    /// Is the segment on disk AND finished?
+    /// Is the segment on disk AND finished? Under the atomic-publish contract those are ONE question: a run
+    /// writes <c>seg{k}.m4s.part</c> and renames it, so the final name appears only when the bytes are whole
+    /// (<see cref="SegmentRunRequest.PartialExtension"/>).
     /// <para>
-    /// ⚠ <b>Existing is not finished.</b> A segment muxer writes each piece progressively, so the file a
-    /// request finds may be half a segment. The next one opening is the signal that this one closed; for the
-    /// final segment nothing follows, so the run exiting is. Serving on existence alone truncates the first
-    /// segment of every stream — the kind of failure that plays for two seconds and then stops.
+    /// 🔴 <b>It used to require the NEXT segment to exist</b>, because a progressive muxer creates a file
+    /// when it STARTS writing it — which made first playback wait for segment 0 <i>and</i> the opening of
+    /// segment 1, a whole segment of latency for a question the producer can answer for free. ⚠ Non-empty,
+    /// not merely present: a rename cannot produce a zero-length file, but a foreign engine ignoring the
+    /// contract can, and this is the cheaper half of noticing.
     /// </para>
     /// </summary>
-    private static bool IsComplete(Source source, int index)
-    {
-        var path = SegmentPath(source, index);
-        if (!NonEmpty(path)) return false;
-        if (File.Exists(SegmentPath(source, index + 1))) return true;
-        // Nothing is writing it: whatever is there is all there will ever be.
-        return source.Run is null || source.Run.HasExited;
-    }
+    private static bool IsComplete(Source source, int index) => NonEmpty(SegmentPath(source, index));
 
     /// <summary>
     /// For a source WITH a picture: does the segment actually contain one?
@@ -565,8 +569,18 @@ internal sealed class SegmentStream : IDisposable
     }
 
     /// <summary>
-    /// A window that has been running past its grace period, has written something, and still has no picture
-    /// in it. True means the ladder was advanced and the caller should loop.
+    /// A window that has been running past its grace period, has PUBLISHED something, and still has no
+    /// picture in it. True means the ladder was advanced and the caller should loop.
+    /// <para>
+    /// ⚠ <b>Atomic publish narrowed this, and the remaining gap is stated rather than papered over.</b> It
+    /// used to inspect a still-open first segment — the tell for an encoder that writes no frames, whose
+    /// muxer therefore never rotates. A part being written is now a <c>.part</c>, so what this sees is a
+    /// FINISHED window start with no picture: still worth catching when the request is for a later index,
+    /// and no longer able to see a run that has published nothing at all. That case falls to
+    /// <see cref="SegmentStreamOptions.WaitBudget"/> and answers <c>503</c> without advancing the ladder.
+    /// Reading a <c>.part</c> instead would judge a file mid-write, where "no picture yet" and "no picture
+    /// ever" are the same bytes.
+    /// </para>
     /// </summary>
     private bool StalledWithoutPicture(Source source)
     {
@@ -652,7 +666,7 @@ internal sealed class SegmentStream : IDisposable
         }
 
         var run = _engine.Start(new SegmentRunRequest(
-            source.Path, source.Directory, source.HasPicture, index, source.Plan, source.Attempt));
+            source.Bytes, source.Directory, source.HasPicture, index, source.Plan, source.Attempt));
         if (run is null)
         {
             Log(() => $"segments: no engine candidate left for seg{index} (attempt {source.Attempt}) — giving up");
@@ -681,34 +695,36 @@ internal sealed class SegmentStream : IDisposable
     }
 
     /// <summary>
-    /// Delete the highest-numbered segment the first time a source is opened in this process.
+    /// Delete anything a killed process left half-written, the first time a source is opened here.
     /// <para>
-    /// ⚠ The app can be killed mid-write, and what that leaves behind is a segment file that EXISTS, is
-    /// non-empty and is truncated — which <see cref="IsComplete(Source, int)"/> would then accept forever, because the
-    /// process that could have said otherwise is gone. Dropping exactly one file per source costs one
-    /// segment of re-encoding and closes the hole.
+    /// Under the atomic-publish contract that is exactly the <c>.part</c> files
+    /// (<see cref="SegmentRunRequest.PartialExtension"/>) — a rename either happened or it did not, so no
+    /// FINAL name can be truncated and none has to be guessed at.
+    /// </para>
+    /// <para>
+    /// 🔴 <b>It used to delete the highest-numbered SEGMENT instead</b>, on the reasoning that a kill leaves
+    /// a file that exists, is non-empty and is short. That cost a segment of re-production on every open of
+    /// every source — almost always a perfectly good one — and still could not see a truncated file anywhere
+    /// but the tail.
     /// </para>
     /// </summary>
-    private void DropUnfinishedTail(Source source)
+    private void DropPartials(Source source)
     {
         try
         {
-            var highest = -1;
-            // ⚠ The SEGMENT extension, from the one place that states it. This glob said `seg*.ts` for a day
-            // after D75 moved the tier to fMP4, so the sweep matched nothing and the hole below stayed open
-            // while every test still passed — none of them writes a truncated file.
-            foreach (var file in System.IO.Directory.EnumerateFiles(source.Directory, $"seg*{SegmentRunRequest.SegmentExtension}"))
+            var dropped = 0;
+            foreach (var file in System.IO.Directory.EnumerateFiles(
+                         source.Directory, $"*{SegmentRunRequest.PartialExtension}"))
             {
-                if (TryParseSegmentIndex(Path.GetFileName(file), out var index) && index > highest) highest = index;
+                try { File.Delete(file); dropped++; }
+                catch (Exception) { /* it will be overwritten by the next run anyway */ }
             }
 
-            if (highest < 0) return;
-            File.Delete(SegmentPath(source, highest));
-            Log(() => $"segments: dropped seg{highest} — it may have been truncated by a kill");
+            if (dropped > 0) Log(() => $"segments: dropped {dropped} part-file(s) left by an interrupted run");
         }
         catch (Exception ex)
         {
-            Log(() => "segments: could not sweep an unfinished tail", ex);
+            Log(() => "segments: could not sweep interrupted writes", ex);
         }
     }
 
@@ -829,18 +845,19 @@ internal sealed class SegmentStream : IDisposable
     private sealed class Source
     {
         /// <summary>
-        /// What the engine reads: a contained local path, or a registered remote url.
+        /// What the engine reads, however it arrives — a local file, a LAN share, a ranged remote fetch.
         /// <para>
-        /// 🔴 <b>NEVER LOG THIS.</b> For a remote source it is the app's credential-bearing url, and
-        /// <c>Path.GetFileName</c> does not sanitise one — it splits on separators, so a query string
-        /// survives intact and lands in the log line whole. Use <see cref="Label"/>, which exists for
-        /// exactly this and is pinned by a test that plants a token in a url and reads the log back.
+        /// ⚠ <b>An address never reaches this type.</b> A remote source's url stays inside the app's own
+        /// opener closure, so the only printable member is <see cref="MediaByteSource.Label"/> — the leak
+        /// this used to guard against with prose is now unrepresentable. A test still plants a token in a
+        /// url and reads the log back.
         /// </para>
         /// </summary>
-        public required string Path { get; init; }
+        public required MediaByteSource Bytes { get; init; }
 
         /// <summary>The safe name for diagnostics: a file name, or the label the app registered.</summary>
-        public required string Label { get; init; }
+        public string Label => Bytes.Label;
+
         public required string Directory { get; init; }
         public required TimeSpan Duration { get; init; }
         public required bool HasPicture { get; init; }

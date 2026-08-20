@@ -29,6 +29,9 @@ public class RealSourceSegmentTests
 
     private static string Fixture => Path.Combine(AppContext.BaseDirectory, "TestAssets", "media", "clip-h264-aac.mkv");
 
+    /// <summary>The same fixture as the engine now takes it: an opener, not a path.</summary>
+    private static MediaByteSource FixtureBytes => MediaByteSource.ForFile(Fixture);
+
     /// <summary>
     /// Where the run's bytes are left for the decode probe. A fixed path rather than a temp one BECAUSE the
     /// probe is a separate process run minutes later by hand; <c>devtools/_*</c> is gitignored.
@@ -101,7 +104,7 @@ public class RealSourceSegmentTests
     {
         var engine = new DefaultSegmentEngine(new RecordingConversion());
 
-        var plan = engine.PlanSegments(Fixture, SegmentSeconds);
+        var plan = engine.PlanSegments(FixtureBytes, SegmentSeconds);
 
         Assert.NotNull(plan);
         Assert.Null(plan.GridSeconds);          // derived, not uniform
@@ -119,14 +122,14 @@ public class RealSourceSegmentTests
     {
         var conversion = new RecordingConversion();
         var engine = new DefaultSegmentEngine(conversion);
-        var plan = engine.PlanSegments(Fixture, SegmentSeconds);
+        var plan = engine.PlanSegments(FixtureBytes, SegmentSeconds);
         Assert.NotNull(plan);
 
         var dir = Artifacts;
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         Directory.CreateDirectory(dir);
 
-        var run = engine.Start(new SegmentRunRequest(Fixture, dir, HasPicture: true, FirstSegment: 0, plan, Attempt: 0));
+        var run = engine.Start(new SegmentRunRequest(FixtureBytes, dir, HasPicture: true, FirstSegment: 0, plan, Attempt: 0));
         Assert.NotNull(run);
 
         var deadline = DateTime.UtcNow.AddSeconds(120);

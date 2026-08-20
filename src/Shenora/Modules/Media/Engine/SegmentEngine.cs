@@ -30,13 +30,13 @@ public interface ISegmentEngine
     /// How long the source plays, or null when it cannot be read. ⚠ The manifest is computed from this ALONE:
     /// no segment has to exist for the whole playlist to be declared.
     /// </summary>
-    TimeSpan? DurationOf(string source);
+    TimeSpan? DurationOf(MediaByteSource source);
 
     /// <summary>
     /// Does the source carry a PICTURE worth keeping (never an attached cover image)? Decides whether a run
     /// needs a video encoder.
     /// </summary>
-    bool HasPicture(string source);
+    bool HasPicture(MediaByteSource source);
 
     /// <summary>
     /// WHERE this engine will cut, when it will not cut on the caller's grid — said HERE, once.
@@ -52,13 +52,18 @@ public interface ISegmentEngine
     /// the request asking for the manifest, so honour the token.
     /// </para>
     /// </summary>
-    /// <param name="source">The file the stream is for.</param>
+    /// <param name="source">The bytes the stream is for.</param>
     /// <param name="segmentSeconds">The length the caller asked for. A derived plan aims at it rather than hitting it.</param>
     /// <param name="cancellationToken">The request's own token.</param>
-    SegmentPlan? PlanSegments(string source, double segmentSeconds, CancellationToken cancellationToken = default);
+    SegmentPlan? PlanSegments(MediaByteSource source, double segmentSeconds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Does a produced SEGMENT actually contain a picture — frames, not merely a declared stream?
+    /// <para>
+    /// ⚠ Still a PATH where the rest of this interface takes a <see cref="MediaByteSource"/>, and deliberately:
+    /// this reads a fragment the engine itself just wrote into <see cref="SegmentRunRequest.Directory"/>, which
+    /// is always local however the source arrived.
+    /// </para>
     /// <para>
     /// 🔴 <b>A DIFFERENT QUESTION from <see cref="HasPicture"/>, and asking the wrong one ships a SILENT bug.</b>
     /// A hardware encoder can open cleanly, accept every frame, write <c>video:0KiB</c> and exit 0, with every
@@ -79,14 +84,26 @@ public interface ISegmentEngine
 }
 
 /// <summary>What one production run is asked to do.</summary>
-/// <param name="SourcePath">The original file. Already authorised against the allowed roots by the caller.</param>
+/// <param name="Source">
+/// The original bytes. Already authorised by the caller — containment for a path, an issued handle for a
+/// remote source. ⚠ Print <see cref="MediaByteSource.Label"/> and nothing else.
+/// </param>
 /// <param name="Directory">
 /// Where to write the output. Created by the caller, and re-created per restart. A run writes
 /// <c>seg{k}.m4s</c> per segment (<see cref="SegmentRunRequest.SegmentExtension"/>) AND one <c>init.mp4</c>
 /// (<see cref="SegmentRunRequest.InitSegmentName"/>); both names are part of this contract.
+/// <para>
+/// 🔴 <b>EVERY PART MUST BE PUBLISHED ATOMICALLY: write <c>{name}.part</c>
+/// (<see cref="SegmentRunRequest.PartialExtension"/>) and RENAME it into place once it is whole.</b> The
+/// consumer serves a part the moment it EXISTS, so a progressively-written file is served truncated — which
+/// plays for a second and stops, with nothing to report. Renaming within one directory is atomic on every
+/// platform this ships to, so a reader sees the old file or the finished one and never a partial.
+/// </para>
+/// <para>
 /// ⚠ <b>The init segment is written BESIDE THE FIRST FRAGMENT, not ahead of the run</b>, so a consumer must
 /// wait for it as it waits for a segment: its decoder configuration is knowable only once an encoder has
 /// produced output, and writing it early yields a movie that opens and plays nothing.
+/// </para>
 /// </param>
 /// <param name="HasPicture">
 /// From <see cref="ISegmentEngine.HasPicture"/> — asked once and passed in, so a restart does not re-probe.
@@ -106,7 +123,7 @@ public interface ISegmentEngine
 /// one encoder candidate can offer the next.
 /// </param>
 public sealed record SegmentRunRequest(
-    string SourcePath,
+    MediaByteSource Source,
     string Directory,
     bool HasPicture,
     int FirstSegment,
@@ -131,6 +148,26 @@ public sealed record SegmentRunRequest(
     /// </para>
     /// </summary>
     public const string SegmentExtension = ".m4s";
+
+    /// <summary>
+    /// Appended to a part's name while it is still being written: <c>seg3.m4s.part</c>, renamed to
+    /// <c>seg3.m4s</c> once whole. See <see cref="Directory"/> for why this is a contract and not a
+    /// convention.
+    /// <para>
+    /// 🔴 <b>It is what lets a consumer treat EXISTENCE as completeness</b>, and that is worth a whole
+    /// segment of startup latency. Without it the only way to know a part had finished was that the NEXT one
+    /// had appeared — so nothing could play until segment 0 <i>and</i> the opening of segment 1 had been
+    /// produced. (The same rule, and the same cost, is visible in other just-in-time transcoders; ffmpeg's
+    /// answer is <c>-hls_flags +temp_file</c>.)
+    /// </para>
+    /// <para>
+    /// ⚠ It also replaces crash recovery with a sweep: a process killed mid-write leaves a <c>.part</c>,
+    /// which is deleted rather than served. Nothing has to guess which finished file might be truncated.
+    /// ⚠ Deliberately does NOT end in <see cref="SegmentExtension"/>, so a <c>seg*.m4s</c> enumeration and
+    /// the route's own resource parsing both skip it.
+    /// </para>
+    /// </summary>
+    public const string PartialExtension = ".part";
 }
 
 /// <summary>A live production run. Dispose to kill it.</summary>

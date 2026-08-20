@@ -67,10 +67,10 @@ public class SegmentStreamTests : IDisposable
 
         public bool IsAvailable => true;
         public string Describe() => "fake";
-        public TimeSpan? DurationOf(string source) => Duration;
-        public bool HasPicture(string source) => SourceHasPicture;
+        public TimeSpan? DurationOf(MediaByteSource source) => Duration;
+        public bool HasPicture(MediaByteSource source) => SourceHasPicture;
 
-        public SegmentPlan? PlanSegments(string source, double segmentSeconds, CancellationToken cancellationToken = default)
+        public SegmentPlan? PlanSegments(MediaByteSource source, double segmentSeconds, CancellationToken cancellationToken = default)
             => Cuts is null ? null : SegmentPlan.Cuts(Cuts, Duration);
 
         /// <summary>A segment "has a rendered picture" when the run that wrote it said so in its name.</summary>
@@ -101,6 +101,43 @@ public class SegmentStreamTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// A run that publishes <b>segment 0 and nothing else</b>, and STAYS ALIVE — the shape
+    /// <see cref="FakeEngine"/> cannot model, because it writes every segment and exits at once, which
+    /// satisfies "the next one exists" and "the run is over" simultaneously.
+    /// <para>
+    /// 🔴 That is why the readiness rule was never covered: both the old rule and the new one pass against
+    /// a fake that finishes instantly. Real production has exactly one segment on disk and a live producer.
+    /// </para>
+    /// </summary>
+    private sealed class OneSegmentEngine : ISegmentEngine
+    {
+        /// <summary>Write the part under its FINAL name (published) or its <c>.part</c> name (mid-write).</summary>
+        public bool Publish { get; init; } = true;
+
+        public bool IsAvailable => true;
+        public string Describe() => "one-segment";
+        public TimeSpan? DurationOf(MediaByteSource source) => TimeSpan.FromSeconds(20);
+        public bool HasPicture(MediaByteSource source) => false;
+        public SegmentPlan? PlanSegments(MediaByteSource source, double seconds, CancellationToken ct = default) => null;
+        public bool HasRenderedPicture(string segment) => true;
+
+        public ISegmentRun? Start(SegmentRunRequest request)
+        {
+            var suffix = Publish ? string.Empty : SegmentRunRequest.PartialExtension;
+            File.WriteAllText(Path.Combine(request.Directory, SegmentRunRequest.InitSegmentName), "init");
+            File.WriteAllText(Path.Combine(request.Directory, $"seg{request.FirstSegment}.m4s{suffix}"), "seg-body");
+            return new Run();
+        }
+
+        /// <summary>Still producing — nothing here may be read as "whatever is there is all there is".</summary>
+        private sealed class Run : ISegmentRun
+        {
+            public bool HasExited => false;
+            public void Dispose() { }
+        }
+    }
+
     private string NewSource(string name = "track.flac")
     {
         var path = Path.Combine(_sources, name);
@@ -108,7 +145,7 @@ public class SegmentStreamTests : IDisposable
         return path;
     }
 
-    private SegmentStreamOptions Options() => new()
+    private SegmentStreamOptions Options(TimeSpan? waitBudget = null) => new()
     {
         Access = new MediaAccessOptions
         {
@@ -118,12 +155,63 @@ public class SegmentStreamTests : IDisposable
             AllowedRoots = [_sources],
             CacheRoot = _cache,
         },
+        // Default 20 s. A test that EXPECTS a refusal must not spend it.
+        WaitBudget = waitBudget ?? TimeSpan.FromSeconds(20),
     };
 
     private static async Task<string> BodyOf(WebViewResourceResponse response)
     {
         using var reader = new StreamReader(response.Content);
         return await reader.ReadToEndAsync();
+    }
+
+    // ── readiness: publishing is what makes a part servable ───────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>A published segment is served immediately — the route does NOT wait for the next one.</b> This
+    /// is a whole segment of startup latency: a page cannot play until <c>init.mp4</c> arrives, that request
+    /// drives segment 0, and requiring segment 1 to exist meant waiting for a second segment's worth of
+    /// production before the first frame.
+    /// <para>
+    /// The old rule inferred completeness from "the next file appeared, or the run is over", because a
+    /// progressive muxer creates a file when it STARTS writing. Atomic publish
+    /// (<see cref="SegmentRunRequest.PartialExtension"/>) makes the producer answer instead.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_published_segment_is_served_without_waiting_for_the_next_one()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        // A short budget so that if this ever regresses it FAILS in a second rather than hanging for 20.
+        using var _ = interceptor.UseSegmentStream(new OneSegmentEngine(), Options(TimeSpan.FromSeconds(1)));
+
+        var response = await interceptor.AskAsync("https://x/shenora-hls/track.flac/seg0.m4s");
+
+        Assert.NotNull(response);
+        Assert.Equal(200, response!.StatusCode);
+        Assert.Equal("seg-body", await BodyOf(response));
+        // The producer is still running and seg1 does not exist — which under the old rule was the whole
+        // reason this request could not be answered.
+        Assert.False(File.Exists(Path.Combine(_cache, "seg1.m4s")));
+    }
+
+    /// <summary>
+    /// The other direction, without which the test above would pass just as well if the route served
+    /// ANYTHING it found: a part still being written is not servable, and must not be mistaken for one.
+    /// </summary>
+    [Fact]
+    public async Task A_part_still_being_written_is_not_served()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        using var _ = interceptor.UseSegmentStream(new OneSegmentEngine { Publish = false },
+                                                   Options(TimeSpan.FromMilliseconds(300)));
+
+        var response = await interceptor.AskAsync("https://x/shenora-hls/track.flac/seg0.m4s");
+
+        Assert.NotNull(response);
+        Assert.Equal(503, response!.StatusCode);
     }
 
     /// <summary>
@@ -375,10 +463,10 @@ public class SegmentStreamTests : IDisposable
     {
         public bool IsAvailable => false;
         public string Describe() => "none";
-        public TimeSpan? DurationOf(string source) => null;
-        public bool HasPicture(string source) => false;
+        public TimeSpan? DurationOf(MediaByteSource source) => null;
+        public bool HasPicture(MediaByteSource source) => false;
         public bool HasRenderedPicture(string segment) => false;
-        public SegmentPlan? PlanSegments(string source, double seconds, CancellationToken cancellationToken = default) => null;
+        public SegmentPlan? PlanSegments(MediaByteSource source, double seconds, CancellationToken cancellationToken = default) => null;
         public ISegmentRun? Start(SegmentRunRequest request) => null;
     }
 

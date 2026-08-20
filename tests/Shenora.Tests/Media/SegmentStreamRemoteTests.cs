@@ -58,9 +58,9 @@ public class SegmentStreamRemoteTests : IDisposable
 
         public bool IsAvailable => true;
         public string Describe() => "counting";
-        public TimeSpan? DurationOf(string source) { DurationProbes++; return Duration; }
-        public bool HasPicture(string source) { PictureProbes++; return SourceHasPicture; }
-        public SegmentPlan? PlanSegments(string source, double seconds, CancellationToken ct = default) => null;
+        public TimeSpan? DurationOf(MediaByteSource source) { DurationProbes++; return Duration; }
+        public bool HasPicture(MediaByteSource source) { PictureProbes++; return SourceHasPicture; }
+        public SegmentPlan? PlanSegments(MediaByteSource source, double seconds, CancellationToken ct = default) => null;
         public bool HasRenderedPicture(string segment) => true;
 
         public ISegmentRun? Start(SegmentRunRequest request)
@@ -95,6 +95,13 @@ public class SegmentStreamRemoteTests : IDisposable
 
     private static string Url(string handle, string resource) => $"https://x/shenora-hls/~remote/{handle}/{resource}";
 
+    /// <summary>
+    /// A stand-in transport. ⚠ Every test that drives the ROUTE needs one: without an opener the route
+    /// refuses the source outright, which is deliberate — a manifest served over bytes nobody can read
+    /// gives a page a playlist whose every segment 503s for ever.
+    /// </summary>
+    private static Func<CancellationToken, Stream> Bytes => _ => new MemoryStream();
+
     private static async Task<string> BodyOf(WebViewResourceResponse response)
     {
         using var reader = new StreamReader(response.Content);
@@ -117,6 +124,7 @@ public class SegmentStreamRemoteTests : IDisposable
             // Every shape that has ever leaked: a token in the query, and one in the userinfo.
             Url = new Uri($"https://cdn.example.com/films/reel.mkv?X-Amz-Signature={secret}"),
             Label = "Reel (2026)",
+            Open = Bytes,
         });
 
         var interceptor = new FakeInterceptor();
@@ -174,11 +182,46 @@ public class SegmentStreamRemoteTests : IDisposable
         Assert.Null(await interceptor.AskAsync(Url("0123456789abcdef0123456789abcdef", "index.m3u8")));
     }
 
+    /// <summary>
+    /// 🔴 <b>A source with no opener is refused AT THE MANIFEST, not at the first segment.</b> The kit ships
+    /// no transport, so bytes are the app's to fetch — and a manifest is derived from the DURATION, which is
+    /// suppliable. Serve one anyway and the page gets a complete playlist whose every entry <c>503</c>s for
+    /// ever, which is the failure this route spends most of its diagnostics trying not to produce.
+    /// </summary>
+    [Fact]
+    public async Task A_source_registered_without_an_opener_is_refused_and_says_why()
+    {
+        var log = new Recorder();
+        var registry = new MediaSourceRegistry();
+        // Everything else supplied, so nothing but the missing opener can be the reason.
+        var handle = registry.Register(new RemoteMediaSource
+        {
+            Url = new Uri("https://cdn/film.mkv"),
+            Label = "openerless",
+            Duration = TimeSpan.FromSeconds(20),
+            HasPicture = true,
+        });
+
+        var interceptor = new FakeInterceptor();
+        using var _ = interceptor.UseSegmentStream(new CountingEngine(), Options(registry, log));
+
+        var manifest = await interceptor.AskAsync(Url(handle, "index.m3u8"));
+
+        Assert.Equal(404, manifest!.StatusCode);
+        // ⚠ And it must NAME the cause. A 404 alone reads as "no such source", which is the one thing this
+        // is not — the source was authorised and the route simply cannot read it.
+        Assert.Contains("openerless", log.All, StringComparison.Ordinal);
+        Assert.Contains("opener", log.All, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Releasing_a_handle_stops_new_streams_through_it()
     {
         var registry = new MediaSourceRegistry();
-        var handle = registry.Register(new RemoteMediaSource { Url = new Uri("https://cdn/x.mkv"), Label = "x" });
+        var handle = registry.Register(new RemoteMediaSource
+        {
+            Url = new Uri("https://cdn/x.mkv"), Label = "x", Open = Bytes,
+        });
 
         var interceptor = new FakeInterceptor();
         using var _ = interceptor.UseSegmentStream(new CountingEngine(), Options(registry));
@@ -201,6 +244,7 @@ public class SegmentStreamRemoteTests : IDisposable
         {
             Url = new Uri("https://cdn.example.com/somewhere/else/entirely.mkv"),
             Label = "elsewhere",
+            Open = Bytes,
         });
 
         var interceptor = new FakeInterceptor();
@@ -226,6 +270,7 @@ public class SegmentStreamRemoteTests : IDisposable
             Label = "film",
             Duration = TimeSpan.FromSeconds(20),
             HasPicture = true,
+            Open = Bytes,
         });
 
         var engine = new CountingEngine();
@@ -246,7 +291,10 @@ public class SegmentStreamRemoteTests : IDisposable
     {
         // The other direction, or "not probed" could be true because nothing works.
         var registry = new MediaSourceRegistry();
-        var handle = registry.Register(new RemoteMediaSource { Url = new Uri("https://cdn/f.mkv"), Label = "f" });
+        var handle = registry.Register(new RemoteMediaSource
+        {
+            Url = new Uri("https://cdn/f.mkv"), Label = "f", Open = Bytes,
+        });
 
         var engine = new CountingEngine { Duration = TimeSpan.FromSeconds(20) };
         var interceptor = new FakeInterceptor();
@@ -274,6 +322,7 @@ public class SegmentStreamRemoteTests : IDisposable
         var first = registry.Register(new RemoteMediaSource
         {
             Url = new Uri("https://cdn/film.mkv?sig=AAAA"), Label = "film", Identity = "catalogue:film-42",
+            Open = Bytes,
         });
         await interceptor.AskAsync(Url(first, "seg0.m4s"));
         var firstDirectory = engine.Starts.Single().Directory;
@@ -282,6 +331,7 @@ public class SegmentStreamRemoteTests : IDisposable
         var second = registry.Register(new RemoteMediaSource
         {
             Url = new Uri("https://cdn/film.mkv?sig=BBBB"), Label = "film", Identity = "catalogue:film-42",
+            Open = Bytes,
         });
         await interceptor.AskAsync(Url(second, "seg0.m4s"));
 
@@ -299,8 +349,8 @@ public class SegmentStreamRemoteTests : IDisposable
         var interceptor = new FakeInterceptor();
         using var _ = interceptor.UseSegmentStream(engine, Options(registry));
 
-        var a = registry.Register(new RemoteMediaSource { Url = new Uri("https://cdn/a.mkv"), Label = "a" });
-        var b = registry.Register(new RemoteMediaSource { Url = new Uri("https://cdn/b.mkv"), Label = "b" });
+        var a = registry.Register(new RemoteMediaSource { Url = new Uri("https://cdn/a.mkv"), Label = "a", Open = Bytes });
+        var b = registry.Register(new RemoteMediaSource { Url = new Uri("https://cdn/b.mkv"), Label = "b", Open = Bytes });
         await interceptor.AskAsync(Url(a, "seg0.m4s"));
         await interceptor.AskAsync(Url(b, "seg0.m4s"));
 

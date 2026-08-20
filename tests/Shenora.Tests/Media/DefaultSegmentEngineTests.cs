@@ -104,9 +104,12 @@ public class DefaultSegmentEngineTests
         return path;
     }
 
+    /// <summary>A local fixture as the engine now takes it: an opener, not a path.</summary>
+    private static MediaByteSource Bytes(string path) => MediaByteSource.ForFile(path);
+
     private static SegmentRunRequest Request(string source, string directory, int first = 0, double seconds = 1.0,
                                              bool hasPicture = true, int attempt = 0, SegmentPlan? plan = null)
-        => new(source, directory, hasPicture, first,
+        => new(Bytes(source), directory, hasPicture, first,
                plan ?? SegmentPlan.Grid(seconds, TimeSpan.FromHours(1)), attempt);
 
     /// <summary>Run to completion, or fail loudly rather than hang — a wedged pump must not stall the suite.</summary>
@@ -137,7 +140,7 @@ public class DefaultSegmentEngineTests
 
         Assert.False(engine.IsAvailable);
         Assert.Null(engine.Start(Request("x.mkv", "d")));
-        Assert.Null(engine.PlanSegments("x.mkv", 6.0));
+        Assert.Null(engine.PlanSegments(Bytes("x.mkv"), 6.0));
         Assert.Contains("no segment engine", engine.Describe(), StringComparison.OrdinalIgnoreCase);
     }
 
@@ -167,7 +170,7 @@ public class DefaultSegmentEngineTests
         var engine = new DefaultSegmentEngine(new FakeConversion());
         var path = Write(dir, Carriable(frames: 40));
 
-        var plan = engine.PlanSegments(path, 2.5);
+        var plan = engine.PlanSegments(Bytes(path), 2.5);
 
         Assert.NotNull(plan);
         Assert.Null(plan!.GridSeconds);
@@ -198,12 +201,88 @@ public class DefaultSegmentEngineTests
         var engine = new DefaultSegmentEngine(new FakeConversion());
         var source = Write(dir, Carriable(8));
 
-        Assert.NotNull(engine.DurationOf(source));
-        Assert.True(engine.HasPicture(source));
+        Assert.NotNull(engine.DurationOf(Bytes(source)));
+        Assert.True(engine.HasPicture(Bytes(source)));
         // An unreadable source is an absent answer, not a throw — every member promises that.
-        Assert.Null(engine.DurationOf(dir.Combine("missing.mkv")));
-        Assert.False(engine.HasPicture(dir.Combine("missing.mkv")));
-        Assert.Null(engine.PlanSegments(dir.Combine("missing.mkv"), 6.0));
+        Assert.Null(engine.DurationOf(Bytes(dir.Combine("missing.mkv"))));
+        Assert.False(engine.HasPicture(Bytes(dir.Combine("missing.mkv"))));
+        Assert.Null(engine.PlanSegments(Bytes(dir.Combine("missing.mkv")), 6.0));
+    }
+
+    // ── the source is an OPENER, not a path ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>The whole point of <see cref="MediaByteSource"/>: a source that is not a file is planned and
+    /// produced identically.</b> Every other fixture here goes through <see cref="Write"/> and would pass
+    /// just as well against a hard-coded <c>File.OpenRead</c> — which is what the engine did until now, and
+    /// is why a remote or LAN source could be described but never produced from.
+    /// <para>
+    /// ⚠ The bytes never reach the disk, so nothing here can fall back to a path.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_source_that_is_not_a_file_is_planned_and_produced_through_its_opener()
+    {
+        using var dir = TempDir.Create();
+        using var mkv = Carriable(frames: 16);
+        var raw = mkv.ToArray();
+        var opened = 0;
+
+        var source = new MediaByteSource
+        {
+            Label = "in-memory",
+            // A fresh stream per call: the probe, the plan and the run each open their own.
+            Open = _ => { Interlocked.Increment(ref opened); return new MemoryStream(raw, writable: false); },
+        };
+
+        var engine = new DefaultSegmentEngine(new FakeConversion());
+        var plan = engine.PlanSegments(source, 1.0);
+        Assert.NotNull(plan);
+
+        using (var run = engine.Start(new SegmentRunRequest(source, dir.Root, HasPicture: true,
+                                                            FirstSegment: 0, plan, Attempt: 0))!)
+        {
+            Assert.NotNull(run);
+            RunToCompletion(run);
+        }
+
+        Assert.True(opened > 0, "the opener was never called — something still resolved a path");
+        var segments = Segments(dir);
+        Assert.Equal(4, segments.Count);
+        // The SOURCE's own frame bytes came through, so this is a real production and not an empty success.
+        Assert.Equal(16 * PictureFrameBytes,
+            segments.Sum(s => Mp4FragmentReader.SampleBytes(s, DefaultSegmentEngine.VideoTrackId)));
+    }
+
+    /// <summary>
+    /// A stream that cannot SEEK is refused by name. Matroska states where a frame lives rather than
+    /// streaming it in order, so a forward-only stream is not a slow source — it is an unreadable one, and
+    /// without this it reads as "not readable Matroska" about a file that is perfectly well-formed.
+    /// </summary>
+    [Fact]
+    public void A_source_whose_stream_cannot_seek_is_refused_with_a_reason()
+    {
+        using var mkv = Carriable(frames: 8);
+        var raw = mkv.ToArray();
+        var lines = new List<string>();
+        var engine = new DefaultSegmentEngine(new FakeConversion(), AppCallback.Logger(lines.Add));
+
+        var source = new MediaByteSource
+        {
+            Label = "forward-only",
+            Open = _ => new ForwardOnlyStream(raw),
+        };
+
+        Assert.Null(engine.DurationOf(source));
+        Assert.Null(engine.PlanSegments(source, 1.0));
+        Assert.Contains(lines, l => l.Contains("seekable adapter", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.Contains("forward-only", StringComparison.Ordinal));
+    }
+
+    /// <summary>What a naive ranged HTTP body is: readable, and not seekable.</summary>
+    private sealed class ForwardOnlyStream(byte[] data) : MemoryStream(data, writable: false)
+    {
+        public override bool CanSeek => false;
     }
 
     // ── planning: where a copied run will cut ──────────────────────────────────────────────────────────
@@ -219,7 +298,7 @@ public class DefaultSegmentEngineTests
         using var dir = TempDir.Create();
         var engine = new DefaultSegmentEngine(new FakeConversion());
         // 24 frames at 250 ms = 6 s, keyframes every 12 frames = every 3 s.
-        var plan = engine.PlanSegments(Write(dir, Carriable(frames: 24, keyEvery: 12)), 1.0);
+        var plan = engine.PlanSegments(Bytes(Write(dir, Carriable(frames: 24, keyEvery: 12))), 1.0);
 
         Assert.NotNull(plan);
         Assert.Null(plan!.GridSeconds);
@@ -240,7 +319,7 @@ public class DefaultSegmentEngineTests
         using var dir = TempDir.Create();
         var engine = new DefaultSegmentEngine(new FakeConversion());
 
-        Assert.Null(engine.PlanSegments(Write(dir, Convertible(frames: 24)), 1.0));
+        Assert.Null(engine.PlanSegments(Bytes(Write(dir, Convertible(frames: 24))), 1.0));
     }
 
     /// <summary>
@@ -258,7 +337,7 @@ public class DefaultSegmentEngineTests
         // 200 frames at 250 ms = 50 s, with exactly ONE keyframe — past the 30 s a copied fragment may be.
         var path = Write(dir, Carriable(frames: 200, withAudio: false, keyEvery: 1_000));
 
-        Assert.Null(engine.PlanSegments(path, 6.0));
+        Assert.Null(engine.PlanSegments(Bytes(path), 6.0));
         Assert.Contains(lines, l => l.Contains("re-encoding instead", StringComparison.Ordinal));
     }
 
@@ -278,7 +357,7 @@ public class DefaultSegmentEngineTests
         var engine = new DefaultSegmentEngine(conversion);
         var path = Write(dir, Carriable(frames: 16));
 
-        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(path, 1.0)))!)
+        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(Bytes(path), 1.0)))!)
         {
             Assert.NotNull(run);
             RunToCompletion(run);
@@ -355,7 +434,7 @@ public class DefaultSegmentEngineTests
         var engine = new DefaultSegmentEngine(conversion);
         var path = Write(dir, Mixed(frames: 16));
 
-        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(path, 1.0)))!)
+        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(Bytes(path), 1.0)))!)
         {
             RunToCompletion(run);
         }
@@ -395,7 +474,7 @@ public class DefaultSegmentEngineTests
         using var dir = TempDir.Create();
         var engine = new DefaultSegmentEngine(new FakeConversion());
         var path = Write(dir, Mixed(frames: 16));            // 4 s at 250 ms a frame, 1 s segments
-        var plan = engine.PlanSegments(path, 1.0);
+        var plan = engine.PlanSegments(Bytes(path), 1.0);
 
         const int first = 2;                                  // start at 2 s, not at zero
         using (var run = engine.Start(Request(path, dir.Root, first: first, plan: plan))!)
@@ -433,7 +512,7 @@ public class DefaultSegmentEngineTests
         int[] shown = [0, 750, 250, 500, 1_000, 1_750, 1_250, 1_500];
         var path = Write(dir, Carriable(frames: 8, withAudio: false, keyEvery: 4, presentation: shown));
 
-        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(path, 1.0)))!)
+        using (var run = engine.Start(Request(path, dir.Root, plan: engine.PlanSegments(Bytes(path), 1.0)))!)
         {
             RunToCompletion(run);
         }
@@ -483,7 +562,7 @@ public class DefaultSegmentEngineTests
         var engine = new DefaultSegmentEngine(new FakeConversion());
         var path = Write(dir, copied ? Carriable(frames: 16) : Convertible(frames: 16));
 
-        using (var run = engine.Start(Request(path, dir.Root, first: 2, plan: engine.PlanSegments(path, 1.0)))!)
+        using (var run = engine.Start(Request(path, dir.Root, first: 2, plan: engine.PlanSegments(Bytes(path), 1.0)))!)
         {
             RunToCompletion(run);
         }

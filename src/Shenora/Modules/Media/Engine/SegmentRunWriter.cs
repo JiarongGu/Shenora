@@ -410,16 +410,35 @@ internal sealed class SegmentRunWriter(
         if (data.Count == 0) return;
 
         var path = Path.Combine(request.Directory, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"seg{segment}{SegmentRunRequest.SegmentExtension}"));
-        using var file = File.Create(path);
         // Sequence numbers are 1-based and strictly increasing; the segment index is 0-based.
-        Mp4FragmentWriter.WriteFragment(file, segment + 1, data);
+        Publish(path, file => Mp4FragmentWriter.WriteFragment(file, segment + 1, data));
     }
 
     private void WriteInit(IReadOnlyList<Mp4FragmentTrack> tracks)
     {
         var path = Path.Combine(request.Directory, SegmentRunRequest.InitSegmentName);
-        using var file = File.Create(path);
-        Mp4FragmentWriter.WriteInitSegment(file, tracks);
+        Publish(path, file => Mp4FragmentWriter.WriteInitSegment(file, tracks));
+    }
+
+    /// <summary>
+    /// Write a part to <c>{path}.part</c> and RENAME it into place, so it becomes visible only once it is
+    /// whole (<see cref="SegmentRunRequest.PartialExtension"/>).
+    /// <para>
+    /// 🔴 <b>The consumer serves a part the moment it exists</b>, so writing in place publishes a truncated
+    /// fragment for however long the write takes — which appends without error and plays for a fraction of a
+    /// second. Renaming inside one directory is atomic on every platform this ships to.
+    /// </para>
+    /// <para>
+    /// ⚠ A failed write leaves the <c>.part</c> rather than a corrupt final name; the route sweeps those when
+    /// it next opens the source. Leaving it is better than deleting it here — a delete that itself fails
+    /// during a teardown would be a second exception on the way out of the first.
+    /// </para>
+    /// </summary>
+    private static void Publish(string path, Action<Stream> write)
+    {
+        var partial = path + SegmentRunRequest.PartialExtension;
+        using (var file = File.Create(partial)) write(file);
+        File.Move(partial, path, overwrite: true);
     }
 
     /// <summary>

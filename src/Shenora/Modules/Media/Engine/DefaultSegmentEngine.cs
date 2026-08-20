@@ -61,7 +61,7 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
         : $"the kit's default segment engine (fMP4 fragments over {_conversion.GetType().Name})";
 
     /// <inheritdoc />
-    public TimeSpan? DurationOf(string source) => Probe(source)?.Duration;
+    public TimeSpan? DurationOf(MediaByteSource source) => Probe(source)?.Duration;
 
     /// <inheritdoc />
     /// <remarks>
@@ -73,7 +73,7 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
     /// answers FALSE for every source alive and the engine builds no video encoder, producing sound-only
     /// segments that play perfectly. A test pins it: the wrong version compiles and looks right.
     /// </remarks>
-    public bool HasPicture(string source)
+    public bool HasPicture(MediaByteSource source)
     {
         var probe = Probe(source);
         return probe is not null
@@ -91,14 +91,16 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
     /// derived plan only for one it will COPY: the kit's encoders emit a keyframe every second so a
     /// whole-second grid is hittable, while copied frames keep the original encoder's keyframes (D76).
     /// </remarks>
-    public SegmentPlan? PlanSegments(string source, double segmentSeconds, CancellationToken cancellationToken = default)
+    public SegmentPlan? PlanSegments(MediaByteSource source, double segmentSeconds, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(source);
         if (_conversion is null || segmentSeconds <= 0) return null;
-        if (Probe(source)?.Duration is not { } duration || duration <= TimeSpan.Zero) return null;
+        if (Probe(source, cancellationToken)?.Duration is not { } duration || duration <= TimeSpan.Zero) return null;
 
         try
         {
-            using var file = File.OpenRead(source);
+            using var file = source.Open(cancellationToken);
+            if (!IsIndexable(file, source)) return null;
             var reader = new MatroskaSampleReader(file);
             if (!reader.ReadHeader()) return null;
 
@@ -137,9 +139,26 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
         catch (Exception ex)
         {
             // A source that cannot be planned is one the grid still serves; the contract's answer is null.
-            Report($"segments: could not plan '{Path.GetFileName(source)}' ({ex.GetType().Name})");
+            Report($"segments: could not plan '{source.Label}' ({ex.GetType().Name})");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Can this stream be INDEXED — seekable, and able to say how long it is?
+    /// <para>
+    /// Checked by name rather than left to fail: Matroska states where a frame lives instead of streaming it
+    /// in order, so a forward-only stream reads as a malformed container and every diagnostic downstream says
+    /// "not readable Matroska" about a file that is perfectly fine. A ranged remote source needs a seekable
+    /// adapter, and this is the line that says so.
+    /// </para>
+    /// </summary>
+    private bool IsIndexable(Stream stream, MediaByteSource source)
+    {
+        if (stream is { CanSeek: true, CanRead: true }) return true;
+        Report($"segments: '{source.Label}' opened a stream that cannot seek, and Matroska is read by offset "
+             + "— a ranged source needs a seekable adapter over its transport");
+        return false;
     }
 
     /// <inheritdoc />
@@ -208,16 +227,27 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
         return null;
     }
 
-    private MediaProbeResult? Probe(string source)
+    /// <summary>
+    /// The source's header, or null when it cannot be read. ⚠ Opens its OWN stream and closes it: the probe
+    /// reads only the head, and holding one open across a whole run would pin a ranged transport's connection
+    /// for the duration.
+    /// </summary>
+    private MediaProbeResult? Probe(MediaByteSource source, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(source);
         try
         {
-            return MatroskaProbe.Read(source);
+            using var stream = source.Open(cancellationToken);
+            return IsIndexable(stream, source) ? MatroskaProbe.Read(stream) : null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             // The contract's answer for both DurationOf and HasPicture is the absent one, never a throw.
-            Report($"segments: could not probe '{Path.GetFileName(source)}' ({ex.GetType().Name})");
+            Report($"segments: could not probe '{source.Label}' ({ex.GetType().Name})");
             return null;
         }
     }
@@ -260,11 +290,13 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
 
         private void Produce(CancellationToken cancellationToken)
         {
-            using var source = File.OpenRead(request.SourcePath);
+            using var source = request.Source.Open(cancellationToken);
+            if (!owner.IsIndexable(source, request.Source)) return;
+
             var reader = new MatroskaSampleReader(source);
             if (!reader.ReadHeader())
             {
-                owner.Report($"segments: '{Path.GetFileName(request.SourcePath)}' is not readable Matroska");
+                owner.Report($"segments: '{request.Source.Label}' is not readable Matroska");
                 return;
             }
 

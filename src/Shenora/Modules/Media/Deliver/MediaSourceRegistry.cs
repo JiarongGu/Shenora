@@ -22,10 +22,25 @@ namespace Shenora.Modules.Media;
 public sealed record RemoteMediaSource
 {
     /// <summary>
-    /// Where the engine reads from. ⚠ Treated as a SECRET: it is never logged, never put on the wire, and
-    /// never returned to the page.
+    /// What this source IS — its identity and, for an app that keys off it, its address. ⚠ Treated as a
+    /// SECRET: never logged, never put on the wire, never returned to the page.
+    /// <para>
+    /// ⚠ <b>Not what the engine reads.</b> That is <see cref="Open"/>, which the app supplies — so the url
+    /// stays inside the app's own closure and cannot reach a kit log line even by accident.
+    /// </para>
     /// </summary>
     public required Uri Url { get; init; }
+
+    /// <summary>
+    /// How to READ the bytes: open a fresh seekable stream over the source, however it is fetched.
+    /// <para>
+    /// 🔴 <b>Null means this source can be described but never PRODUCED from</b>, and the route says so by
+    /// name on the first request rather than dying on every restart. The kit ships no transport — a ranged
+    /// HTTP reader, a LAN share, a partially-downloaded file are all the app's to provide — and the stream
+    /// must be seekable, because Matroska is read by offset (<see cref="MediaByteSource.Open"/>).
+    /// </para>
+    /// </summary>
+    public Func<CancellationToken, Stream>? Open { get; init; }
 
     /// <summary>
     /// What diagnostics call this source — a title, a track id, anything meaningful and not sensitive.

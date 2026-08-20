@@ -30,6 +30,48 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Breaking
+
+- **`ISegmentEngine` reads through an OPENER, not a path** — `DurationOf`, `HasPicture` and `PlanSegments`
+  now take a `MediaByteSource`, and `SegmentRunRequest.SourcePath` (a `string`) is now
+  `SegmentRunRequest.Source` (a `MediaByteSource`). `HasRenderedPicture` still takes a path, because it
+  reads a fragment the engine itself just wrote into its own output directory.
+  - **Why:** the kit's own engine called `File.OpenRead` in two places, so a source that was not a local
+    file could be *described* and never produced from — `SegmentStream` would answer a manifest for a
+    registered remote source and then report *"the production run failed"* on every segment. Where the
+    bytes live is a transport question and the tier had no seam for it.
+  - **Migrating a call site:** `MediaByteSource.ForFile(path)` is the local case and behaves exactly as
+    before. A custom `ISegmentEngine` changes three signatures and reads `request.Source`.
+  - ⚠ The stream an opener returns **must be seekable and must report `Length`** — Matroska states where a
+    frame lives rather than streaming it in order, so a forward-only body cannot be indexed at all. The
+    engine now says so by name instead of reporting the source as unreadable Matroska.
+  - **`RemoteMediaSource.Open` is new and optional**, and a registered source without one is refused at
+    the MANIFEST rather than at its first segment: a manifest is derived from the duration, which is
+    suppliable, so serving one anyway hands the page a complete playlist whose every entry `503`s for
+    ever. `Url` is now identity only — the address stays inside the app's own opener closure, which is
+    what keeps it out of a kit log line by construction rather than by care.
+
+- **A segment engine must now PUBLISH ATOMICALLY, and the segment route serves a part the moment it
+  exists.** A run writes `seg{k}.m4s.part` (new `SegmentRunRequest.PartialExtension`) and renames it into
+  place once whole; the same goes for `init.mp4`.
+  - **Why: it was costing a whole segment of startup latency.** Completeness used to be *inferred* — a
+    segment was servable only once the NEXT one existed, or the run had ended — because a progressive muxer
+    creates a file when it *starts* writing it. A page cannot play until `init.mp4` arrives, that request
+    drives segment 0, so nothing played until segment 0 **and** the opening of segment 1 had been produced.
+    Renaming makes the producer state the answer instead. (The same inference, and the same cost, is visible
+    in other just-in-time transcoders; ffmpeg's equivalent is `-hls_flags +temp_file`.)
+  - **Only a custom `ISegmentEngine` has to change** — the kit's own engine already does this. An engine
+    that writes in place will now have truncated fragments served, which appends without error and plays for
+    a fraction of a second.
+  - **Crash recovery got simpler and stopped destroying good work.** The route used to delete the
+    highest-numbered segment on every open of every source, on the reasoning that a kill leaves a file that
+    exists, is non-empty and is short. It now deletes `*.part` files, which is exactly the set that can be
+    torn — so an interrupted run costs nothing beyond the part it was mid-way through.
+  - ⚠ **One check narrowed:** the picture-stall detector used to inspect a still-open first segment, and a
+    part being written is now hidden. It still catches a finished window start with no picture; a run that
+    publishes *nothing at all* now falls to `WaitBudget` and answers `503` without advancing the encoder
+    ladder. Stated on the method rather than papered over.
+
 ### Added
 
 - **`@shenora/cli` can drive a Mac that is somewhere else.** Every `ios` verb takes `--host user@mac.local`
