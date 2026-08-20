@@ -2,13 +2,12 @@ namespace Shenora.Windows;
 
 /// <summary>
 /// Builds the Chromium command line passed via
-/// <c>CoreWebView2EnvironmentOptions.AdditionalBrowserArguments</c> — the family's measured
-/// display-optimization preset, extracted verbatim.
+/// <c>CoreWebView2EnvironmentOptions.AdditionalBrowserArguments</c> — the measured
+/// display-optimization preset.
 ///
-/// IMPORTANT: <c>--enable-features</c> / <c>--disable-features</c> are each given EXACTLY ONCE
-/// with a comma-separated list. Chromium keeps only the LAST occurrence of a repeated switch,
-/// which previously silently dropped IsolatedCodeCache (the V8 code-cache feature relied on for
-/// fast subsequent loads) and the draggable-regions feature in a source app.
+/// 🔴 <c>--enable-features</c> / <c>--disable-features</c> are each given EXACTLY ONCE with a
+/// comma-separated list: Chromium keeps only the LAST occurrence of a repeated switch, so a second
+/// one silently drops the whole preset behind it.
 ///
 /// Measured-and-REJECTED flags (don't re-add): <c>SpareRendererForSitePerProcess</c> (+150 ms
 /// startup), <c>msWebView2CancelInitialNavigation</c> (no gain), and
@@ -18,17 +17,14 @@ namespace Shenora.Windows;
 /// </summary>
 public static class BrowserArguments
 {
-    // msWebView2CodeCache makes JS served via WebResourceRequested (an embedded bundle) eligible
-    // for V8 bytecode caching → faster 3rd+ React mount in production. No effect in dev (Vite
-    // serves over http, not through the handler). Pairs with IsolatedCodeCache.
+    // msWebView2CodeCache makes JS served via WebResourceRequested eligible for V8 bytecode caching.
+    // No effect in dev (Vite serves over http, not through the handler). Pairs with IsolatedCodeCache.
     private const string EnableFeatures =
         "msWebView2EnableDraggableRegions,IsolatedCodeCache,ScriptStreaming,msWebView2CodeCache";
 
     private const string DisableFeatures = "msSmartScreenProtection,TranslateUI";
 
-    /// <summary>
-    /// Build the argument string.
-    /// </summary>
+    /// <summary>Build the argument string.</summary>
     /// <param name="isDevelopment">
     /// Dev mode appends <paramref name="devExtraArguments"/> — needed because setting
     /// <c>AdditionalBrowserArguments</c> at all makes WebView2 IGNORE the
@@ -67,17 +63,14 @@ public static class BrowserArguments
 
     /// <summary>
     /// Append caller-supplied switches to a <paramref name="preset"/> while keeping this file's two
-    /// hard invariants — the single place that knows them, so a second preset (the auxiliary session
-    /// browser) cannot get them subtly wrong (P5.5 H4.4).
+    /// invariants — the single place that knows them, so a second preset cannot get them subtly wrong.
     /// <list type="number">
-    /// <item><b>Each features switch appears EXACTLY ONCE.</b> Chromium keeps only the LAST
-    /// occurrence, so an app appending its own <c>--enable-features=</c>/<c>--disable-features=</c>
-    /// silently discarded the whole preset — the measured incident this class documents. Caller
-    /// feature lists are MERGED into the preset's single occurrence instead of appended.</item>
-    /// <item><b>The dev CDP arguments are re-appended by hand.</b> Setting
-    /// <c>AdditionalBrowserArguments</c> at all makes WebView2 IGNORE
-    /// <c>WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS</c>, which is how the devtools loop passes
-    /// <c>--remote-debugging-port</c>. Never in production.</item>
+    /// <item><b>Each features switch appears EXACTLY ONCE.</b> Caller feature lists are MERGED into the
+    /// preset's single occurrence rather than appended, because Chromium keeps only the LAST
+    /// occurrence.</item>
+    /// <item><b>The dev CDP arguments are re-appended by hand</b>, since setting
+    /// <c>AdditionalBrowserArguments</c> makes WebView2 IGNORE
+    /// <c>WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS</c>. Never in production.</item>
     /// </list>
     /// </summary>
     public static string Compose(string preset, bool isDevelopment,
@@ -86,8 +79,8 @@ public static class BrowserArguments
         ArgumentNullException.ThrowIfNull(preset);
         var args = preset.Trim();
 
-        // Order matters only for the features merge: fold every caller list in, then append what is
-        // left over, so the result still carries one --enable-features and one --disable-features.
+        // Fold every caller list in, then append what is left over, so the result still carries one
+        // --enable-features and one --disable-features.
         var extras = new List<string>();
         if (!string.IsNullOrWhiteSpace(additionalArguments)) extras.Add(additionalArguments.Trim());
         if (isDevelopment && !string.IsNullOrWhiteSpace(devExtraArguments)) extras.Add(devExtraArguments.Trim());

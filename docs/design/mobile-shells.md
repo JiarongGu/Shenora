@@ -130,6 +130,12 @@ any delivery path; the architecture they produced is D71.
   simulator is the same mistake as the reverse, which this file already records once. Consequence: **the
   segment tier's PICTURE path is still unmeasured**, and with it the question of whether a platform video
   encoder reorders its output (`SegmentRunWriter` fail-closes and would produce short segments).
+- 🔴 **And the iPhone 17 Pro has NO MPEG-4 Part 2 DECODER, with a valid ESDS in hand.** `TryStart` logged
+  `no DECODER for Mpeg4Video at 480x270 (codecPrivate 47B)` — 47 bytes of ESDS present and VideoToolbox
+  still refused, on the same device that decodes `h263`. ⚠ **So "the device converts h263" does not
+  generalise to "the device converts legacy video"**, and a codec table needs a row per codec rather than a
+  verdict per family. This is a DECODER absence, which no capability query the kit can make will report:
+  the refusal arrives when the session is created.
 - 🔴 **iOS HAS NO `window.MediaSource` AT ALL — only `ManagedMediaSource` — and its `startstreaming` DOES
   fire. Measured 2026-08-14** (iPhone 16 Pro simulator, iOS 26, `MSE-PROBE` in the MAUI sample's page):
   ```
@@ -194,6 +200,14 @@ handful of large ranges, iOS hundreds of tiny ones — not as a current count.
 | **cold seek to 80 %** | **YES** — `target=48.02 landed=48.02 t=49.42 advanced=1.40 paused=false` | **YES** — `target=48.02 landed=48.02 t=49.43 advanced=1.42 paused=false` |
 | range requests, ONE clip, 2026-08-12 probe (see the note above — a ratio, not a current count) | **4** | **508**, every one `206` |
 | disposes the response body | **YES** | **NO** |
+
+🔴 **RE-VERIFIED on Android 16 / SDK 36 / WebView 133.0.6943.137: choosing `Sliced` there still breaks it,
+and the failure is a LOOP rather than an error.** On a non-faststart file `Sliced` produced **35 requests, 28
+of them the identical tail range** (`bytes=393216-`, each answered `206` with a correct `Content-Range`)
+where `Unsliced` serves the same clip in **four**. The platform applies the range start to whatever body it
+is given, so slicing applies the offset twice, the player never receives the bytes it asked for, and it asks
+again. ⚠ This is a *separate, later* measurement from the 4-vs-508 row above — that one is a
+`Sliced`-vs-`Unsliced` platform comparison, this one is the cost of getting D44's choice wrong on Android.
 
 - ✅ **The design's central claim holds on BOTH shells: a seek into a region nothing has produced is
   serviceable cold.** Android asked for `bytes=393216-` and got `206 … bytes 393216-488376/488377`. iOS is

@@ -11,15 +11,10 @@ namespace Shenora.iOS;
 
 /// <summary>
 /// The iOS half of <see cref="MobileFileDialogsBase"/>: saving through
-/// <see cref="UIDocumentPickerViewController"/> in its export-a-copy form.
-/// <para>
-/// The ORDER is forced here and it is the one real difference from Android. iOS has no
-/// "create an empty document and give me a handle" picker — the export picker hands over a file that
-/// already exists — so the content must be produced BEFORE the user chooses, and a cancel therefore
-/// wastes the work. Android asks first precisely because it can. The shared declaration on
-/// <c>MobileFileDialogsBase.SaveAsync</c> documents this for callers rather than leaving it to be
-/// discovered.
-/// </para>
+/// <see cref="UIDocumentPickerViewController"/> in its export-a-copy form. ⚠ iOS has no "create an empty
+/// document and give me a handle" picker — the export picker hands over a file that ALREADY EXISTS — so the
+/// content is produced BEFORE the user chooses and a cancel wastes the work
+/// (<see cref="MobileFileDialogsBase.SaveAsync"/>).
 /// </summary>
 public sealed class IosFileDialogs : MobileFileDialogsBase
 {
@@ -32,10 +27,8 @@ public sealed class IosFileDialogs : MobileFileDialogsBase
         ArgumentNullException.ThrowIfNull(write);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // The temp is not an optimisation here, it is the only way this works at all: the picker exports
-        // an existing file. It doubles as the same safety Android gets from it — the user's document is
-        // untouched until the content is complete, so a caller that throws half-way through a long
-        // encode has destroyed nothing.
+        // The temp is not an optimisation, it is the only way this works: the picker exports an EXISTING
+        // file. It doubles as safety — the user's document is untouched until the content is complete.
         var temp = NewTempPath(SuggestedName(options));
         try
         {
@@ -47,9 +40,8 @@ public sealed class IosFileDialogs : MobileFileDialogsBase
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            // No path is reported on success — the contract populates FilePath only when the host has an
-            // addressable destination, and what comes back here is a security-scoped URL that is not
-            // valid for the app to reopen later.
+            // No path on success: the contract populates FilePath only for an addressable destination, and
+            // what comes back here is a security-scoped URL the app cannot reopen later.
             return await ExportAsync(temp, cancellationToken).ConfigureAwait(false)
                 ? FileDialogResult.Completed()
                 : FileDialogResult.Cancelled();
@@ -62,10 +54,8 @@ public sealed class IosFileDialogs : MobileFileDialogsBase
         }
     }
 
-    /// <summary>
-    /// Present the export picker for <paramref name="temp"/>. True when the user chose a destination,
-    /// false when they cancelled.
-    /// </summary>
+    /// <summary>Present the export picker for <paramref name="temp"/>. True when the user chose a
+    /// destination, false when they cancelled.</summary>
     private static async Task<bool> ExportAsync(string temp, CancellationToken cancellationToken)
     {
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -77,9 +67,8 @@ public sealed class IosFileDialogs : MobileFileDialogsBase
                     "there is no view controller to present the document picker on — call this while a " +
                     "page is on screen, not during startup.");
 
-            // asCopy: true — the system copies our temp to the destination and we keep ownership of the
-            // temp (and delete it). The moving form would hand our cache file to the user's storage and
-            // leave us deleting something that is no longer ours.
+            // asCopy: true — the system copies our temp to the destination and we keep ownership of it. The
+            // moving form would hand our cache file to the user's storage and leave us deleting it.
             var picker = new UIDocumentPickerViewController([NSUrl.FromFilename(temp)], asCopy: true)
             {
                 Delegate = new ExportDelegate(completion),
@@ -95,11 +84,10 @@ public sealed class IosFileDialogs : MobileFileDialogsBase
     }
 
     /// <summary>
-    /// Completes the awaiting task from the picker's callbacks. Both the singular and the plural
-    /// did-pick overrides are implemented: the plural is the modern one, the singular still fires on
-    /// some paths, and a picker that reports through the one we did NOT handle would leave the caller
-    /// waiting forever with the file apparently saved. <c>TrySet…</c> throughout, because a
-    /// cancellation may have completed the task already.
+    /// Completes the awaiting task from the picker's callbacks. ⚠ BOTH did-pick overrides are implemented —
+    /// the plural is the modern one, the singular still fires on some paths, and one reported through the
+    /// override we did NOT handle leaves the caller waiting for ever with the file apparently saved.
+    /// <c>TrySet…</c> throughout: a cancellation may have completed the task already.
     /// </summary>
     private sealed class ExportDelegate(TaskCompletionSource<bool> completion) : UIDocumentPickerDelegate
     {

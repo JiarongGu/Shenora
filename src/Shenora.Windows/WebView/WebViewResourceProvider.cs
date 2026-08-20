@@ -5,10 +5,9 @@ using Microsoft.Extensions.Logging;
 namespace Shenora.Windows;
 
 /// <summary>
-/// Serves the packaged frontend bundle to <see cref="WebViewHost"/>'s virtual host. Implementations
-/// must be fast and non-blocking: the virtual-host path serves the MAIN DOCUMENT synchronously on
-/// the UI thread (see <see cref="WebViewHost"/> for why), so a stream here should come from memory
-/// or an already-warm cache, never a slow device.
+/// Serves the packaged frontend bundle to <see cref="WebViewHost"/>'s virtual host. 🔴 Implementations
+/// must be fast and non-blocking: the virtual-host path serves the MAIN DOCUMENT synchronously on the
+/// UI thread, so a stream here comes from memory or an already-warm cache, never a slow device.
 /// </summary>
 public interface IWebViewResourceProvider
 {
@@ -22,14 +21,7 @@ public interface IWebViewResourceProvider
     /// <summary>
     /// Optional: start filling any cache in the BACKGROUND so the first navigation does not pay for it.
     /// Called once at startup. Fire-and-forget and idempotent; a provider with nothing to warm does
-    /// nothing, which is why this has a default body.
-    /// <para>
-    /// ⚠ <b>On the INTERFACE because the kit's own composition needs it.</b> It was a member of
-    /// <see cref="EmbeddedResourceProvider"/> alone, so the startup call had to be a DOWNCAST with no
-    /// <c>else</c> — meaning an app that registered its own provider (the reason this interface is
-    /// public at all) silently got no warmup and no diagnostic. A default interface member costs an
-    /// existing implementer nothing and cannot be added after 1.0.
-    /// </para>
+    /// nothing.
     /// </summary>
     void BeginWarmup() { }
 }
@@ -44,9 +36,7 @@ public sealed class EmbeddedResourceProviderOptions
     /// Manifest-name prefix of the bundle root, INCLUDING the folder segment (e.g.
     /// <c>MyApp.wwwroot</c> for <c>&lt;EmbeddedResource Include="wwwroot\**"/&gt;</c> in project
     /// <c>MyApp</c>). Virtual paths are relative to it: <c>assets/x.js</c> ⇒
-    /// <c>MyApp.wwwroot.assets.x.js</c> — so the request path and the virtual path are the same
-    /// string and no reverse name→path parsing exists (the source app parsed names back to paths,
-    /// which mis-mapped any filename containing a dot).
+    /// <c>MyApp.wwwroot.assets.x.js</c>.
     /// </summary>
     public required string ResourcePrefix { get; init; }
 
@@ -67,11 +57,9 @@ public sealed class EmbeddedResourceProviderOptions
 }
 
 /// <summary>
-/// The packaged-frontend resource provider: embedded manifest resources with an in-memory cache,
-/// or a plain directory in file mode. Ported from the family's provider with its known gap fixed:
-/// the source preloaded EVERY resource with a parallel loop in the constructor, blocking startup —
-/// here the cache is lazy (first request pays one manifest read) and <see cref="BeginWarmup"/>
-/// optionally fills it in the background, so startup cost is zero either way.
+/// The packaged-frontend resource provider: embedded manifest resources with a lazy in-memory cache,
+/// or a plain directory in file mode. <see cref="BeginWarmup"/> optionally fills the cache in the
+/// background, so startup pays nothing either way.
 /// </summary>
 public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
 {
@@ -97,12 +85,10 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
                        && Directory.Exists(dir);
         IsEmbedded = !fileMode && _manifest.Count > 0;
 
-        // A provider that can serve NOTHING is reported here but NOT rejected (P5.5 H3). Rejecting in
-        // the constructor was the obvious move and is wrong: dev mode navigates to the Vite DevUrl, so
-        // the provider is legitimately never consulted, and a fresh clone has an empty wwwroot (the
-        // sample's csproj documents exactly that). The loud failure belongs at the point the host
-        // COMMITS to serving the bundle — see WebViewHost's startup sanity check, which is what turns a
-        // mistyped ResourcePrefix from a black window into an actionable error.
+        // A provider that can serve NOTHING is reported here but NOT rejected: dev mode navigates to
+        // the Vite DevUrl, so the provider is legitimately never consulted and a fresh clone has an
+        // empty wwwroot. The loud failure belongs where the host COMMITS to serving the bundle —
+        // WebViewHost.AssertBundleServable.
         CanServe = IsEmbedded || fileMode;
         if (!CanServe)
         {
@@ -128,12 +114,10 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
     }
 
     /// <summary>
-    /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>). This type used
-    /// to call <c>_options.Log?.Invoke(…)</c> directly at seven sites; two of them sit inside
-    /// <see cref="BeginWarmup"/>'s fire-and-forget <c>Task.Run</c>, where a throwing sink escapes the
-    /// very <c>catch</c> it reports from and becomes an unobserved task exception. Laziness also
-    /// matters for the constructor's "serves nothing" hint, which enumerates the assembly's manifest
-    /// to compose itself.
+    /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>): two call sites sit
+    /// inside <see cref="BeginWarmup"/>'s fire-and-forget <c>Task.Run</c>, where a throwing sink
+    /// escapes the very <c>catch</c> it reports from, and the constructor's "serves nothing" hint
+    /// enumerates the whole manifest to compose itself.
     /// </summary>
     private void Log(Func<string> message, Exception? failure = null) => Shenora.AppCallback.Log(_options.Log, message, exception: failure);
 
@@ -144,9 +128,8 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
     /// False when this provider has NOTHING to serve — no embedded resource matches
     /// <see cref="EmbeddedResourceProviderOptions.ResourcePrefix"/> and no usable
     /// <see cref="EmbeddedResourceProviderOptions.FileFallbackDirectory"/> exists — so every request
-    /// would 404. Legitimate when the page loads from a dev URL instead; fatal when the bundle IS the
-    /// document, which is why <see cref="WebViewHost"/> checks it at startup rather than the constructor
-    /// rejecting it outright (P5.5 H3).
+    /// would 404. Legitimate when the page loads from a dev URL, fatal when the bundle IS the document
+    /// (<see cref="WebViewHost.AssertBundleServable"/>).
     /// </summary>
     public bool CanServe { get; }
 
@@ -168,11 +151,6 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
                 }
                 catch (Exception ex)
                 {
-                    // GUARDED (Shenora.AppCallback), unlike this type's other Log calls: those sit
-                    // under a caller that would observe a throwing sink, whereas this body is a
-                    // fire-and-forget Task.Run with nothing above it — an app logger throwing here
-                    // escapes the very catch it is reporting from and becomes an unobserved task
-                    // exception. An ILogger/Log action IS an app callback (webview2-hosting.md).
                     Log(() => $"[Shenora.Windows] Warmup failed for {name}", ex);
                 }
             }
@@ -247,8 +225,8 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
     }
 
     /// <summary>
-    /// The first two dot-separated segments of a manifest name — enough to recognise a bundle root
-    /// (<c>MyApp.wwwroot</c>) in the "did you mean" hint without dumping every file name.
+    /// The first two dot-separated segments of a manifest name — enough for the "did you mean" hint to
+    /// name a bundle root (<c>MyApp.wwwroot</c>) without dumping every file name.
     /// </summary>
     private static string TopTwoSegments(string manifestName)
     {
@@ -266,17 +244,13 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
 
     /// <summary>
     /// Map a normalized virtual path to a file under <paramref name="root"/>, or null when it would
-    /// escape. File-mode serving is REACHABLE BY PAGE CONTENT and had no containment at all
-    /// (found in the P0–P5 review): the host unescapes the request path before calling us — it must,
-    /// so bundle filenames with spaces or CJK characters resolve — so two vectors existed.
-    /// (1) <c>%2e%2e%2f…</c> arrives here as <c>../</c> and walked out of the bundle. (2) A ROOTED
-    /// path (<c>/C:%2fUsers%2f…</c>) is worse: <see cref="Path.Combine(string,string)"/> DISCARDS the
-    /// first argument when the second is rooted, so it returned the caller's absolute path verbatim.
-    /// Responses are served with <c>Access-Control-Allow-Origin: *</c>, so any script in the page
-    /// could read and exfiltrate what it got back. Embedded mode was safe only incidentally
-    /// (<c>../</c> yields a manifest name that doesn't exist).
-    /// Both checks matter: rejecting <c>..</c> alone leaves the rooted vector open, and the
-    /// full-path prefix assertion alone would still let a rooted path through on some inputs.
+    /// escape. 🔴 File-mode serving is REACHABLE BY PAGE CONTENT, and responses carry
+    /// <c>Access-Control-Allow-Origin: *</c>, so any script can read what comes back. The host must
+    /// unescape the request path (bundle filenames carry spaces and CJK characters), so two vectors
+    /// arrive here: <c>%2e%2e%2f…</c> as <c>../</c>, and a ROOTED path, where
+    /// <see cref="Path.Combine(string,string)"/> DISCARDS its first argument and returns the caller's
+    /// absolute path verbatim. ⚠ Both checks matter — rejecting <c>..</c> alone leaves the rooted
+    /// vector open, and the full-path prefix assertion alone still lets some rooted paths through.
     /// </summary>
     internal static string? ResolveContained(string root, string normalizedVirtualPath)
     {
@@ -303,8 +277,8 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
             return null; // malformed path (invalid characters, too long, …) — never serve it
         }
 
-        // Belt-and-braces: the resolved path must still sit under the root. Compare with the
-        // separator appended so "/bundle-evil" can't pass as a child of "/bundle".
+        // The resolved path must still sit under the root. ⚠ Compare with the separator appended, or
+        // "/bundle-evil" passes as a child of "/bundle".
         var prefix = fullRoot.EndsWith(Path.DirectorySeparatorChar)
             ? fullRoot
             : fullRoot + Path.DirectorySeparatorChar;

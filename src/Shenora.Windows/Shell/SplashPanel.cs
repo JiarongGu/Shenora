@@ -1,8 +1,7 @@
 namespace Shenora.Windows;
 
-/// <summary>Inputs for <see cref="SplashPanel"/>. Colors are the app's to choose (the library is
-/// headless — no design-system palette ships here); match them to the form's and the WebView2's
-/// background so startup is one continuous surface (the family's no-white-flash contract).</summary>
+/// <summary>Inputs for <see cref="SplashPanel"/>. Colors are the app's to choose (D13); match them to the
+/// form's and the WebView2's background so startup is one continuous surface with no white flash.</summary>
 public sealed class SplashPanelOptions
 {
     /// <summary>Panel background. Neutral dark default — override to match the app.</summary>
@@ -23,10 +22,9 @@ public sealed class SplashPanelOptions
 }
 
 /// <summary>
-/// The startup overlay shown over the WebView2 while the frontend boots (WebView2 init + first
-/// script compile is seconds on cold starts): a minimal centered marquee bar, nothing else.
-/// Ported from the family app minus its dead status labels. Add it to the form ON TOP of the
-/// WebView2 control, then hide/remove it when the frontend signals ready.
+/// The startup overlay shown over the WebView2 while the frontend boots — a centered marquee bar,
+/// nothing else. Add it to the form ON TOP of the WebView2 control, then hide or remove it when the
+/// frontend signals ready.
 /// </summary>
 public sealed class SplashPanel : Panel
 {
@@ -60,8 +58,7 @@ public sealed class SplashPanel : Panel
         _content.Controls.Add(_bar);
         Controls.Add(_content);
 
-        // Recenter on resize, debounced — drag-resize fires storms of layout passes otherwise
-        // (the source app's measured fix).
+        // Recenter on resize, debounced — drag-resize fires storms of layout passes otherwise.
         _resizeDebounce = new UiDebounce(50);
         Resize += (_, _) => _resizeDebounce.Execute(UpdateBarLayout);
         UpdateBarLayout();
@@ -69,18 +66,9 @@ public sealed class SplashPanel : Panel
 
     /// <summary>
     /// Switch from the indeterminate marquee to a determinate bar at <paramref name="percent"/>
-    /// (clamped 0–100). Marshals itself once the handle exists; before that, applies directly
-    /// (pre-handle <c>InvokeRequired</c> LIES — false on a pool thread — and <c>BeginInvoke</c>
-    /// throws, the same trap the WebView2 deferral marshal guards against).
-    /// <para>
-    /// DELIBERATELY NOT routed through <see cref="WinFormsUiDispatcher"/>, unlike the other marshal
-    /// sites collapsed in P5.5 H4.2 — and this is a judgement, not an oversight. Those were services
-    /// marshalling to a FOREIGN control from an arbitrary thread, where centralising the
-    /// handle/thread/guard decision removes duplicated risk. This is a control marshalling to
-    /// ITSELF: the two-line self-post is idiomatic, its pre-handle "apply directly" is correct
-    /// (setting a property on an unrealized control needs no marshal), and injecting a dispatcher
-    /// would add a field and a construction site for zero correctness gain.
-    /// </para>
+    /// (clamped 0–100). Marshals itself once the handle exists; before that, applies directly.
+    /// ⚠ <c>IsHandleCreated</c> is checked FIRST because pre-handle <c>InvokeRequired</c> LIES — it
+    /// reports false on a pool thread, and <c>BeginInvoke</c> then throws.
     /// </summary>
     public void UpdateProgress(int percent)
     {
@@ -108,10 +96,6 @@ public sealed class SplashPanel : Panel
         Invalidate();
     }
 
-    // Named test accessors for the two child controls (P5.5 H7). The tests used to reach them as
-    // `Controls[0]` and `Controls[0].Controls[0]`, which asserted the CONTROL TREE SHAPE as a
-    // side effect: inserting any decorative child, or reparenting the bar, would have failed a
-    // layout test with an IndexOutOfRange or an InvalidCast rather than a message about layout.
     /// <summary>The centered container holding the bar. Internal for tests.</summary>
     internal Panel ContentPanel => _content;
 
@@ -136,8 +120,8 @@ public sealed class SplashPanel : Panel
 }
 
 /// <summary>
-/// Trailing-edge debounce on the UI thread (WinForms timer — ticks on the message loop, no
-/// marshalling needed). Internal until the utilities extraction phase promotes a public set.
+/// Trailing-edge debounce on the UI thread — a WinForms timer, so it ticks on the message loop and needs
+/// no marshalling.
 /// </summary>
 internal sealed class UiDebounce(int delayMilliseconds) : IDisposable
 {

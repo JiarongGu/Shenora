@@ -10,42 +10,20 @@ using VideoToolbox;
 namespace Shenora.iOS;
 
 /// <summary>
-/// The PICTURE half of iOS's codec seam: decode a track this device can read but its webview refuses, and
-/// re-encode it as H.264 — the peer of <c>AndroidMediaVideoConversion</c>, so the tier is not Android-shaped.
-///
+/// The PICTURE half of iOS's codec seam: decode a track this device can read but its webview refuses (a page
+/// gets sound and a blank picture with NO error), and re-encode it as H.264 — the peer of
+/// <c>AndroidMediaVideoConversion</c>.
 /// <para>
-/// 🔴 <b>The gap it closes is measured, not theoretical, and the deferral that used to sit in `TASKS.md`
-/// was refuted by its own evidence.</b> That entry read "no measured gap justifies it — iOS decodes what its
-/// webview accepts". The opposite is what was measured: this device decodes <c>mpeg4</c> (MPEG-4 Part 2)
-/// perfectly and <b>its own webview refuses it</b>, so a page gets sound and a blank picture with NO error at
-/// all — the failure mode <see cref="Mp4Remuxer"/>'s track-selection comment records independently. Owner,
-/// 2026-08-13: <i>"its not a question it should/shouldn't we building the pipeline, so it should support
-/// range of conversion logic too."</i>
-/// </para>
-/// <para>
-/// ⚠ <b>It is SHORTER than the Android peer for one reason worth knowing before comparing them:</b>
-/// VideoToolbox hands back compressed samples already length-prefixed (AVCC), which is exactly what MP4
-/// stores. The Android port had to split Annex-B start codes and re-prefix every NAL unit; there is no such
-/// step here, and adding one would corrupt the output.
-/// </para>
-/// <para>
-/// ⚠ <b>The two sessions are joined by a CALLBACK, not by a surface.</b> Android bridges its decoder to its
-/// encoder with a shared <c>Surface</c> so pixels never enter managed memory; VideoToolbox has no equivalent,
-/// so a decoded <see cref="CVImageBuffer"/> is handed straight to the compression session from inside the
-/// decompression callback. The buffer is NOT copied — it is fed while the callback still owns it, which is
-/// the one ordering this class cannot get wrong without producing a green picture.
+/// ⚠ <b>VideoToolbox hands back compressed samples already length-prefixed (AVCC), which is what MP4
+/// stores.</b> The Android peer has to split Annex-B start codes and re-prefix every NAL unit; adding that
+/// step here would corrupt the output.
 /// </para>
 /// </summary>
 public static class IosMediaVideoConversion
 {
-    /// <summary>
-    /// Register the picture converter on the app's pipeline. Dispose to remove it.
-    /// </summary>
-    /// <remarks>
-    /// ⚠ Returns a registration rather than <c>void</c> — unlike <see cref="IosMediaAudioConversion.Use"/>,
-    /// which predates the chain being removable. The shell registers both; an app that wants its own picture
-    /// path registers after and wins, because the chain is asked last-first.
-    /// </remarks>
+    /// <summary>Register the picture converter on the app's pipeline. Dispose to remove it.</summary>
+    /// <remarks>An app that wants its own picture path registers AFTER this and wins — the chain is asked
+    /// last-first.</remarks>
     public static IDisposable Use(MediaConversionPipeline pipeline, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
@@ -53,28 +31,22 @@ public static class IosMediaVideoConversion
     }
 
     /// <summary>
-    /// What this converter OFFERS to attempt — the declaration the pipeline answers <c>CanConvert</c> from
-    /// before any codec is built.
+    /// What this converter OFFERS to attempt — the declaration the pipeline answers <c>CanConvert</c> from,
+    /// derived from the same table <see cref="CodecTypeOf"/> switches on so claim and behaviour cannot drift.
     /// <para>
-    /// ⚠ Derived from the same table <see cref="CodecTypeOf"/> switches on, so the claim and the behaviour
-    /// cannot drift. A second hand-written list would be a second thing to keep true.
+    /// ⚠ Computed on access, never cached in a static initialiser: that runs in DECLARATION order, reads
+    /// <c>Offered</c> before the table exists and produces an empty claim list — a converter that silently
+    /// claims nothing.
     /// </para>
     /// </summary>
-    /// <remarks>
-    /// ⚠ Computed on access rather than cached in a static initialiser: a cached one runs in DECLARATION
-    /// order, so it read <c>Offered</c> before that table existed and produced an empty claim list — a
-    /// converter that silently claimed nothing, which is the failure mode this whole file has already been
-    /// bitten by twice.
-    /// </remarks>
     public static IReadOnlyList<MediaStreamClaim> Claims =>
         [.. Offered.Keys.Select(codec => new MediaStreamClaim(MediaStreamKind.Video, codec))];
 
     /// <summary>
     /// Which picture codecs this converter offers.
     /// <para>
-    /// ⚠ <b>H.264 and HEVC are deliberately ABSENT, exactly as on Android.</b> MP4 already carries both, so
-    /// <see cref="Mp4Remuxer"/> COPIES them — lossless, instant, and it cannot fail halfway. Offering to
-    /// convert them would make the kit re-encode a film it could have remuxed.
+    /// ⚠ <b>H.264 and HEVC are ABSENT, exactly as on Android.</b> MP4 already carries both, so
+    /// <see cref="Mp4Remuxer"/> COPIES them — lossless, instant, and it cannot fail halfway.
     /// </para>
     /// </summary>
     public static bool CanConvert(string codec) => CodecTypeOf(codec) is not null;
@@ -82,14 +54,12 @@ public static class IosMediaVideoConversion
     private static IMediaStreamConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate,
                                                     ILogger? log)
     {
-        // ⚠ Declining a KIND is silent on purpose — the audio converter shares this chain and every
-        // soundtrack would otherwise log a line about a picture converter that correctly ignored it.
+        // ⚠ Declining a KIND is silent: the audio converter shares this chain, and every soundtrack would
+        // otherwise log a line about a picture converter that correctly ignored it.
         if (source.Kind is not MediaStreamKind.Video) return null;
 
-        // 🔴 EVERY OTHER DECLINE REPORTS, and that is not tidiness. This class returned null from four
-        // places without a word, and the first device run could not tell "declined" from "broken" — the
-        // exact failure D63 names, produced by the very file added to answer it. A picture that is dropped
-        // says only `dropped:["mpeg4"]`, which names the codec and nothing about WHY.
+        // 🔴 EVERY OTHER DECLINE REPORTS (D63): a dropped picture says only `dropped:["mpeg4"]`, which names
+        // the codec and nothing about WHY, so "declined" and "broken" are otherwise indistinguishable.
         if (source.Codec is not { } codec)
         {
             Report(log, "[Shenora.iOS] picture conversion declined a video track with NO codec name");
@@ -104,8 +74,7 @@ public static class IosMediaVideoConversion
         }
 
         // A platform video encoder REFUSES to configure without real dimensions, so a source that reached
-        // here without them cannot be converted — and saying so is better than configuring at 0x0 and
-        // failing later inside the first frame.
+        // here without them cannot be converted.
         if (source.Width is not > 0 || source.Height is not > 0)
         {
             Report(log, $"[Shenora.iOS] picture conversion declined {codec}: no dimensions on the source, "
@@ -119,8 +88,8 @@ public static class IosMediaVideoConversion
         }
         catch (Exception ex)
         {
-            // Declining is an ordinary answer on this seam — the caller then reports UNSUPPORTED_CODEC and
-            // names it — so a platform that throws must not take the conversion out with it.
+            // Declining is an ordinary answer on this seam, so a platform that throws must not take the
+            // conversion out with it.
             Report(log, $"[Shenora.iOS] picture conversion could not start for {codec} ({ex.GetType().Name})");
             return null;
         }
@@ -129,12 +98,9 @@ public static class IosMediaVideoConversion
     private static void Report(ILogger? log, string message) => AppCallback.Log(log, () => message);
 
     /// <summary>
-    /// The codecs worth OFFERING, as VideoToolbox's own four-character codes.
-    /// <para>
-    /// ⚠ Deliberately the same short list the Android peer offers, so a film that converts on one shell
-    /// converts on the other. A codec absent here is not "unsupported by iOS" — it is one the kit does not
-    /// claim, which is the honest difference.
-    /// </para>
+    /// The codecs worth OFFERING, as VideoToolbox's own four-character codes — the same short list the
+    /// Android peer offers, so a film that converts on one shell converts on the other. ⚠ A codec absent
+    /// here is not "unsupported by iOS"; it is one the kit does not claim.
     /// </summary>
     private static readonly Dictionary<string, CMVideoCodecType> Offered =
         new(StringComparer.OrdinalIgnoreCase)
@@ -144,10 +110,7 @@ public static class IosMediaVideoConversion
             ["h263"] = CMVideoCodecType.H263,
         };
 
-    /// <summary>
-    /// ⚠ ONE table, read by both <see cref="Claims"/> and this — so what the converter DECLARES and what it
-    /// ACCEPTS cannot drift. A hand-written second list is a second thing to keep true.
-    /// </summary>
+    /// <summary>The one table <see cref="Claims"/> and this both read.</summary>
     private static CMVideoCodecType? CodecTypeOf(string codec) =>
         Offered.TryGetValue(codec, out var type) ? type : null;
 
@@ -161,9 +124,7 @@ public static class IosMediaVideoConversion
         private readonly int _height;
         private readonly ReadOnlyMemory<byte> _codecPrivate;
 
-        /// <summary>
-        /// Always present — see the construction site for why a DEFERRED one was tried and reverted.
-        /// </summary>
+        /// <summary>Always present — <see cref="TryStart"/> says why a DEFERRED one is wrong.</summary>
         private readonly VTDecompressionSession _decoder;
 
         /// <summary>
@@ -197,9 +158,7 @@ public static class IosMediaVideoConversion
             _log = log;
         }
 
-        /// <summary>
-        /// One place builds the decompression session, so the eager path and the deferred one cannot drift.
-        /// </summary>
+        /// <summary>The one place that builds the decompression session.</summary>
         private static VTDecompressionSession? CreateDecoder(CMVideoFormatDescription sourceFormat,
             Func<Run?> owner, ILogger? log, CMVideoCodecType codecType, int width, int height,
             ReadOnlyMemory<byte> codecPrivate)
@@ -245,31 +204,20 @@ public static class IosMediaVideoConversion
                     return null;
                 }
 
-                // One keyframe a second. ⚠ A SEEKING decision rather than a quality one, and the same one
-                // the Android peer makes: the sync-sample table is built from these, so a long interval
-                // makes every seek land far from where the user asked.
+                // One keyframe a second. ⚠ A SEEKING decision, not a quality one: the sync-sample table is
+                // built from these, so a long interval makes every seek land far from where the user asked.
                 encoder.SetProperty(VTCompressionPropertyKey.MaxKeyFrameIntervalDuration, new NSNumber(1));
                 encoder.SetProperty(VTCompressionPropertyKey.RealTime, NSNumber.FromBoolean(false));
                 encoder.SetProperty(VTCompressionPropertyKey.AllowFrameReordering, NSNumber.FromBoolean(false));
 
                 // 🔴 THE DECODER IS REQUIRED HERE, AND A DEFERRED ONE WAS A MISTAKE THIS FILE ALREADY MADE.
                 // Creating it is the ONLY honest answer to "can this device convert that codec" — the
-                // encoder proves nothing about the source. Measured on an iPhone 17 Pro:
-                //
-                //   picture conversion: no DECODER for Mpeg4Video at 480x270 (codecPrivate 47B)
-                //
-                // 47 bytes of ESDS present and VideoToolbox still refuses. So the earlier reading — "it
-                // needs its ESDS, and the capability probe cannot supply one" — was WRONG: this device has
-                // no MPEG-4 Part 2 decoder at all, and `h263` answered true beside it by HAVING a decoder,
-                // not by needing no extensions.
-                //
-                // ⚠ Deferring it made `CanConvert` answer TRUE from the encoder alone, so the kit promised a
-                // conversion it could not perform — exactly the `accepts && !repairable → BROKEN` case
-                // `CodecProbe` warns about — and the muxer then failed with `NoCarriableStream` after
-                // accepting the track. It also broke `CONVERT-REFUSAL`, which asks for a codec that must be
-                // REFUSED. An over-claim here is worse than a narrow answer: a refusal is a routing
-                // decision the app can act on, while a promise that fails mid-mux is a transcode spent on
-                // nothing.
+                // encoder proves nothing about the source. Deferring it made `CanConvert` answer TRUE from
+                // the encoder alone, so the kit promised a conversion it could not perform and the muxer
+                // failed with `NoCarriableStream` AFTER accepting the track.
+                // ⚠ Measured on an iPhone 17 Pro: `no DECODER for Mpeg4Video at 480x270 (codecPrivate 47B)`
+                // — 47 bytes of ESDS present and VideoToolbox still refuses, so that device has no MPEG-4
+                // Part 2 decoder at all, while `h263` answers true beside it by HAVING one.
                 decoder = CreateDecoder(sourceFormat, () => run, log, codecType, width, height, codecPrivate);
                 if (decoder is null) return null;
 
@@ -302,13 +250,13 @@ public static class IosMediaVideoConversion
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            // 🔴 THE DECODER FIRST, and the order is not symmetry — it holds real pictures back. Its
-            // remaining frames must reach the ENCODER before the encoder is told there is no more input,
-            // or the tail is encoded by nobody and the file simply stops early with no error anywhere.
+            // 🔴 THE DECODER FIRST — it holds real pictures back, and they must reach the ENCODER before the
+            // encoder is told there is no more input, or the tail is encoded by nobody and the file stops
+            // early with no error anywhere.
             _decoder.FinishDelayedFrames();
             _decoder.WaitForAsynchronousFrames();
 
-            // 🔴 And only THEN the encoder, which holds a GOP. Without this the last second or so of every
+            // 🔴 And only THEN the encoder, which holds a GOP: without this the last second or so of every
             // converted film is missing — well-formed, playable, and short.
             _encoder.CompleteFrames(CMTime.PositiveInfinity);
             return Take();
@@ -316,8 +264,7 @@ public static class IosMediaVideoConversion
 
         /// <summary>
         /// The decompression callback. ⚠ It feeds the encoder from INSIDE the callback, while VideoToolbox
-        /// still owns the pixel buffer — copying it out first would be the obvious shape and would cost a
-        /// full-frame copy per picture for nothing.
+        /// still owns the pixel buffer — copying it out first would cost a full-frame copy per picture.
         /// </summary>
         private void OnDecoded(VTStatus status, CVImageBuffer? image, CMTime presentation, CMTime duration)
         {
@@ -325,17 +272,14 @@ public static class IosMediaVideoConversion
             _encoder.EncodeFrame(image, presentation, duration, null, IntPtr.Zero, out _);
         }
 
-        /// <summary>
-        /// The compression callback: one encoded picture, already length-prefixed.
-        /// </summary>
+        /// <summary>The compression callback: one encoded picture, already length-prefixed.</summary>
         private void OnEncoded(VTStatus status, CMSampleBuffer? buffer)
         {
             if (status != VTStatus.Ok || buffer is null) return;
 
-            // 🔴 The `avcC` comes from the sample's own format description rather than from anything this
-            // class assembles, and it is read on EVERY sample until it is known: the first sample is not
-            // guaranteed to carry a format description, and writing an empty config into a file produces
-            // one that opens and plays nothing.
+            // 🔴 The `avcC` comes from the sample's own format description, read on EVERY sample until it is
+            // known: the first sample is not guaranteed to carry one, and an empty config produces a file
+            // that opens and plays nothing.
             if (OutputConfig.IsEmpty && buffer.GetVideoFormatDescription() is { } described)
             {
                 OutputConfig = AvcCFrom(described);
@@ -373,9 +317,8 @@ public static class IosMediaVideoConversion
 
         /// <summary>
         /// ⚠ <b>NOT-depends-on-others, and the polarity is the trap.</b> VideoToolbox marks a sample with
-        /// <c>DependsOnOthers</c>; a keyframe is one where that is FALSE. Reading the attachment as if it
-        /// meant "is a keyframe" claims every frame is one, and a seek then lands on a green smear.
-        /// Absent attachments mean a sync sample, which is why the default is true.
+        /// <c>DependsOnOthers</c>; a keyframe is one where that is FALSE. Reading the attachment as "is a
+        /// keyframe" claims every frame is one, and a seek then lands on a green smear.
         /// </summary>
         private static bool IsKeyframe(CMSampleBuffer buffer)
         {
@@ -408,8 +351,8 @@ public static class IosMediaVideoConversion
 
         /// <summary>
         /// Rebuild an <c>avcC</c> from the encoder's parameter sets. ⚠ MP4 stores the SPS and PPS in this
-        /// box, NOT in the frames — VideoToolbox keeps them out of the sample data entirely, so a file
-        /// written without this decodes nothing.
+        /// box, NOT in the frames — VideoToolbox keeps them out of the sample data, so a file written
+        /// without this decodes nothing.
         /// </summary>
         private static ReadOnlyMemory<byte> AvcCFrom(CMVideoFormatDescription description)
         {
@@ -448,12 +391,9 @@ public static class IosMediaVideoConversion
         }
 
         /// <summary>
-        /// Describe the SOURCE stream so the decoder knows what it is being fed.
-        /// <para>
-        /// ⚠ <b>The container's codec-private bytes are the decoder configuration</b>, and for MPEG-4 Part 2
-        /// that is the ESDS descriptor Matroska stores verbatim. A decoder created without it produces a
-        /// green picture rather than an error, which is the failure this method exists to prevent.
-        /// </para>
+        /// Describe the SOURCE stream so the decoder knows what it is being fed. ⚠ <b>The container's
+        /// codec-private bytes ARE the decoder configuration</b> — for MPEG-4 Part 2 the ESDS descriptor
+        /// Matroska stores verbatim, and a decoder created without it produces a green picture, not an error.
         /// </summary>
         private static CMVideoFormatDescription? SourceFormat(CMVideoCodecType codecType, int width, int height,
                                                               ReadOnlyMemory<byte> codecPrivate)

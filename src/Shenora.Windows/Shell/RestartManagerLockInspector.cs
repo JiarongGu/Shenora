@@ -1,35 +1,20 @@
 using System.Runtime.InteropServices;
 using Shenora;
-// The CONTRACT is in Core, never in the engine — a shell must be able to implement a portable contract
-// without reaching into the layer that happens to consume it (D48). This using being `Core.Shell` rather
-// than `Engine.Files` IS that rule holding.
+// `Core.Shell`, not `Engine.Files`: a shell implements a portable contract without reaching into the
+// layer that consumes it (D48).
 using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 
 /// <summary>
-/// Names the processes holding a file open, using the Windows <b>Restart Manager</b> — the same API
-/// an installer uses to say "close these applications before continuing".
-///
+/// Names the processes holding a file open, using the Windows <b>Restart Manager</b> — the answer for
+/// contention a lease cannot touch (a game holding its own assets, a mod loader, antivirus, Explorer's
+/// preview handler), where the only useful thing left is to say WHO.
 /// <para>
-/// This is the answer for the contention a lease cannot touch. A game holding its own assets, a mod
-/// loader, antivirus, Explorer's preview handler, another application editing a folder this app does
-/// not own: none of them will ever take a lease, so the only useful thing left is to say WHO, and let
-/// the app retry, ask the user to close it, or report something better than "the process cannot access
-/// the file because it is being used by another process".
-/// </para>
-///
-/// <para>
-/// <b>Local handles only.</b> Restart Manager asks the local machine. A file on a network share held
-/// open from ANOTHER machine is invisible to it — that answer lives on the server (an admin can see it
-/// through the server's own open-files list) and no client-side API can produce it. This returns empty
-/// there rather than guessing, which is why <see cref="IFileLockInspector"/> documents empty as
-/// "cannot tell" and not as "nobody".
-/// </para>
-///
-/// <para>
-/// Windows-only, hence its home in <c>Shenora.Windows</c> (the Windows primitives layer, D19) rather
-/// than in <c>Shenora</c> where the seam and the file-update queue live.
+/// ⚠ <b>Local handles only.</b> A file on a network share held open from ANOTHER machine is invisible to
+/// Restart Manager — that answer lives on the server and no client-side API can produce it. This returns
+/// empty there rather than guessing, which is why <see cref="IFileLockInspector"/> documents empty as
+/// "cannot tell", not "nobody".
 /// </para>
 /// </summary>
 public sealed class RestartManagerLockInspector : IFileLockInspector
@@ -45,8 +30,8 @@ public sealed class RestartManagerLockInspector : IFileLockInspector
         ArgumentException.ThrowIfNullOrEmpty(path);
         if (!OperatingSystem.IsWindows()) return [];
 
-        // Never throws: this is a diagnostic, and a diagnostic that fails the operation it describes
-        // is worse than no diagnostic. Every failure path below returns empty.
+        // 🔴 Never throws — a diagnostic that fails the operation it describes is worse than none. Every
+        // failure path below returns empty.
         var sessionKey = new string('\0', 32 + 1);
         if (RmStartSession(out var session, 0, sessionKey) != 0) return [];
 
@@ -77,8 +62,7 @@ public sealed class RestartManagerLockInspector : IFileLockInspector
         }
         catch (Exception)
         {
-            // Includes DllNotFoundException on a Windows edition without rstrtmgr, which is a real
-            // possibility on server core installs.
+            // Includes DllNotFoundException on a Windows edition without rstrtmgr (server core).
             return [];
         }
         finally

@@ -7,11 +7,8 @@ namespace Shenora.Mobile;
 
 /// <summary>
 /// The mobile shell's <see cref="IWebViewInterceptor"/> — a middleware pipeline over MAUI's
-/// <c>HybridWebView.WebResourceRequested</c>.
-/// <para>
-/// Shared source: this one file is the Android AND the iOS implementation, and the only thing that differs
-/// between them is <see cref="RangeDelivery"/>.
-/// </para>
+/// <c>HybridWebView.WebResourceRequested</c>. One shared source is both the Android and the iOS
+/// implementation; only <see cref="RangeDelivery"/> differs.
 /// </summary>
 public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
 {
@@ -23,10 +20,9 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
 
     /// <param name="webView">The webview to intercept. Its <c>WebResourceRequested</c> is subscribed here.</param>
     /// <param name="pipeline">
-    /// The app-level pipeline (<c>app.UseFiles(…)</c>, <c>app.UseMediaPlayer()</c>), applied to this
-    /// interceptor now — routes are read per request, so this is early enough for the first document.
-    /// Pass <c>app.Pipeline</c>, or a fresh <see cref="WebViewPipeline"/> for a webview that must serve
-    /// nothing. Required (unlike the desktop's equivalent, which is a nullable option property).
+    /// The app-level pipeline (<c>app.UseFiles(…)</c>, <c>app.UseMediaPlayer()</c>), applied now — routes
+    /// are read per request, so this is early enough for the first document. Pass <c>app.Pipeline</c>, or a
+    /// fresh <see cref="WebViewPipeline"/> for a webview that must serve nothing.
     /// </param>
     /// <param name="log">Optional diagnostics. Guarded — a throwing sink must not break serving.</param>
     public MobileWebViewInterceptor(HybridWebView webView, WebViewPipeline pipeline, ILogger? log = null)
@@ -36,36 +32,29 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
         _log = log;
         _webView.WebResourceRequested += OnWebResourceRequested;
 
-        // Warmed here so the fragment repair can answer from memory, never doing I/O on the platform's
-        // event thread. A first load is always fragment-free, so it has that whole navigation to finish.
+        // Warmed here so the fragment repair answers from memory, never doing I/O on the platform's event
+        // thread. A first load is always fragment-free, so it has that whole navigation to finish.
         _document = ReadBundleDocument();
 
-        // Not guarded: a throwing step is a composition mistake, and must fail loudly rather than leave a
-        // webview that silently serves nothing.
+        // Not guarded: a throwing step is a composition mistake. Failing loudly beats a webview that
+        // silently serves nothing.
         pipeline.ApplyTo(this);
 
         // ⚠ THE AUTOPLAY POLICY IS NOT LEVELLED HERE. Android requires a user gesture for `play()` and iOS
-        // does not, so a page that autoplays on one shell answers `NotAllowedError` on the other — but the
-        // documented Android answer, `Settings.MediaPlaybackRequiresUserGesture = false` on MAUI's
-        // `MauiHybridWebView` at construction, makes every clip fail to load at all
-        // (`MEDIA_ELEMENT_ERROR: Format error`, `readyState=0`). See TASKS.md.
+        // does not; the documented Android answer — `MediaPlaybackRequiresUserGesture = false` on MAUI's
+        // `MauiHybridWebView` — makes every clip fail to LOAD instead (`readyState=0`). See TASKS.md.
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// ⚠ A compile-time constant per platform — not a setting, and not something an app may override.
-    /// </remarks>
+    /// <remarks>⚠ A compile-time constant per platform, not a setting an app may override.</remarks>
     public WebViewRangeDelivery RangeDelivery =>
 #if ANDROID
-        // Android's webview applies the Range START to whatever body it is handed, so slicing as well applies
-        // the offset twice — a player asking for a file's tail gets an empty body and retries it forever.
-        //
-        // 🔴 **NOT a stale workaround for an old Chromium — still true on Android 16 (SDK 36, WebView
-        // 133.0.6943.137).** Flipping to `Sliced` and serving a
-        // non-faststart file produced **35 requests, 28 of them the identical tail range**
-        // (`bytes=393216-`, each answered `206` with a correct `Content-Range`) — the retry loop this
-        // comment predicts. Unsliced serves the same clip in FOUR requests. A correct 206 is not enough;
-        // the webview offsets the body it is given regardless of what the headers say.
+        // Android's webview applies the Range START to whatever body it is handed, so slicing as well
+        // applies the offset twice — a player asking for a file's tail gets an empty body and retries for
+        // ever. 🔴 NOT a stale workaround for an old Chromium: still true on Android 16 (SDK 36, WebView
+        // 133.0.6943.137), where `Sliced` on a non-faststart file produced 35 requests, 28 of them the
+        // identical tail range, each answered `206` with a correct `Content-Range`; `Unsliced` serves the
+        // same clip in FOUR. A correct 206 is not enough.
         WebViewRangeDelivery.Unsliced;
 #elif IOS || MACCATALYST
         // WKURLSchemeHandler passes the body through verbatim, so the handler slices — ordinary correct HTTP.
@@ -109,8 +98,8 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
             // A throwing middleware must not become an unhandled exception on the platform's event thread,
             // and its text must not reach the page — page script can read a response body.
             Log(() => "[Shenora.Mobile] Resource middleware failed", ex);
-            // ⚠ Sent through `Answer` like every other reply: this type has exactly one `SetResponse` call,
-            // and a second one would be a body that skipped `PlatformBody` — a dead process on Android.
+            // ⚠ Through `Answer` like every other reply: this type has exactly one `SetResponse` call, and a
+            // second would be a body that skipped `PlatformBody` — a dead process on Android.
             Answer(e, WebViewResourceResponse.NotFound());
             return;
         }
@@ -122,8 +111,7 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     /// Hand a response to the platform, or leave the event untouched so it serves the request itself.
     /// <para>
     /// 🔴 <b>THE ONE PLACE a managed <see cref="Stream"/> becomes a platform response body</b>, so the
-    /// per-platform adjustments (<see cref="PlatformHeaders"/>, <see cref="PlatformBody"/>) belong here and
-    /// nowhere else.
+    /// per-platform adjustments (<see cref="PlatformHeaders"/>, <see cref="PlatformBody"/>) belong here.
     /// </para>
     /// </summary>
     private void Answer(WebViewWebResourceRequestedEventArgs e, WebViewResourceResponse? response)
@@ -131,8 +119,8 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
         // Nothing claimed it — leave `Handled` alone so the platform serves it normally (the bundle).
         if (response is null) return;
 
-        // The PORTABLE overload: every header in the dictionary reaches the native response on both
-        // platforms, so `e.PlatformArgs` is not needed.
+        // The PORTABLE overload: every header reaches the native response on both platforms, so
+        // `e.PlatformArgs` is not needed.
         e.SetResponse(response.StatusCode, response.ReasonPhrase, PlatformHeaders(response.Headers),
             PlatformBody(response.Content));
         e.Handled = true;
@@ -146,8 +134,7 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     /// 🔴 <b>Without the wrapper, a mid-read throw KILLS THE PROCESS on Android, with nothing in the app's
     /// log.</b> A managed exception marshals into Java as <c>android.runtime.JavaProxyThrowable</c>, which
     /// extends <c>java.lang.Error</c> and so escapes Chromium's <c>catch (IOException)</c> in
-    /// <c>InputStreamAdapter.read</c>; a <c>Java.IO.IOException</c> arrives as its PEER and hits that catch,
-    /// giving a page-visible failed load.
+    /// <c>InputStreamAdapter.read</c>; a <c>Java.IO.IOException</c> arrives as its PEER and hits that catch.
     /// <para>
     /// ⚠ Only the READ path is translated; a throwing <c>Close</c> is not. iOS is unchanged, where the same
     /// failure is silent — a committed <c>200</c> with a short body (<c>docs/design/mobile-shells.md</c>).
@@ -163,12 +150,12 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
 #if ANDROID
     /// <summary>
     /// A response body whose mid-read failure reaches Java as <c>java.io.IOException</c> — the one throwable
-    /// Chromium's <c>InputStreamUtil.read</c> catches; anything else kills the process.
-    /// <see cref="PlatformBody"/> has the mechanism.
+    /// Chromium's <c>InputStreamUtil.read</c> catches; anything else kills the process
+    /// (<see cref="PlatformBody"/> has the mechanism).
     /// </summary>
     /// <remarks>
-    /// ⚠ It must NOT return 0 to hide the failure: that is the silent short body a bounded stream throws
-    /// precisely to avoid (<c>BoundedBodyStream.Read</c>). Translation, not suppression.
+    /// ⚠ It must NOT return 0 to hide the failure — that is the silent short body a bounded stream throws to
+    /// avoid (<c>BoundedBodyStream.Read</c>). Translation, not suppression.
     /// </remarks>
     private sealed class AndroidResponseBody(Stream inner, ILogger? log) : Stream
     {
@@ -178,10 +165,8 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
         public override long Length => inner.Length;
         public override long Position { get => inner.Position; set => inner.Position = value; }
 
-        /// <summary>
-        /// The array overload only: <c>InputStreamAdapter</c> calls it, and
-        /// <see cref="Stream.Read(Span{byte})"/>'s base implementation forwards here.
-        /// </summary>
+        /// <summary>The array overload only: <c>InputStreamAdapter</c> calls it, and
+        /// <see cref="Stream.Read(Span{byte})"/>'s base implementation forwards here.</summary>
         public override int Read(byte[] buffer, int offset, int count)
         {
             try
@@ -191,16 +176,16 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
             catch (Java.IO.IOException)
             {
                 // What `InputStreamUtil.read`'s `catch (IOException)` expects, so it passes through with its
-                // real type and message. ⚠ The test is "already catchable", NOT "has a Java peer": any other
-                // peered throwable — a revoked SAF permission mid-read raises `Java.Lang.SecurityException`
-                // — misses that catch and kills the process, so it is translated below instead.
+                // real type and message. ⚠ The test is "already catchable", NOT "has a Java peer": a peered
+                // `Java.Lang.SecurityException` (a SAF permission revoked mid-read) misses that catch and
+                // kills the process, so it is translated below instead.
                 throw;
             }
             catch (Java.Lang.Error)
             {
                 // A genuine `java.lang.Error` (OOM, StackOverflow) SHOULD still take the process. ⚠ Never
                 // reached by a wrapped MANAGED exception: the `JavaProxyThrowable` that extends
-                // `java.lang.Error` is minted at the marshalling boundary, and does not exist on this side.
+                // `java.lang.Error` is minted at the marshalling boundary and does not exist on this side.
                 throw;
             }
             catch (Exception ex)
@@ -219,11 +204,8 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 
-        /// <summary>
-        /// Forwarded, and load-bearing: Android DISPOSES a response body — including one it abandons
-        /// mid-download — and that dispose releases the source handle behind a bounded body. A wrapper that
-        /// swallowed it would leak a file handle per abandoned request.
-        /// </summary>
+        /// <summary>Forwarded, and load-bearing: Android DISPOSES a response body — including one abandoned
+        /// mid-download — and that dispose is what releases the source handle behind a bounded body.</summary>
         protected override void Dispose(bool disposing)
         {
             if (disposing) inner.Dispose();
@@ -234,27 +216,23 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
 
     /// <summary>
     /// The kit's repair for a platform that cannot serve its own bundle for a given request shape. Null —
-    /// "nothing to repair" — for every request except the one case below, and null again when the bundle
-    /// cannot be read: an app that serves its document some other way must be left exactly as it was.
+    /// "nothing to repair" — for every other request, and null again when the bundle cannot be read.
     /// </summary>
     /// <remarks>
     /// ⚠ <b>Android maps a top-level <c>#fragment</c> URL onto an asset name and answers 404</b>, so every
     /// hash-routed page dies on RELOAD with <c>net::ERR_INVALID_RESPONSE</c>; on iOS the navigation never
     /// completes. The request fails before any script runs, so this interceptor is the only seam that can
-    /// answer it (table on <see cref="WebViewResourceRequest.IsRootWithFragment"/>).
-    /// <para>
-    /// It answers the SAME bytes the platform would have served for the fragment-free URL —
-    /// <c>HybridRoot/DefaultFile</c> from the app package — so the page boots exactly as on a first load and
-    /// its router reads the fragment off <c>location</c> as usual.
-    /// </para>
+    /// answer it (table on <see cref="WebViewResourceRequest.IsRootWithFragment"/>). It answers the SAME
+    /// bytes the platform would have served for the fragment-free URL — <c>HybridRoot/DefaultFile</c> from
+    /// the app package — so the page boots as on a first load and its router reads <c>location</c> as usual.
     /// </remarks>
     private WebViewResourceResponse? RepairDocumentRequest(Uri uri)
     {
         if (!WebViewResourceRequest.IsRootWithFragment(uri)) return null;
 
-        // ⚠ NEVER BLOCK HERE. `_document` is warmed once at construction; if it is not ready we DECLINE
-        // rather than wait, because `.Result`/`.GetAwaiter().GetResult()` deadlocks iOS's main thread — the
-        // app stays alive with this as the last line it ever logs.
+        // ⚠ NEVER BLOCK HERE. `_document` is warmed once at construction; if it is not ready we DECLINE.
+        // `.Result`/`.GetAwaiter().GetResult()` deadlocks iOS's main thread — the app stays alive with this
+        // as the last line it ever logs.
         if (_document is not { IsCompletedSuccessfully: true, Result: { } document })
         {
             Log(() => "[Shenora.Mobile] Fragment document repair declined — the bundle is not readable, or "
@@ -275,9 +253,9 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     /// answer from memory.
     /// <para>
     /// 🔴 <b>The path is built entirely from APP CONFIGURATION</b> — a request URI decides only WHETHER to
-    /// repair, never WHAT to serve, so there is no page input on this path to contain. It is read from the
-    /// WEBVIEW rather than from constants: both are settable, and assuming the defaults would silently stop
-    /// repairing the apps that changed them.
+    /// repair, never WHAT to serve, so there is no page input on this path to contain. Read off the WEBVIEW,
+    /// since both settings are settable and assuming the defaults would silently stop repairing the apps
+    /// that changed them.
     /// </para>
     /// </summary>
     private Task<BundleDocument?> ReadBundleDocument()
@@ -310,9 +288,7 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     /// one platform emits some itself and then passes ours through as well.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// ⚠ <b>Android duplicates</b> — measured with a route that varied only which headers the kit supplied:
-    /// </para>
     /// <code>
     /// kit supplies      page receives content-type                 page receives content-length
     /// ────────────      ─────────────────────────                  ───────────────────────────
@@ -322,17 +298,16 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     /// neither           application/octet-stream                   0
     /// </code>
     /// <para>
-    /// So the platform ALWAYS emits a <c>Content-Type</c> and a <c>Content-Length: 0</c> of its own AND
-    /// copies our dictionary verbatim — a custom <c>X-</c> header arrived exactly once in every variant, so
-    /// it is these two fields being re-derived, not blanket duplication. No <c>SetResponse</c> overload
-    /// takes a content type AND a dictionary, so neither is avoidable by choosing another.
+    /// So the platform always emits a <c>Content-Type</c> and a <c>Content-Length: 0</c> of its own AND
+    /// copies our dictionary verbatim (a custom <c>X-</c> header arrived exactly once in every variant), and
+    /// no <c>SetResponse</c> overload takes a content type ALONGSIDE a dictionary.
     /// </para>
     /// <para>
     /// <c>Content-Length</c> is therefore dropped: two DIFFERENT values for it is an invalid HTTP message
     /// (RFC 9110 §8.6) and a consumer taking the first reads the payload as EMPTY. <c>Content-Type</c>
-    /// STAYS — dropping it yields the table's <c>application/octet-stream</c>, which no <c>&lt;video&gt;</c>
-    /// will touch. ⚠ Android only: iOS builds an <c>NSHTTPURLResponse</c> through entirely different
-    /// platform code and has NOT been measured, so do not generalise without a device run.
+    /// STAYS — dropping it yields <c>application/octet-stream</c>, which no <c>&lt;video&gt;</c> will touch.
+    /// ⚠ Android only: iOS builds an <c>NSHTTPURLResponse</c> through different platform code and is
+    /// UNMEASURED.
     /// </para>
     /// </remarks>
     private static IReadOnlyDictionary<string, string> PlatformHeaders(IReadOnlyDictionary<string, string> headers)
@@ -351,9 +326,9 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     /// Run the composed pipeline.
     /// <para>
     /// ⚠ Resolved SYNCHRONOUSLY: both mobile platforms need the status line and headers at the moment the
-    /// event returns, so the metadata cannot be awaited (the desktop shell has a deferral and does not).
-    /// Laziness belongs in the BODY — the response carries a <c>Stream</c> the platform reads afterwards —
-    /// so middleware must not do slow work before returning (<see cref="IWebViewInterceptor.Use"/>).
+    /// event returns, so the metadata cannot be awaited. Laziness belongs in the BODY — the response
+    /// carries a <c>Stream</c> the platform reads afterwards — so middleware must not do slow work before
+    /// returning (<see cref="IWebViewInterceptor.Use"/>).
     /// </para>
     /// </summary>
     private static WebViewResourceResponse? Run(WebViewResourceHandler handler, WebViewResourceRequest request)

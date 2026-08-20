@@ -7,12 +7,11 @@ namespace Shenora.Windows;
 /// <summary>
 /// Shell integrations: reveal in Explorer, open a folder, open a URL, launch a process.
 /// <para>
-/// Opening a URL is meaningful on ANY host, so it lives on <see cref="IUrlLauncher"/> in
-/// <c>Shenora</c> and is inherited here — app logic that only opens links should depend on that
-/// and stay platform-neutral (D20). Revealing in a file manager and launching a process are
-/// desktop-only CONCEPTS, so they stay on this interface. <c>UseWindows</c> registers both faces of
-/// the same instance. <c>OpenUrl</c> is deliberately NOT redeclared: re-declaring an inherited member
-/// is CS0108, a build error now that warnings are errors.
+/// Opening a URL is meaningful on ANY host, so it is inherited from <see cref="IUrlLauncher"/> in
+/// <c>Shenora</c> and app logic that only opens links should depend on that (D20); revealing in a file
+/// manager and launching a process are desktop-only concepts and stay here. <c>UseWindows</c> registers
+/// both faces of the same instance. ⚠ <c>OpenUrl</c> is not redeclared — re-declaring an inherited
+/// member is CS0108, an error under warnings-as-errors.
 /// </para>
 /// </summary>
 public interface IShellLauncher : IUrlLauncher
@@ -23,9 +22,7 @@ public interface IShellLauncher : IUrlLauncher
     /// <summary>Open a directory in the shell's file manager.</summary>
     void OpenDirectory(string directoryPath);
 
-    /// <summary>
-    /// Launch an executable.
-    /// </summary>
+    /// <summary>Launch an executable.</summary>
     /// <param name="options">What to run, and how.</param>
     /// <returns>
     /// The new process's id, or <c>null</c> when the shell satisfied the request WITHOUT starting one
@@ -37,13 +34,9 @@ public interface IShellLauncher : IUrlLauncher
 }
 
 /// <summary>
-/// What to launch, and how — for <see cref="IShellLauncher.LaunchProcess"/>.
-/// <para>
-/// A record rather than parameters because every plausible next requirement — an elevation verb,
-/// environment variables, an argument LIST instead of a hand-quoted string, a window style — would
-/// otherwise change the method's signature and break every caller. On a record each is an added
-/// property, which is additive.
-/// </para>
+/// What to launch, and how — for <see cref="IShellLauncher.LaunchProcess"/>. An options type rather than
+/// parameters, so the next requirement (an elevation verb, environment variables, an argument list) is an
+/// added property instead of a broken signature.
 /// </summary>
 public sealed class ProcessLaunchOptions
 {
@@ -61,9 +54,8 @@ public sealed class ProcessLaunchOptions
 }
 
 /// <summary>
-/// The <see cref="IShellLauncher"/> implementation, ported from the primary desktop sibling with
-/// its Windows 11 lessons kept. Validation failures throw BCL exceptions
-/// (<see cref="FileNotFoundException"/>…) — this package carries no IPC dependency; the dispatch
+/// The <see cref="IShellLauncher"/> implementation. Validation failures throw BCL exceptions
+/// (<see cref="FileNotFoundException"/>…) — this package carries no IPC dependency, and the dispatch
 /// boundary maps throws to structured errors.
 /// </summary>
 public sealed class ShellLauncher : IShellLauncher
@@ -106,8 +98,7 @@ public sealed class ShellLauncher : IShellLauncher
     /// <inheritdoc />
     public void OpenUrl(string url)
     {
-        // Scheme-checked like the WebView2 new-window policy: an app shell must never
-        // shell-execute odd protocols on a page's behalf.
+        // ⚠ Scheme-checked: an app shell must never shell-execute odd protocols on a page's behalf.
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
             throw new ArgumentException($"Only http/https URLs open in the system browser (got '{url}').", nameof(url));
 
@@ -130,8 +121,7 @@ public sealed class ShellLauncher : IShellLauncher
             WorkingDirectory = options.WorkingDirectory
                 ?? Path.GetDirectoryName(options.ExecutablePath) ?? string.Empty,
         });
-        // Read the id BEFORE the handle is disposed — and the handle IS disposed, because a drifted
-        // hand-copy of this method once leaked one per launch.
+        // ⚠ Read the id BEFORE the `using` disposes the handle.
         return started?.Id;
     }
 }

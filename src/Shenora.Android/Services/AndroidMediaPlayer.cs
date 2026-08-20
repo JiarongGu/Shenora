@@ -4,43 +4,28 @@ using Shenora.Modules.Media;
 using Android.Media;
 using Shenora;
 
-// `MediaPlayer` is ambiguous in this file — Shenora.Modules.Media has the page-backed one — and the
-// platform type cannot be called `AndroidMediaPlayer` either, because that is now THIS class. `Platform*`
-// is the alias vocabulary for "the OS's own version of the thing this file implements".
+// `MediaPlayer` is ambiguous here: Shenora.Modules.Media has the page-backed one.
 using PlatformPlayer = Android.Media.MediaPlayer;
 
 namespace Shenora.Android;
 
 /// <summary>
-/// Android's <see cref="IMediaPlayer"/> — the platform's own <c>android.media.MediaPlayer</c>. The state
-/// machine is <see cref="MediaPlayerBase"/>'s; this is the platform half.
+/// Android's <see cref="IMediaPlayer"/> — the platform's own <c>android.media.MediaPlayer</c> and not
+/// ExoPlayer, because D51 forbids shipping an engine. The state machine is
+/// <see cref="MediaPlayerBase"/>'s; this is the platform half.
 /// <para>
-/// 🔴 <b>Why the platform player and NOT ExoPlayer</b>, which is the obvious suggestion. D51 says the kit
-/// ships no codec and no engine, ever — every byte of decoding is the platform's — and ExoPlayer is an
-/// ENGINE: a third-party library with its own extractors, its own renderers and a transitive AndroidX
-/// graph, landing in every consumer of <c>Shenora.Android</c> whether or not they play anything.
-/// <c>android.media.MediaPlayer</c> is already in the SDK, decodes through the same <c>MediaCodec</c> layer
-/// <see cref="AndroidMediaCapability"/> reports on, and covers this contract completely.
+/// The contract promises no adaptive streaming (DASH, smooth HLS switching), which is where ExoPlayer is
+/// genuinely better; an app that needs it derives its own <see cref="MediaPlayerBase"/>.
 /// </para>
 /// <para>
-/// <b>What that costs, stated plainly:</b> adaptive streaming (DASH, smooth HLS switching) and some
-/// container edge cases are where ExoPlayer is genuinely better. The contract promises neither. And an app
-/// that needs it is no longer stuck — <see cref="MediaPlayerBase"/> makes bringing your own engine a
-/// derived class with about forty lines in it, which is a better answer than the kit picking a heavy
-/// dependency for everyone.
-/// </para>
-/// <para>
-/// ⚠ <b>Background playback additionally needs the APP's own foreground service and notification</b>, the
-/// same division <see cref="AndroidPlaybackSession"/> draws: Android kills a backgrounded process's audio
-/// without one. The kit plays; the app decides whether it is allowed to keep playing.
+/// ⚠ <b>Background playback additionally needs the APP's own foreground service and notification</b> —
+/// Android kills a backgrounded process's audio without one. Same division as
+/// <see cref="AndroidPlaybackSession"/>: the kit plays, the app decides whether it may keep playing.
 /// </para>
 /// </summary>
 public sealed class AndroidMediaPlayer : MediaPlayerBase
 {
-    /// <summary>
-    /// <c>PlaybackParams</c> — the only way to set a speed — arrived in Android 6.0. The floor here is 21,
-    /// and CA1416 is a build error in this repo, so the guard is required rather than defensive.
-    /// </summary>
+    /// <summary><c>PlaybackParams</c> — the only way to set a speed — arrived in Android 6.0; the floor is 21.</summary>
     private const int PlaybackParamsApi = 23;
 
     private PlatformPlayer? _player;
@@ -58,11 +43,8 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
 
     /// <summary>
     /// <inheritdoc />
-    /// <para>
-    /// ⚠ Android reports <b>-1</b> for a stream whose length it cannot know, and 0 before prepare — neither
-    /// is a duration, and both mean the contract's <c>null</c>. Returning the raw value would give a UI a
-    /// scrubber that is either negative or pinned at the end.
-    /// </para>
+    /// ⚠ Android reports <b>-1</b> for a stream whose length it cannot know and 0 before prepare; neither
+    /// is a duration, and both mean the contract's <c>null</c>.
     /// </summary>
     protected override TimeSpan? DurationCore =>
         _player is { Duration: > 0 } player ? TimeSpan.FromMilliseconds(player.Duration) : null;
@@ -73,8 +55,8 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
         var player = new PlatformPlayer();
         _player = player;
 
-        // Music rather than a notification blip — this is what makes ducking, the volume rocker's choice of
-        // stream and mute-on-call behave the way a user expects of a player. Must be set BEFORE prepare.
+        // Music, not a notification blip: this drives ducking, the volume rocker's choice of stream and
+        // mute-on-call. Must be set BEFORE prepare.
         player.SetAudioAttributes(new AudioAttributes.Builder()
             .SetContentType(AudioContentType.Music)!
             .SetUsage(AudioUsageKind.Media)!
@@ -86,14 +68,12 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
         player.Info += OnInfo;
         player.SeekComplete += OnSeekComplete;
 
-        // The ORIGINAL string for a network URL rather than the parsed Uri round-tripped back to text:
-        // System.Uri normalizes escaping, and a signed URL whose signature covers its own encoding stops
-        // matching. A file: URI becomes a plain path, which is what SetDataSource wants.
+        // The ORIGINAL string for a network URL: System.Uri normalizes escaping, and a signed URL whose
+        // signature covers its own encoding stops matching. A file: URI becomes the plain path it wants.
         player.SetDataSource(uri.IsFile ? uri.LocalPath : source.Uri);
 
-        // ASYNC prepare, never Prepare(): the synchronous one blocks the calling thread until the source is
-        // parsed, which for a network source is however long the network takes. Readiness arrives on
-        // Prepared, which is what the base is waiting for.
+        // ASYNC prepare, never Prepare(): the synchronous one blocks the caller for however long the
+        // network takes. Readiness arrives on Prepared, which is what the base is waiting for.
         player.PrepareAsync();
     }
 
@@ -102,9 +82,8 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
 
     /// <inheritdoc />
     /// <remarks>
-    /// ⚠ The speed goes on BEFORE <c>Start()</c> and never while paused — on this platform assigning
-    /// <c>PlaybackParams</c> to a paused player STARTS it, which is the same trap AVFoundation has with
-    /// <c>Rate</c> and the reason <see cref="MediaPlayerBase"/> defers a rate set while paused.
+    /// ⚠ The speed goes on BEFORE <c>Start()</c> and never while paused — assigning <c>PlaybackParams</c>
+    /// to a paused player STARTS it, which is why <see cref="MediaPlayerBase"/> defers a rate set.
     /// </remarks>
     protected override void PlayCore(double rate)
     {
@@ -117,10 +96,7 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
     protected override void PauseCore() => _player?.Pause();
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Genuinely asynchronous: Android calls back on <c>SeekComplete</c> when the position lands, so
-    /// <c>SeekAsync</c> completes then rather than on the request being accepted.
-    /// </remarks>
+    /// <remarks>Completes on the platform's <c>SeekComplete</c>, not on the request being accepted.</remarks>
     protected override Task SeekCore(TimeSpan position)
     {
         if (_player is not { } player) return Task.CompletedTask;
@@ -130,8 +106,7 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Interlocked.Exchange(ref _seeking, completion)?.TrySetResult();
 
-        // The int overload: SeekTo(long, SeekMode) is API 26 and this floor is 21. Milliseconds are the
-        // platform's unit throughout.
+        // The int overload: SeekTo(long, SeekMode) is API 26 and this floor is 21.
         player.SeekTo((int)position.TotalMilliseconds);
         return completion.Task;
     }
@@ -144,9 +119,8 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
 
     /// <inheritdoc />
     /// <remarks>
-    /// <c>Release()</c> and not just <c>Reset()</c>: a MediaPlayer holds a decoder and an audio track, both
-    /// scarce on a device, and a reset-but-unreleased instance keeps them. Handlers come off first — they
-    /// are attached to THIS instance, and a callback arriving mid-release would touch a dead object.
+    /// <c>Release()</c> and not just <c>Reset()</c>: a MediaPlayer holds a decoder and an audio track,
+    /// both scarce. Handlers come off first — a callback arriving mid-release touches a dead object.
     /// </remarks>
     protected override void TeardownCore()
     {
@@ -180,22 +154,20 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
         // otherwise report a failed source as one that played to its end.
         e.Handled = true;
 
-        // The platform's own codes are LOGGED and never thrown: this string can reach a page, and the same
-        // rule the IPC stack applies to every error path applies here. `What` is the coarse reason and
-        // `Extra` the vendor detail — together they are what makes a support report actionable.
+        // LOGGED, never thrown: this string can reach a page. `What` is the coarse reason, `Extra` the
+        // vendor detail.
         Log(() => $"MediaPlayer open failed: what={e.What} extra={e.Extra}");
         OnFailed("The media source could not be played.");
     }
 
     /// <summary>
-    /// Buffering, which Android reports through the general-purpose Info callback rather than its own
-    /// event. Start and end are separate codes; watching only the first gives a player that enters
-    /// Buffering and never leaves.
+    /// Buffering, which Android reports through the general-purpose Info callback. ⚠ Start and end are
+    /// separate codes; watching only the first gives a player that enters Buffering and never leaves.
     /// </summary>
     private void OnInfo(object? sender, PlatformPlayer.InfoEventArgs e)
     {
-        // Conditional on what we are already doing: the platform reports these whether or not anything is
-        // playing, and forwarding unconditionally would strand a PAUSED player in Buffering.
+        // The platform reports these whether or not anything is playing — forwarding unconditionally
+        // would strand a PAUSED player in Buffering.
         switch (e.What)
         {
             case MediaInfo.BufferingStart when State == MediaPlayerState.Playing:
@@ -210,15 +182,13 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
     }
 
     /// <summary>
-    /// Set the playback speed where the platform can. Below API 23 there is no mechanism at all, so the
-    /// request is logged and dropped — which the contract already allows: <see cref="IMediaPlayer.SetRateAsync"/>
-    /// reports what was ASKED FOR precisely because a platform may not honour it.
+    /// Set the playback speed where the platform can. Below API 23 there is no mechanism, so the request
+    /// is logged and dropped — <see cref="IMediaPlayer.SetRateAsync"/> reports what was ASKED FOR.
     /// </summary>
     private void ApplySpeed(PlatformPlayer player, double rate)
     {
-        // ⚠ The LITERAL, not `PlaybackParamsApi`. CA1416 does not follow the guard through a named constant
-        // — measured here, four errors on an ostensibly guarded call — and it is a build error in this repo.
-        // The constant stays because it documents the floor; the analyser needs to see the number.
+        // ⚠ The LITERAL, not `PlaybackParamsApi`: CA1416 does not follow the guard through a named
+        // constant (measured — four errors on a guarded call) and it is a build error in this repo.
         if (!OperatingSystem.IsAndroidVersionAtLeast(23))
         {
             // Only worth a line when the app actually asked for something other than normal speed.
@@ -230,10 +200,7 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
         SetSpeed(player, (float)rate);
     }
 
-    /// <summary>
-    /// The API-23 half, split out and ATTRIBUTED so the platform guard above is one the analyser can verify
-    /// rather than one a reader has to trust.
-    /// </summary>
+    /// <summary>The API-23 half, split out and ATTRIBUTED so the analyser can verify the guard above.</summary>
     [System.Runtime.Versioning.SupportedOSPlatform("android23.0")]
     private static void SetSpeed(PlatformPlayer player, float rate) =>
         // A FRESH PlaybackParams rather than mutating the player's own: the getter throws IllegalState on a

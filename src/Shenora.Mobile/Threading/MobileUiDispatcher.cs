@@ -29,8 +29,8 @@ public sealed class MobileUiDispatcher : UiDispatcherBase
     /// <inheritdoc />
     /// <remarks>
     /// MAUI's <see cref="IDispatcher"/> has no pre-realized phase to observe, so this is always
-    /// <see cref="UiTargetState.Ready"/> and <see cref="UiTargetState.NotReady"/> is unreachable on this
-    /// shell — a caller branching on it will never see it here.
+    /// <see cref="UiTargetState.Ready"/> — a caller branching on <see cref="UiTargetState.NotReady"/> will
+    /// never see it on this shell.
     /// </remarks>
     public override UiTargetState State => UiTargetState.Ready;
 
@@ -39,9 +39,9 @@ public sealed class MobileUiDispatcher : UiDispatcherBase
 
     /// <inheritdoc />
     /// <remarks>
-    /// <c>Dispatch</c> is the non-blocking post. Never <c>DispatchAsync().Wait()</c> — a blocking marshal
-    /// off the UI thread hangs the application. It answers false rather than throwing when it refuses, so
-    /// the refusal is turned into an exception here for the base to fault an awaited call with.
+    /// <c>Dispatch</c> is the non-blocking post. ⚠ Never <c>DispatchAsync().Wait()</c> — a blocking marshal
+    /// off the UI thread hangs the application. It answers false rather than throwing, so the refusal is
+    /// turned into an exception here for the base to fault an awaited call with.
     /// </remarks>
     protected override bool TryPost(Action work, out Exception? failure)
     {

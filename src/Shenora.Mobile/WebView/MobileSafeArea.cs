@@ -32,31 +32,25 @@ public sealed class MobileSafeArea : IDisposable
         Publish(null);
 
         // 🔴 ROTATION MOVES AN INSET TO A DIFFERENT EDGE, it does not merely resize it: a cutout that is
-        // `top` in portrait is `left` or `right` in landscape. So reading once publishes the wrong SHAPE
-        // forever, and the page reserves a strip along the top while the notch is down the side.
-        // `SizeChanged` is MAUI's own signal and fires on both platforms.
+        // `top` in portrait is `left` or `right` in landscape, so reading ONCE publishes the wrong SHAPE for
+        // ever. `SizeChanged` is MAUI's own signal and fires on both platforms.
         _webView.SizeChanged += OnSizeChanged;
         _webView.HandlerChanged += OnHandlerChanged;
         if (_webView.Handler is not null) Attach();
     }
 
-    /// <summary>
-    /// Push a measurement to the page. Safe to call repeatedly, and every call publishes: the script is
-    /// idempotent and <see cref="Publish"/>'s generation counter collapses a rotation storm.
-    /// </summary>
+    /// <summary>Push a measurement to the page. Safe to call repeatedly, and every call publishes.</summary>
     public void Report(SafeAreaInsets insets)
     {
         if (_disposed) return;
 
         // 🔴 NEVER skip an unchanged value here. CSS custom properties live on the DOCUMENT, so every
-        // navigation throws them away — and the insets do NOT change across one, so a value-equality
-        // guard leaves the new document with nothing while the shell still reports "delivered".
-        // Republishing is cheap: the script is idempotent and Publish's generation counter collapses a
-        // storm into one delivery.
-        //
-        // The NUMBERS are logged only when they change; this runs on every layout pass. Without them the
-        // shell's own output is unobservable — the page's diagnostic reports what the PAGE ended up with,
-        // which on a shell whose page also reads `env()` is not proof of what the shell published.
+        // navigation throws them away — and the insets do NOT change across one, so a value-equality guard
+        // leaves the new document with nothing while the shell still reports "delivered". Republishing is
+        // cheap: the script is idempotent and Publish's generation counter collapses a storm.
+        // ⚠ The NUMBERS are logged only when they change; this runs on every layout pass. The page's own
+        // diagnostic reports what the PAGE ended up with, which on a shell whose page also reads `env()` is
+        // not proof of what the shell published.
         if (_last != insets)
             Log($"safe-area measured: top={insets.Top:0.#} right={insets.Right:0.#} "
               + $"bottom={insets.Bottom:0.#} left={insets.Left:0.#}");
@@ -68,8 +62,7 @@ public sealed class MobileSafeArea : IDisposable
     /// Evaluate the script, and KEEP TRYING until the page confirms it ran.
     /// <para>
     /// 🔴 The retry IS the delivery mechanism: evaluating against a webview that has no document yet does
-    /// not throw, it silently does nothing — so a single publish reports success while the page receives
-    /// nothing.
+    /// not throw, it silently does nothing — so a single publish reports success and delivers nothing.
     /// </para>
     /// </summary>
     private async void Publish(SafeAreaInsets? insets)
@@ -86,8 +79,7 @@ public sealed class MobileSafeArea : IDisposable
                 var result = await _webView.EvaluateJavaScriptAsync(script).ConfigureAwait(true);
                 if (result is not null && result.Contains(SafeAreaScript.DeliveredMarker, StringComparison.Ordinal))
                 {
-                    // Logged ONCE: this fires on every layout pass, and a line per pass buries the
-                    // device log the rest of the shell writes to.
+                    // Logged ONCE — this fires on every layout pass.
                     if (!_delivered)
                     {
                         _delivered = true;
@@ -122,11 +114,8 @@ public sealed class MobileSafeArea : IDisposable
     }
 
     /// <summary>
-    /// Subscribe to the platform's inset changes and take a first reading.
-    /// <para>
-    /// ⚠ Per-platform, and a platform with no arm falls through in SILENCE rather than failing to
-    /// compile — unlike <c>SaveAsync</c>, because "no insets to report" is a legitimate answer here.
-    /// </para>
+    /// Subscribe to the platform's inset changes and take a first reading. ⚠ Per-platform, and a platform
+    /// with no arm falls through in SILENCE — "no insets to report" is a legitimate answer here.
     /// </summary>
     private void Attach()
     {
@@ -137,15 +126,13 @@ public sealed class MobileSafeArea : IDisposable
         if (ReferenceEquals(view, _attachedTo)) return;
 
         // ⚠ DETACH THE PREVIOUS VIEW FIRST. A handler change means a NEW platform view, and a stale
-        // subscription leaves Android holding this object through the closure for as long as it holds
-        // the old view, with a dead view still firing reads. The same-view guard above cannot see it.
-        // The handler lives in a field because an anonymous lambda cannot be unsubscribed later.
+        // subscription leaves Android holding this object through the closure while a dead view still fires
+        // reads. The handler lives in a field because an anonymous lambda cannot be unsubscribed later.
         DetachPlatformView();
         _attachedTo = view;
 
-        // Layout is when the window's insets become known and when they change (rotation, keyboard, a
-        // resized window). Cheap to repeat: Publish's generation counter collapses a storm into one
-        // delivery. NOT deduplicated by value — see Report.
+        // Layout is when the insets become known and when they change (rotation, keyboard, a resized
+        // window). Cheap to repeat, and NOT deduplicated by value — see Report.
         _layoutChanged = (_, _) => ReadPlatformInsets();
         view.LayoutChange += _layoutChanged;
 #endif
@@ -164,8 +151,7 @@ public sealed class MobileSafeArea : IDisposable
     {
         if (_attachedTo is global::Android.Views.View previous && _layoutChanged is not null)
         {
-            // The view may already be torn down: detaching from a dead one must not throw out of a
-            // dispose path.
+            // The view may already be torn down, and a dispose path must not throw.
             try { previous.LayoutChange -= _layoutChanged; }
             catch (Exception) { /* already gone */ }
         }
@@ -176,14 +162,11 @@ public sealed class MobileSafeArea : IDisposable
 
     private void OnSizeChanged(object? sender, EventArgs e) => ReadWhileSettling();
 
-    /// <summary>
-    /// Re-read the platform's insets now, and again while the rotation settles.
-    /// </summary>
+    /// <summary>Re-read the platform's insets now, and again while the rotation settles.</summary>
     /// <remarks>
-    /// ⚠ The follow-up reads are load-bearing. A rotation is ANIMATED and the size change is reported at
-    /// its START, when iOS still reports the OLD orientation's <c>SafeAreaInsets</c> — so a single read
-    /// on <c>SizeChanged</c> publishes the very values the rotation invalidated. Cheap to repeat:
-    /// <see cref="Publish"/> is idempotent and collapses the overlapping attempts into one delivery.
+    /// ⚠ The follow-up reads are load-bearing. A rotation is ANIMATED and the size change is reported at its
+    /// START, when iOS still reports the OLD orientation's <c>SafeAreaInsets</c> — so a single read on
+    /// <c>SizeChanged</c> publishes the very values the rotation invalidated.
     /// </remarks>
     private async void ReadWhileSettling()
     {
@@ -199,8 +182,7 @@ public sealed class MobileSafeArea : IDisposable
         }
         catch (Exception ex)
         {
-            // `async void`: nothing awaits this, so an escape here is an unhandled exception on the UI
-            // thread rather than a failed read.
+            // `async void`: an escape here is an unhandled exception on the UI thread, not a failed read.
             Log($"safe-area re-read after a size change failed ({ex.GetType().Name})");
         }
     }
@@ -216,9 +198,8 @@ public sealed class MobileSafeArea : IDisposable
 
         // 🔴 READ the insets; do NOT install an OnApplyWindowInsetsListener on the webview. Setting one
         // REPLACES the view's own inset handling rather than observing it, so the WebView stops applying
-        // insets internally and `env(safe-area-inset-top)` in the page drops to 0 — invisible unless
-        // someone thinks to check env(). Delegating via ViewCompat.OnApplyWindowInsets does not rescue
-        // it. GetRootWindowInsets is purely observational and cannot consume or suppress anything.
+        // insets internally and `env(safe-area-inset-top)` in the page drops to 0 — invisible unless someone
+        // checks env(). GetRootWindowInsets is purely observational and cannot consume or suppress anything.
         var insets = AndroidX.Core.View.ViewCompat.GetRootWindowInsets(view);
         if (insets is null) return;
 
@@ -254,8 +235,7 @@ public sealed class MobileSafeArea : IDisposable
         _webView.HandlerChanged -= OnHandlerChanged;
         _webView.SizeChanged -= OnSizeChanged;
 #if ANDROID
-        // The platform view outlives this object, so disposing without this leaves Android holding it
-        // through the closure.
+        // The platform view outlives this object; without this Android holds it through the closure.
         DetachPlatformView();
 #endif
     }

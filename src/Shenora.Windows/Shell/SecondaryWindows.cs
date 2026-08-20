@@ -9,9 +9,7 @@ public sealed class SecondaryWindowOptions
 {
     /// <summary>
     /// Creates the window — runs ON the window's own STA thread, so every control it creates gets that
-    /// thread's message pump. Create it, don't show it: the pump shows it after geometry is applied. A
-    /// WebView2-hosting window initializes its host from its own <c>Load</c> with
-    /// <c>UseSharedEnvironment = false</c>.
+    /// thread's message pump. Create it, don't show it: the pump shows it after geometry is applied.
     /// </summary>
     public required Func<Form> CreateForm { get; init; }
 
@@ -27,11 +25,11 @@ public sealed class SecondaryWindowOptions
 /// <summary>
 /// Named secondary windows, each on its OWN STA thread with its own message pump. One window per name;
 /// <see cref="Open"/> on an existing name ACTIVATES it rather than recreating it.
-///
-/// Threading: everything here marshals to the window's thread with non-blocking <c>BeginInvoke</c> — a
-/// blocking <c>Invoke</c> from the IPC thread deadlocks the UI. Window threads are BACKGROUND, so an
-/// app exit never hangs on a forgotten window; dispose (or <see cref="CloseAll"/>) closes them
-/// gracefully first so geometry saves run.
+/// <para>
+/// ⚠ Everything marshals with non-blocking <c>BeginInvoke</c> — a blocking <c>Invoke</c> from the IPC
+/// thread deadlocks the UI. Window threads are BACKGROUND, so an app exit never hangs on a forgotten
+/// window; dispose (or <see cref="CloseAll"/>) closes them gracefully first so geometry saves run.
+/// </para>
 /// </summary>
 public sealed class SecondaryWindows : IDisposable
 {
@@ -40,8 +38,8 @@ public sealed class SecondaryWindows : IDisposable
         public volatile Form? Form;
         public volatile bool CloseRequested;
 
-        // Pre-handle intent, same mechanism as CloseRequested: the marshal is a no-op before the handle
-        // exists, so an Activate arriving while the window thread starts up is silently lost otherwise.
+        // ⚠ Pre-handle intent, same mechanism as CloseRequested: the marshal is a no-op before the handle
+        // exists, so an Activate arriving while the window thread starts up would be silently lost.
         public volatile bool ActivateRequested;
     }
 
@@ -82,7 +80,7 @@ public sealed class SecondaryWindows : IDisposable
         }
         catch (Exception ex)
         {
-            // Without this a failed Start leaves the entry behind FOREVER — RunWindow, the only other
+            // ⚠ Without this a failed Start leaves the entry behind forever — RunWindow, the only other
             // cleanup path, never ran — so the name stays permanently "already open".
             _windows.TryRemove(name, out _);
             _logger.LogError(ex, "Secondary window '{Name}' could not start its thread", name);
@@ -104,7 +102,7 @@ public sealed class SecondaryWindows : IDisposable
                 new WindowStateManager(store, options.StateOptions).AttachTo(form);
             }
 
-            // NO FormClosed removal here. Application.Run has NOT returned when FormClosed fires, so
+            // 🔴 NO FormClosed removal here: Application.Run has NOT returned when FormClosed fires, so
             // Dispose() — which waits on _windows becoming empty — would see "empty" mid-teardown and let
             // the process exit while a WebView2 child was still shutting down, leaving its user-data
             // folder LOCKED. The `finally` after Application.Run is the only correct removal point.
@@ -164,10 +162,10 @@ public sealed class SecondaryWindows : IDisposable
         if (!_windows.TryGetValue(name, out var entry)) return;
 
         // Set the flag FIRST, unconditionally: the form may not exist yet, and even when it does the Post
-        // below is a no-op until the handle is created. Cleared on the success path so it can't refire.
+        // below is a no-op until the handle is created. Cleared on the success path so it cannot refire.
         entry.ActivateRequested = true;
         if (entry.Form is not { } form) return;
-        if (Post(form, () => WindowActivation.BringToFront(form)))   // one activation owner
+        if (Post(form, () => WindowActivation.BringToFront(form)))
             entry.ActivateRequested = false;
     }
 
@@ -203,8 +201,8 @@ public sealed class SecondaryWindows : IDisposable
     internal Form? TryGetForm(string name) =>
         _windows.TryGetValue(name, out var entry) ? entry.Form : null;
 
-    // Non-blocking marshal to the window's own thread, through the ONE owner. Pre-handle this is a
-    // deliberate NO-OP (the dispatcher's `false`): the caller is never the window's own thread, so
-    // running inline would CREATE the handle on the wrong thread and kill the pump.
+    // Non-blocking marshal to the window's own thread. ⚠ Pre-handle this is a deliberate NO-OP: the
+    // caller is never the window's own thread, so running inline would CREATE the handle on the wrong
+    // thread and kill the pump.
     private static bool Post(Form form, Action action) => new WinFormsUiDispatcher(form).Post(action);
 }

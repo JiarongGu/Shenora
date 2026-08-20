@@ -8,23 +8,11 @@ namespace Shenora.iOS;
 
 /// <summary>
 /// iOS's <see cref="IMediaStreamConversion"/> — AudioToolbox's <c>AudioConverter</c>, chained decoder →
-/// PCM → AAC encoder. The soundtrack half of the translation layer on this platform (D59).
-/// <para>
-/// <b>Why it is TWO converters and not one.</b> <c>AudioConverterNew</c> will happily build a
-/// compressed→compressed converter for some pairs, but not reliably across the formats that matter here,
-/// and a chain is what the Android side already does (MediaCodec decoder → AAC encoder). Two converters
-/// with PCM in the middle is the shape both platforms can actually satisfy.
-/// </para>
+/// PCM → AAC encoder (D59).
 /// <para>
 /// ⚠ <b>It converts what the DEVICE decodes and MP4 can carry — nothing wider.</b> Ask
 /// <see cref="IosMediaCapability"/> first; the middleware DECLINES (returns null) for anything else
 /// rather than producing a file that opens and plays silence.
-/// </para>
-/// <para>
-/// 🔴 <b>Registering it is what closes a gap that was ANNOUNCED but not fixed.</b> iOS reports AC-3 as
-/// decodable and AAC as encodable, so the planner says <c>Transcode</c> — and until this existed, no
-/// conversion was registered on iOS, so <c>Mp4Remuxer</c> dropped the soundtrack and reported it in
-/// <see cref="MediaRemuxerResult.Dropped"/>. Honest, but silent. This makes the film play.
 /// </para>
 /// </summary>
 public static class IosMediaAudioConversion
@@ -41,42 +29,33 @@ public static class IosMediaAudioConversion
     private const uint PcmFlags = 0x4 | 0x8;
 
     /// <summary>
-    /// The kit's own <c>OSStatus</c>, returned by the input callback to mean <b>"no more input right
-    /// now"</b> — as distinct from "the stream has ended", which is what zero packets with <c>noErr</c>
-    /// means and which the converter LATCHES permanently.
+    /// The kit's own <c>OSStatus</c> for <b>"no more input right now"</b> — 'shnr', so a log line naming it
+    /// is unmistakably ours rather than CoreAudio's.
     /// <para>
-    /// 🔴 It exists because this distinction is not optional and there is no API for it: a converter fed
-    /// one frame per call runs out of input on every single call, and saying so the wrong way kills it
-    /// after the FIRST frame. <c>AudioConverterFillComplexBuffer</c> returns whatever the callback returns,
-    /// so the caller gets this value back and reads it as success.
+    /// 🔴 Zero packets with <c>noErr</c> means THE STREAM HAS ENDED and the converter LATCHES that
+    /// permanently, so a converter fed one frame per call — which starves on every call — must answer this
+    /// instead, or every frame after the first converts to nothing with no error.
+    /// <c>AudioConverterFillComplexBuffer</c> hands the callback's status back to the caller.
     /// </para>
-    /// <para>'shnr', so a log line naming it is unmistakably ours rather than CoreAudio's.</para>
     /// </summary>
     private const int NoMoreInput = 0x73686E72;
 
-    /// <summary>What this can take as INPUT. AAC is absent on purpose: MP4 carries it already, so
-    /// converting would be a lossy round-trip for nothing (the remuxer copies it instead).</summary>
+    /// <summary>What this can take as INPUT. AAC is absent: MP4 carries it already, so the remuxer
+    /// copies it rather than paying a lossy round-trip.</summary>
     private static readonly Dictionary<string, uint> Inputs = new(StringComparer.OrdinalIgnoreCase)
     {
         ["ac3"] = FormatAc3,
         ["eac3"] = FormatEac3,
     };
 
-    /// <summary>
-    /// Add this platform's converter to a pipeline, behind anything the app registered itself.
-    /// <para>
-    /// Registered rather than returned, so an adopter's own encoder can sit in FRONT of it with
-    /// <c>pipeline.Use(...)</c> and this stays as the fallback — the composability D59 rests on.
-    /// </para>
-    /// </summary>
+    /// <summary>Add this platform's converter to a pipeline, behind anything the app registered itself.</summary>
     public static void Use(MediaConversionPipeline pipeline, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
         pipeline.Use((source, _) =>
         {
             if (source.Codec is not { } codec || !Inputs.TryGetValue(codec, out var inputFormat)) return null;
-            // Defaults matter here: a wrong rate produces audio at the wrong SPEED rather than an error,
-            // which is the trap MediaConversionMiddleware's own docs call out.
+            // ⚠ A wrong rate produces audio at the wrong SPEED rather than an error.
             var channels = source.Channels is > 0 ? source.Channels.Value : 2;
             var rate = source.SampleRate is > 0 ? source.SampleRate.Value : 48000;
             return AudioConverterRun.TryStart(inputFormat, rate, channels, log);
@@ -87,12 +66,9 @@ public static class IosMediaAudioConversion
     /// What this converter OFFERS — read from the SAME <see cref="Inputs"/> table it converts from, so the
     /// declaration and the behaviour cannot drift.
     /// <para>
-    /// 🔴 <b>Declaring it is what removes a WILDCARD from the chain, and the wildcard was not harmless.</b>
-    /// A converter registered without claims means "ask me about anything", so ONE of them made every other
-    /// converter's claim moot and left the DEVICE as the only gate — which reported <c>h264</c> as
-    /// convertible on a phone, because every phone decodes it and nothing here offers to convert it.
-    /// Measured. ⚠ Computed on access, never a static initialiser: that runs in declaration order
-    /// and would read the table before it exists, claiming nothing at all.
+    /// ⚠ Computed on access, never a static initialiser: that runs in declaration order and would read the
+    /// table before it exists, claiming nothing at all — and a converter that claims nothing is a WILDCARD
+    /// that leaves the device as the only gate.
     /// </para>
     /// </summary>
     public static IReadOnlyList<MediaStreamClaim> Claims =>
@@ -107,20 +83,16 @@ public static class IosMediaAudioConversion
         private readonly List<byte> _pcm = [];
         private bool _disposed;
 
-        // ── the tally, because the SEGMENT writer times this track by COUNTING packets ───────────────
-        // 🔴 A soundtrack that emits too few packets is silently SHORT rather than broken: every fragment
-        // is well-formed, every append succeeds, and the stream stalls because `buffered` is the
-        // intersection of the tracks. These four numbers separate the three candidates — the decoder
-        // returning nothing, the encoder returning nothing, and the arithmetic that turns packets into
-        // time — none of which the pipeline could otherwise tell apart.
+        // ── the tally: the SEGMENT writer times this track by COUNTING packets ───────────────────────
+        // 🔴 A soundtrack that emits too few packets is silently SHORT rather than broken — every fragment
+        // well-formed, every append succeeding, and `buffered` stalling on the track intersection.
         private int _pushes;
         private int _packets;
         private long _inputBytes;
         private long _decodedBytes;
         private bool _summarised;
 
-        // How many calls of each leg still report in full — see Trace. Decode gets more because it is the
-        // leg under investigation and its first frame is where the answer is.
+        // How many calls of each leg still report in full — see Trace.
         private int _decodeTraces = 4;
         private int _encodeTraces = 2;
 
@@ -136,17 +108,11 @@ public static class IosMediaAudioConversion
 
         /// <summary>
         /// The 2-byte AudioSpecificConfig an MP4 <c>esds</c> needs: 5 bits object type (2 = AAC-LC), 4 bits
-        /// sample-rate index, 4 bits channel configuration.
+        /// sample-rate index, 4 bits channel configuration. Synthesised, not read from the encoder — for
+        /// AAC <c>kAudioConverterCompressionMagicCookie</c> is an ESDS-wrapped blob carrying these bytes.
         /// <para>
-        /// <b>Synthesised rather than read from the encoder</b>, and the alternative is worth naming: iOS
-        /// exposes <c>kAudioConverterCompressionMagicCookie</c>, but for AAC that cookie is an
-        /// ESDS-wrapped blob, so using it means parsing a descriptor tree to recover the same two bytes.
-        /// Android does read its config from the encoder because <c>csd-0</c> IS the raw ASC there — the
-        /// platforms differ, and matching each one's shape beats forcing a single path.
-        /// </para>
-        /// <para>
-        /// ⚠ An unlisted sample rate falls back to the 48 kHz index. That is wrong-but-playable rather than
-        /// broken, and every rate AC-3 actually uses is in the table.
+        /// ⚠ An unlisted sample rate falls back to the 48 kHz index — wrong-but-playable, and every rate
+        /// AC-3 actually uses is in the table.
         /// </para>
         /// </summary>
         private static byte[] AacConfig(int rate, int channels)
@@ -170,15 +136,12 @@ public static class IosMediaAudioConversion
         /// produces audio that drifts against the picture rather than an error.</remarks>
         public int OutputFramesPerPacket => 1024;
 
-        /// <inheritdoc />
-
         /// <summary>The output as a stream description — one answer for either kind.</summary>
         public MediaStreamInfo OutputFormat => new(MediaStreamKind.Audio, "aac",
             Channels: OutputChannels > 0 ? OutputChannels : null,
             SampleRate: OutputSampleRate > 0 ? OutputSampleRate : null);
         private int OutputSampleRate { get; }
 
-        /// <inheritdoc />
         private int OutputChannels { get; }
 
         /// <summary>
@@ -198,10 +161,8 @@ public static class IosMediaAudioConversion
                 if (AudioConverterNew(ref compressedIn, ref pcm, out decoder) != 0) return Fail(decoder, encoder);
                 if (AudioConverterNew(ref pcm, ref aac, out encoder) != 0) return Fail(decoder, encoder);
 
-                // The three descriptions that can disagree, printed together because only their DIFFERENCE
-                // is informative: what the kit asserted, what CoreAudio says the format really is, and what
-                // the converter settled on. A decoder handed an under-specified ASBD is the leading
-                // explanation for a conversion that consumes input and emits nothing.
+                // What the kit asserted, what CoreAudio says the format is, and what the converter settled
+                // on — only their DIFFERENCE is informative.
                 var built = decoder;
                 AppCallback.Log(log, () =>
                     $"[Shenora.iOS] decoder in: declared {Describe(declared)} | completed {Describe(compressedIn)} "
@@ -214,8 +175,8 @@ public static class IosMediaAudioConversion
             }
             catch (Exception)
             {
-                // A missing framework or a bad descriptor reads as "cannot convert", which is the safe
-                // direction: the remuxer then drops the track and SAYS SO rather than writing a broken file.
+                // A missing framework or a bad descriptor reads as "cannot convert": the remuxer then drops
+                // the track and SAYS SO rather than writing a broken file.
                 return Fail(decoder, encoder);
             }
 
@@ -241,8 +202,8 @@ public static class IosMediaAudioConversion
             _decodedBytes += decoded.Length;
 
             _pcm.AddRange(decoded);
-            // Every AAC frame is a sync sample; the muxer derives audio timing from the packet count, so the
-            // presentation time is a formality here and stated rather than invented.
+            // ⚠ Presentation time 0: an audio encoder does not time its output, so the muxer derives audio
+            // timing from the PACKET COUNT (a fixed number of samples each) and not from these stamps.
             var out_ = Encode(drain: false).Select(b => new MediaFrame(b, 0)).ToArray();
             _packets += out_.Length;
             return out_;
@@ -253,26 +214,20 @@ public static class IosMediaAudioConversion
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            // 🔴 THE DECODER FIRST, and it is not symmetry — it holds real audio back. A decoder runs a
-            // priming latency: the first AC-3 packet measured here yielded 1248 PCM frames rather than
-            // 1536, and those 288 frames come out only when the stream is declared over. Draining just the
-            // PCM buffer would end every soundtrack a fraction early, well-formed and unreported — the
-            // exact failure this method exists to prevent.
+            // 🔴 THE DECODER FIRST — it holds real audio back behind a priming latency, released only when
+            // the stream is declared over. Draining just the PCM buffer ends every soundtrack a fraction
+            // early, well-formed and unreported.
             var tail = Convert(_decoder, ReadOnlyMemory<byte>.Empty, compressedInput: true, final: true);
             if (tail.Length > 0) { _pcm.AddRange(tail); _decodedBytes += tail.Length; }
 
-            // ⚠ Everything still buffered, or the soundtrack ends early and NOTHING reports it — the file is
-            // well-formed and simply stops. That is the failure this method exists to prevent.
             var out_ = Encode(drain: true).Select(b => new MediaFrame(b, 0)).ToArray();
             _packets += out_.Length;
             Summarise("drain");
             return out_;
         }
 
-        /// <summary>
-        /// One line saying where the soundtrack went — emitted at drain AND at dispose, because a run that
-        /// is killed mid-segment never drains and that is exactly when the answer matters.
-        /// </summary>
+        /// <summary>One line saying where the soundtrack went — at drain AND at dispose, since a run killed
+        /// mid-segment never drains. Idempotent.</summary>
         private void Summarise(string at)
         {
             if (_summarised) return;
@@ -312,8 +267,7 @@ public static class IosMediaAudioConversion
 
             if (drain)
             {
-                // The encoder's own tail, for the same reason the decoder has one — it is told the stream
-                // is over exactly once, here, and answers with anything it was still holding.
+                // The encoder's own tail: it is told the stream is over exactly once, here.
                 var flushed = Convert(_encoder, ReadOnlyMemory<byte>.Empty, compressedInput: false, final: true);
                 if (flushed.Length > 0) packets.Add(flushed);
             }
@@ -324,30 +278,27 @@ public static class IosMediaAudioConversion
         /// <summary>
         /// Run one buffer through a converter, whose input it PULLS through <see cref="InputProc"/>.
         /// <para>
-        /// ⚠ <b><c>AudioConverterFillComplexBuffer</c>, because the simple form cannot do this.</b>
-        /// <c>AudioConverterConvertBuffer</c> refuses any conversion needing a complex converter, and
-        /// compressed→PCM always is. Measured: the simulator answered <c>'op??'</c> and an
-        /// iPhone 17 Pro answered status 0 with ZERO BYTES — the same wrong API failing two different ways.
+        /// ⚠ <c>AudioConverterConvertBuffer</c> is not an alternative: it refuses any conversion needing a
+        /// complex converter, and compressed→PCM always is. The simulator answers <c>'op??'</c>; a device
+        /// answers status 0 with ZERO BYTES.
         /// </para>
         /// </summary>
         private unsafe byte[] Convert(IntPtr converter, ReadOnlyMemory<byte> input, bool compressedInput,
                                       bool final = false)
         {
-            // Generous: decoded PCM is far larger than its compressed source, and an undersized buffer is
-            // reported by the converter rather than overrunning.
+            // Generous: decoded PCM is far larger than its compressed source. An undersized buffer is
+            // reported by the converter rather than overrun.
             var capacity = compressedInput ? Math.Max(input.Length * 64, 65536) : Math.Max(input.Length, 8192);
             var output = new byte[capacity];
             var source = input.ToArray();
             var bytesPerPcmFrame = Math.Max(OutputChannels * 2, 1);
             uint outputSize;
             int status;
-            // ⚠ Reported on failure, because "produced 0 bytes" alone cannot distinguish "the converter
-            // refused" from "it wanted more input than one frame carries" — and guessing between those is
-            // how the previous implementation stayed broken.
+            // Reported on failure: "produced 0 bytes" alone cannot distinguish "the converter refused" from
+            // "it wanted more input than one frame carries".
             uint produced = 0, asked = 0;
-            // The callback's own tally, copied back out. 🔴 It is the single most discriminating fact
-            // available here: "the converter never pulled" and "the converter pulled, took the frame and
-            // emitted nothing" are opposite diagnoses that look identical from the return values alone.
+            // The callback's own tally, copied back out — "never pulled" and "pulled, took the frame and
+            // emitted nothing" are opposite diagnoses, identical from the return values alone.
             InputContext tally;
 
             fixed (byte* inputPtr = source)
@@ -359,8 +310,8 @@ public static class IosMediaAudioConversion
                     Size = (uint)source.Length,
                     Channels = (uint)OutputChannels,
                     Compressed = compressedInput ? 1 : 0,
-                    // A compressed frame is ONE packet; PCM is one packet per frame, which is what tells the
-                    // encoder how much audio it was handed rather than merely how many bytes.
+                    // A compressed frame is ONE packet; PCM is one packet per frame — which is what tells
+                    // the encoder how much AUDIO it was handed rather than how many bytes.
                     Packets = compressedInput ? (source.Length > 0 ? 1u : 0u)
                                               : (uint)(source.Length / bytesPerPcmFrame),
                     Final = final ? 1 : 0,
@@ -378,8 +329,8 @@ public static class IosMediaAudioConversion
                     },
                 };
 
-                // How many packets to ASK for: as much PCM as the buffer holds when decoding, and exactly
-                // one AAC packet when encoding — the caller already chunks PCM to one frame per call.
+                // Ask for as much PCM as the buffer holds when decoding, exactly one AAC packet when
+                // encoding — the caller already chunks PCM to one frame per call.
                 var wanted = compressedInput ? (uint)(capacity / bytesPerPcmFrame) : 1u;
 
                 asked = wanted;
@@ -393,27 +344,22 @@ public static class IosMediaAudioConversion
                 tally = context;
             }
 
-            // Our own starvation code is a SUCCESS: the converter ran out of input part-way through a call
-            // and stopped there, which is the normal shape of a stream fed one frame at a time. Everything
-            // it managed to write before that is in the buffer and must not be thrown away.
+            // Our own starvation code is a SUCCESS — the normal shape of a stream fed one frame at a time.
+            // ⚠ Everything written before it is in the buffer and must not be thrown away.
             var starved = status == NoMoreInput;
             if (starved) status = 0;
 
             Trace(compressedInput, input.Length, source, status, asked, produced, outputSize, tally, starved);
 
-            // ⚠ An EMPTY final call is how the decoder is flushed, and producing nothing is its correct
-            // answer when it held nothing back. Reporting that as a failure would cry wolf on every
-            // successful conversion.
+            // An EMPTY final call is how the decoder is flushed, and producing nothing is its correct
+            // answer when it held nothing back — not a failure.
             if (status == 0 && outputSize == 0 && final && input.IsEmpty) return [];
 
             if (status != 0 || outputSize == 0)
             {
-                // 🔴 BOTH BRANCHES REPORT, and the silent one is the one that mattered. Measured
-                // 2026-08-09: the SIMULATOR fails loudly here with 'op??', while a real iPhone 17 Pro
-                // returns status 0 and ZERO BYTES for the same file — success that converted nothing. Only
-                // the error branch logged, so on the device this produced no diagnostic whatsoever and the
-                // sole evidence was the remuxer's refusal. "Accepted every frame and wrote nothing" is the
-                // exact failure this repo has a rule about; it should never be the quiet path.
+                // 🔴 BOTH BRANCHES REPORT. The simulator fails loudly here with 'op??' while a real device
+                // returns status 0 and ZERO BYTES for the same file — success that converted nothing, which
+                // must never be the quiet path.
                 Log(() => status != 0
                     ? $"[Shenora.iOS] AudioConverter returned {StatusName(status)}."
                     : $"[Shenora.iOS] AudioConverter reported SUCCESS and produced 0 bytes from a "
@@ -426,12 +372,11 @@ public static class IosMediaAudioConversion
 
         /// <summary>
         /// Report what one conversion call actually did — asked, produced, and what the input pump was
-        /// pulled for. Budgeted to the first few calls of each leg: the diagnosis is in the FIRST ones, and
-        /// an unbudgeted line here is one per audio frame of a whole film.
+        /// pulled for. Budgeted to the first few calls of each leg; unbudgeted it is one line per audio
+        /// frame of a whole film.
         /// <para>
-        /// 🔴 <b>It reports on SUCCESS as well as failure</b>, because "worked" and "worked for the wrong
-        /// reason" are the pair this subsystem keeps confusing — a leg that emits a couple of packets and
-        /// then nothing reads as working right up until the file is silent.
+        /// 🔴 It reports on SUCCESS as well as failure: a leg that emits a couple of packets and then
+        /// nothing reads as working right up until the file is silent.
         /// </para>
         /// </summary>
         private void Trace(bool compressedInput, int inputLength, byte[] source, int status,
@@ -443,8 +388,8 @@ public static class IosMediaAudioConversion
             budget--;
 
             var leg = compressedInput ? "decode" : "encode";
-            // The first bytes only for a COMPRESSED input: an AC-3 syncframe opens 0B 77, so this settles
-            // "is the frame we were handed even the thing we told the converter it was" without a second run.
+            // Compressed input only: an AC-3 syncframe opens 0B 77, so the head settles whether the frame
+            // is the thing we told the converter it was.
             var head = compressedInput ? $" head={Hex(source, 8)}" : "";
             Log(() =>
                 $"[Shenora.iOS] {leg}: in={inputLength}B{head} status={StatusName(status)}"
@@ -454,8 +399,8 @@ public static class IosMediaAudioConversion
         }
 
         /// <summary>The first bytes of a buffer, so a frame can be recognised rather than assumed.</summary>
-        /// <remarks>⚠ <c>System.Convert</c> spelled out: this class has its own <c>Convert</c> method, which
-        /// shadows the BCL type inside it.</remarks>
+        /// <remarks>⚠ <c>System.Convert</c> spelled out — this class has its own <c>Convert</c> method,
+        /// which shadows the BCL type inside it.</remarks>
         private static string Hex(byte[] data, int count)
             => System.Convert.ToHexString(data, 0, Math.Min(count, data.Length));
 
@@ -464,11 +409,8 @@ public static class IosMediaAudioConversion
         /// <summary>
         /// An <c>OSStatus</c> as CoreAudio actually means it: a FOURCC, plus the name where the kit knows one.
         /// <para>
-        /// 🔴 <b>Never print the raw integer — that is a diagnostic which reads as evidence and carries
-        /// none.</b> `AudioConverter returned 1869627199` is <c>0x6F703F3F</c>, <c>'op??'</c>,
-        /// <c>kAudioConverterErr_OperationNotSupported</c>, and nobody reads that off a decimal. The repo
-        /// has the same rule for bare exception messages (`probe-diagnostics.md`); a naked error CODE is
-        /// the same failure wearing a number.
+        /// ⚠ Never print the raw integer: <c>1869627199</c> is <c>0x6F703F3F</c>, <c>'op??'</c>,
+        /// <c>kAudioConverterErr_OperationNotSupported</c>, and nobody reads that off a decimal.
         /// </para>
         /// </summary>
         private static string StatusName(int status)
@@ -478,8 +420,7 @@ public static class IosMediaAudioConversion
                 (char)((status >> 24) & 0xFF), (char)((status >> 16) & 0xFF),
                 (char)((status >> 8) & 0xFF), (char)(status & 0xFF),
             };
-            // Only render a FourCC when every byte is printable — otherwise it is an ordinary negative
-            // OSStatus and the decimal is the honest form.
+            // A FourCC only when every byte is printable; otherwise it is an ordinary negative OSStatus.
             var printable = Array.TrueForAll(chars, c => c is >= ' ' and < (char)127);
             var code = printable ? $"'{new string(chars)}'" : status.ToString(System.Globalization.CultureInfo.InvariantCulture);
             var known = status switch
@@ -498,10 +439,9 @@ public static class IosMediaAudioConversion
         {
             if (_disposed) return;
             _disposed = true;
-            // Before the handles go: a run killed mid-segment never drains, and that is precisely the case
-            // where "where did the sound go" needs an answer. Summarise() is idempotent.
             Summarise("dispose");
-            // BOTH, and neither throw: a leaked converter holds a hardware codec slot, and a device has few.
+            // 🔴 BOTH, and neither throws: a leaked converter holds a hardware codec slot, and a device has
+            // few of them.
             if (_decoder != IntPtr.Zero) AudioConverterDispose(_decoder);
             if (_encoder != IntPtr.Zero) AudioConverterDispose(_encoder);
         }
@@ -555,10 +495,9 @@ public static class IosMediaAudioConversion
     /// <summary>
     /// An <c>AudioBufferList</c> carrying exactly ONE buffer.
     /// <para>
-    /// ⚠ The real struct is variable-length — a count followed by that many buffers — so this shape is only
-    /// valid while `NumberBuffers` is 1. That holds here because both legs are INTERLEAVED
-    /// (`kAudioFormatFlagIsPacked`, no `NonInterleaved` flag), and interleaved audio is one buffer whatever
-    /// the channel count. A non-interleaved format would need one buffer per channel and this would
+    /// ⚠ The real struct is variable-length, so this shape is valid only while <c>NumberBuffers</c> is 1 —
+    /// true here because both legs are INTERLEAVED (<c>kAudioFormatFlagIsPacked</c>, no
+    /// <c>NonInterleaved</c>). A non-interleaved format needs one buffer per channel and this would
     /// silently read past the end.
     /// </para>
     /// </summary>
@@ -582,10 +521,9 @@ public static class IosMediaAudioConversion
     /// What the input callback is handed. Lives in the CALLER'S stack frame for the duration of one
     /// <c>FillComplexBuffer</c> call and is passed as an opaque pointer — the converter never outlives it.
     /// <para>
-    /// The last four fields are the callback's TALLY, written by it and read back by the caller once the
-    /// call returns. ⚠ They are counted here rather than logged from the callback deliberately: a managed
-    /// diagnostic sink invoked from inside an <see cref="UnmanagedCallersOnlyAttribute"/> frame is app code
-    /// running on the converter's own stack, and the kit does not run app code there.
+    /// ⚠ The last four fields are the callback's TALLY, counted rather than logged from the callback: a
+    /// managed diagnostic sink invoked from inside an <see cref="UnmanagedCallersOnlyAttribute"/> frame is
+    /// app code running on the converter's own stack, and the kit does not run app code there.
     /// </para>
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
@@ -598,10 +536,8 @@ public static class IosMediaAudioConversion
         public int Compressed;
         public int Served;
 
-        /// <summary>
-        /// Non-zero only on the LAST call of a stream. It is what licenses the callback to answer
-        /// "0 packets, noErr" — the one answer that ends the conversion for good.
-        /// </summary>
+        /// <summary>Non-zero only on the LAST call of a stream — what licenses the callback to answer
+        /// "0 packets, noErr", the one answer that ends the conversion for good.</summary>
         public int Final;
 
         public AudioStreamPacketDescription Description;
@@ -618,20 +554,9 @@ public static class IosMediaAudioConversion
 
     /// <summary>
     /// The converter's input pump: it calls this to PULL, rather than being pushed a buffer.
-    ///
     /// <para>
-    /// 🔴 <b>This callback is the whole reason for the rewrite.</b> `AudioConverterConvertBuffer` cannot
-    /// perform a conversion that needs a complex converter — and compressed→PCM always does, because the
-    /// converter must be free to ask for input at its own rhythm rather than being handed one buffer.
-    /// Measured on hardware: the simple form answered `'op??'` on a simulator and SUCCEEDED WITH ZERO BYTES
-    /// on an iPhone.
-    /// </para>
-    ///
-    /// <para>
-    /// ⚠ <b>Serving the data ONCE and then answering "0 packets" is the contract</b>, not a shortcut. Zero
-    /// with a success status is how a caller says "no more input"; returning the same buffer again would
-    /// loop the converter forever, and returning an error would abort a conversion that had in fact
-    /// finished.
+    /// ⚠ <b>Serving the data ONCE and then answering "0 packets" is the contract.</b> Returning the same
+    /// buffer again loops the converter forever; returning an error aborts a conversion that had finished.
     /// </para>
     /// </summary>
     [UnmanagedCallersOnly]
@@ -645,13 +570,7 @@ public static class IosMediaAudioConversion
         {
             *packets = 0;
             if (description is not null) *description = null;
-            // 🔴 THE WHOLE BUG WAS RETURNING 0 HERE. Zero packets with noErr does not mean "nothing more
-            // in this call" — it means THE STREAM HAS ENDED, and the converter latches that permanently.
-            // Measured on the iOS simulator: the first frame decoded (1248 PCM frames out of one
-            // 834-byte AC-3 packet, after priming), and every frame after it returned 0 with `pump calls=0`
-            // — the converter never asked again, because it had been told the stream was over. A non-zero
-            // status is how a starved pump says "not yet"; the converter stays alive and the caller sees
-            // its own code come back.
+            // 🔴 Returning 0 here says THE STREAM HAS ENDED, permanently — see NoMoreInput.
             return context->Final != 0 ? 0 : NoMoreInput;
         }
 
@@ -664,8 +583,8 @@ public static class IosMediaAudioConversion
         data->Buffer.DataByteSize = context->Size;
         data->Buffer.Data = context->Data;
 
-        // Packet descriptions are for VARIABLE-size packets only. PCM has none — a fixed frame size is
-        // implied by the format — and handing one over anyway is rejected.
+        // Packet descriptions are for VARIABLE-size packets only; PCM has none and handing one over is
+        // rejected.
         if (description is not null)
             *description = context->Compressed != 0 ? &context->Description : null;
         return 0;
@@ -689,17 +608,12 @@ public static class IosMediaAudioConversion
     };
 
     /// <summary>
-    /// Ask CoreAudio to FILL IN a compressed description rather than asserting one.
+    /// Ask CoreAudio to FILL IN a compressed description rather than asserting one: an
+    /// <c>AudioStreamBasicDescription</c> for a compressed format has fields only the codec knows (flags,
+    /// bytes per packet, the real frames per packet), and the kit can supply only the three that come from
+    /// the container.
     /// <para>
-    /// 🔴 <b>An <c>AudioStreamBasicDescription</c> for a compressed format has fields only the codec
-    /// knows</b> — flags, bytes per packet, the real frames per packet — and the kit can supply only the
-    /// three that come from the container (format, rate, channels). <c>kAudioFormatProperty_FormatInfo</c>
-    /// completes the rest in place. A converter built from an under-specified description can still be
-    /// CREATED, which is why <see cref="IosMediaCapability"/> answers yes, and can then consume input and
-    /// emit nothing — the failure this is here to remove.
-    /// </para>
-    /// <para>
-    /// ⚠ Falls back to what it was given. A refusal means "CoreAudio does not describe this format", which
+    /// ⚠ Falls back to what it was given — a refusal means CoreAudio does not describe this format, which
     /// the converter is about to say for itself in a way the caller already handles.
     /// </para>
     /// </summary>
@@ -736,10 +650,7 @@ public static class IosMediaAudioConversion
         }
     }
 
-    /// <summary>
-    /// A stream description in one line. Every field, because the missing one is the point — a diagnostic
-    /// that prints the fields it expects to matter cannot show you the one that did.
-    /// </summary>
+    /// <summary>A stream description in one line — every field, since the missing one is the point.</summary>
     private static string Describe(StreamDescription? description)
     {
         if (description is not { } d) return "(unavailable)";

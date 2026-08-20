@@ -8,8 +8,7 @@ namespace Shenora.Windows;
 
 /// <summary>
 /// An app-defined scheme served asynchronously OFF the UI thread (disk reads, remote
-/// fetch-and-cache…). See <see cref="WebViewHost"/> for the sync-vs-deferred serving split and
-/// why it exists.
+/// fetch-and-cache…). See <see cref="WebViewHost"/> for the sync-vs-deferred serving split.
 /// </summary>
 public sealed class WebViewDeferredScheme
 {
@@ -18,33 +17,25 @@ public sealed class WebViewDeferredScheme
 
     /// <summary>
     /// Answers one request. Runs on a thread-pool thread — never touch UI state. Return null or
-    /// throw to answer 404; a thrown message never reaches the page (it goes to the host log).
-    /// <para>
-    /// It takes the whole <see cref="WebViewResourceRequest"/> and returns a
-    /// <see cref="WebViewResourceResponse"/> — status, headers, and a STREAM — rather than the
-    /// <c>(byte[], contentType)</c> pair it used to (P6.6). Two things were impossible before and are
-    /// the reason this changed: a handler could not read a request header, so <c>Range</c> was
-    /// invisible and a page could not SEEK anything it served; and returning the complete bytes meant
-    /// a 4 GB file became 4 GB of memory. Use <see cref="WebViewByteRange.TryParse"/> plus
-    /// <see cref="WebViewResourceResponse.PartialContent"/> for the seekable case.
-    /// </para>
+    /// throw to answer 404; a thrown message never reaches the page (it goes to the host log). Use
+    /// <see cref="WebViewByteRange.TryParse"/> plus
+    /// <see cref="WebViewResourceResponse.PartialContent"/> for a seekable resource.
     /// </summary>
     public required Func<WebViewResourceRequest, Task<WebViewResourceResponse?>> Handler { get; init; }
 
     /// <summary>
-    /// Default <c>Cache-Control</c> for SUCCESSFUL (2xx) responses that do not set their own. The
-    /// family default caches one day; callers cache-bust with a query token (e.g.
-    /// <c>?t=&lt;mtime&gt;</c>) when the content can change. A handler that sets the header itself
-    /// wins — a 206 or a 404 has its own caching story and must not be stamped over.
+    /// Default <c>Cache-Control</c> for SUCCESSFUL (2xx) responses that do not set their own; a
+    /// handler that sets the header itself wins. Cache-bust with a query token (e.g.
+    /// <c>?t=&lt;mtime&gt;</c>) when the content can change.
     /// </summary>
     public string CacheControl { get; init; } = "public, max-age=86400";
 }
 
 /// <summary>
-/// A virtual-host → disk-folder mapping (<c>SetVirtualHostNameToFolderMapping</c>). The OTHER
-/// legitimate way to serve a bundle: folder mapping for disk-backed content, resource
-/// interception (<see cref="WebViewHostOptions.ResourceProvider"/>) for embedded content — both
-/// are family-proven, so both are supported (don't "unify" one away).
+/// A virtual-host → disk-folder mapping (<c>SetVirtualHostNameToFolderMapping</c>) — the other way to
+/// serve a bundle: folder mapping for disk-backed content, resource interception
+/// (<see cref="WebViewHostOptions.ResourceProvider"/>) for embedded content. Both are supported; don't
+/// unify one away.
 /// </summary>
 public sealed class WebViewFolderMapping
 {
@@ -58,10 +49,7 @@ public sealed class WebViewFolderMapping
     public CoreWebView2HostResourceAccessKind AccessKind { get; init; } = CoreWebView2HostResourceAccessKind.Allow;
 }
 
-/// <summary>
-/// Inputs for <see cref="WebViewHost"/> — every magic value the source apps hardcoded (dev URL,
-/// virtual host, schemes, background color, timeout) as documented options.
-/// </summary>
+/// <summary>Inputs for <see cref="WebViewHost"/>.</summary>
 public sealed class WebViewHostOptions
 {
     /// <summary>
@@ -75,21 +63,13 @@ public sealed class WebViewHostOptions
     /// The app-level resource pipeline (<c>app.UseFiles(…)</c>, <c>app.UseMediaPlayer()</c>), applied to
     /// this host's interceptor at construction. Wire it from the built app —
     /// <c>Pipeline = sp.GetRequiredService&lt;WebViewPipeline&gt;()</c> — and every <see cref="WebViewHost"/>
-    /// built from these options serves the same routes, a secondary window's included.
+    /// built from these options serves the same routes, a secondary window's included. Null = this host
+    /// serves only what is registered on its own interceptor.
     /// <para>
-    /// ⚠ <b>NOT a session browser.</b> <c>SessionBrowser</c> is not a <see cref="WebViewHost"/> — it
-    /// builds its own environment and interceptor and has no way to be handed this pipeline, so it
-    /// inherits none of the host's serving. A page that renders <c>mediaUrl(…)</c> happily in the main
+    /// ⚠ <b>NOT a session browser.</b> <c>SessionBrowser</c> builds its own environment and interceptor
+    /// and cannot be handed this pipeline, so a page that renders <c>mediaUrl(…)</c> happily in the main
     /// window 404s inside a <c>RenderSession</c> or <c>StreamingSession</c>. <c>docs/ADOPTION.md</c> has
     /// the recipe for serving your own frontend into an off-screen session.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>Null means this host serves only what is registered on its own interceptor</b>, which is a
-    /// legitimate choice for a deliberately isolated webview — and a silent mistake everywhere else, since
-    /// a window serving no routes looks exactly like a window whose routes were never needed. It is
-    /// nullable rather than required only because the options object is constructed by the APP, and
-    /// forcing it would break every existing construction site including the ones that genuinely want
-    /// nothing. Set it unless you mean the isolation.
     /// </para>
     /// </summary>
     public Shenora.Core.WebView.WebViewPipeline? Pipeline { get; init; }
@@ -102,16 +82,16 @@ public sealed class WebViewHostOptions
     public bool UseSharedEnvironment { get; init; } = true;
 
     /// <summary>
-    /// Budget for environment creation + <c>EnsureCoreWebView2Async</c>. The family-proven guard:
-    /// an orphaned user-data-folder lock (a zombie browser process) hangs init FOREVER without
-    /// it; failing loudly with an actionable message beats a silent never-appearing window.
+    /// Budget for environment creation + <c>EnsureCoreWebView2Async</c>. ⚠ An orphaned
+    /// user-data-folder lock (a zombie browser process) hangs init FOREVER without it — no error, no
+    /// window.
     /// </summary>
     public TimeSpan InitTimeout { get; init; } = TimeSpan.FromSeconds(25);
 
     /// <summary>
-    /// The dev server URL (e.g. <c>http://localhost:3517</c>). No default on purpose: every
-    /// family app picks a UNIQUE port (never 3000) so parallel dev sessions of sibling apps
-    /// can't collide — keep it in sync with the frontend's <c>vite.config.ts</c>.
+    /// The dev server URL (e.g. <c>http://localhost:3517</c>), kept in sync with the frontend's
+    /// <c>vite.config.ts</c>. No default on purpose: pick a unique port so parallel dev sessions of
+    /// sibling apps can't collide.
     /// </summary>
     public string? DevUrl { get; init; }
 
@@ -125,9 +105,9 @@ public sealed class WebViewHostOptions
     public IWebViewResourceProvider? ResourceProvider { get; init; }
 
     /// <summary>
-    /// Explicit production start URL. Overrides the <see cref="VirtualHost"/> default
-    /// (<c>https://{VirtualHost}/index.html</c>) — the server-backed profile points this at its
-    /// own in-process HTTP server instead of using a provider at all.
+    /// Explicit production start URL, overriding the <see cref="VirtualHost"/> default
+    /// (<c>https://{VirtualHost}/index.html</c>) — the server-backed profile points this at its own
+    /// in-process HTTP server.
     /// </summary>
     public string? ProductionUrl { get; init; }
 
@@ -138,8 +118,8 @@ public sealed class WebViewHostOptions
     public IReadOnlyList<WebViewFolderMapping> FolderMappings { get; init; } = [];
 
     /// <summary>
-    /// The control's background before content paints. Set it to the SAME color as the form and
-    /// the app's page background — the family's no-white-flash contract. Null = leave default.
+    /// The control's background before content paints. Set it to the SAME color as the form and the
+    /// app's page background, or the window flashes white. Null = leave default.
     /// </summary>
     public Color? BackgroundColor { get; init; }
 
@@ -150,16 +130,15 @@ public sealed class WebViewHostOptions
     /// </summary>
     public bool AllowExternalDrop { get; init; } = true;
 
-    /// <summary>Inject the family script that stops the browser navigating to dropped files.</summary>
+    /// <summary>Inject the script that stops the browser navigating to dropped files.</summary>
     public bool PreventDefaultFileDrop { get; init; } = true;
 
-    /// <summary>Inject the family script that blocks browser chrome shortcuts in production.</summary>
+    /// <summary>Inject the script that blocks browser chrome shortcuts in production.</summary>
     public bool BlockBrowserShortcutsInProduction { get; init; } = true;
 
     /// <summary>
     /// Globals injected on document created as <c>window.&lt;name&gt; = &lt;json&gt;;</c> (e.g. an
-    /// app-metadata object). Values are JSON-serialized camelCase with full escaping — the source
-    /// apps interpolated raw strings here, which was the audit's injection gap.
+    /// app-metadata object). Values are JSON-serialized camelCase with full escaping.
     /// </summary>
     public IReadOnlyDictionary<string, object?> InjectedGlobals { get; init; } =
         new Dictionary<string, object?>();
@@ -168,26 +147,21 @@ public sealed class WebViewHostOptions
     public IReadOnlyList<string> DocumentCreatedScripts { get; init; } = [];
 
     /// <summary>
-    /// Runs AFTER the family hardening preset (dev-gated devtools/context menus; status bar,
-    /// zoom, autofill, pinch, swipe, password autosave, built-in error page all off; web
-    /// messages on) so an app can override individual settings without losing the rest.
+    /// Runs AFTER the hardening preset, so an app can override individual settings without losing
+    /// the rest.
     /// </summary>
     public Action<CoreWebView2Settings>? ConfigureSettings { get; init; }
 
     /// <summary>
-    /// <c>window.open</c>/<c>target=_blank</c> goes to the SYSTEM browser (http/https only,
-    /// anything else dropped) — never a bare WebView2 popup. The app window only ever hosts the
-    /// app.
+    /// <c>window.open</c>/<c>target=_blank</c> goes to the SYSTEM browser (http/https only, anything
+    /// else dropped) — never a bare WebView2 popup.
     /// </summary>
     public bool OpenExternalLinksInSystemBrowser { get; init; } = true;
 
     /// <summary>
-    /// Replaces the default download policy. Default: downloads are CANCELED (and logged) — an
-    /// app shell is not a browser; a page-initiated download is almost always a bug or an attack
-    /// surface. Apps that want downloads take full control here (e.g. set the result path and
-    /// hide the default UI).
+    /// Replaces the default download policy (downloads are CANCELED and logged).
     /// <para>
-    /// <b>Return <c>true</c> when you have handled it</b>; <c>false</c> falls through to the built-in
+    /// ⚠ <b>Return <c>true</c> when you have handled it</b>; <c>false</c> falls through to the built-in
     /// policy, and so does a throw (which is logged). An unanswered download event proceeds, so
     /// "observe and let the kit decide" must be spelled <c>false</c>.
     /// </para>
@@ -195,26 +169,24 @@ public sealed class WebViewHostOptions
     public Func<CoreWebView2DownloadStartingEventArgs, bool>? OnDownloadStarting { get; init; }
 
     /// <summary>
-    /// Replaces the default permission policy. Default: kinds in
-    /// <see cref="PermittedPermissions"/> are allowed, everything else (camera, mic, location,
-    /// notifications…) silently denied — no browser-style prompt ever interrupts the app.
+    /// Replaces the default permission policy (kinds in <see cref="PermittedPermissions"/> allowed,
+    /// everything else silently denied — no browser-style prompt ever interrupts the app).
     /// <para>
-    /// <b>Return <c>true</c> when you have set <c>State</c></b>; <c>false</c> (or a throw, which is
+    /// ⚠ <b>Return <c>true</c> when you have set <c>State</c></b>; <c>false</c> (or a throw, which is
     /// logged) falls through to <see cref="PermittedPermissions"/>. An unanswered permission request
-    /// stalls whatever asked for it, so the fallback always runs.
+    /// stalls whatever asked for it.
     /// </para>
     /// </summary>
     public Func<CoreWebView2PermissionRequestedEventArgs, bool>? OnPermissionRequested { get; init; }
 
-    /// <summary>Permission kinds the default policy allows. Clipboard read is the one web
-    /// capability family apps legitimately use from the page.</summary>
+    /// <summary>Permission kinds the default policy allows.</summary>
     public IReadOnlyList<CoreWebView2PermissionKind> PermittedPermissions { get; init; } =
         [CoreWebView2PermissionKind.ClipboardRead];
 
     /// <summary>
     /// Recover from a crashed renderer by reloading — at most <see cref="MaxAutoReloads"/> times, and
-    /// never more than once per <see cref="AutoReloadCooldown"/>. The browser-process kinds are NOT
-    /// auto-recovered: the whole control is dead then, which is an app-level decision.
+    /// never more than once per <see cref="AutoReloadCooldown"/>. Browser-process kinds are NOT
+    /// auto-recovered: the whole control is dead then.
     /// </summary>
     public bool ReloadOnRenderProcessFailure { get; init; } = true;
 
@@ -223,15 +195,9 @@ public sealed class WebViewHostOptions
 
     /// <summary>
     /// How many times a renderer crash may be auto-recovered before the host gives up and leaves the
-    /// failure to <see cref="OnProcessFailed"/> (default 3).
-    /// <para>
-    /// Having a TERMINAL state is the point (P5.5 H3). Rate-limiting alone is not a stopping condition:
-    /// a deterministically-crashing page — one that faults during load — reloaded every cooldown
-    /// FOREVER, burning a browser process each time, while
-    /// <see cref="ReloadOnRenderProcessFailure"/>'s own documentation promised that "a crash-looping
-    /// page must not spin". After the cap the host logs once and stops. A successful navigation resets
-    /// the count, so a long-running app is not slowly used up by unrelated crashes.
-    /// </para>
+    /// failure to <see cref="OnProcessFailed"/> (default 3). Rate-limiting alone is not a stopping
+    /// condition — a page that faults during load would reload every cooldown FOREVER, burning a
+    /// browser process each time. A successful navigation resets the count.
     /// </summary>
     public int MaxAutoReloads { get; init; } = 3;
 

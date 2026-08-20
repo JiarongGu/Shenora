@@ -3,7 +3,7 @@ using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 
-/// <summary>Inputs for <see cref="OptimizedForm"/> — the chrome values the source apps hardcoded.</summary>
+/// <summary>Inputs for <see cref="OptimizedForm"/>.</summary>
 public sealed class OptimizedFormOptions
 {
     /// <summary>
@@ -14,8 +14,8 @@ public sealed class OptimizedFormOptions
     public bool FramelessChrome { get; init; }
 
     /// <summary>
-    /// The form fill — set it to the app's page background (the family no-white-flash contract:
-    /// form = WebView2 = splash = page CSS). Null = the Form default.
+    /// The form fill — set it to the app's page background so form, WebView2, splash and page CSS all
+    /// match and startup shows no white flash. Null = the Form default.
     /// </summary>
     public Color? BackColor { get; init; }
 
@@ -43,18 +43,10 @@ public sealed class OptimizedFormOptions
     public int TopResizeBorder { get; init; } = 8;
 
     /// <summary>
-    /// Frameless: the window OWNS the caption-button pixels and paints them itself (P5.6). The
-    /// cluster reported to <see cref="OptimizedForm.SetCaptionButtons"/> is cut out of every child
-    /// control that would cover it, so those pixels become the form's own client area — which is the
-    /// only way the OS routes real mouse input there, and therefore the only way Windows 11 offers
-    /// **Snap Layouts** on the maximize button.
-    /// <para>
-    /// Why it clips EVERY covering child rather than one named control: whatever is on top changes
-    /// over a window's life. A splash panel covers the caption while the app boots, the web view
-    /// covers it afterwards, and an overlay may cover it in between — so naming one control leaves
-    /// the buttons dead for the others. A child that overlaps the cluster is, by definition, covering
-    /// the buttons; excluding it is the mechanism, not a heuristic.
-    /// </para>
+    /// Frameless: the window OWNS the caption-button pixels and paints them itself. The cluster
+    /// reported to <see cref="OptimizedForm.SetCaptionButtons"/> is cut out of every child control
+    /// that would cover it, so the OS routes real mouse input there — which is what buys Windows 11
+    /// Snap Layouts on the maximize button.
     /// <para>
     /// Requires <see cref="FramelessChrome"/> and is inert until rectangles are reported. Pair it
     /// with <see cref="OptimizedForm.CaptionButtonColors"/>.
@@ -64,21 +56,15 @@ public sealed class OptimizedFormOptions
 }
 
 /// <summary>
-/// The optimized main-form base, merged from the two desktop siblings: double-buffered
-/// rendering + a raw <see cref="WndProcHook"/> seam (from the primary sibling) and the optional
-/// borderless "custom chrome" (from the second sibling, with its measured lessons kept as
-/// comments below). With <see cref="OptimizedFormOptions.FramelessChrome"/> the default title
-/// bar is gone; min/max/close/drag/resize are driven from the frontend over IPC (see
-/// <c>WindowCommandModule</c> in Shenora.Windows and <c>WindowCommands</c> in @shenora/react).
-///
-/// Frameless technique: WM_NCCALCSIZE keeps Windows' native (visually invisible on Win11)
-/// side/bottom resize borders but gives the TOP back to the client — so the window is
-/// edge-resizable + Aero-snap capable with NO visible frame and NO content inset (the WebView2
-/// fills flush). Maximize is done MANUALLY (size the window to the monitor work area via
-/// SetWindowPos) rather than WindowState.Maximized — which, for a borderless window, left a
-/// ~6 px gap on every edge and squared off the corners. Manual sizing fills the work area
-/// exactly AND keeps the Win11 rounded corners; SC_MAXIMIZE (Win+Up / system menu) routes
-/// through the same path so all maximize routes are consistent.
+/// The optimized main-form base: double-buffered rendering, a raw <see cref="WndProcHook"/> seam,
+/// and optional borderless "custom chrome". With <see cref="OptimizedFormOptions.FramelessChrome"/>
+/// the default title bar is gone and min/max/close/drag/resize are driven from the frontend over IPC
+/// (<c>WindowCommandModule</c> here, <c>WindowCommands</c> in @shenora/react).
+/// <para>
+/// 🔴 Frameless maximize is MANUAL — a <c>SetWindowPos</c> fill of the monitor work area, keeping
+/// <c>WindowState.Normal</c> — so <see cref="AppPlacement"/> is the truth and
+/// <see cref="Form.WindowState"/> is not. See <c>docs/design/shells.md</c> for the technique.
+/// </para>
 /// </summary>
 public class OptimizedForm : Form, IAppMaximizable
 {
@@ -87,17 +73,15 @@ public class OptimizedForm : Form, IAppMaximizable
     // Sent when the window moves to a monitor with a different scale factor (PerMonitorV2).
     private const int WM_DPICHANGED = 0x02E0;
     private const int HTCLIENT = 1, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
-    // The caption-button hit-test codes. Answering WM_NCHITTEST with HTMAXBUTTON is the ONLY way to
-    // get the Windows 11 Snap Layouts flyout on a page-drawn maximize button — the OS offers it on
-    // hover over whatever reports itself as the maximize button, and a frameless window has no real
-    // caption for it to find (P5.6).
+    // Answering WM_NCHITTEST with HTMAXBUTTON is what makes Windows 11 offer Snap Layouts on a
+    // page-drawn maximize button; a frameless window has no real caption for the OS to find.
     private const int HTMINBUTTON = 8, HTMAXBUTTON = 9, HTCLOSE = 20;
     private const int WM_NCMOUSEMOVE = 0x00A0, WM_NCMOUSELEAVE = 0x02A2,
                       WM_NCLBUTTONDOWN = 0x00A1, WM_NCLBUTTONUP = 0x00A2;
     private const int SC_MAXIMIZE = 0xF030, SC_RESTORE = 0xF120;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_BORDER_COLOR = 34;
-    // Win11 rounded corners. A frameless window (custom WM_NCCALCSIZE) can lose the AUTOMATIC
-    // rounding, so it is requested explicitly. 33 = DWMWA_WINDOW_CORNER_PREFERENCE.
+    // A frameless window (custom WM_NCCALCSIZE) can lose the AUTOMATIC Win11 rounding, so it is
+    // requested explicitly. 33 = DWMWA_WINDOW_CORNER_PREFERENCE.
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2, DWMWCP_DONOTROUND = 1;
 
     private readonly OptimizedFormOptions _options;
@@ -105,21 +89,18 @@ public class OptimizedForm : Form, IAppMaximizable
     private bool _immersiveDarkMode;
     private bool _maximized;
     private Rectangle _restoreBounds;
-    // Caption-button regions, in CLIENT px. Empty = the app declares none, and every message below
-    // falls through untouched — this feature costs nothing until it is used.
+    // Caption-button regions in CLIENT px. Empty = every message below falls through untouched.
     private CaptionButtonRegion[] _captionButtons = [];
     private CaptionButtonKind? _hotCaptionButton;
     private CaptionButtonKind? _pressedCaptionButton;
-    // The bounding box of the whole cluster: what gets cut out of the clip control and what this
-    // form paints. Driven from the REPORTED rects, never guessed — see SetCaptionButtons.
+    // The cluster's bounding box: what gets cut out of the covering children and what this form
+    // paints. Driven from the REPORTED rects, never guessed — see SetCaptionButtons.
     private Rectangle _captionUnion;
-    // Children whose geometry we watch, and the subset we actually gave a region to. Two sets, not
-    // one: we must only ever null a region WE set (an app may give its own control one).
+    // Children whose geometry we watch, and the subset we actually gave a region to. Two sets: we
+    // must only ever null a region WE set (an app may give its own control one).
     private readonly HashSet<Control> _trackedChildren = [];
     private readonly HashSet<Control> _clippedChildren = [];
     private CaptionButtonColors? _captionButtonColors;
-    // Input → pixels only. Everything about WHERE the buttons are and who receives a click stays in
-    // this form's WndProc — see CaptionButtonRenderer for why the split line sits exactly there.
     private readonly CaptionButtonRenderer _captionRenderer = new();
 
     /// <summary>A form with the default options: double-buffered, framed, no manual maximize.</summary>
@@ -128,18 +109,14 @@ public class OptimizedForm : Form, IAppMaximizable
     }
 
     /// <summary>
-    /// A form configured by <paramref name="options"/> (null = defaults). Options are validated HERE
-    /// rather than degrading to silence later: asking for native caption buttons without frameless
-    /// chrome throws, because the alternative is a window whose buttons simply do nothing.
+    /// A form configured by <paramref name="options"/> (null = defaults). ⚠ Native caption buttons
+    /// without frameless chrome THROWS here — a framed window never reaches the hit-test they depend
+    /// on, so the alternative is buttons that silently do nothing.
     /// </summary>
     public OptimizedForm(OptimizedFormOptions? options)
     {
         _options = options ?? new OptimizedFormOptions();
 
-        // Fail at composition rather than degrading to silence (the P5.5 H3 lesson: an option that
-        // quietly does nothing is worse than one that throws). A framed window has real caption
-        // buttons and never reaches the hit-test this depends on, so the combination is always an
-        // app mistake — and the symptom would be "the buttons just don't work", with nothing to grep.
         if (_options.NativeCaptionButtons && !_options.FramelessChrome)
         {
             throw new ArgumentException(
@@ -152,40 +129,25 @@ public class OptimizedForm : Form, IAppMaximizable
         _dwmBorderColor = _options.DwmBorderColor;
         _immersiveDarkMode = _options.ImmersiveDarkMode;
 
-        // Double-buffer only — NEVER add ControlStyles.UserPaint without an OnPaint: with it,
-        // the resize-inset/border renders as an unpainted WHITE frame (measured in the source).
-        // Let the system paint the (dark) BackColor so no edge is ever a light flash.
+        // ⚠ NEVER add ControlStyles.UserPaint without an OnPaint: the resize inset then renders as an
+        // unpainted WHITE frame (measured). Let the system paint BackColor so no edge is a light flash.
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
         UpdateStyles();
 
         if (_options.BackColor is { } backColor) BackColor = backColor;
         if (_options.FramelessChrome) FormBorderStyle = FormBorderStyle.None; // custom chrome
 
-        // NO form-level AllowDrop (removed in P5.5 H2). It used to be set here with a DragOver handler,
-        // justified as "so a drop-zone manager can see system drag events over the form" — which is not
-        // how OLE drop works: a drop target is registered PER HWND, and DropZoneOverlay sets its own
-        // AllowDrop and handles all four drag events on itself. Nothing in the kit ever subscribed to
-        // the FORM's drag events.
-        //
-        // So it cost two things and bought none. It made handle creation OLE-dependent, hence
-        // STA-dependent, for every consumer of this base class — the trap behind this repo's own
-        // earned test rule (handle creation throws inside WndProc on an MTA thread, and WinForms
-        // answers with a BLOCKING dialog that stalled a whole suite). And with a DragOver handler but
-        // no DragDrop handler, dragging files anywhere over the window showed a COPY CURSOR and then
-        // silently discarded the drop — worse than not being a drop target at all.
-        //
-        // An app that genuinely wants form-level drops sets AllowDrop = true and wires its own
-        // handlers; that is plain WinForms and needs nothing from us.
+        // No form-level AllowDrop: a drop target is registered PER HWND and DropZoneOverlay registers
+        // its own. Setting it here would force OLE/STA on every consumer of this base class.
 
-        // Only a FRAMELESS window maximizes manually, so only it can hold a stale fill (P5.5 H2).
-        // SystemEvents holds a STRONG static reference, so this must be unsubscribed in Dispose or the
-        // form is leaked for the process lifetime.
+        // Only a FRAMELESS window maximizes manually, so only it can hold a stale fill.
+        // ⚠ SystemEvents holds a STRONG static reference — unsubscribed in Dispose, or the form and
+        // its whole control tree leak for the process lifetime.
         if (_options.FramelessChrome)
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
 
-        // The maximize button's glyph is maximize-vs-restore, so it must be repainted whenever that
-        // state moves — including via Win+Up, the system menu and a snap, which all route through
-        // the manual path. Cheaper and less error-prone than touching all four raise sites.
+        // The maximize glyph is maximize-vs-restore, so it repaints whenever that state moves —
+        // including via Win+Up, the system menu and a snap, which all route through the manual path.
         MaximizedChanged += (_, _) => InvalidateCaptionButtons();
 
         if (_options.FramelessChrome && _options.NativeCaptionButtons)
@@ -198,9 +160,8 @@ public class OptimizedForm : Form, IAppMaximizable
     /// <inheritdoc />
     protected override void Dispose(bool disposing)
     {
-        // Unconditional detach: SystemEvents is a static, process-lifetime publisher, so a missed
-        // unsubscribe keeps this form (and its whole control tree) alive forever. Removing a handler
-        // that was never added is a no-op, so this needs no matching condition.
+        // Unconditional detach — removing a handler that was never added is a no-op, and a missed
+        // SystemEvents unsubscribe keeps this form alive for the process lifetime.
         if (disposing)
         {
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
@@ -221,13 +182,6 @@ public class OptimizedForm : Form, IAppMaximizable
     /// <see cref="Message.Result"/>, so <c>IntPtr.Zero</c> is the ordinary "handled, nothing to
     /// report". A hook that throws counts as not-handled and the window keeps working.
     /// </para>
-    /// <para>
-    /// ⚠ It used to be <c>Func&lt;int, bool&gt;</c> — the message ID alone. That could not read
-    /// <see cref="Message.WParam"/>/<see cref="Message.LParam"/> or set a result, which every real
-    /// reason to hook a window procedure needs (<c>WM_COPYDATA</c>, <c>WM_POWERBROADCAST</c>,
-    /// <c>WM_DEVICECHANGE</c>, <c>WM_SETTINGCHANGE</c>, any <c>RegisterWindowMessage</c> channel with
-    /// a payload).
-    /// </para>
     /// </summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -237,13 +191,10 @@ public class OptimizedForm : Form, IAppMaximizable
     /// Called when the OS changes what it is doing to a caption button (hover in/out, press,
     /// release). Never called unless <see cref="SetCaptionButtons"/> registered regions.
     /// <para>
-    /// Only needed when <see cref="OptimizedFormOptions.NativeCaptionButtons"/> is OFF — with it on this window
-    /// paints the buttons itself and an app has nothing to do here. It stays because the other mode
-    /// is real: a form whose caption strip is NOT covered by a web view can draw its own buttons,
-    /// and claiming the hit-test costs it every mouse event in those rectangles, so this callback is
-    /// then the only way it can learn what to render. See <see cref="CaptionButtonState"/>.
+    /// Only needed when <see cref="OptimizedFormOptions.NativeCaptionButtons"/> is OFF: an app that
+    /// draws the buttons itself loses every mouse event in those rectangles to the hit-test, so this
+    /// is the only way it learns what to render. Invoked GUARDED — a throw cannot take the window down.
     /// </para>
-    /// <para>App code, so it is invoked GUARDED — a throw here cannot take the window down.</para>
     /// </summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -252,8 +203,8 @@ public class OptimizedForm : Form, IAppMaximizable
     /// <summary>
     /// The palette this window paints the caption buttons with when
     /// <see cref="OptimizedFormOptions.NativeCaptionButtons"/> is on. Null = a neutral fallback
-    /// derived from <see cref="Control.BackColor"/> — set it; the fallback exists only so a
-    /// half-wired app sees buttons rather than an empty rectangle.
+    /// derived from <see cref="Control.BackColor"/>, so a half-wired app sees buttons rather than an
+    /// empty rectangle.
     /// </summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -264,26 +215,16 @@ public class OptimizedForm : Form, IAppMaximizable
     }
 
     /// <summary>
-    /// Tell the window where the caption buttons are, in CLIENT px, so the OS can treat them as the
-    /// real thing — chiefly so Windows 11 offers Snap Layouts on the maximize button. Pass an empty
-    /// list (the default) to hand every pixel back.
+    /// Tell the window where the caption buttons are, in CLIENT px, so the OS treats them as the real
+    /// thing — chiefly so Windows 11 offers Snap Layouts on the maximize button. Pass an empty list
+    /// (the default) to hand every pixel back. With
+    /// <see cref="OptimizedFormOptions.NativeCaptionButtons"/> on, the clipped hole is the UNION of
+    /// these rectangles. Calling it before the handle exists is supported.
     /// <para>
-    /// With <see cref="OptimizedFormOptions.NativeCaptionButtons"/> on, this also drives the clip: the hole is the
-    /// UNION of the rectangles given here. That is the only correct way to size it — the cluster is
-    /// ~250 physical px at 200% scaling, so any constant guessed at 100% cuts THROUGH the buttons.
-    /// Deriving it from the reported rects is right at every DPI by construction.
-    /// </para>
-    /// <para>
-    /// Re-send this whenever the page's layout changes: the rectangles are a snapshot, and a stale
-    /// one silently moves the hit-test away from the button the user can see.
-    /// </para>
-    /// <para>
-    /// Call it on the UI THREAD. With <see cref="OptimizedFormOptions.NativeCaptionButtons"/> on it
-    /// reshapes child controls, which is not safe cross-thread; the kit's own route already marshals
-    /// (<c>WindowCommandModule</c> posts through <c>IUiDispatcher</c>). Calling it before the handle
-    /// exists is fine and supported — the rectangles are stored and the clip is applied once the
-    /// window is shown, which is what lets an app declare its buttons early enough to be usable
-    /// behind a splash screen.
+    /// ⚠ <b>Re-send it whenever the page's layout changes, and call it on the UI THREAD.</b> The
+    /// rectangles are a snapshot, so a stale one silently moves the hit-test off the visible button;
+    /// and with native caption buttons this reshapes child controls, which is not safe cross-thread
+    /// (the kit's own route already marshals through <c>IUiDispatcher</c>).
     /// </para>
     /// </summary>
     /// <param name="regions">The button rectangles; null or empty clears them.</param>
@@ -295,16 +236,16 @@ public class OptimizedForm : Form, IAppMaximizable
 
         if (_captionButtons.Length == 0 && (_hotCaptionButton is not null || _pressedCaptionButton is not null))
         {
-            // Clearing the regions must also clear any state currently being rendered, or whoever
-            // draws is left painting a hover that can never end.
+            // Clearing the regions clears the rendered state too, or whoever draws is left painting a
+            // hover that can never end.
             _hotCaptionButton = null;
             _pressedCaptionButton = null;
             RaiseCaptionButtonState();
         }
 
         ApplyCaptionButtonClip();
-        // Repaint what the cluster LEFT as well as where it landed, or a shrinking layout leaves
-        // the old buttons painted on pixels the web view has just been handed back.
+        // Repaint what the cluster LEFT as well as where it landed, or a shrinking layout leaves the
+        // old buttons painted on pixels the web view has just been handed back.
         if (!previousUnion.IsEmpty) Invalidate(previousUnion);
         InvalidateCaptionButtons();
     }
@@ -328,20 +269,16 @@ public class OptimizedForm : Form, IAppMaximizable
 
     private void OnClippedChildGeometryChanged(object? sender, EventArgs e)
     {
-        // A window region is in coordinates relative to the window's top-left and SURVIVES a resize,
-        // so it goes stale the moment the control changes size: the "everything except the hole"
-        // part would keep the OLD size and leave a dead strip where the child stopped rendering.
-        // Recompute from the stored union; whoever reports the rects corrects the hole's position a
-        // moment later. (Same class of staleness as the manual maximized fill — RefreshMaximizedFill.)
+        // ⚠ A window region is relative to the window's top-left and SURVIVES a resize, so it goes
+        // stale the moment the control changes size and leaves a dead strip where the child stopped
+        // rendering. Recompute from the stored union.
         ApplyCaptionButtonClip();
         InvalidateCaptionButtons();
     }
 
     private void OnCaptionChildAdded(object? sender, ControlEventArgs e)
     {
-        // A control added AFTER the cluster was reported would cover the buttons — the splash panel
-        // and the web view are typically added at different moments, and drop-zone overlays appear
-        // later still.
+        // A control added AFTER the cluster was reported would cover the buttons.
         ApplyCaptionButtonClip();
         InvalidateCaptionButtons();
     }
@@ -353,13 +290,9 @@ public class OptimizedForm : Form, IAppMaximizable
     }
 
     /// <summary>
-    /// Watch a child's geometry so its hole stays correct — including <c>HandleCreated</c>.
-    /// <para>
-    /// A region cannot be applied before the control is realized, and <c>ControlAdded</c> fires
-    /// BEFORE the handle exists, so without this a control added after startup (a drop-zone overlay,
-    /// a web view built lazily) would be skipped once and never revisited: it would cover the buttons
-    /// with nothing to un-cover them. Caught by <c>A_child_added_AFTER_the_rects_were_reported…</c>.
-    /// </para>
+    /// Watch a child's geometry so its hole stays correct — including <c>HandleCreated</c>, without
+    /// which a control added after startup would be skipped once (a region cannot be applied before
+    /// the control is realized, and <c>ControlAdded</c> fires first) and never revisited.
     /// </summary>
     private void Track(Control child)
     {
@@ -380,10 +313,8 @@ public class OptimizedForm : Form, IAppMaximizable
         ClearOurRegion(child);
     }
 
-    /// <summary>
-    /// Hand the pixels back — but only if WE took them. An app is free to give its own control a
-    /// region, and nulling that because it happens to sit on this form would be our bug, not theirs.
-    /// </summary>
+    /// <summary>Hand the pixels back — but only if WE took them; an app may have given its own
+    /// control a region.</summary>
     private void ClearOurRegion(Control child)
     {
         if (!_clippedChildren.Remove(child)) return;
@@ -392,8 +323,8 @@ public class OptimizedForm : Form, IAppMaximizable
 
     /// <summary>
     /// Cut the cluster out of every direct child that would cover it (and restore any that no longer
-    /// does). See <see cref="OptimizedFormOptions.NativeCaptionButtons"/> for why it is every child
-    /// rather than one named control.
+    /// does). Every child, not one named control: what is on top changes over a window's life —
+    /// splash, then web view, then overlays.
     /// </summary>
     private void ApplyCaptionButtonClip()
     {
@@ -407,8 +338,8 @@ public class OptimizedForm : Form, IAppMaximizable
         {
             if (child is null || child.IsDisposed) continue;
 
-            // Watch it FIRST and unconditionally: a child with no handle yet has no hole to compute,
-            // and HandleCreated is the event that brings us back to finish the job.
+            // Watch it FIRST and unconditionally: a child with no handle has no hole to compute, and
+            // HandleCreated is what brings us back to finish the job.
             Track(child);
 
             var hole = HoleFor(child);
@@ -436,9 +367,8 @@ public class OptimizedForm : Form, IAppMaximizable
     private Rectangle HoleFor(Control child)
     {
         if (_captionUnion.IsEmpty || child.Width <= 0 || child.Height <= 0) return Rectangle.Empty;
-        // The union is in this FORM's client px; a window region is in the CHILD's own. Via screen
-        // coordinates for the same reason WindowCommandModule converts that way: identical whenever
-        // the child fills the form, and correct when it does not.
+        // The union is in this FORM's client px; a window region is in the CHILD's own. Converted via
+        // screen coordinates, which is correct whether or not the child fills the form.
         if (!IsHandleCreated || !child.IsHandleCreated) return Rectangle.Empty;
         var topLeft = child.PointToClient(PointToScreen(_captionUnion.Location));
         var hole = new Rectangle(topLeft, _captionUnion.Size);
@@ -455,11 +385,6 @@ public class OptimizedForm : Form, IAppMaximizable
         Invalidate(_captionUnion);
     }
 
-    // No public `HotCaptionButton` property: CaptionButtonStateChanged already delivers it, and a
-    // second way to learn the same thing is surface that has to be maintained forever for nothing
-    // (generic-library: every public member earns its keep, default to internal). Adding it later is
-    // non-breaking; removing it would not be.
-
     private CaptionButtonKind? CaptionButtonAt(Point screenPoint)
     {
         if (_captionButtons.Length == 0) return null;
@@ -475,10 +400,8 @@ public class OptimizedForm : Form, IAppMaximizable
         if (_hotCaptionButton == hot && _pressedCaptionButton == pressed) return;
         _hotCaptionButton = hot;
         _pressedCaptionButton = pressed;
-        // Repaint BEFORE telling the app: when this window owns the pixels (a clip target is set),
-        // the state change IS the affordance, and without this the buttons never visibly react —
-        // found by running the sample, with everything else about the chain already correct.
-        // No-ops in the un-clipped mode, where the callback below is the whole point.
+        // ⚠ Repaint BEFORE telling the app: when this window owns the pixels, changing the state is
+        // not enough — without this the buttons never visibly react, silently. No-op when the app draws.
         InvalidateCaptionButtons();
         RaiseCaptionButtonState();
     }
@@ -493,17 +416,8 @@ public class OptimizedForm : Form, IAppMaximizable
     /// <summary>
     /// Paint the caption buttons into the hole cut out of the covering children.
     /// <para>
-    /// On the FORM, deliberately — not in a child control placed in the hole. A child would become
-    /// the window <c>WindowFromPoint</c> finds, putting back exactly the coverage problem the clip
-    /// exists to remove; it would then have to answer <c>HTTRANSPARENT</c> and hope the hit search
-    /// walks outward to this form. The form's own client area needs none of that: it is already the
-    /// window the OS asks, which is what the clip proved.
-    /// </para>
-    /// <para>
-    /// The DRAWING itself moved to <see cref="CaptionButtonRenderer"/> (0.2.0 design pass): it is pure
-    /// input-to-pixels, so it is independently testable and does not belong in a form whose real job
-    /// here is deciding who receives a click. What stayed is this override — the decision to paint at
-    /// all, and on this surface.
+    /// ⚠ On the FORM, never in a child control placed in the hole: a child becomes the window
+    /// <c>WindowFromPoint</c> finds, which puts back the coverage problem the clip exists to remove.
     /// </para>
     /// </summary>
     protected override void OnPaint(PaintEventArgs e)
@@ -516,8 +430,8 @@ public class OptimizedForm : Form, IAppMaximizable
     }
 
     /// <summary>
-    /// True when the window is maximized. Frameless chrome maximizes MANUALLY (fills the work
-    /// area) so <see cref="Form.WindowState"/> is NOT the source of truth — this property is.
+    /// The authoritative placement. 🔴 Frameless chrome maximizes MANUALLY, so
+    /// <see cref="Form.WindowState"/> is not the source of truth — this property is.
     /// </summary>
     public WindowPlacement AppPlacement =>
         (_options.FramelessChrome ? _maximized : WindowState == FormWindowState.Maximized)
@@ -527,15 +441,14 @@ public class OptimizedForm : Form, IAppMaximizable
     /// <summary>
     /// The windowed geometry to restore to — what <see cref="WindowStateManager"/> must PERSIST while
     /// this window is maximized, since a manual work-area maximize leaves <c>Bounds</c> showing the
-    /// work area and <see cref="Form.RestoreBounds"/> showing nothing useful (P5.5 H2).
+    /// work area and <see cref="Form.RestoreBounds"/> showing nothing useful.
     /// </summary>
     public Rectangle AppRestoreBounds => _options.FramelessChrome ? _restoreBounds : RestoreBounds;
 
     /// <summary>
     /// Apply a saved maximized state once the window is realized.
-    /// <see cref="WindowStateManager.Apply(Form)"/> runs BEFORE the form is shown, and a manual
-    /// work-area maximize needs a live handle and a monitor to measure — so it leaves a marker and
-    /// this consumes it.
+    /// <see cref="WindowStateManager.Apply(Form)"/> runs before the form is shown and a manual
+    /// work-area maximize needs a live handle, so it leaves a marker and this consumes it.
     /// </summary>
     protected override void OnShown(EventArgs e)
     {
@@ -546,9 +459,8 @@ public class OptimizedForm : Form, IAppMaximizable
             if (AppPlacement != WindowPlacement.Maximized) Maximize();
         }
 
-        // A hole can only be cut once the child has a handle, and an app that reports its rectangles
-        // during construction (so the buttons are live behind a SPLASH, before any page has loaded)
-        // does so long before that. Re-apply here, where every child is realized.
+        // A hole can only be cut once the child has a handle, and an app may report its rectangles
+        // during construction. Re-apply here, where every child is realized.
         ApplyCaptionButtonClip();
         InvalidateCaptionButtons();
     }
@@ -557,19 +469,9 @@ public class OptimizedForm : Form, IAppMaximizable
     public event EventHandler? MaximizedChanged;
 
     /// <summary>
-    /// Raise <see cref="MaximizedChanged"/> through the app-callback guard.
-    /// <para>
-    /// 🔴 <b>Two of the four raise paths are inside <c>WndProc</c></b> (the <c>WM_SYSCOMMAND</c>
-    /// maximize/restore interception), and this event is PUBLIC — an adopting app subscribes to resync
-    /// its own chrome. An exception from a subscriber there escapes into the window procedure, which is
-    /// the "fatal rather than catchable" position <see cref="AppCallback"/> exists for, and the same
-    /// reason <c>WndProcHook</c> is already guarded a few hundred lines below.
-    /// </para>
-    /// <para>
-    /// ⚠ Containment, not isolation: a throwing subscriber still shadows the ones registered after it,
-    /// exactly as <see cref="RaiseCaptionButtonState"/> behaves. Per-subscriber isolation is
-    /// <c>IEventBus</c>'s job, and a WinForms chrome event does not carry that weight.
-    /// </para>
+    /// Raise <see cref="MaximizedChanged"/> through the app-callback guard — two of the four raise
+    /// paths are inside <c>WndProc</c>, where a subscriber's exception has no catcher.
+    /// ⚠ Containment, not isolation: a throwing subscriber still shadows the ones after it.
     /// </summary>
     private void RaiseMaximizedChanged()
     {
@@ -607,25 +509,12 @@ public class OptimizedForm : Form, IAppMaximizable
     }
 
     /// <summary>
-    /// Where this window should go when it is restored — Windows' OWN answer, not its current rect.
-    /// <para>
-    /// <c>GetWindowRect</c> is wrong here whenever the window is SNAPPED: it returns the docked half,
-    /// so maximizing a snapped window and restoring it put the window straight back into the snap,
-    /// while every other Windows app exits it (user-reported). <c>WINDOWPLACEMENT.rcNormalPosition</c>
-    /// is by definition the window's restored position, and Aero Snap deliberately leaves it at the
-    /// PRE-SNAP rectangle — measured: Win+Left moved the rect to the left half of the desktop and left
-    /// <c>rcNormalPosition</c> byte-identical. So preferring it exits the snap exactly, and needs no
-    /// "is this window snapped" test — for which Win32 has no clean API, and which would otherwise
-    /// have to guess by comparing against the work area's halves and quadrants.
-    /// </para>
-    /// <para>
-    /// Caveat kept honest: <c>rcNormalPosition</c> is documented as WORKSPACE coordinates, which can
-    /// differ from screen coordinates when the taskbar is docked to the top or left (they were
-    /// identical on the measured setup, taskbar at the bottom). That is survivable rather than
-    /// silently wrong because <see cref="RestoreFromMax"/> already validates the target through
-    /// <see cref="WindowStateManager.IsVisible"/> and falls back to a centred work-area rect — so the
-    /// worst case is "restores somewhere reachable", never off-screen.
-    /// </para>
+    /// Where this window should go when it is restored — <c>WINDOWPLACEMENT.rcNormalPosition</c>,
+    /// Windows' own restore rectangle, not the live rect. <c>GetWindowRect</c> returns the docked half
+    /// of a SNAPPED window, so restoring from maximize put it straight back into the snap; Aero Snap
+    /// leaves <c>rcNormalPosition</c> at the pre-snap rectangle, so preferring it exits the snap.
+    /// (It is documented as WORKSPACE coordinates; <see cref="RestoreFromMax"/> validates the target,
+    /// so a top/left-docked taskbar costs accuracy rather than reachability.)
     /// </summary>
     private bool TryGetRestoreTarget(out Rectangle bounds)
     {
@@ -645,8 +534,8 @@ public class OptimizedForm : Form, IAppMaximizable
             }
         }
 
-        // Fall back to the live rect rather than leaving the restore target unset: a stale one is a
-        // window that will not come back, which is worse than one that comes back still docked.
+        // Fall back to the live rect rather than leaving the restore target unset — a stale target is
+        // a window that never comes back.
         if (GetWindowRect(Handle, out var wr))
         {
             bounds = Rectangle.FromLTRB(wr.left, wr.top, wr.right, wr.bottom);
@@ -656,11 +545,9 @@ public class OptimizedForm : Form, IAppMaximizable
     }
 
     /// <summary>
-    /// The CURRENT monitor's work area in exact physical px.
-    /// <para>
-    /// GetMonitorInfo, never <see cref="Screen.WorkingArea"/> — the managed value is DPI-mis-scaled on
-    /// a HiDPI monitor (~12 px short per edge, measured); the P/Invoke rect is exact.
-    /// </para>
+    /// The CURRENT monitor's work area in exact physical px. ⚠ <c>GetMonitorInfo</c>, never
+    /// <see cref="Screen.WorkingArea"/> — the managed value is DPI-mis-scaled on a HiDPI monitor
+    /// (~12 px short per edge, measured).
     /// </summary>
     private bool TryGetCurrentWorkArea(out RECT workArea)
     {
@@ -678,15 +565,10 @@ public class OptimizedForm : Form, IAppMaximizable
             SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 
     /// <summary>
-    /// Re-apply the maximized fill to whatever monitor the window is on now (P5.5 H2).
-    /// <para>
-    /// A manual maximize is a one-shot <c>SetWindowPos</c> to one monitor's work area, so nothing kept
-    /// it true afterwards: moving a maximized window to a monitor with different DPI or resolution
-    /// (Win+Shift+Arrow), changing the display scale, or docking/undocking left the window at the OLD
-    /// monitor's physical size — too small (a gap) or too large (spilling off-screen) — while still
-    /// believing it was maximized. Called from <c>WM_DPICHANGED</c> and from
+    /// Re-apply the maximized fill to whatever monitor the window is on now — a manual maximize is a
+    /// one-shot <c>SetWindowPos</c> in physical px, so a monitor move, a scale change or a dock leaves
+    /// it the wrong size while still "maximized". Called from <c>WM_DPICHANGED</c> and
     /// <c>SystemEvents.DisplaySettingsChanged</c>.
-    /// </para>
     /// </summary>
     private void RefreshMaximizedFill()
     {
@@ -696,8 +578,7 @@ public class OptimizedForm : Form, IAppMaximizable
     }
 
     private void OnDisplaySettingsChanged(object? sender, EventArgs e) =>
-        // SystemEvents raises this on its OWN thread, so it must be marshalled — and through the one
-        // owner, whose guard matters here because a system-event handler has no caller to catch a throw.
+        // ⚠ SystemEvents raises this on its OWN thread, so it must be marshalled.
         new WinFormsUiDispatcher(this).Post(RefreshMaximizedFill);
 
     /// <summary>Restore from maximize (the manual path when frameless).</summary>
@@ -712,17 +593,16 @@ public class OptimizedForm : Form, IAppMaximizable
         }
 
         if (!_maximized) return;
-        // Un-minimize first (mirrors Maximize): restoring bounds on a still-minimized window
-        // mangles them under WS_MINIMIZE and leaves the window in the taskbar.
+        // Un-minimize first (mirrors Maximize): restoring bounds on a still-minimized window mangles
+        // them under WS_MINIMIZE and leaves the window in the taskbar.
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         _maximized = false;
         ApplyCornerPreference(); // rounded corners again when windowed
 
-        // _restoreBounds is RAW PHYSICAL px captured on whichever monitor the window was maximized from,
-        // so it can be unreachable by now: that monitor may have been unplugged, moved in the virtual
-        // desktop, or rescaled (P5.5 H2). Restoring to it blind put the window somewhere the user
-        // cannot grab it. Reuse the window-state stack's own reachability check rather than a second
-        // opinion on what "off-screen" means, and fall back to a centred half-work-area.
+        // ⚠ _restoreBounds is RAW PHYSICAL px from whichever monitor the window was maximized on, which
+        // may since have been unplugged, moved or rescaled — restoring to it blind put the window
+        // somewhere the user cannot grab. Validate through the window-state stack's own reachability
+        // check, and fall back to a centred half-work-area.
         var target = _restoreBounds;
         if (target.Width > 0 && target.Height > 0
             && !WindowStateManager.IsVisible(target.X, target.Y, target.Width, target.Height,
@@ -749,9 +629,7 @@ public class OptimizedForm : Form, IAppMaximizable
 
     /// <summary>
     /// Re-apply the chrome to a new theme at RUNTIME — a light↔dark switch must resync the DWM
-    /// border/dark-mode flag and the form fill, or the frame keeps the old theme's (near-white
-    /// or near-black) edge (measured in the source; its frontend re-sends on every effective
-    /// theme change — see <c>WindowCommandOptions.ApplyTheme</c>).
+    /// border/dark-mode flag and the form fill, or the frame keeps the old theme's edge.
     /// </summary>
     public void ApplyChromeTheme(Color backColor, Color? dwmBorderColor, bool immersiveDarkMode = true)
     {
@@ -767,10 +645,9 @@ public class OptimizedForm : Form, IAppMaximizable
         get
         {
             var cp = base.CreateParams;
-            // Keep Aero snap / edge resize / taskbar min-max without the caption. Null-guarded:
-            // the BASE Form constructor evaluates this virtual before our ctor assigns _options —
-            // that early read is style bookkeeping only; the value that matters is re-read at
-            // handle creation, after construction.
+            // Keep Aero snap / edge resize / taskbar min-max without the caption. Null-guarded: the
+            // BASE Form constructor evaluates this before our ctor assigns _options, and that early
+            // read is bookkeeping only — the value that matters is re-read at handle creation.
             if (_options is { FramelessChrome: true }) cp.Style |= WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
             return cp;
         }
@@ -789,8 +666,7 @@ public class OptimizedForm : Form, IAppMaximizable
         DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
         if (_dwmBorderColor is { } color)
         {
-            // COLORREF is 0x00BBGGRR — matching the border line to the app edge means no
-            // visible frame on the frameless window.
+            // COLORREF is 0x00BBGGRR.
             var border = color.R | (color.G << 8) | (color.B << 16);
             DwmSetWindowAttribute(Handle, DWMWA_BORDER_COLOR, ref border, sizeof(int));
         }
@@ -798,7 +674,7 @@ public class OptimizedForm : Form, IAppMaximizable
     }
 
     /// <summary>Rounded when WINDOWED, SQUARE when maximized — a maximized window fills the work
-    /// area, so rounded corners would clip the content at the edges (user-reported in the source).</summary>
+    /// area, so rounded corners would clip the content at the edges.</summary>
     private void ApplyCornerPreference()
     {
         if (!IsHandleCreated) return;
@@ -814,18 +690,11 @@ public class OptimizedForm : Form, IAppMaximizable
     /// </summary>
     protected override void WndProc(ref Message m)
     {
-        // The hook is APP CODE running inside WndProc, which is the worst possible place for an
-        // escaping exception (P5.5 H2): there is no caller on the stack, and before the family
-        // bootstrap installs its handlers — window creation happens early — an unhandled exception
-        // here surfaces as WinForms' own BLOCKING modal dialog, mid-message-dispatch, on a window that
-        // may not even be visible yet. The measured version of that failure stalled a whole test suite.
-        // A throwing hook is therefore treated as "did not handle the message": the window keeps
-        // working and the message falls through to the real handling below, which is the only
-        // behaviour that leaves the app usable.
-        // The message is COPIED OUT first because `m` is a `ref` parameter and cannot be captured by
-        // the guard's lambda (CS1628). Copying is why the hook ANSWERS with a result rather than
-        // assigning `m.Result` — a write to the copy would be discarded silently, which is the worst
-        // shape available. `Message` is a struct of four words, so the copy costs nothing.
+        // The hook is APP CODE inside WndProc, where an escaping exception has no caller and surfaces
+        // as WinForms' own BLOCKING modal dialog mid-dispatch. A throwing hook is therefore treated as
+        // "did not handle the message" and the window keeps working.
+        // ⚠ The message is COPIED because `m` is `ref` and cannot be captured by the guard's lambda
+        // (CS1628) — which is why the hook ANSWERS with a result: a write to the copy would be lost.
         var message = m;
         if (WndProcHook is { } hook
             && Shenora.AppCallback.RunOrDefault(() => hook(message), null) is { } result)
@@ -840,10 +709,8 @@ public class OptimizedForm : Form, IAppMaximizable
             return;
         }
 
-        // The window moved to a monitor with a different scale factor. Let WinForms rescale fonts and
-        // child controls FIRST, then re-apply our manual fill: a maximized frameless window is sized to
-        // one monitor's work area in physical px, so after the move it is the wrong size until we
-        // recompute it (P5.5 H2).
+        // The window moved to a monitor with a different scale factor: let WinForms rescale fonts and
+        // child controls FIRST, then re-apply our manual fill.
         if (m.Msg == WM_DPICHANGED)
         {
             base.WndProc(ref m);
@@ -851,16 +718,14 @@ public class OptimizedForm : Form, IAppMaximizable
             return;
         }
 
-        // Route the system maximize/restore (Win+Up, system menu, snap) through the manual path
-        // so every maximize fills the work area exactly (no 6 px gap) and keeps rounded corners.
+        // Route the system maximize/restore (Win+Up, system menu, snap) through the manual path so
+        // every maximize route agrees.
         if (m.Msg == WM_SYSCOMMAND)
         {
             var cmd = (int)m.WParam & 0xFFF0;
             if (cmd == SC_MAXIMIZE) { Maximize(); return; }
-            // Intercept SC_RESTORE only when NOT minimized: a minimized window's restore must
-            // reach DefWindowProc to un-minimize (swallowing it left the window in the taskbar
-            // with the maximize state silently dropped); the manual work-area
-            // bounds survive un-minimize, so the window comes back still maximized.
+            // ⚠ Intercept SC_RESTORE only when NOT minimized: a minimized window's restore must reach
+            // DefWindowProc to un-minimize, and swallowing it left the window stuck in the taskbar.
             if (cmd == SC_RESTORE && _maximized && WindowState != FormWindowState.Minimized)
             {
                 RestoreFromMax();
@@ -868,9 +733,8 @@ public class OptimizedForm : Form, IAppMaximizable
             }
         }
 
-        // On focus change Windows repaints the (removed) caption in the inactive colour → a grey
-        // strip at the top. lParam = -1 to DefWindowProc suppresses that non-client repaint while
-        // keeping the correct active/inactive result.
+        // On focus change Windows repaints the (removed) caption in the inactive colour → a grey strip
+        // at the top. lParam = -1 suppresses that non-client repaint, keeping the correct result.
         if (m.Msg == WM_NCACTIVATE)
         {
             m.Result = DefWindowProc(Handle, WM_NCACTIVATE, m.WParam, new IntPtr(-1));
@@ -881,16 +745,13 @@ public class OptimizedForm : Form, IAppMaximizable
         {
             if (_maximized)
             {
-                // Maximized: the window IS sized to the work area, so make the client fill it
-                // with NO inset (otherwise the native side/bottom resize border shows as a ~6 px
-                // gap on each edge).
+                // The window IS sized to the work area, so the client fills it with NO inset —
+                // otherwise the native side/bottom resize border shows as a ~6 px gap per edge.
                 m.Result = IntPtr.Zero;
                 return;
             }
-            // Normal: let DefWindowProc compute the standard non-client inset (native,
-            // invisible-on-Win11 resize borders), then give the TOP back to the client →
-            // caption gone, side/bottom resize kept, frameless look, no content inset.
-            // (Returning 0 for ALL sides instead would need a visible inset for resize.)
+            // Normal: let DefWindowProc compute the standard non-client inset (the native,
+            // invisible-on-Win11 resize borders), then give the TOP back to the client.
             var nccsp = Marshal.PtrToStructure<NCCALCSIZE_PARAMS>(m.LParam);
             var originalTop = nccsp.rgrc0.top;
             base.WndProc(ref m);
@@ -901,12 +762,10 @@ public class OptimizedForm : Form, IAppMaximizable
             return;
         }
 
-        // ── Page-drawn caption buttons (P5.6) ────────────────────────────────────────────────────
-        // Claiming the hit-test is what buys Snap Layouts, and it COSTS the page every mouse event in
-        // those rectangles — Windows now considers them non-client, so the WebView2 sees nothing
-        // there. That is why the three messages below are handled rather than left to DefWindowProc:
-        // without them the buttons would show the flyout and stop working, which is the classic
-        // half-done version of this feature.
+        // ── Page-drawn caption buttons ───────────────────────────────────────────────────────────
+        // Claiming the hit-test buys Snap Layouts and COSTS the page every mouse event in those
+        // rectangles (Windows now calls them non-client), so hover/press/release are handled here or
+        // the buttons show the flyout and stop working.
         if (_captionButtons.Length > 0)
         {
             if (m.Msg == WM_NCMOUSEMOVE)
@@ -916,14 +775,13 @@ public class OptimizedForm : Form, IAppMaximizable
             }
             else if (m.Msg == WM_NCMOUSELEAVE)
             {
-                // The pointer left the non-client area entirely — including into the page, which is
-                // the ordinary way out of a button.
+                // The pointer left the non-client area entirely — including into the page.
                 SetCaptionButtonState(null, null);
             }
             else if (m.Msg == WM_NCLBUTTONDOWN && HitTestToKind((int)m.WParam) is { } pressed)
             {
-                // Swallow the press. Handing it to DefWindowProc would run the OS's own caption
-                // button loop against a caption this window does not have.
+                // Swallow the press: DefWindowProc would run the OS's own caption-button loop against
+                // a caption this window does not have.
                 SetCaptionButtonState(pressed, pressed);
                 m.Result = IntPtr.Zero;
                 return;
@@ -932,19 +790,17 @@ public class OptimizedForm : Form, IAppMaximizable
             {
                 var wasPressed = _pressedCaptionButton;
                 SetCaptionButtonState(released, null);
-                // Only act if the press STARTED on this button — press here, drag away, release
-                // elsewhere must not activate, matching every other button on the system.
+                // Only act if the press STARTED on this button, matching every other button on the
+                // system.
                 if (wasPressed == released) InvokeCaptionButton(released);
                 m.Result = IntPtr.Zero;
                 return;
             }
         }
 
-        // WM_NCCALCSIZE gave the TOP edge to the client area, so DefWindowProc reports HTCLIENT
-        // there and Windows can't resize from the top. Re-add a top resize border: within the
-        // strip, return HTTOP (or the diagonal corners). Below the strip the app's header still
-        // gets the drag (mousedown → START_DRAG → HTCAPTION), so the top edge both RESIZES
-        // (very edge) and DRAGS (header).
+        // WM_NCCALCSIZE gave the TOP edge to the client area, so DefWindowProc reports HTCLIENT there
+        // and Windows cannot resize from the top. Re-add a top resize border: within the strip, answer
+        // HTTOP (or the diagonal corners). Below it the app's header still gets the drag.
         if (m.Msg == WM_NCHITTEST)
         {
             base.WndProc(ref m);
@@ -954,10 +810,8 @@ public class OptimizedForm : Form, IAppMaximizable
                 var screen = new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF));
                 var p = PointToClient(screen);
 
-                // Caption buttons win over the resize strip: they sit at the top edge, and losing a
-                // few pixels of resize border is a far smaller cost than a close button that resizes
-                // the window. Checked while MAXIMIZED too — unlike the resize strip below, which is
-                // meaningless then.
+                // Caption buttons win over the resize strip they share the top edge with. Checked
+                // while MAXIMIZED too, unlike the resize strip below.
                 if (CaptionButtonAt(screen) is { } kind)
                 {
                     m.Result = (IntPtr)(kind switch
@@ -969,9 +823,6 @@ public class OptimizedForm : Form, IAppMaximizable
                     return;
                 }
 
-                // DpiHelper owns every device-DPI conversion (P5.5 H4.5). It was `* DeviceDpi / 96`
-                // here — integer division that only happened to be safe because the multiply came
-                // first, and which silently returns 0 for a non-positive DeviceDpi.
                 var border = Math.Max(6, DpiHelper.Scale(_options.TopResizeBorder, DpiHelper.ScaleFromDeviceDpi(DeviceDpi)));
                 if (!_maximized && p.Y >= 0 && p.Y < border)
                     m.Result = (IntPtr)(p.X < border ? HTTOPLEFT : p.X >= ClientSize.Width - border ? HTTOPRIGHT : HTTOP);
@@ -991,10 +842,8 @@ public class OptimizedForm : Form, IAppMaximizable
     };
 
     /// <summary>
-    /// Perform what a caption button does. Routed through the SAME public members the page's IPC
-    /// commands use (<see cref="ToggleMaximize"/>, <see cref="Form.Close"/>), so a click on the
-    /// button and a click delivered by the page cannot diverge — in particular the frameless manual
-    /// maximize keeps its <see cref="AppPlacement"/> bookkeeping either way (P5.5 H2).
+    /// Perform what a caption button does, through the SAME public members the page's IPC commands
+    /// use (<see cref="ToggleMaximize"/>, <see cref="Form.Close"/>), so the two routes cannot diverge.
     /// </summary>
     private void InvokeCaptionButton(CaptionButtonKind kind)
     {

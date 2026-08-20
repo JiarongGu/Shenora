@@ -15,35 +15,31 @@ public sealed class WebViewIpcBridgeOptions
     public required IMessageDispatcher Dispatcher { get; init; }
 
     /// <summary>
-    /// When set, EVERY event emitted on the bus is forwarded to the page as a batched
-    /// notification (the family's wildcard-forward pattern). Buffering starts at bridge
-    /// CONSTRUCTION so events emitted during the (slow) WebView2 init aren't lost; delivery
-    /// starts once the client reports ready. Null = the app pushes notifications itself via
-    /// <see cref="WebViewIpcBridge.SendNotification"/>.
+    /// When set, EVERY event emitted on the bus is forwarded to the page as a batched notification.
+    /// Buffering starts at bridge CONSTRUCTION so events emitted during the (slow) WebView2 init aren't
+    /// lost; delivery starts once the client reports ready. Null = the app pushes notifications itself
+    /// via <see cref="WebViewIpcBridge.SendNotification"/>.
     /// </summary>
     public IEventBus? EventBus { get; init; }
 
     /// <summary>
-    /// Notification flush interval. ~50 ms is the family's measured sweet spot: a busy backend
-    /// can fire hundreds of events a second, and one batched post beats hundreds of round trips
-    /// while staying imperceptible to the UI.
+    /// Notification flush interval. One batched post beats hundreds of round trips while staying
+    /// imperceptible to the UI.
     /// </summary>
     public TimeSpan NotificationInterval { get; init; } = TimeSpan.FromMilliseconds(50);
 
     /// <summary>
-    /// Cap on buffered notifications. If the client never becomes ready (init stalled or failed)
-    /// the queue would otherwise grow without bound until OOM. Over the cap the OLDEST is
-    /// dropped — notifications are telemetry-like (progress/status); losing stale ones under
-    /// overflow is fine, an OOM isn't. (The family's measured cap.)
+    /// Cap on buffered notifications — over it the OLDEST is dropped. A client that never becomes
+    /// ready (init stalled or failed) would otherwise grow the queue until OOM.
     /// </summary>
     public int MaxQueuedNotifications { get; init; } = 10_000;
 
     /// <summary>
-    /// Per-channel delivery policy, applied at ENQUEUE (a direct <see cref="WebViewIpcBridge.SendNotification"/>
-    /// call AND a forwarded bus event alike). Default: deliver everything. This is the seam that lets
-    /// one bridge per window, or an auxiliary/remote session, receive only the slice of the app's
-    /// traffic it should — every bridge subscribing with the bus's wildcard forward otherwise means
-    /// every event reaches every window. Forwarded to <see cref="Shenora.Core.Ipc.NotificationPumpOptions.Filter"/>.
+    /// Per-channel delivery policy, applied at ENQUEUE (a direct
+    /// <see cref="WebViewIpcBridge.SendNotification"/> call AND a forwarded bus event alike). Default:
+    /// deliver everything. Forwarded to
+    /// <see cref="Shenora.Core.Ipc.NotificationPumpOptions.Filter"/>; it is what lets one bridge per
+    /// window receive only its slice of the app's traffic.
     /// </summary>
     public Func<IpcNotification, bool>? NotificationFilter { get; init; }
 
@@ -51,8 +47,7 @@ public sealed class WebViewIpcBridgeOptions
     /// What to tell the client this shell is and can do, answered in the handshake so one page can
     /// ship to every shell. Declared by the APP because it depends on what this app composed — a
     /// desktop host that never mapped <c>WindowCommandModule</c> has no window chrome to advertise,
-    /// whatever platform it is on. A typical frameless composition here declares
-    /// <c>WindowChrome</c>, <c>DropZones</c> and the picker capabilities.
+    /// whatever platform it is on.
     /// </summary>
     public ShellInfo? Shell { get; init; }
 
@@ -72,24 +67,18 @@ public sealed class WebViewIpcBridgeOptions
 /// The WebView2 postMessage IPC transport: client requests come in over
 /// <c>WebMessageReceived</c> and are dispatched through the app's
 /// <see cref="IMessageDispatcher"/>; responses and batched <see cref="IpcNotificationBatch"/>
-/// pushes go back via <c>PostWebMessageAsString</c>. Merged from the two family transports
-/// (the correlated postMessage handler of the primary desktop sibling; the bounded buffered
-/// event push of Sonora) with their post-mortem comments kept.
+/// pushes go back via <c>PostWebMessageAsString</c>.
 ///
-/// Composition order (the sample app is the reference): construct the bridge BEFORE
-/// <see cref="WebViewHost.InitializeAsync"/> (event buffering starts at construction, so events
-/// emitted during the slow WebView2 init survive), call <see cref="Attach"/> after it, then
-/// <see cref="WebViewHost.Navigate"/>. Construct and attach on the UI thread that owns the
-/// control. Dispose with the owning window — the source app's transport once kept its flush
-/// timer firing for the life of the process, posting into a torn-down WebView.
+/// Composition order: construct the bridge BEFORE <see cref="WebViewHost.InitializeAsync"/> (event
+/// buffering starts at construction, so events emitted during the slow WebView2 init survive), call
+/// <see cref="Attach"/> after it, then <see cref="WebViewHost.Navigate"/>. Construct and attach on the
+/// UI thread that owns the control, and dispose with the owning window.
 /// </summary>
 public sealed class WebViewIpcBridge : IDisposable
 {
     /// <summary>
     /// Reserved wire route: the client's ready handshake module (mirrored by the client bridge).
-    /// Forwards to <see cref="IpcHostBridge.HandshakeModule"/>, which is where the wire contract
-    /// lives now that a non-WebView2 base needs it too — a <c>const</c> forward, so the literal
-    /// every consumer compiled against is unchanged.
+    /// Forwards to <see cref="IpcHostBridge.HandshakeModule"/>, which owns the wire contract.
     /// </summary>
     public const string HandshakeModule = IpcHostBridge.HandshakeModule;
 
@@ -107,8 +96,7 @@ public sealed class WebViewIpcBridge : IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// Construct BEFORE <see cref="WebViewHost.InitializeAsync"/> — event buffering starts here, so
-    /// anything emitted during the slow WebView2 init survives — then <see cref="Attach"/> after it.
+    /// Construct BEFORE <see cref="WebViewHost.InitializeAsync"/>, then <see cref="Attach"/> after it.
     /// Options are validated now, not at <see cref="Attach"/>, so a bad value names itself.
     /// </summary>
     public WebViewIpcBridge(WebView2Control webView, WebViewIpcBridgeOptions options)
@@ -116,8 +104,8 @@ public sealed class WebViewIpcBridge : IDisposable
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
         _options = options ?? throw new ArgumentNullException(nameof(options));
 
-        // Validated against the BRIDGE's option names, not the pump's — an adopter who set
-        // MaxQueuedNotifications should not get an error naming NotificationPumpOptions.MaxQueued.
+        // Validated against the BRIDGE's option names, not the pump's, so the error names what the
+        // adopter set.
         if (options.MaxQueuedNotifications < 1)
             throw new ArgumentOutOfRangeException(nameof(options),
                 $"{nameof(WebViewIpcBridgeOptions.MaxQueuedNotifications)} must be at least 1 — 0 would silently discard every notification.");
@@ -125,15 +113,15 @@ public sealed class WebViewIpcBridge : IDisposable
             throw new ArgumentOutOfRangeException(nameof(options),
                 $"{nameof(WebViewIpcBridgeOptions.NotificationInterval)} must be at least 1 ms.");
 
-        // A WinForms Timer's Interval is an int32 millisecond count — a fact belonging to whichever base
-        // constructs the timer. Checked before it is constructed, so the failure names this option.
+        // A WinForms Timer's Interval is an int32 millisecond count. Checked before it is constructed,
+        // so the failure names this option.
         if (options.NotificationInterval.TotalMilliseconds > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(options),
                 $"{nameof(WebViewIpcBridgeOptions.NotificationInterval)} must fit in an int32 millisecond count (the WinForms timer's limit).");
 
         _log = options.Log;
-        // The one marshalling owner (D19/D20): a posted body that throws is reported rather than
-        // becoming an unhandled UI-thread exception.
+        // The one marshalling owner (D19/D20) — it guards the posted body, which otherwise becomes an
+        // unhandled UI-thread exception.
         _ui = new Shenora.Windows.WinFormsUiDispatcher(webView,
             ex => AppCallback.Log(options.Log, () => "[Shenora.Windows] Posted UI work failed",
                                   LogLevel.Warning, ex));
@@ -147,9 +135,9 @@ public sealed class WebViewIpcBridge : IDisposable
             Log = options.Log,
         });
 
-        // The pump goes to the host bridge so the HANDSHAKE opens the gate in one place — that pairing
-        // is protocol. CLOSING it stays here, because which events mean "the page can no longer receive"
-        // is WebView2 vocabulary. See docs/design/ipc.md for the split.
+        // The pump goes to the host bridge so the HANDSHAKE opens the gate in one place; CLOSING it
+        // stays here, because which events mean "the page can no longer receive" is WebView2
+        // vocabulary. See docs/design/ipc.md for the split.
         _host = new IpcHostBridge(new IpcHostBridgeOptions
         {
             Dispatcher = options.Dispatcher,
@@ -185,8 +173,8 @@ public sealed class WebViewIpcBridge : IDisposable
         // attached, so live delivery beats buffering for a document that may never load.
         _webView.CoreWebView2.ContentLoading += OnContentLoading;
         // A dead renderer leaves the gate open, so the next tick drains a batch into a process that
-        // cannot receive it — and the queue is already emptied. Watched here rather than relying on the
-        // host's auto-reload policy, which is optional.
+        // cannot receive it — and the drain empties the queue before posting. Watched here because the
+        // host's auto-reload policy is optional.
         _webView.CoreWebView2.ProcessFailed += OnProcessFailed;
 
         // A WinForms timer ticks on the UI thread, the only one allowed to touch CoreWebView2.
@@ -198,10 +186,9 @@ public sealed class WebViewIpcBridge : IDisposable
     }
 
     /// <summary>
-    /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>). Every site
-    /// here has no caller to catch anything — a WebView2 event handler, the flush timer's tick,
-    /// dispose — and several sit inside a <c>catch</c> that exists to stop a failure escaping, so a
-    /// throwing sink would defeat the very catch it reports from.
+    /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>): every site here has
+    /// no caller to catch anything, and several sit inside a <c>catch</c> that exists to stop a failure
+    /// escaping — so a throwing sink would defeat the very catch it reports from.
     /// </summary>
     private void Log(Func<string> message, Exception? failure = null) => Shenora.AppCallback.Log(_log, message, exception: failure);
 
@@ -260,28 +247,21 @@ public sealed class WebViewIpcBridge : IDisposable
     {
         if (!_pump.IsOpen) return;
         _pump.Close();
-        // The pump itself no longer logs this transition — ContentLoading/ProcessFailed are WebView2
-        // vocabulary that belongs here, not in a base-agnostic type. Kept so the diagnostic survives:
-        // a gate that closes silently is very hard to debug (P5.5 H3 was found the hard way without it).
+        // ⚠ Keep the diagnostic: a ready gate that closes silently is very hard to debug.
         Log(() => $"[Shenora.Windows] Buffering notifications until the client is ready again — {reason}");
     }
 
     /// <summary>
-    /// Parse → handshake-or-dispatch → response JSON. Null when the input wasn't a valid request
-    /// (nothing to correlate a response to — logged and dropped; the client's own timeout
-    /// surfaces it). Internal seam so the protocol is testable without a live WebView2.
-    /// <para>
-    /// The protocol itself lives in <see cref="IpcHostBridge"/> now; this forward is kept so the
-    /// bridge's own suite still exercises the WebView2 composition end to end rather than the
-    /// neutral piece in isolation — which is what makes it a regression test for the move.
-    /// </para>
+    /// Parse → handshake-or-dispatch → response JSON, via <see cref="IpcHostBridge"/>. Null when the
+    /// input wasn't a valid request (nothing to correlate a response to — logged and dropped; the
+    /// client's own timeout surfaces it). Internal seam for tests.
     /// </summary>
     internal Task<string?> HandleIncomingAsync(string json) => _host.HandleIncomingAsync(json);
 
     private void Flush()
     {
-        // Belt-and-braces around a call that already guards itself: this runs on a WinForms timer, so
-        // anything escaping is an unhandled UI-thread exception repeating every interval.
+        // A catch-all over a call that already guards per notification: this runs on a WinForms timer,
+        // so anything escaping is an unhandled UI-thread exception repeating every interval.
         try
         {
             if (_pump.TryDrainBatch(out var batchJson) && batchJson is not null)
@@ -294,8 +274,8 @@ public sealed class WebViewIpcBridge : IDisposable
     }
 
     /// <summary>
-    /// Drain the queue into a batch envelope; null when empty or the client isn't ready yet. Thin
-    /// wrapper over <see cref="NotificationPump.TryDrainBatch"/>. Internal seam for tests.
+    /// Drain the queue into a batch envelope; null when empty or the client isn't ready yet. Internal
+    /// seam for tests.
     /// </summary>
     internal string? TryBuildBatchJson() => _pump.TryDrainBatch(out var json) ? json : null;
 
@@ -317,7 +297,7 @@ public sealed class WebViewIpcBridge : IDisposable
     }
 
     /// <summary>
-    /// Stop the flush timer, detach the message handler, unsubscribe from the bus. Without it a 50 ms
+    /// Stop the flush timer, detach the message handler, unsubscribe from the bus. Without it the flush
     /// timer goes on posting into a torn-down WebView for the life of the process.
     /// </summary>
     public void Dispose()

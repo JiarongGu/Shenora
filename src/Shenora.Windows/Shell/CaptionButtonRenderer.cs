@@ -5,34 +5,23 @@ namespace Shenora.Windows;
 /// <see cref="OptimizedFormOptions.NativeCaptionButtons"/> is on: the surface behind the cluster, each
 /// button's hover/pressed background, and the Windows chrome glyph on top.
 /// <para>
-/// Split out of <see cref="OptimizedForm"/> in the 0.2.0 design pass, and the SPLIT LINE is the point.
-/// Everything here is input → pixels: it never sees a window message, never hit-tests, and never
-/// touches the window region. That is exactly why it could be moved — the message-loop half
-/// (<c>WM_NCCALCSIZE</c>, <c>WM_NCHITTEST</c>, <c>WM_SYSCOMMAND</c>, the manual maximize, the child
-/// region clipping) deliberately stayed in the form, because OS input routing is the area where a
-/// green unit suite has twice been the wrong answer in this repo (P5.6, see
-/// <c>docs/REVIEW-GUIDE.md</c> §6) and re-verifying it buys nothing. Cohesion where it is free; no
-/// gambling where it is not.
-/// </para>
-/// <para>
-/// Internal, and per-form: it caches a <see cref="Font"/> keyed on the monitor scale, so the owning
-/// form disposes it. Stateless apart from that cache — <see cref="Glyph"/> and
-/// <see cref="FallbackColors"/> are pure and unit-tested directly.
+/// Everything here is input → pixels: it never sees a window message, never hit-tests and never touches
+/// the window region — the message-loop half stays in the form. Internal and per-form, because it caches
+/// a <see cref="Font"/> keyed on the monitor scale that the owning form disposes.
 /// </para>
 /// </summary>
 internal sealed class CaptionButtonRenderer : IDisposable
 {
     private Font? _glyphFont;
 
-    // Process-wide: which of the two icon fonts this machine actually has. Resolving it costs a failed
+    // Process-wide: which of the two icon fonts this machine has. Resolving it costs a failed
     // FontFamily construction, and the answer cannot change while the process runs.
     private static string? _glyphFamily;
 
     /// <summary>
-    /// Paint the cluster. <paramref name="union"/> is the bounding box of every region — the whole of
-    /// it is filled, so the GAPS between buttons are covered too: the web view no longer renders any
-    /// of those pixels (they were cut out of it), and an unpainted gap shows as a tear beside the
-    /// buttons.
+    /// Paint the cluster. <paramref name="union"/> is the bounding box of every region, and the whole of
+    /// it is filled so the GAPS between buttons are covered too — the web view no longer renders any of
+    /// those pixels, and an unpainted gap shows as a tear beside the buttons.
     /// </summary>
     internal void Paint(Graphics graphics, IReadOnlyList<CaptionButtonRegion> regions, Rectangle union,
                         CaptionButtonKind? hot, CaptionButtonKind? pressed, bool maximized,
@@ -68,16 +57,14 @@ internal sealed class CaptionButtonRenderer : IDisposable
     }
 
     /// <summary>
-    /// The Windows chrome glyphs — the same codepoints the OS draws in a real caption, so the buttons
-    /// match every other window on the desktop. Maximize swaps to RESTORE while maximized, which is
-    /// behaviour rather than styling: a maximize glyph on a maximized window is simply wrong.
+    /// The Windows chrome glyphs — the same codepoints the OS draws in a real caption. Maximize swaps to
+    /// RESTORE while maximized, which is behaviour rather than styling.
     /// </summary>
     /// <remarks>
-    /// ESCAPE SEQUENCES, never the literal characters. These are Private Use Area codepoints, and a
-    /// BOM-less UTF-8 source on this repo's CJK-locale build machine is a documented mojibake trap
-    /// (the CodePage note in <c>src/Directory.Build.props</c>). An escape is plain ASCII in the file,
-    /// so nothing between an editor and the compiler can mangle it. Unlike a mangled glyph, a mangled
-    /// escape fails to COMPILE instead of silently painting an empty button.
+    /// 🔴 ESCAPE SEQUENCES, never the literal characters. These are Private Use Area codepoints, and a
+    /// BOM-less UTF-8 source on a CJK-locale build machine is a mojibake trap (the CodePage note in
+    /// <c>src/Directory.Build.props</c>). A mangled escape fails to COMPILE; a mangled literal silently
+    /// paints an empty button.
     /// </remarks>
     internal static string Glyph(CaptionButtonKind kind, bool maximized) => kind switch
     {
@@ -87,12 +74,9 @@ internal sealed class CaptionButtonRenderer : IDisposable
     };
 
     /// <summary>
-    /// The icon font at this monitor's scale, cached until the scale changes.
-    /// <para>
-    /// "Segoe Fluent Icons" is Windows 11's; Windows 10 ships only "Segoe MDL2 Assets". Both carry
-    /// these four glyphs at the SAME codepoints, so the fallback is exact rather than approximate, and
-    /// one of the two is present on every Windows this package targets.
-    /// </para>
+    /// The icon font at this monitor's scale, cached until the scale changes. "Segoe Fluent Icons" is
+    /// Windows 11's and "Segoe MDL2 Assets" is Windows 10's; both carry these four glyphs at the SAME
+    /// codepoints, so the fallback is exact.
     /// </summary>
     internal Font GlyphFont(int deviceDpi)
     {
@@ -126,9 +110,8 @@ internal sealed class CaptionButtonRenderer : IDisposable
     /// <summary>
     /// A last-resort palette derived from the form's own fill, used only when an app set
     /// <see cref="OptimizedFormOptions.NativeCaptionButtons"/> without
-    /// <see cref="OptimizedForm.CaptionButtonColors"/>. Refusing to paint would be worse: the clip has
-    /// already taken those pixels away from the page, so the buttons would silently vanish — the same
-    /// "degrades to silence" failure the resource-prefix check exists to prevent.
+    /// <see cref="OptimizedForm.CaptionButtonColors"/>. ⚠ Refusing to paint would be worse: the clip has
+    /// already taken those pixels from the page, so the buttons would silently vanish.
     /// </summary>
     internal static CaptionButtonColors FallbackColors(Color formBackColor)
     {
@@ -139,8 +122,7 @@ internal sealed class CaptionButtonRenderer : IDisposable
             Hover = dark ? ControlPaint.Light(formBackColor, 0.4f) : ControlPaint.Dark(formBackColor, 0.06f),
             Pressed = dark ? ControlPaint.Light(formBackColor, 0.8f) : ControlPaint.Dark(formBackColor, 0.12f),
             Glyph = dark ? Color.White : Color.Black,
-            // Close goes red on hover on every Windows app; that is the platform convention users read
-            // as "this closes", not a design choice of ours.
+            // Close goes red on hover on every Windows app — a platform convention, not a design choice.
             CloseHover = Color.FromArgb(196, 43, 28),
             ClosePressed = Color.FromArgb(163, 36, 23),
             CloseGlyphHot = Color.White,

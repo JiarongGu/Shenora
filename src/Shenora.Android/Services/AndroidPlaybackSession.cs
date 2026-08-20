@@ -4,39 +4,26 @@ using Shenora.Modules.Platform;
 using Android.Media;
 using Android.Media.Session;
 using Shenora;
-// BOTH namespaces define `PlaybackState` and they mean different things — ours is the portable enum,
-// Android's is the builder-built state object. Aliased rather than partially qualified so no line in this
-// file is ambiguous to a reader either.
+// Both namespaces define `PlaybackState`: ours is the portable enum, Android's the built state object.
 using AndroidState = Android.Media.Session.PlaybackState;
 using PortableState = Shenora.Modules.Platform.PlaybackState;
 
 namespace Shenora.Android;
 
 /// <summary>
-/// Android's <see cref="IPlaybackSession"/> — a platform <c>MediaSession</c>, which is what routes
-/// headphone and steering-wheel buttons and what the system media controls read.
-/// <para>
-/// The PLATFORM <c>MediaSession</c> (API 21+) rather than AndroidX <c>MediaSessionCompat</c>, deliberately:
-/// the compat class would drag an AndroidX media dependency into a package whose whole selling point is
-/// that it adds almost nothing, and every API this uses has been present since the minimum the shell
-/// supports.
-/// </para>
+/// Android's <see cref="IPlaybackSession"/> — the platform <c>MediaSession</c> (API 21+, not AndroidX's
+/// compat class, which would drag an AndroidX media dependency in). It is what routes headphone and
+/// steering-wheel buttons and what the system media controls read.
 /// <para>
 /// ⚠ <b>A session makes the app CONTROLLABLE; a MediaStyle notification is what makes it VISIBLE.</b>
-/// Everything here — metadata, state, actions, button routing — works without one, and
-/// <c>adb shell dumpsys media_session</c> shows it. But the media controls in the shade and on the lock
-/// screen are attached to a notification, and posting one means choosing an icon, a channel name and a
-/// channel importance, which are the app's design decisions and not the kit's (D13). So the kit owns the
-/// session and the app owns the notification; see the class remarks in <see cref="IPlaybackSession"/> for
-/// where that line sits.
+/// Everything here works without one, but the shade and lock-screen controls attach to a notification,
+/// and choosing its icon, channel and importance is the app's decision (D13). Bind one with
+/// <see cref="SessionToken"/>.
 /// </para>
 /// </summary>
 public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
 {
-    /// <summary>
-    /// The tag Android shows for this session — in <c>dumpsys</c>, in bug reports, and to a car head unit
-    /// that lists sessions by tag. Not user-facing text, so it is not localised.
-    /// </summary>
+    /// <summary>The tag Android shows in <c>dumpsys</c> and to a car head unit. Not user-facing text.</summary>
     private const string SessionTag = "ShenoraPlayback";
 
     private readonly MediaSession _session;
@@ -55,17 +42,10 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
         _session.SetCallback(new CommandCallback(this));
         // Active marks this as a CURRENT session — the flag the system reads when choosing which one to
         // surface and to route hardware buttons to.
-        //
-        // ⚠ Sabotage-measured on Android 12, and the result corrected two guesses, so only what was
-        // observed is claimed here. Removing this line leaves the session STILL LISTED by
-        // `dumpsys media_session`, with its metadata and playback state intact, and only `active=false` to
-        // show it — so "is it registered?" answers yes either way and is not the check that catches this.
-        // Setting it flips that to `active=true`, which is the whole measured difference.
-        //
-        // What was NOT demonstrated: that this alone wins the media button session. `Media button session`
-        // stayed null in BOTH runs, because the probe publishes metadata without playing audio or taking
-        // audio focus — and audio focus is the app's to own, which is the same boundary as the MediaStyle
-        // notification in the class remarks. Do not read this line as "buttons now work".
+        // ⚠ Sabotage-measured on Android 12: without it the session is STILL LISTED by
+        // `dumpsys media_session`, metadata and state intact, with only `active=false` to show it — so
+        // "is it registered?" is not the check that catches this. `Media button session` stayed null in
+        // BOTH runs, so this alone does not win the media buttons; audio focus is the app's to own.
         _session.Active = true;
     }
 
@@ -76,8 +56,7 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
         set
         {
             lock (_gate) _supported = value;
-            // Re-publishing the state is how Android learns the action set — actions live on
-            // PlaybackState, not on the session — so changing what is supported has to re-send it.
+            // Actions live on PlaybackState, not on the session, so a changed set has to be re-sent.
             Report(new PlaybackProgress
             {
                 State = _lastState,
@@ -91,11 +70,7 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
     private double _lastRate = 1.0;
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Android takes no preferred interval — its media notification renders fixed fast-forward/rewind
-    /// glyphs — so this is not pushed anywhere. It is what the request carries back, so a handler can
-    /// always just use it.
-    /// </remarks>
+    /// <remarks>Android takes no preferred interval; this is what a skip request carries back.</remarks>
     public TimeSpan SkipInterval
     {
         get { lock (_gate) return _skipInterval; }
@@ -104,19 +79,11 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
 
     /// <summary>
     /// The platform session's token — what an app passes to
-    /// <c>Notification.MediaStyle.SetMediaSession(token)</c>.
+    /// <c>Notification.MediaStyle.SetMediaSession(token)</c> to bind its own notification to this session.
     /// <para>
-    /// ⚠ <b>Without this the kit's own boundary was unbuildable, which the first adopter found.</b> The class
-    /// remarks say "the kit owns the session, the app owns the notification" — but a MediaStyle notification
-    /// binds to a session BY TOKEN, and there was no way to get one. So the split read as a clean division of
-    /// labour while leaving the app's half impossible, and they kept a hand-written session instead.
-    /// </para>
-    /// <para>
-    /// Android-only, and deliberately not on <see cref="IPlaybackSession"/>: the type is
-    /// <c>Android.Media.Session.MediaSession.Token</c> and putting it on the portable contract would drag a
-    /// platform type into <c>Shenora</c>. An app that needs it is already writing Android notification
-    /// code, so it can name the Android type — cast the injected <see cref="IPlaybackSession"/>, or register
-    /// this class itself.
+    /// Android-only, and not on <see cref="IPlaybackSession"/>: the type is
+    /// <c>Android.Media.Session.MediaSession.Token</c> and the portable contract carries no platform types.
+    /// Cast the injected <see cref="IPlaybackSession"/>, or register this class itself.
     /// </para>
     /// </summary>
     public MediaSession.Token? SessionToken => _disposed ? null : _session.SessionToken;
@@ -141,10 +108,8 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
 
             if (!info.Artwork.IsEmpty)
             {
-                // Decoded here rather than on a pool thread, unlike the desktop: this is a synchronous
-                // call with no async equivalent, and a lock-screen thumbnail is small. A FAILED decode
-                // returns null rather than throwing, so a malformed image quietly means "no artwork"
-                // instead of taking the metadata with it.
+                // Synchronous — there is no async equivalent, and a lock-screen thumbnail is small. A
+                // failed decode returns null rather than throwing, so bad artwork does not lose metadata.
                 var bytes = info.Artwork.ToArray();
                 var bitmap = global::Android.Graphics.BitmapFactory.DecodeByteArray(bytes, 0, bytes.Length);
                 if (bitmap is not null) builder.PutBitmap(MediaMetadata.MetadataKeyAlbumArt, bitmap);
@@ -177,18 +142,10 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
     /// <summary>
     /// The speed to publish — DERIVED from the state, never the caller's rate verbatim.
     /// <para>
-    /// ⚠ <b>This is not cosmetic.</b> A controller extrapolates the displayed position as
-    /// <c>position + elapsed × speed</c>, so a paused session advertising <c>1.0</c> lets the lock-screen
-    /// scrubber walk away from audio that is not moving, until the next report snaps it back. Android
-    /// documents 0 as the paused speed and measurably behaves that way (<c>state=2 … speed=1.0</c> on
-    /// Android 12 via <c>dumpsys media_session</c>, found by the first adopter on the 0.9.1 adoption).
-    /// </para>
-    /// <para>
-    /// Derived HERE rather than asked of every app, and that is the point of a portable contract: iOS
-    /// already derived it, so one <see cref="PlaybackProgress"/> produced two behaviours and only one of the
-    /// platforms punished the app for it. The adopter's workaround was to zero <c>Rate</c> before calling —
-    /// i.e. to lie about its own rate to satisfy one platform, which is exactly what this contract exists to
-    /// prevent.
+    /// ⚠ A controller extrapolates the displayed position as <c>position + elapsed × speed</c>, so a
+    /// paused session advertising <c>1.0</c> lets the lock-screen scrubber walk away from audio that is
+    /// not moving. Android documents 0 as the paused speed and behaves that way (measured
+    /// <c>state=2 … speed=1.0</c> on Android 12 via <c>dumpsys media_session</c>).
     /// </para>
     /// </summary>
     private static double RateFor(PlaybackProgress progress) =>
@@ -201,21 +158,16 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
         Try(() =>
         {
             _session.SetMetadata(null);
-            // Not chained off SetState: the binding returns a NULLABLE builder, so a fluent chain is a
-            // possible-null dereference the analyser is right about.
+            // Not chained: the binding's SetState returns a NULLABLE builder.
             var cleared = new AndroidState.Builder();
             cleared.SetState(PlaybackStateCode.None, 0, 0f);
             _session.SetPlaybackState(cleared.Build());
-            // Inactive is what takes the app out of the system's session list — the counterpart of the
-            // constructor's Active = true, and the difference between Clear() and reporting Stopped.
+            // Inactive is what takes the app out of the system's session list; reporting Stopped does not.
             _session.Active = false;
         }, nameof(Clear));
     }
 
-    /// <summary>
-    /// Map the portable state onto Android's. <c>Buffering</c> is a real state here, which is half the
-    /// reason the portable enum has one.
-    /// </summary>
+    /// <summary>Map the portable state onto Android's.</summary>
     private static PlaybackStateCode StateFor(PortableState state) => state switch
     {
         PortableState.Playing => PlaybackStateCode.Playing,
@@ -225,13 +177,9 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
     };
 
     /// <summary>
-    /// Map the supported set onto Android's action bits.
-    /// <para>
-    /// ⚠ <c>TogglePlayPause</c> lights <c>ActionPlayPause</c> AND both halves, for the same reason the
-    /// desktop does: Android's default callback dispatch turns a media-button toggle into
-    /// <c>OnPlay</c>/<c>OnPause</c> based on the current state, so declaring only the toggle would leave
-    /// the concrete buttons unavailable to anything that offers them separately.
-    /// </para>
+    /// Map the supported set onto Android's action bits. ⚠ <c>TogglePlayPause</c> lights
+    /// <c>ActionPlayPause</c> AND both halves — the platform resolves a media-button toggle into
+    /// <c>OnPlay</c>/<c>OnPause</c>, so declaring only the toggle leaves the concrete buttons dark.
     /// </summary>
     private static long ActionsFor(PlaybackCommands commands)
     {
@@ -244,8 +192,7 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
         if (commands.HasFlag(PlaybackCommands.Next)) actions |= AndroidState.ActionSkipToNext;
         if (commands.HasFlag(PlaybackCommands.Previous)) actions |= AndroidState.ActionSkipToPrevious;
         if (commands.HasFlag(PlaybackCommands.Seek)) actions |= AndroidState.ActionSeekTo;
-        // Android names these fast-forward/rewind; the SEMANTICS an app gives them are the skip interval,
-        // which is how every long-form player on the platform uses them.
+        // Android names these fast-forward/rewind; an app gives them skip-interval semantics.
         if (commands.HasFlag(PlaybackCommands.SkipForward)) actions |= AndroidState.ActionFastForward;
         if (commands.HasFlag(PlaybackCommands.SkipBackward)) actions |= AndroidState.ActionRewind;
         return actions;
@@ -256,8 +203,7 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
         var handler = CommandReceived;
         if (handler is null) return;
         var request = new PlaybackCommandRequest { Command = command, Position = position, Interval = interval };
-        // The ONE guard. These run on the session's handler thread, where an escaping exception has no
-        // caller and takes the process with it.
+        // 🔴 These run on the session's handler thread, where an escaping exception takes the process.
         AppCallback.Run(() => handler(request),
             ex => Log(() => $"[Shenora.Android] A {command} handler threw.", ex));
     }
@@ -281,17 +227,16 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
         Try(() =>
         {
             _session.Active = false;
-            // Release, not just inactive: the session is a system-registered object and leaking it keeps
-            // the app in the media session list for the life of the process.
+            // Release, not just inactive: a leaked session stays in the media session list for the
+            // life of the process.
             _session.Release();
         }, nameof(Dispose));
         _session.Dispose();
     }
 
     /// <summary>
-    /// Android's side of the two-way contract. Every override is a control the OS, a headphone or a car
-    /// stereo asked for; there is no <c>OnTogglePlayPause</c> because the platform resolves a toggle into
-    /// <see cref="OnPlay"/>/<see cref="OnPause"/> itself.
+    /// Android's side of the two-way contract. There is no <c>OnTogglePlayPause</c> — the platform
+    /// resolves a toggle into <see cref="OnPlay"/>/<see cref="OnPause"/> itself.
     /// </summary>
     private sealed class CommandCallback(AndroidPlaybackSession owner) : MediaSession.Callback
     {
@@ -308,8 +253,7 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
         public override void OnSeekTo(long pos) =>
             owner.Raise(PlaybackCommand.Seek, TimeSpan.FromMilliseconds(pos));
 
-        // No interval arrives with these, so the configured one is supplied — the contract promises
-        // Interval is always set for a skip.
+        // No interval arrives with these; the contract promises one is always set for a skip.
         public override void OnFastForward() =>
             owner.Raise(PlaybackCommand.SkipForward, interval: owner.SkipInterval);
 

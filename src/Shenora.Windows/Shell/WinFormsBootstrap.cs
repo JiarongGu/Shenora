@@ -22,38 +22,30 @@ public sealed class WinFormsBootstrapOptions
     /// <summary>Shown in the last-resort crash dialog's title.</summary>
     public string ApplicationName { get; init; } = "Application";
 
-    /// <summary>DPI mode. The family standard is PerMonitorV2 (see <see cref="DpiHelper"/> for the implications).</summary>
+    /// <summary>DPI mode. PerMonitorV2 by default — see <see cref="DpiHelper"/> for what that implies.</summary>
     public HighDpiMode HighDpiMode { get; init; } = HighDpiMode.PerMonitorV2;
 
     /// <summary>
-    /// Receives EVERY unhandled exception (log it here — this is the crash log the source apps
-    /// lacked). Must never throw; a throwing handler is swallowed.
+    /// Receives EVERY unhandled exception — log it here. Must never throw; a throwing handler is
+    /// swallowed.
     /// </summary>
     public Action<UnhandledExceptionReport>? OnUnhandledException { get; init; }
 
-    /// <summary>
-    /// Show a last-resort MessageBox for UI-thread and terminating exceptions. Off for headless
-    /// tests/tools.
-    /// </summary>
+    /// <summary>Show a last-resort MessageBox for UI-thread and terminating exceptions. Off for headless
+    /// tests/tools.</summary>
     public bool ShowCrashDialog { get; init; } = true;
 
     /// <summary>
-    /// Mark unobserved task exceptions observed so they don't escalate (they still reach
-    /// <see cref="OnUnhandledException"/>). Matches the .NET default of not crashing, but LOGGED —
-    /// the silent-swallow was the gap.
+    /// Mark unobserved task exceptions observed so they don't escalate — they still reach
+    /// <see cref="OnUnhandledException"/>, so they are logged rather than silently swallowed.
     /// </summary>
     public bool ObserveUnobservedTaskExceptions { get; init; } = true;
 }
 
 /// <summary>
-/// One-call WinForms process initialization — the family's proven settings PLUS the global
-/// exception handling every source app lacked (the audit's #1 gap: an unhandled UI-thread
-/// exception after startup was completely undefended).
-///
-/// Call FIRST in <c>Main</c>, before any form or control is created (the text-rendering and DPI
-/// settings reject later calls). Deliberately NOT ported from the sources: a reflection hack
-/// against a non-public <c>Application</c> property (it targeted <c>RuntimeType</c>, a guaranteed
-/// no-op).
+/// One-call WinForms process initialization — visual styles, text rendering, DPI mode, and the three
+/// global exception channels. ⚠ Call FIRST in <c>Main</c>, before any form or control is created: the
+/// text-rendering and DPI settings reject a later call.
 /// </summary>
 public static class WinFormsBootstrap
 {
@@ -64,21 +56,19 @@ public static class WinFormsBootstrap
     private static bool _showingCrashDialog;
 
     /// <summary>
-    /// Test seam for the last-resort dialog: a real <c>MessageBox</c> would block the suite forever, and
-    /// the re-entrancy guard is the whole point of that method, so it needs to be drivable. Receives
-    /// (title, body). Null = show the real dialog.
+    /// Test seam for the last-resort dialog — a real <c>MessageBox</c> would block the suite forever.
+    /// Receives (title, body); null = show the real dialog.
     /// </summary>
     internal static Action<string, string>? ShowDialogOverride;
 
     /// <summary>
-    /// Initialize WinForms (visual styles, GDI+ text rendering, DPI mode, catch-mode for UI
-    /// exceptions) and wire the three global exception channels to
+    /// Initialize WinForms (visual styles, GDI+ text rendering, DPI mode, catch-mode for UI exceptions)
+    /// and wire the three global exception channels to
     /// <see cref="WinFormsBootstrapOptions.OnUnhandledException"/> + a last-resort dialog.
     /// <para>
-    /// IDEMPOTENT (P5.5 H2): only the first call does anything, and its options win. A second call used
-    /// to re-register all three exception channels, so every later exception was reported twice and
-    /// raised two stacked crash dialogs — and the natural way to hit that is a library and its host app
-    /// both trying to be well-behaved.
+    /// 🔴 IDEMPOTENT: first call wins. A second call re-registering all three channels reported every
+    /// later exception twice and raised two stacked crash dialogs — the natural way to hit it is a
+    /// library and its host app both being well-behaved.
     /// </para>
     /// </summary>
     /// <exception cref="InvalidOperationException">
@@ -88,12 +78,10 @@ public static class WinFormsBootstrap
     {
         var opt = options ?? new WinFormsBootstrapOptions();
 
-        // Fail HERE, loudly, with the fix in the message (P5.5 H2). WinForms needs an STA thread for
-        // every OLE feature — drag-and-drop registration, the shell file dialogs, the clipboard — and
-        // without [STAThread] the failure lands much later and much worse: handle creation throws
-        // inside WndProc, which WinForms answers with a BLOCKING modal dialog, on a window that is
-        // often not visible yet. The repo's own test suite has an earned rule about this (xunit workers
-        // are MTA), and it cost a stalled suite to learn.
+        // 🔴 STA-OR-FAIL, here and loudly. Every OLE feature — drag-and-drop registration, the shell
+        // dialogs, the clipboard — needs it, and without [STAThread] the failure lands far later and far
+        // worse: handle creation throws inside WndProc, which WinForms answers with a BLOCKING modal
+        // dialog on a window that is often not visible yet.
         if (Thread.CurrentThread.GetApartmentState() != ApartmentState.STA)
         {
             throw new InvalidOperationException(
@@ -103,8 +91,7 @@ public static class WinFormsBootstrap
                 "the clipboard — fail later inside window creation instead of here.");
         }
 
-        // Interlocked, not a plain bool: Initialize is documented as the FIRST call in Main, but nothing
-        // stops a library from calling it on another thread at startup.
+        // Interlocked, not a plain bool: nothing stops a library from calling this on another thread.
         if (Interlocked.Exchange(ref _initialized, 1) != 0) return;
 
         Application.EnableVisualStyles();
@@ -131,8 +118,8 @@ public static class WinFormsBootstrap
     /// <summary>Internal for tests (the wiring above is process-global and untestable in-suite).</summary>
     internal static void Handle(UnhandledExceptionReport report, WinFormsBootstrapOptions options)
     {
-        // The app's crash logger is app code invoked from an exception channel — nothing above it on
-        // the stack. Through the one guard (P5.5 H2): the crash handler must never crash.
+        // Guarded: the app's crash logger runs from an exception channel with nothing above it on the
+        // stack, and the crash handler must never crash.
         if (options.OnUnhandledException is { } onException)
             Shenora.AppCallback.Run(() => onException(report));
 
@@ -142,16 +129,10 @@ public static class WinFormsBootstrap
     }
 
     /// <summary>
-    /// The last-resort dialog, with a RE-ENTRANCY GUARD (P5.5 H2).
-    /// <para>
-    /// <see cref="MessageBox.Show(string)"/> runs its own modal message loop, so it PUMPS — which means
-    /// a UI-thread exception that recurs (a broken paint handler, a timer that throws every tick) is
-    /// dispatched again while this dialog is still up, re-entering <see cref="Handle"/> and stacking
-    /// another dialog on top. Every one of them pumps too, so the app ends up with an unbounded pile of
-    /// modal dialogs over a window nobody can reach, and the user cannot dismiss them faster than they
-    /// arrive. One dialog at a time per thread; recurrences still reach the app's logger above, which is
-    /// where a repeating fault belongs anyway.
-    /// </para>
+    /// The last-resort dialog, with a RE-ENTRANCY GUARD: <see cref="MessageBox.Show(string)"/> runs its
+    /// own modal message loop, so a RECURRING UI-thread exception is dispatched again while the dialog is
+    /// up, re-entering <see cref="Handle"/> and stacking dialogs unboundedly over a window nobody can
+    /// reach. One at a time per thread; recurrences still reach the app's logger.
     /// </summary>
     private static void ShowCrashDialog(UnhandledExceptionReport report, WinFormsBootstrapOptions options)
     {

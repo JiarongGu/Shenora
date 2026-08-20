@@ -7,35 +7,17 @@ using System.Runtime.InteropServices;
 namespace Shenora.iOS;
 
 /// <summary>
-/// iOS's <see cref="IMediaCapability"/> — answered by asking AudioToolbox to BUILD a converter, which
-/// succeeds only when a codec for the pair actually exists on the device.
-///
+/// iOS's <see cref="IMediaCapability"/> — answered by asking the platform to BUILD a codec, which succeeds
+/// only when one for the pair actually exists on the device.
 /// <para>
-/// 🔴 <b>Why a converter and not a format list.</b> The obvious API is
-/// <c>kAudioFormatProperty_DecodeFormatIDs</c>, and on a device it returns OSStatus <c>'prop'</c>
-/// (<c>kAudioFormatUnsupportedPropertyError</c>) — measured on an iPhone 17 Pro, iOS 26.5.2. That property
-/// is macOS-only. Constructing an <c>AudioConverter</c> is both the portable question and the honest one,
-/// because it is exactly what an engine would have to do anyway.
+/// 🔴 <b>A converter, never a format list.</b> <c>kAudioFormatProperty_DecodeFormatIDs</c> is macOS-only and
+/// answers OSStatus <c>'prop'</c> (<c>kAudioFormatUnsupportedPropertyError</c>) on a device; constructing an
+/// <c>AudioConverter</c> is what an engine has to do anyway. Pictures are asked the same way — see
+/// <see cref="ReadVideo"/>.
 /// </para>
 /// <para>
-/// <b>What it found, and it is the finding that shapes the transcode tier:</b> AC-3 and E-AC-3 DECODE are
-/// present (at 5.1 and at stereo), AAC decodes and encodes — while the AOSP Android emulator had no AC-3 at
-/// all. The two platforms genuinely differ, so neither answer may be baked in.
-/// </para>
-/// <para>
-/// 🔴 <b>VIDEO IS PROBED, not left empty.</b> An empty set is honest about the gap and still wrong in
-/// effect: with no device answer for pictures, the only way to ask "is this convertible" is to build the
-/// converter's own decoder and encoder on EVERY query, which fuses what the KIT claims with what the
-/// DEVICE can do — producing an over-claim (a promise from the encoder alone) and an under-claim (a
-/// refusal for a codec that only lacked its ESDS). Asked once and cached, a session is what answers —
-/// see <c>ReadVideo</c> for why nothing cheaper is honest.
-/// <para>
-/// ⚠ <b>That honesty used to be this platform's alone, and it was an ACCIDENT of the empty set rather than
-/// a rule.</b> Android reported real video encoders from <c>MediaCodecList</c> and so promised a transcode
-/// the kit has no engine for. Since 2026-08-09 <c>WithDeviceEncoders</c> intersects the device's answer
-/// with what the app can actually convert, so both shells refuse it for the same stated reason — see D63's
-/// fourth instance.
-/// </para>
+/// ⚠ The answer differs per PLATFORM and per DEVICE — this one decodes AC-3 and E-AC-3 where the AOSP
+/// Android emulator has neither — so neither may be baked in. Tables: <c>docs/design/mobile-shells.md</c>.
 /// </para>
 /// </summary>
 public sealed class IosMediaCapability : IMediaCapability
@@ -68,9 +50,8 @@ public sealed class IosMediaCapability : IMediaCapability
     /// <summary>
     /// The picture codecs worth asking about, as VideoToolbox's own four-character codes.
     /// <para>
-    /// ⚠ <c>h264</c> and <c>hevc</c> are here even though the CONVERTER never offers them: this answers
-    /// what the DEVICE can do, and a page that already plays H.264 is exactly what makes the remuxer's copy
-    /// path correct. Conflating the two questions is what this type exists to prevent.
+    /// ⚠ <c>h264</c> and <c>hevc</c> are here even though the CONVERTER never offers them: this answers what
+    /// the DEVICE can do, and a page that already plays H.264 is what makes the remuxer's copy path correct.
     /// </para>
     /// </summary>
     private static readonly (string Name, CMVideoCodecType Type)[] VideoCandidates =
@@ -86,14 +67,6 @@ public sealed class IosMediaCapability : IMediaCapability
     private static readonly HashSet<MediaStreamCodec> None = new();
 
     /// <inheritdoc />
-    /// <remarks>
-    /// 🔴 <b>VIDEO IS PROBED, and an empty set here is load-bearing in the wrong direction.</b> Answering
-    /// EMPTY "rather than guessing" is honest about the gap and still wrong in effect: with no device
-    /// answer for pictures, the only way to learn whether a codec is convertible is to CONSTRUCT the
-    /// converter's own sessions on every ask, fusing "the kit claims it" with "the device can do it" and
-    /// producing both an over-claim and an under-claim.
-    /// See <see cref="ReadVideo"/> for why a session is still what answers, and why once is enough.
-    /// </remarks>
     public IReadOnlySet<MediaStreamCodec> Decodable(MediaStreamKind kind) => kind switch
     {
         MediaStreamKind.Audio => _audio.Value.Decode,
@@ -109,32 +82,20 @@ public sealed class IosMediaCapability : IMediaCapability
         _ => None,
     };
 
-    /// <summary>
-    /// What this device can DECODE and ENCODE for pictures, asked ONCE.
-    /// </summary>
+    /// <summary>What this device can DECODE and ENCODE for pictures, asked ONCE.</summary>
     /// <remarks>
-    /// <para>
     /// 🔴 <b>Asked by CONSTRUCTING a session, because VideoToolbox has no cheaper honest answer.</b>
-    /// <c>VTIsHardwareDecodeSupported</c> exists but reports only the HARDWARE path, and software decoders
-    /// are real — a codec this device decodes in software would be reported as unsupported, which is the
-    /// "taking what IS supported as unsupported" mistake this file's own header warns about. Creating a
-    /// session is the same test the converter applies, so the two cannot disagree.
+    /// <c>VTIsHardwareDecodeSupported</c> reports only the HARDWARE path, so a codec this device decodes in
+    /// SOFTWARE would come back unsupported. Creating a session is the same test the converter applies, so
+    /// the two cannot disagree.
+    /// <para>
+    /// ⚠ <b>Once, cached — hence the <see cref="Lazy{T}"/>.</b> Each probe costs a real codec instance and a
+    /// device has only a handful; an earlier design built two of them on EVERY ask. Nothing touches this
+    /// until something asks.
     /// </para>
     /// <para>
-    /// ⚠ <b>Once, cached, and that is why this is a <see cref="Lazy{T}"/> rather than a call per query.</b>
-    /// Each probe costs a real codec instance and a device has only a handful; the previous design answered
-    /// "can you convert X?" by building two of them on EVERY ask. An app that never plays anything pays
-    /// nothing, because nothing touches this until something asks.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>ENCODE is asked only for what the kit would ever encode TO</b> — H.264 today. Probing an encoder
-    /// for MPEG-4 Part 2 would answer a question nobody has: the conversion target is decided by what a
-    /// webview plays, not by what the device could emit.
-    /// </para>
-    /// <para>
-    /// ⚠ 640x360 is arbitrary, valid, and never encodes anything — the same stand-in
-    /// <c>MediaConversionPipeline.CanConvert</c> uses, and for the same reason: a video codec refuses to
-    /// configure at 0x0.
+    /// ⚠ ENCODE is asked only for what the kit would ever encode TO — H.264 today. 640x360 is arbitrary,
+    /// valid, and never encodes anything: a video codec refuses to configure at 0x0.
     /// </para>
     /// </remarks>
     private static (HashSet<MediaStreamCodec> Decode, HashSet<MediaStreamCodec> Encode) ReadVideo()
@@ -152,8 +113,7 @@ public sealed class IosMediaCapability : IMediaCapability
             }
             catch (Exception)
             {
-                // A throwing probe is a "no" like any other: this method's whole contract is to report what
-                // works, and a platform that objects to being asked has answered.
+                // A throwing probe is a "no" like any other — a platform that objects has answered.
             }
 
             // The kit only ever encodes TO H.264 — see the remarks.
@@ -178,8 +138,8 @@ public sealed class IosMediaCapability : IMediaCapability
 
         foreach (var (name, format) in Candidates)
         {
-            // Six channels for the surround formats and two for the rest: a downmix-only decoder would
-            // otherwise be reported as absent, which is a different answer from "no decoder".
+            // ⚠ Six channels for the surround formats, two for the rest: asked only at 5.1, a downmix-only
+            // decoder reports as absent, which is a different answer from "no decoder".
             var channels = format is FormatAc3 or FormatEac3 ? 6 : 2;
             if (CanConvert(Compressed(format, channels), Pcm(channels))) decode.Add(name);
             if (CanConvert(Pcm(channels), Compressed(format, channels))) encode.Add(name);

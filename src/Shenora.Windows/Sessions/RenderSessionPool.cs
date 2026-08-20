@@ -8,8 +8,8 @@ namespace Shenora.Windows;
 public sealed class RenderSessionPoolOptions
 {
     /// <summary>
-    /// A live UI-thread control (typically the main window) every WebView2 op marshals onto —
-    /// the family's UI-thread anchor pattern; WebView2 needs the app's message pump.
+    /// A live UI-thread control (typically the main window) every WebView2 op marshals onto — WebView2
+    /// needs the app's message pump.
     /// </summary>
     public required Control Anchor { get; init; }
 
@@ -18,17 +18,16 @@ public sealed class RenderSessionPoolOptions
     /// off-screen and their JS must keep running.</summary>
     public required SessionBrowserOptions Browser { get; init; }
     /// <summary>
-    /// Diagnostics. Null = silent. The sessions package shipped with NO logging of any kind against
-    /// ~30 swallowed catches, so a wedged pool was undiagnosable in production (P5.5 H4.7). Note the
-    /// browser-level events (init failure, suppressed popups, denied permissions, a dead renderer)
-    /// report through <see cref="SessionBrowserOptions.Log"/> on <see cref="Browser"/>.
+    /// Diagnostics. Null = silent. Browser-level events (init failure, suppressed popups, denied
+    /// permissions, a dead renderer) report through <see cref="SessionBrowserOptions.Log"/> on
+    /// <see cref="Browser"/> instead.
     /// </summary>
     public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
 
 
     /// <summary>
-    /// Max concurrent leased sessions (the family default: 3). Leases past the cap WAIT until
-    /// one is returned — a queue, not a failure.
+    /// Max concurrent leased sessions (default 3). Leases past the cap WAIT until one is returned — a
+    /// queue, not a failure.
     /// </summary>
     public int Capacity { get; init; } = 3;
 
@@ -42,30 +41,14 @@ public sealed class RenderSessionPoolOptions
     /// <summary>
     /// Consulted before every EXPLICIT session navigation (return false to refuse). Wire your
     /// SSRF/allowlist policy here — sessions navigate data-driven URLs, and a server-reachable
-    /// loopback/LAN/metadata host behind an unguarded navigate is a request-forgery hole (the
-    /// source app guards every browser the same way). Null = any http(s) URL.
+    /// loopback/LAN/metadata host behind an unguarded navigate is a request-forgery hole. Null = any
+    /// http(s) URL. Setting it also makes the pool cancel any unvetted CROSS-HOST navigation, so a
+    /// guard-approved URL answering <c>302 → http://127.0.0.1:8080/admin</c> is not followed.
     /// <para>
-    /// SCOPE, precisely (it was over-promised before the P5.5 review): this runs on the explicit
-    /// <c>NavigateAsync</c> call. It CANNOT be consulted for redirects or in-page navigation, because
-    /// WebView2's <c>NavigationStarting</c> event has no deferral and an async policy cannot be
-    /// awaited inside it. What setting this DOES additionally buy you: the pool then cancels any
-    /// unvetted CROSS-HOST navigation, so a guard-approved URL answering
-    /// <c>302 → http://127.0.0.1:8080/admin</c> is not followed. Same-host hops stay allowed.
-    /// </para>
-    /// <para>
-    /// For BREADTH over redirect targets and subresources, also set
-    /// <see cref="SessionBrowserOptions.RequestFilter"/> on <see cref="Browser"/> — it is synchronous by
-    /// design and sees every request.
-    /// </para>
-    /// <para>
-    /// 🔴 <b>But it is a SIEVE, not the boundary, and this doc used to say the opposite.</b> The request
-    /// filter FAILS OPEN: a throw from it allows the request, deliberately, because it runs on every
-    /// subresource of every page and failing closed on one buggy predicate would blank the page. So an
-    /// app that puts its whole SSRF blocklist there has a policy that stops blocking the moment it
-    /// throws once. What holds unconditionally is this guard plus the kit's own cross-origin
-    /// cancellation, both of which fail CLOSED. Use the filter to widen coverage, never as the only
-    /// thing standing between a session and an internal host.
-    /// ⚠ A throw from it is logged once per session; before that it was silent.
+    /// 🔴 <b><see cref="SessionBrowserOptions.RequestFilter"/> is a SIEVE, not the boundary.</b> It adds
+    /// breadth over redirect targets and subresources, but it FAILS OPEN: one throw and an app that put
+    /// its whole SSRF blocklist there has a policy that has stopped blocking. What holds unconditionally
+    /// is this guard plus the kit's own cross-origin cancellation, both of which fail CLOSED.
     /// </para>
     /// </summary>
     public Func<Uri, CancellationToken, Task<bool>>? NavigationGuard { get; init; }
@@ -78,24 +61,18 @@ public sealed class RenderSessionPoolOptions
     /// Hard cap on ONE leased-session operation — the UI-thread marshal of a navigate, a script, an
     /// HTML read or a CDP call (default 60 s). When it expires the caller gets a
     /// <see cref="TimeoutException"/> and the instance is marked unusable, so returning the lease
-    /// DISCARDS it instead of re-pooling a wedged page.
+    /// DISCARDS it instead of re-pooling a page whose JS thread is blocked.
     /// <para>
-    /// WHY IT IS NOT OPTIONAL (P5.5 H2): a page whose JS thread is blocked (a spin loop; before
-    /// script dialogs were disabled, an <c>alert()</c>) makes <c>ExecuteScriptAsync</c>/
-    /// <c>GetHtmlAsync</c> never complete. Escaping the await alone is not enough — the pool would
-    /// re-pool the same dead page and every later lease would inherit it.
-    /// </para>
-    /// <para>
-    /// Keep this comfortably ABOVE <see cref="NavigationTimeout"/>: a navigate's own soft cap is part
-    /// of the operation, so a lower value here would report a legitimately slow load as a wedge.
+    /// ⚠ Keep this comfortably ABOVE <see cref="NavigationTimeout"/>: a navigate's own soft cap is part
+    /// of the operation, so a lower value here reports a legitimately slow load as a wedge.
     /// </para>
     /// </summary>
     public TimeSpan OpTimeout { get; init; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// How long <c>NavigateAsync</c> waits for the document to load before returning what is there
-    /// (default 30 s). A SOFT cap by design — the caller decides what "settled" means via its own
-    /// script polling, so a slow page is not an error; it just stops holding the lease open.
+    /// (default 30 s). A SOFT cap: the caller decides what "settled" means via its own script polling,
+    /// so a slow page is not an error — it just stops holding the lease open.
     /// </summary>
     public TimeSpan NavigationTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
@@ -108,15 +85,13 @@ public sealed class RenderSessionPoolOptions
 }
 
 /// <summary>
-/// A BOUNDED, mode-aware pool + queue of driveable off-screen WebView2 sessions, ported from the
-/// server-backed sibling. The runtime mode hosts EVERY session's WebView2 on ONE shared hidden
-/// off-screen form; the dev/test mode (<see cref="RenderSessionPoolOptions.VisiblePerSession"/>)
-/// gives each session its own visible window to watch. Sessions are LEASED — the caller owns
-/// navigation, its own JS, and the page's API/message events for the life of a lease — and
-/// several run in PARALLEL up to the cap. A lease returns a free instance (LIFO keeps a warm one
-/// hot), creates one lazily under the cap, or WAITS on the capacity queue; returning a session
-/// resets it to <c>about:blank</c> and re-pools it — a failed reset DISCARDS the instance rather
-/// than re-pooling a poisoned one. Dispose with the owning window.
+/// A BOUNDED, mode-aware pool + queue of driveable off-screen WebView2 sessions. The runtime mode hosts
+/// EVERY session's WebView2 on ONE shared hidden off-screen form; the dev/test mode
+/// (<see cref="RenderSessionPoolOptions.VisiblePerSession"/>) gives each its own visible window. Sessions
+/// are LEASED — the caller owns navigation, its own JS and the page's events for the life of a lease —
+/// and several run in PARALLEL up to the cap. A lease takes a free instance (LIFO keeps a warm one hot),
+/// creates one lazily under the cap, or WAITS on the capacity queue; returning one resets it to
+/// <c>about:blank</c> and re-pools it, and a failed reset DISCARDS it. Dispose with the owning window.
 /// </summary>
 public sealed class RenderSessionPool : IDisposable
 {
@@ -126,8 +101,8 @@ public sealed class RenderSessionPool : IDisposable
     private readonly object _lock = new();
     private readonly Stack<PoolInstance> _free = new(); // idle instances ready to re-lease (LIFO keeps a warm one hot)
 
-    // ONE environment for the pool's single profile, instead of one per instance. Owner-scoped on
-    // purpose — see SessionEnvironmentCache for why a static, profile-keyed cache would break
+    // ONE environment for the pool's single profile, instead of one per instance. Owner-scoped — see
+    // SessionEnvironmentCache for why a static, profile-keyed cache would break
     // InteractiveSession.ClearProfile.
     private readonly SessionEnvironmentCache _environment = new();
     private int _created;                                // total instances realized (≤ cap; grows, shrinks on discard)
@@ -144,24 +119,23 @@ public sealed class RenderSessionPool : IDisposable
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         if (options.Capacity < 1) throw new ArgumentOutOfRangeException(nameof(options), "Capacity must be at least 1.");
-        // Validate at CONSTRUCTION, the package convention: a non-positive budget would otherwise
-        // surface much later as an instantly-cancelled operation or an instantly-discarded instance,
-        // with nothing pointing at the option that caused it.
+        // Validate at CONSTRUCTION: a non-positive budget would otherwise surface much later as an
+        // instantly-cancelled operation or an instantly-discarded instance, with nothing pointing at
+        // the option that caused it.
         RequireUsableTimeout(options.OpTimeout, nameof(RenderSessionPoolOptions.OpTimeout));
         RequireUsableTimeout(options.NavigationTimeout, nameof(RenderSessionPoolOptions.NavigationTimeout));
         RequireUsableTimeout(options.ResetTimeout, nameof(RenderSessionPoolOptions.ResetTimeout));
-        // A zero/negative client size gives a 0×0 viewport (P5.5 H3): the page "loads", every element
-        // has zero size, and any site that gates on window size behaves as if on a phantom display —
-        // with nothing anywhere to suggest the viewport is the problem.
+        // A zero/negative client size gives a 0×0 viewport: the page "loads", every element has zero
+        // size, and any site that gates on window size behaves as if on a phantom display — with
+        // nothing anywhere to suggest the viewport is the problem.
         if (options.OffscreenClientSize.Width < 1 || options.OffscreenClientSize.Height < 1)
             throw new ArgumentOutOfRangeException(nameof(options),
                 $"{nameof(RenderSessionPoolOptions.OffscreenClientSize)} must be positive in both dimensions.");
         _capacity = new SemaphoreSlim(options.Capacity, options.Capacity);
 
         // The upper bound is not pedantry: these feed CancellationTokenSource.CancelAfter and
-        // Task.WaitAsync, both of which THROW above int.MaxValue milliseconds (~24.8 days). Someone
-        // reaching for TimeSpan.MaxValue to mean "no timeout" would otherwise get an
-        // ArgumentOutOfRangeException from the middle of an operation instead of from here.
+        // Task.WaitAsync, both of which THROW above int.MaxValue milliseconds (~24.8 days), so
+        // TimeSpan.MaxValue as "no timeout" would fail from the middle of an operation.
         static void RequireUsableTimeout(TimeSpan value, string name)
         {
             if (value <= TimeSpan.Zero || value.TotalMilliseconds > int.MaxValue)
@@ -174,30 +148,27 @@ public sealed class RenderSessionPool : IDisposable
     internal sealed record PoolInstance(Form Host, WebView2Control Web)
     {
         /// <summary>
-        /// The host the caller's async <see cref="RenderSessionPoolOptions.NavigationGuard"/> last
-        /// approved, or null before any explicit navigate. Read by the navigation policy wired in
-        /// <see cref="WireNavigationPolicy"/> to reject an UNVETTED cross-host hop. Cleared on
-        /// return-to-pool so a recycled instance can't inherit the previous lease's approval.
+        /// The host the caller's <see cref="RenderSessionPoolOptions.NavigationGuard"/> last approved,
+        /// or null before any explicit navigate. <see cref="WireNavigationPolicy"/> reads it to reject
+        /// an UNVETTED cross-host hop; cleared on return so a recycled instance can't inherit it.
         /// </summary>
         internal string? ApprovedOrigin { get; set; }   // host + port; see RenderSession.NavigateAsync
 
         /// <summary>
-        /// Set when this instance's RENDER PROCESS died (P5.5 H4.4). Its browser object survives the
-        /// crash, so nothing else marks it unusable: without this the instance was reset, re-pooled
-        /// and re-leased forever, and every later lease burned the full navigation cap against a dead
-        /// renderer. <see cref="Return"/> discards a poisoned instance instead of re-pooling it.
+        /// Set when this instance's RENDER PROCESS died. ⚠ Its browser object survives the crash, so
+        /// nothing else marks it unusable and it would be reset, re-pooled and re-leased forever;
+        /// <see cref="Return"/> discards a poisoned instance instead.
         /// </summary>
         internal bool Poisoned { get; set; }
 
         /// <summary>
         /// The identity of the lease currently holding this instance — the SCOPE of everything its
         /// browser publishes on <see cref="SessionBrowserOptions.Events"/>. Re-assigned on every lease
-        /// AND on every return, because the browser outlives the lease: a scope captured once at init
-        /// would tag a later lease's events with an earlier lease's id.
+        /// AND on every return, because the browser outlives the lease.
         /// <para>
-        /// 🔴 <b>Never null, including while idle</b> — on this bus a null scope is a GLOBAL BROADCAST
-        /// that reaches every subscriber, so the about:blank reset between two leases would have been
-        /// delivered to all of them. An idle instance gets an identity nobody holds instead, which only
+        /// 🔴 <b>Never null, including while idle</b> — a null scope is a GLOBAL BROADCAST that reaches
+        /// every subscriber, so the about:blank reset between two leases would be delivered to all of
+        /// them. An idle instance gets an identity nobody holds instead, which only
         /// <see cref="Shenora.Core.Events.IEventBus.SubscribeToAll"/> sees.
         /// </para>
         /// </summary>
@@ -212,10 +183,9 @@ public sealed class RenderSessionPool : IDisposable
     public async Task<RenderSession> LeaseAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        // Link the dispose token so a queued lease is CANCELLED (not left hanging forever) when
-        // the pool disposes — a wedged wire request would otherwise never settle. WaitAsync is
-        // outside the try: if it throws (cancelled/disposed) no permit was taken, so nothing to
-        // release.
+        // Link the dispose token so a queued lease is CANCELLED (not left hanging forever) when the
+        // pool disposes. WaitAsync is outside the try: if it throws (cancelled/disposed) no permit was
+        // taken, so there is nothing to release.
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token);
         await _capacity.WaitAsync(linked.Token).ConfigureAwait(false); // held for the whole lease
         try
@@ -225,9 +195,9 @@ public sealed class RenderSessionPool : IDisposable
             if (instance is null)
             {
                 // The LINKED token, not the caller's: creation takes SECONDS (browser-process spawn +
-                // profile attach), and disposing the pool mid-creation used to let that creation run to
-                // completion and publish a live off-screen window whose browser process then held the
-                // profile lock with nothing left to dispose it (P5.5 H2).
+                // profile attach), and disposing the pool mid-creation would let that creation run to
+                // completion and publish a live off-screen window whose browser process then holds the
+                // profile lock with nothing left to dispose it.
                 instance = await (InstanceFactoryOverride ?? CreateInstanceAsync)(linked.Token).ConfigureAwait(false);
                 lock (_lock) _created++; // accounted HERE (not in the factory) so the test seam counts too
             }
@@ -253,12 +223,10 @@ public sealed class RenderSessionPool : IDisposable
         var tcs = new TaskCompletionSource<PoolInstance>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // 🔴 THE TOKEN HAS TO REACH THE RETURNED TASK, not only the posted body. Every check below runs
-        // INSIDE the BeginInvoke, so they are reachable only if the post is ever pumped — and
-        // `BeginInvoke` succeeds whenever the handle exists, including after `Application.Run` has
-        // returned, when nothing will pump it again. The lease then waits forever WHILE HOLDING A
-        // CAPACITY PERMIT, so `Dispose()` cancelling `_disposeCts` could not free it either and the slot
-        // was gone for the process lifetime. `InteractiveSession.RunAsync` registers for exactly this
-        // reason and names the incident; these two did not get the same treatment.
+        // INSIDE the BeginInvoke, and `BeginInvoke` succeeds whenever the handle exists — including
+        // after `Application.Run` has returned, when nothing will pump it again. The lease then waits
+        // forever WHILE HOLDING A CAPACITY PERMIT, so `Dispose()` cancelling `_disposeCts` cannot free
+        // it either and the slot is gone for the process lifetime.
         using var cancelled = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
 
         try
@@ -293,11 +261,10 @@ public sealed class RenderSessionPool : IDisposable
                         // (webviews overlap off-screen — harmless, each renders independently).
                         //
                         // 🔴 `ownsHost` STAYS FALSE even when this call is the one that creates it. The
-                        // shared host belongs to the POOL — Dispose() disposes it — and these lambdas
-                        // INTERLEAVE: each yields at its multi-second init, so a second lease can parent
-                        // its own control to this form while the first is still awaiting. Tearing the form
-                        // down here would dispose that control along with it (a Form disposes its children)
-                        // and hand the other caller a live-looking session that is entirely dead.
+                        // shared host belongs to the POOL, and these lambdas INTERLEAVE: each yields at
+                        // its multi-second init, so a second lease can parent its own control to this
+                        // form while the first is still awaiting. Tearing the form down here would
+                        // dispose that control with it and hand the other caller a dead session.
                         host = _sharedHost ??= OffscreenWindow.Create("Render sessions", _options.OffscreenClientSize);
                     }
 
@@ -307,10 +274,9 @@ public sealed class RenderSessionPool : IDisposable
                     // The instance exists before init so the crash callback can mark it — a renderer
                     // can die at any time, including during the very first navigation.
                     var instance = new PoolInstance(host, web);
-                    // The linked token (caller + pool dispose) now reaches INIT itself (P5.5 H9.6):
-                    // a cancelled lease used to wait out the full InitTimeout before the re-check below
-                    // could fire. It gates the await only — the environment task is shared across this
-                    // pool's instances, so cancelling creation for one caller would break the others.
+                    // The linked token (caller + pool dispose) reaches INIT itself, so a cancelled lease
+                    // does not wait out the full InitTimeout before the re-check below. It gates the
+                    // await only: the environment task is shared across this pool's instances.
                     await SessionBrowser.InitializeAsync(web, _options.Browser,
                         onProcessFailed: _ => instance.Poisoned = true,
                         // Read per emit, not captured: this browser is re-leased under a NEW identity
@@ -320,11 +286,10 @@ public sealed class RenderSessionPool : IDisposable
                         cancellationToken: cancellationToken)
                         .ConfigureAwait(true);
 
-                    // Re-check AFTER the multi-second init (P5.5 H2). The pre-check above was the only
-                    // one, so a lease cancelled — or a pool disposed — during those seconds still
-                    // published a fully live instance: an off-screen window nobody owns and a browser
-                    // process holding the profile lock, because the cancelled caller never got a
-                    // session to dispose.
+                    // Re-check AFTER the multi-second init: a lease cancelled — or a pool disposed —
+                    // during those seconds would otherwise still publish a fully live instance, an
+                    // off-screen window nobody owns and a browser process holding the profile lock,
+                    // because the cancelled caller never got a session to dispose.
                     if (cancellationToken.IsCancellationRequested)
                     {
                         TearDown();
@@ -335,9 +300,8 @@ public sealed class RenderSessionPool : IDisposable
                     WireNavigationPolicy(instance);
                     // ⚠ If the registration above already cancelled the task, NOBODY OWNS this instance —
                     // the caller has gone. Handing ownership over is what `TrySetResult` means, so a
-                    // false return is a teardown obligation, not a no-op. Without this the cancellation
-                    // fix would trade a hang for a leaked browser process holding the profile lock,
-                    // which is the worse of the two.
+                    // false return is a teardown obligation, not a no-op; otherwise the cancellation fix
+                    // trades a hang for a leaked browser process holding the profile lock.
                     if (!tcs.TrySetResult(instance)) TearDown();
                 }
                 catch (Exception ex)
@@ -346,11 +310,9 @@ public sealed class RenderSessionPool : IDisposable
                     tcs.TrySetException(ex);
                 }
 
-                // Undo everything this call realized, and NOTHING another one did. Shared by the failure
-                // and the cancelled-after-init paths: a failed or abandoned init must not leak the control
-                // (runtime mode) or the window (dev mode) — otherwise every retry against a locked profile
-                // orphans one, and an abandoned control can still finish attaching a live browser process
-                // that holds the very lock the timeout is diagnosing.
+                // Undo everything this call realized, and NOTHING another one did: an abandoned control
+                // can still finish attaching a live browser process that holds the very lock the init
+                // timeout is diagnosing.
                 //
                 // ⚠ The CONTROL is always this call's; the HOST only in dev mode. See `ownsHost`.
                 void TearDown()
@@ -363,9 +325,9 @@ public sealed class RenderSessionPool : IDisposable
                     catch (Exception cleanupError)
                     {
                         // Best-effort, but not silent: a leaked control keeps the profile locked, which
-                        // is the symptom the init timeout's message tries to explain (P5.5 H4.7).
-                        // Through SessionLog because an app logger that throws HERE would escape before
-                        // TrySetException below and hang the lease forever — see SessionLog's docs.
+                        // is the symptom the init timeout's message tries to explain. Through SessionLog
+                        // because an app logger that throws HERE would escape before TrySetException
+                        // below and hang the lease forever.
                         SessionLog.Try(_options.Log, l =>
                             l.LogWarning(cleanupError, "Tearing down a failed session instance failed."));
                     }
@@ -383,41 +345,20 @@ public sealed class RenderSessionPool : IDisposable
     }
 
     /// <summary>
-    /// Cancel an UNVETTED cross-host navigation for the instance's whole life — wired once here, on
-    /// the UI thread, right after init, and only when the app configured a
-    /// <see cref="RenderSessionPoolOptions.NavigationGuard"/>.
+    /// Cancel an UNVETTED cross-host navigation for the instance's whole life — wired once here, on the
+    /// UI thread, right after init, and only when the app configured a
+    /// <see cref="RenderSessionPoolOptions.NavigationGuard"/>. Without it a guard-approved URL that
+    /// answers <c>302 → http://127.0.0.1:8080/admin</c> is followed anyway: the caller vetted host X,
+    /// and nothing vetted host Y.
     /// <para>
-    /// WHAT THIS CLOSES: the guard is documented as the app's SSRF/allowlist policy but was consulted
-    /// ONLY inside the explicit <c>NavigateAsync</c> call, so a guard-approved URL that answered
-    /// <c>302 → http://127.0.0.1:8080/admin</c> was followed anyway and its DOM handed back to the
-    /// caller (found in the P0–P5 review). The caller vetted host X; nothing vetted host Y.
+    /// A HOST COMPARISON rather than the guard itself, because <c>NavigationStarting</c> has NO deferral
+    /// in the WebView2 SDK (verified), so an <c>async</c> policy cannot be awaited there and blocking on
+    /// it would deadlock the UI thread. ⚠ <b>MAIN FRAME ONLY</b> — a cross-origin IFRAME is a
+    /// subresource, and subresources are <see cref="SessionBrowserOptions.RequestFilter"/>'s job.
     /// </para>
     /// <para>
-    /// WHY IT IS A HOST COMPARISON AND NOT THE GUARD ITSELF: <c>NavigationStarting</c> has NO
-    /// deferral in the WebView2 SDK (verified — <c>CoreWebView2NavigationStartingEventArgs</c>
-    /// exposes none), so an <c>async</c> policy simply cannot be awaited there; blocking on it would
-    /// deadlock the UI thread it runs on. A synchronous, guard-independent rule is therefore the most
-    /// that this event can enforce. Same-host hops (<c>http → https</c>, <c>/</c> → <c>/index.html</c>,
-    /// in-page navigation) stay allowed; an unvetted cross-ORIGIN hop is cancelled. ⚠ Origin means host
-    /// AND port — <c>Uri.Authority</c>, which omits a default port so <c>http</c> -&gt; <c>https</c> on one
-    /// host still matches.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>MAIN FRAME ONLY</b>, by scope rather than by oversight: this is <c>NavigationStarting</c>, not
-    /// <c>FrameNavigationStarting</c>, so a cross-origin IFRAME is not cancelled here. An iframe is a
-    /// subresource, and subresources are the request filter's job — see the paragraph below.
-    /// </para>
-    /// <para>
-    /// TO SEE REDIRECT TARGETS AND SUBRESOURCES, add
-    /// <see cref="SessionBrowserOptions.RequestFilter"/>: it is SYNCHRONOUS by design and is wired at
-    /// the request layer with <c>WebResourceContext.All</c>, so it sees every request.
-    /// ⚠ <b>It FAILS OPEN by design and is therefore a sieve, not a boundary</b> — see its own remarks.
-    /// This policy and the guard are what hold; both fail closed.
-    /// </para>
-    /// <para>
-    /// NOT applied to <c>InteractiveSession</c> deliberately: a human-in-the-loop flow legitimately redirects
-    /// across hosts (OAuth), so cancelling unvetted hops there would break real sign-in flows. A
-    /// window is human-driven, not a data-driven SSRF surface.
+    /// NOT applied to <c>InteractiveSession</c>: a human-in-the-loop flow legitimately redirects across
+    /// hosts (OAuth), and a window is human-driven rather than a data-driven SSRF surface.
     /// </para>
     /// </summary>
     private void WireNavigationPolicy(PoolInstance instance)
@@ -441,13 +382,11 @@ public sealed class RenderSessionPool : IDisposable
 
     /// <summary>
     /// Should this navigation be cancelled? The whole rule, extracted from the event so it can be
-    /// TESTED — the event itself needs a live browser, which is why the port defect sat here unnoticed
-    /// behind a comment that gave the exact hop it failed to stop as its worked example.
+    /// TESTED — the event itself needs a live browser.
     /// </summary>
     /// <param name="candidate">The URI the browser is about to navigate to.</param>
-    /// <param name="approvedOrigin">
-    /// The authority (host + port) the app's guard vetted, or null when nothing has been vetted yet.
-    /// </param>
+    /// <param name="approvedOrigin">The authority (host + port) the guard vetted, or null when nothing
+    /// has been vetted yet.</param>
     internal static bool IsUnvettedHop(string candidate, string? approvedOrigin)
     {
         if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri)) return false;
@@ -459,15 +398,14 @@ public sealed class RenderSessionPool : IDisposable
     }
 
     /// <summary>
-    /// Return an instance: reset it to <c>about:blank</c> ON THE UI THREAD (clears the previous
-    /// page's DOM/JS so the next lease starts on a blank document), re-pool it, and release the
-    /// capacity slot. NOTE this clears the DOM/JS only — the profile (cookies/localStorage/
-    /// IndexedDB) is SHARED across every lease by design (one profile per pool), so this is NOT
-    /// trust-domain isolation; use separate pools for separate trust domains. A reset failure
-    /// DISCARDS the instance (a poisoned one must not re-pool) — the slot is still released so
-    /// the pool creates a fresh one. If the pool has since disposed, the instance is discarded
-    /// rather than pushed into a stack nobody will drain. Best-effort throughout: a return must
-    /// never throw back into a caller's dispose.
+    /// Return an instance: reset it to <c>about:blank</c> ON THE UI THREAD, re-pool it, and release the
+    /// capacity slot. A reset failure DISCARDS the instance (the slot is still released), and so does a
+    /// return into a pool that has since disposed. Best-effort throughout — a return must never throw
+    /// back into a caller's dispose.
+    /// <para>
+    /// ⚠ This clears the DOM/JS ONLY. The profile (cookies/localStorage/IndexedDB) is SHARED across
+    /// every lease by design, so it is NOT trust-domain isolation; use separate pools for those.
+    /// </para>
     /// </summary>
     internal void Return(PoolInstance instance)
     {
@@ -483,7 +421,7 @@ public sealed class RenderSessionPool : IDisposable
                 try
                 {
                     // A crashed renderer can never be reset back to a usable state, so don't try —
-                    // discard it straight away (P5.5 H4.4).
+                    // discard it straight away.
                     ok = !instance.Poisoned
                          && await (ResetOverride ?? ResetToBlankAsync)(instance).ConfigureAwait(true);
                 }
@@ -495,20 +433,17 @@ public sealed class RenderSessionPool : IDisposable
                 bool repooled = false;
                 lock (_lock)
                 {
-                    // Don't re-pool into a disposed pool — Dispose already drained _free, so a
-                    // push here would leak the instance (and its browser process holding the
-                    // profile lock) forever.
+                    // Don't re-pool into a disposed pool — Dispose already drained _free, so a push here
+                    // would leak the instance (and its browser process holding the profile lock) forever.
                     if (ok && !_disposed) { _free.Push(instance); repooled = true; }
                 }
                 if (!repooled)
                 {
                     if (!ok)
                     {
-                        // Name WHICH invariant discarded it: a dead renderer (ProcessFailed / an
-                        // abandoned operation) and a reset the renderer never answered are different
-                        // diagnoses, and lumping them together is what made a wedged pool opaque.
-                        // Guarded: this sits BEFORE _capacity.Release(), so a throwing app logger here
-                        // used to leak the permit for the process lifetime (see SessionLog).
+                        // Name WHICH invariant discarded it: a dead renderer and a reset the renderer
+                        // never answered are different diagnoses. Guarded — this sits BEFORE
+                        // _capacity.Release(), so a throwing app logger would leak the permit.
                         var reason = instance.Poisoned
                             ? "the instance is poisoned: a dead renderer, or an operation that was abandoned"
                             : $"reset to about:blank did not complete within {_options.ResetTimeout.TotalSeconds:0}s";
@@ -526,9 +461,8 @@ public sealed class RenderSessionPool : IDisposable
         }
         catch
         {
-            // The message loop is gone (host teardown) — can't reset on the UI thread. Release
-            // the slot so a shutting-down process doesn't deadlock a pending lease; the window
-            // dies with the app.
+            // The message loop is gone (host teardown) — can't reset on the UI thread. Release the slot
+            // so a shutting-down process doesn't deadlock a pending lease; the window dies with the app.
             try { _capacity.Release(); } catch { }
         }
     }
@@ -555,17 +489,10 @@ public sealed class RenderSessionPool : IDisposable
 
     /// <summary>
     /// FAIL CLOSED on the reset navigation: true only when the blank navigation actually completed
-    /// inside <paramref name="timeout"/>.
-    /// <para>
-    /// This used to swallow the wait's outcome and <c>return true</c> unconditionally, with a comment
-    /// reasoning that "the next lease navigates away regardless" (P5.5 H2). It does not: a renderer
-    /// that cannot answer a navigation to <c>about:blank</c> cannot answer the next lease's navigation
-    /// either. So the documented "a failed reset DISCARDS the instance" invariant was reachable only
-    /// via a THROW — a merely unresponsive instance was re-pooled forever, and every subsequent lease
-    /// burned the full navigation cap against it before failing.
-    /// </para>
-    /// <para>Split out (and internal) so the real path is unit-testable: the pool's own reset test
-    /// could only drive <c>ResetOverride</c>, which is precisely why this shipped unnoticed.</para>
+    /// inside <paramref name="timeout"/>. A renderer that cannot answer a navigation to
+    /// <c>about:blank</c> cannot answer the next lease's either, so a merely unresponsive instance must
+    /// not be re-pooled. Split out (and internal) so the real path is unit-testable — the pool's own
+    /// reset test can only drive <c>ResetOverride</c>.
     /// </summary>
     internal static async Task<bool> AwaitResetNavigationAsync(Task navigationCompleted, TimeSpan timeout)
     {
@@ -600,9 +527,8 @@ public sealed class RenderSessionPool : IDisposable
         catch (Exception ex)
         {
             // Teardown stays best-effort, but no longer SILENT: a discard that fails leaks a browser
-            // process holding the profile lock, and the next launch's init hangs on it — the exact
-            // symptom the init-timeout message tries to explain (P5.5 H4.7). Guarded: this runs both
-            // inside the posted return body and inside Dispose() under _lock.
+            // process holding the profile lock, and the next launch's init hangs on it. Guarded: this
+            // runs both inside the posted return body and inside Dispose() under _lock.
             SessionLog.Try(_options.Log, l => l.LogWarning(ex, "Discarding a pooled session instance failed."));
         }
     }
@@ -611,17 +537,11 @@ public sealed class RenderSessionPool : IDisposable
     /// waiter on the capacity queue would otherwise hang forever). Leased sessions die with the
     /// app; one still returning after this is discarded (see <see cref="Return"/>).
     /// <para>
-    /// ⚠ <b>CALL IT ON THE UI THREAD.</b> Unlike every other path in this class, this one does NOT
-    /// marshal: it disposes WebView2 controls and the shared host form directly, where
-    /// <see cref="Return"/> does the same work inside an <c>Anchor.BeginInvoke</c>. Deliberate, because
-    /// the alternative is worse at exactly the moment it runs — a post placed after
-    /// <c>Application.Run</c> has returned is never pumped, so the browser processes survive holding
-    /// their profile folders' OS locks, and the NEXT launch hangs in init on them.
-    /// </para>
-    /// <para>
-    /// So dispose the pool from your shutdown path on the UI thread (a <c>FormClosed</c> handler, or
-    /// before <c>Application.Run</c> returns) rather than from a DI container's disposal on a worker,
-    /// which is the shape that would reach this off-thread without anything saying so.
+    /// ⚠ <b>CALL IT ON THE UI THREAD</b> (a <c>FormClosed</c> handler, or before <c>Application.Run</c>
+    /// returns) — never from a DI container's disposal on a worker. Unlike every other path in this
+    /// class, this one does NOT marshal: a post placed after <c>Application.Run</c> has returned is
+    /// never pumped, so the browser processes would survive holding their profile folders' OS locks and
+    /// the NEXT launch would hang in init on them.
     /// </para>
     /// </summary>
     public void Dispose()
@@ -639,10 +559,9 @@ public sealed class RenderSessionPool : IDisposable
         // and then wipes the profile would always fail.
         _environment.Clear();
         // Neither the semaphore nor the CTS is disposed: SemaphoreSlim only needs disposal if
-        // AvailableWaitHandle was touched (it never is here), and disposing it WHILE a just-
-        // cancelled waiter is unwinding can wedge that waiter; the CTS holds no unmanaged handle
-        // and an in-flight LeaseAsync may still read its Token to build its linked source. Both
-        // are managed objects the GC reclaims.
+        // AvailableWaitHandle was touched (it never is here), disposing it WHILE a just-cancelled
+        // waiter is unwinding can wedge that waiter, and an in-flight LeaseAsync may still read the
+        // CTS's Token to build its linked source. Both are managed objects the GC reclaims.
     }
 
     /// <summary>Test seams.</summary>

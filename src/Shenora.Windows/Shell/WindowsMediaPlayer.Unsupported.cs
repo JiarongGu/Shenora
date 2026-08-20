@@ -8,21 +8,11 @@ using Shenora;
 namespace Shenora.Windows;
 
 /// <summary>
-/// The plain-<c>net10.0-windows</c> half of <see cref="WindowsMediaPlayer"/>: a NAMED refusal, exactly as
-/// <see cref="WindowsPlaybackSession"/> does it and for the same reason — <c>Windows.Media.Playback</c> is
-/// WinRT, and the WinRT projections only exist when the target framework names a Windows SDK version.
+/// The plain-<c>net10.0-windows</c> half of <see cref="WindowsMediaPlayer"/>: a NAMED refusal at
+/// construction. See <see cref="WindowsPlaybackSession"/> for why these halves exist and how they refuse.
 /// <para>
-/// <b>It refuses at CONSTRUCTION, not per call.</b> The registration in <c>UseWindows</c> is lazy, so the
-/// throw lands the first time an app resolves the player — at the point it asked for the capability, naming
-/// the platform and the one-line remedy. A per-method refusal would let an app open a source and call Play
-/// into nothing first, which is the silent degradation this kit treats as the worse failure.
-/// </para>
-/// <para>
-/// 🔴 <b>It derives from <see cref="MediaPlayerBase"/> so the two TFM variants cannot DRIFT.</b>
-/// <see cref="WindowsPlaybackSession"/>'s pair are two hand-written shapes kept in step by a test, because
-/// that contract has no base class; here the public surface is inherited on both sides, so "same type name,
-/// same members, different TFM" is structural rather than a promise. The overrides below are all
-/// <c>protected</c> — they are not surface, and nothing can reach them anyway.
+/// It derives from <see cref="MediaPlayerBase"/>, so "same type name, same members, different TFM" is
+/// structural here rather than two hand-written shapes kept in step by a test.
 /// </para>
 /// </summary>
 public sealed class WindowsMediaPlayer : MediaPlayerBase
@@ -63,7 +53,6 @@ public sealed class WindowsMediaPlayer : MediaPlayerBase
     /// <inheritdoc />
     protected override void TeardownCore() => throw Unreachable();
 
-    /// <summary>States the truth: on this TFM the constructor refuses, so nothing here can run.</summary>
     private static InvalidOperationException Unreachable() => new(
         "WindowsMediaPlayer cannot be constructed on plain net10.0-windows, so this is unreachable.");
 }

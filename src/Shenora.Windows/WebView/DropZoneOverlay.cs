@@ -5,8 +5,8 @@ using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 namespace Shenora.Windows;
 
 /// <summary>
-/// Transparent overlay that captures OS file drag-drop events for one zone, ported from the
-/// primary desktop sibling. Internal — <see cref="DropZoneManager"/> owns the lifecycle.
+/// Transparent overlay that captures OS file drag-drop events for one zone. Internal —
+/// <see cref="DropZoneManager"/> owns the lifecycle.
 ///
 /// Visibility logic:
 /// - Mouse outside the zone → always visible (ready to catch a drag).
@@ -30,10 +30,9 @@ internal sealed class DropZoneOverlay : Panel
     private bool _isDisposed;
     private bool _formIsActive = true;
 
-    // The overlay can be disposed (zone unregistered / navigation / form close) while an async
-    // occlusion check or a queued SHOW/form-event is still pending. Touching Visible/Handle/
-    // Bounds after that throws ObjectDisposedException — every control-mutating path checks
-    // this first.
+    // ⚠ The overlay can be disposed (zone unregistered / navigation / form close) while an async
+    // occlusion check or a queued SHOW is still pending, and touching Visible/Handle/Bounds after that
+    // throws — so every control-mutating path checks this first.
     private bool Dead => _isDisposed || IsDisposed;
 
     public DropZoneOverlay(string zoneId, WebView2Control webView, ILogger logger,
@@ -179,8 +178,8 @@ internal sealed class DropZoneOverlay : Panel
     }
 
     /// <summary>
-    /// Ask the DOM whether the zone element is actually visible where the overlay sits — a
-    /// dialog/panel covering it must also suppress the overlay, or drags land on covered UI.
+    /// Ask the DOM whether the zone element is actually visible where the overlay sits — a dialog or
+    /// panel covering it must also suppress the overlay, or drags land on covered UI.
     /// </summary>
     private async void CheckOcclusion()
     {
@@ -188,9 +187,8 @@ internal sealed class DropZoneOverlay : Panel
         _pendingOcclusionCheck = true;
         try
         {
-            // The zone id is app-supplied and reaches a script: JSON-inject + CSS.escape, never
-            // raw interpolation (the webview2-hosting injection rule — a quote in the id would
-            // break the selector and fail the check open forever).
+            // 🔴 The zone id is app-supplied and reaches a script: JSON-inject + CSS.escape, never raw
+            // interpolation — a quote in the id would break the selector and fail the check open.
             var zoneIdJson = System.Text.Json.JsonSerializer.Serialize(ZoneId);
             var script = $$"""
                 (function() {

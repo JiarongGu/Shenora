@@ -1,15 +1,13 @@
 namespace Shenora.Windows;
 
 /// <summary>
-/// Runs a function on a dedicated STA thread — required for WinForms dialogs and the clipboard.
-/// ALWAYS used for those (never inline on the caller): the source app's measured rule — a
-/// dialog on the WebView2's UI thread conflicts with its message handling, and a dedicated STA
-/// thread sidesteps every apartment surprise.
+/// Runs a function on an STA thread — required for WinForms dialogs and the clipboard, and 🔴 ALWAYS
+/// used for those rather than inline on the caller: a dialog on the WebView2's UI thread conflicts with
+/// its message handling.
 /// <para>
-/// ⚠ <b>Two entry points, and the difference is the APARTMENT's LIFETIME, not the threading.</b>
-/// <see cref="RunAsync"/> gives the call a thread of its own, which is what a blocking modal dialog
-/// wants and what it has always used. <see cref="RunSharedAsync"/> queues onto ONE long-lived pumped
-/// apartment — see its remarks for the defect that earned it.
+/// ⚠ <b>Two entry points, and the difference is the APARTMENT's LIFETIME.</b> <see cref="RunAsync"/>
+/// gives the call a thread of its own, which is what a blocking modal dialog wants;
+/// <see cref="RunSharedAsync"/> queues onto ONE long-lived PUMPED apartment.
 /// </para>
 /// </summary>
 internal static class StaThread
@@ -38,23 +36,10 @@ internal static class StaThread
     /// <summary>
     /// Queue onto the ONE shared STA apartment, which lives for the process and PUMPS MESSAGES.
     /// <para>
-    /// 🔴 <b>OLE clipboard writes need this and a per-call thread silently corrupts them.</b>
-    /// <c>Clipboard.SetDataObject(copy: true)</c> ends in <c>OleFlushClipboard</c>, which asks the data
-    /// object to render every advertised format into global memory — and that rendering is serviced
-    /// through the apartment's MESSAGE LOOP. A thread that sets the clipboard and immediately exits tears
-    /// the apartment down mid-flush, so the STANDARD formats survive and the rest do not.
-    /// </para>
-    /// <para>
-    /// <b>Measured, 8 runs of a copy carrying text + files + HTML + PNG + a private format:</b> text and
-    /// files always came back; the PNG returned as ZEROS of the right length and <c>text/html</c> vanished
-    /// from the item entirely, on ~1 run in 6 — no exception, no error, a copy that simply lost half of
-    /// itself. ⚠ That is a PRODUCTION defect, not a test artifact: an app copying a picture beside its
-    /// text would ship the text and an empty picture, occasionally, forever.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>The pump is the whole point — an earlier attempt at this parked the shared thread on a
-    /// blocking queue and made things WORSE</b> (every run failed): a long-lived STA thread that does not
-    /// pump cannot service the very rendering callbacks the flush depends on.
+    /// 🔴 <b>OLE clipboard writes need a PUMPED apartment, and both other shapes corrupt them SILENTLY</b> —
+    /// a per-call thread tears down mid-<c>OleFlushClipboard</c> and a non-pumping one never services it, so
+    /// formats come back as zeros of the right length with no exception. Measured both ways:
+    /// <c>docs/design/shells.md</c>, "Native services, and the STA rule".
     /// </para>
     /// <para>
     /// ⚠ <b>Nothing queued here may BLOCK</b> — work is serialised, so a modal dialog would stall every
@@ -66,8 +51,8 @@ internal static class StaThread
         var marshaller = SharedApartment.Marshaller;
         var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // BeginInvoke, not Invoke: this is called from arbitrary threads (including the UI thread) and
-        // blocking one of them on the apartment would deadlock the moment the apartment needed it back.
+        // ⚠ BeginInvoke, not Invoke: this is called from arbitrary threads including the UI thread, and
+        // blocking one on the apartment deadlocks the moment the apartment needs it back.
         marshaller.BeginInvoke(() =>
         {
             try
@@ -84,8 +69,8 @@ internal static class StaThread
 
     /// <summary>
     /// The one long-lived pumped STA apartment, started on first use. Nested so an app that never touches
-    /// the clipboard never starts the thread — a static field on <see cref="StaThread"/> would also be
-    /// initialised by the first <see cref="RunAsync"/> caller.
+    /// the clipboard never starts the thread — a static field on <see cref="StaThread"/> would be
+    /// initialised by the first <see cref="RunAsync"/> caller too.
     /// </summary>
     private static class SharedApartment
     {
@@ -93,8 +78,8 @@ internal static class StaThread
 
         private static Control Start()
         {
-            // A Control is the marshalling primitive because BeginInvoke needs a window HANDLE — the
-            // posted work arrives as a message, which is the same loop the OLE rendering callbacks use.
+            // A Control, because BeginInvoke needs a window HANDLE: the posted work arrives as a message
+            // on the same loop the OLE rendering callbacks use.
             var ready = new TaskCompletionSource<Control>(TaskCreationOptions.RunContinuationsAsynchronously);
             var thread = new Thread(() =>
             {

@@ -22,21 +22,9 @@ public sealed class InteractiveSessionResult
 
     /// <summary>
     /// Throw this outcome's failure as an <see cref="ShenoraException"/> — the bridge from
-    /// <see cref="InteractiveSessionErrorCodes"/> into the IPC error contract (P5.5 H9.4). No-op on success.
-    /// <para>
-    /// The two vocabularies were never really separate: these codes are already SCREAMING_SNAKE i18n
-    /// keys in the shape <c>IpcErrorCodes</c> uses, so the only thing missing was a typed path between
-    /// them — and without one, every app routing a session over IPC hand-wrote the same
-    /// <c>if (!result.Success) throw new ShenoraException(result.ErrorCode!)</c>. Throwing (rather
-    /// than returning an error object) is what plugs into the dispatcher's documented boundary:
-    /// <c>ModuleBase</c> and <c>MessageDispatcher</c> already turn an <see cref="ShenoraException"/>
-    /// into the structured wire error, so a facade route becomes a single call.
-    /// </para>
-    /// <code>
-    /// var result = await session.RunAsync(flow.DriveAsync, cancellationToken);
-    /// result.ThrowIfFailed();          // SESSION_BUSY / SESSION_CANCELLED / … cross as the wire code
-    /// return new { blob = result.Blob };
-    /// </code>
+    /// <see cref="InteractiveSessionErrorCodes"/> into the IPC error contract, so a facade route is one
+    /// call: <c>ModuleBase</c> and <c>MessageDispatcher</c> already turn one into the structured wire
+    /// error. No-op on success.
     /// </summary>
     /// <exception cref="ShenoraException">When <see cref="Success"/> is false.</exception>
     public void ThrowIfFailed()
@@ -74,9 +62,7 @@ public sealed class InteractiveSessionOptions
     public required Control Anchor { get; init; }
 
     /// <summary>
-    /// The browser this session runs, configured exactly like a pooled or streaming one — the profile
-    /// directory, the five hooks, the request filter, bundle serving, the logger and the event bus all
-    /// live there and all reach this session.
+    /// The browser this session runs, configured exactly like a pooled or streaming one.
     /// <para>
     /// 🔴 <b><see cref="SessionBrowserOptions.ProfileDirectory"/> is where the session's isolation is
     /// decided</b> — one per provider, AND per sub-account where a provider serves multiple accounts.
@@ -86,11 +72,9 @@ public sealed class InteractiveSessionOptions
     /// captured session for real (<see cref="InteractiveSession.ClearProfile"/>).
     /// </para>
     /// <para>
-    /// ⚠ <b><see cref="SessionBrowserOptions.KeepAliveInBackground"/> is the one field this session
-    /// overrides</b>, from <see cref="RevealImmediately"/>: a window held off-screen must keep its JS
-    /// running, and that is the session's business rather than the app's. Everything else is passed
-    /// through untouched, which is why this is a whole options object and not a hand-copied subset —
-    /// copying fields would silently miss the next one added to <see cref="SessionBrowserOptions"/>.
+    /// <see cref="SessionBrowserOptions.KeepAliveInBackground"/> is the one field this session
+    /// overrides, from <see cref="RevealImmediately"/>: a window held off-screen must keep its JS
+    /// running. Everything else passes through untouched.
     /// </para>
     /// </summary>
     public required SessionBrowserOptions Browser { get; init; }
@@ -99,10 +83,10 @@ public sealed class InteractiveSessionOptions
     public string Title { get; init; } = "Session";
 
     /// <summary>
-    /// Initial client size — desktop-width by default ON PURPOSE: responsive pages reflow
-    /// to a mobile layout in a narrow window, and at least one measured provider renders NO
-    /// interactive UI at all below desktop width. The driver shrinks to the real content box afterwards
-    /// via <see cref="SessionController.FitToBox"/>.
+    /// Initial client size — desktop-width by default: responsive pages reflow to a mobile layout in a
+    /// narrow window, and at least one measured provider renders NO interactive UI at all below desktop
+    /// width. The driver shrinks to the real content box afterwards via
+    /// <see cref="SessionController.FitToBox"/>.
     /// </summary>
     public Size ClientSize { get; init; } = new(680, 780);
 
@@ -120,27 +104,26 @@ public sealed class InteractiveSessionOptions
 
     /// <summary>
     /// True (default): the window shows immediately and <see cref="InteractiveSession.RunAsync"/>
-    /// behaves like the server-backed sibling's modal flow. False: the SILENT-REFRESH shape from
-    /// the primary sibling — the window is created REALIZED BUT OFF-SCREEN, and only a driver
-    /// call to <see cref="SessionController.Reveal"/> brings it on screen; a driver that
-    /// completes without revealing (the persistent profile was already signed in) refreshes the
-    /// session with the user never seeing a window ("no interaction ⇒ no window").
+    /// behaves like a modal flow. False: the SILENT-REFRESH shape — the window is created REALIZED BUT
+    /// OFF-SCREEN, and only a driver call to <see cref="SessionController.Reveal"/> brings it on screen,
+    /// so a driver that completes without revealing (the profile was already signed in) refreshes the
+    /// session with the user never seeing a window.
     /// </summary>
     public bool RevealImmediately { get; init; } = true;
 
     /// <summary>
-    /// Consulted before every controller navigation (return false to refuse) — the same
-    /// SSRF-shaped seam as the session pool: the URLs are data-driven (provider definitions),
-    /// and this window both discloses the rendered page and accepts input.
+    /// Consulted before every controller navigation (return false to refuse) — the same SSRF-shaped seam
+    /// as the session pool: the URLs are data-driven, and this window both discloses the rendered page
+    /// and accepts input.
     /// </summary>
     public Func<Uri, CancellationToken, Task<bool>>? NavigationGuard { get; init; }
 
     /// <summary>
-    /// Loading-state hook (marshalled to the UI thread): show/hide the app's own splash overlay
-    /// over the WebView2 — the visual is the app's (headless). Driven by the driver via
+    /// Loading-state hook (marshalled to the UI thread): show/hide the app's own splash overlay over the
+    /// WebView2 — the visual is the app's. Driven by the driver via
     /// <see cref="SessionController.SetLoading"/>, plus a one-shot fallback hide after
-    /// <see cref="LoadingFallbackTimeout"/> so a driver that never signals can't leave the
-    /// splash up forever (measured — three independent drop paths in the source).
+    /// <see cref="LoadingFallbackTimeout"/> so a driver that never signals can't leave the splash up
+    /// forever.
     /// </summary>
     public Action<bool>? OnLoading { get; init; }
 
@@ -150,24 +133,14 @@ public sealed class InteractiveSessionOptions
 
 /// <summary>
 /// A HUMAN-IN-THE-LOOP browser session: a real WebView2 window over a persistent, isolated profile,
-/// whose DRIVER — app code — navigates, watches, and returns whatever it captured.
-/// <para>
-/// The kit owns the MECHANICS, not the scenario (D21). Those mechanics, merged from both family
-/// proofs: a modal <c>ShowDialog</c> nested message loop so the window pumps reliably even when
-/// triggered from a background thread; one session at a time; exactly-once completion (a dropped
-/// post or a tripped token cannot wedge the busy gate); the user's close is HELD so the driver gets
-/// a final read; and reveal-on-demand, so a driver that finishes without help never shows a window
-/// at all (see <see cref="InteractiveSessionOptions.RevealImmediately"/>).
-/// </para>
-/// <para>
-/// WHAT IT IS FOR is the driver's business: signing in, clearing a captcha or an interstitial,
-/// accepting terms, completing a checkout step — anything that needs a real browser and, sometimes,
-/// a real person. This type was called <c>LoginWindow</c> until P5.5 H9.7 and contained no login
-/// logic even then; the name was the last of the login vocabulary H4.6 started removing when it made
-/// the controller neutral. The package ships NO driver at all: a cookie-login one used to, and was
-/// removed in P7 because a login workflow is a product, not a mechanism (D21 amended). A worked
-/// example lives in the desktop sample — copy it, it is yours.
-/// </para>
+/// whose DRIVER — app code — navigates, watches, and returns whatever it captured. The kit owns the
+/// MECHANICS, not the scenario (D21): a modal <c>ShowDialog</c> nested message loop so the window pumps
+/// reliably even when triggered from a background thread; one session at a time; exactly-once completion
+/// (a dropped post or a tripped token cannot wedge the busy gate); the user's close is HELD so the
+/// driver gets a final read; and reveal-on-demand, so a driver that finishes without help never shows a
+/// window at all (see <see cref="InteractiveSessionOptions.RevealImmediately"/>). The package ships NO
+/// driver — signing in, clearing a captcha, accepting terms is the driver's business, and a worked
+/// example lives in the desktop sample.
 /// </summary>
 public sealed class InteractiveSession
 {
@@ -176,8 +149,7 @@ public sealed class InteractiveSession
 
     /// <summary>
     /// TEST SEAM: stands in for the modal window, so the gate ownership around it can be exercised
-    /// without a real WebView2 and a nested message loop. Null in production. Mirrors
-    /// <c>RenderSessionPool.InstanceFactoryOverride</c>.
+    /// without a real WebView2 and a nested message loop. Null in production.
     /// </summary>
     internal Func<CancellationToken, InteractiveSessionResult>? RunOnUiOverride;
 
@@ -208,11 +180,11 @@ public sealed class InteractiveSession
         var tcs = new TaskCompletionSource<InteractiveSessionResult>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // 🔴 COMPLETING THE CALLER AND RELEASING THE GATE ARE TWO DIFFERENT EVENTS, and merging them was
-        // the bug. The caller must be answered the moment it cancels — that part was right, and it is
-        // what stopped a never-pumped post from hanging it forever. But the gate ALSO opened then, while
-        // the modal window was still on screen: the caller took "cancelled" as "finished", called
-        // ClearProfile against a profile the live browser still holds (which throws into a swallow), and
-        // a second RunAsync sailed past the gate to open a SECOND window on the same profile.
+        // the bug. The caller must be answered the moment it cancels — that is what stops a never-pumped
+        // post from hanging it forever. But the gate ALSO opened then, while the modal window was still
+        // on screen: the caller took "cancelled" as "finished", called ClearProfile against a profile the
+        // live browser still holds (which throws into a swallow), and a second RunAsync sailed past the
+        // gate to open a SECOND window on the same profile.
         //
         // So the gate belongs to whoever owns a WINDOW. `owner` says who that is, and only one of the
         // two paths can claim it:
@@ -266,14 +238,9 @@ public sealed class InteractiveSession
 
     /// <summary>
     /// The browser this session actually runs: the app's own options, with the ONE field the session
-    /// owns overridden. A window held off-screen must keep its JS running, which is the session's
-    /// business rather than the app's.
-    /// <para>
-    /// 🔴 <b>Extracted so the pass-through is TESTABLE without a WebView2</b>, mirroring
-    /// <c>SessionController.ShouldHoldClose</c>. Everything past here needs a real browser and a modal
-    /// loop, so the alternative was a rule saying "remember to forward the new field" — and the defect
-    /// this replaced was exactly that rule being followed twice and then forgotten.
-    /// </para>
+    /// owns overridden. Extracted so the pass-through is TESTABLE without a WebView2 — everything past
+    /// here needs a real browser and a modal loop, and the alternative was a rule saying "remember to
+    /// forward the new field".
     /// </summary>
     internal static SessionBrowserOptions ComposeBrowserOptions(
         SessionBrowserOptions browser, bool revealImmediately) =>
@@ -327,9 +294,6 @@ public sealed class InteractiveSession
                 // GUARDED: a timer tick has no caller on its stack, so a throwing OnLoading here is an
                 // unhandled UI-thread exception — the family bootstrap's modal crash dialog — and this
                 // is a splash toggle, for which ObjectDisposedException is the obvious way to throw.
-                // The same callback is already guarded on the two paths below (see the finally block's
-                // own comment, which records what one unguarded OnLoading cost); this site was the
-                // one that still ran bare.
                 fallback.Tick += (_, _) =>
                 {
                     fallback.Stop();
@@ -345,17 +309,16 @@ public sealed class InteractiveSession
             SessionController? controller = null;
             try
             {
-                // 🔴 INSIDE the try, and that is the whole fix. This check used to sit above it and
-                // `form.Close(); return;` — skipping the finally, which holds the ONE unconditional
-                // `OnLoading(false)`. `onLoading(true)` has already run by now, so a session cancelled
-                // between the post and `Shown` left the app's splash up; with
-                // `LoadingFallbackTimeout = Zero` — documented as supported — there was no timer to
-                // rescue it either, so the overlay stayed for the process lifetime. `outcome` is already
-                // Cancelled, and the finally closes the window, so nothing else is lost by falling
-                // through.
+                // 🔴 INSIDE the try, and that is the whole fix. Above it, `form.Close(); return;` skips
+                // the finally, which holds the ONE unconditional `OnLoading(false)`. `onLoading(true)`
+                // has already run by now, so a session cancelled between the post and `Shown` leaves the
+                // app's splash up; with `LoadingFallbackTimeout = Zero` — documented as supported —
+                // there is no timer to rescue it either, so the overlay stays for the process lifetime.
+                // `outcome` is already Cancelled, and the finally closes the window, so nothing else is
+                // lost by falling through.
                 //
                 // ⚠ NO TEST COVERS THIS, and that is measured rather than assumed: reinstating the early
-                // return leaves all 215 session tests green. Everything below needs a live WebView2 and a
+                // return leaves every session test green. Everything below needs a live WebView2 and a
                 // modal loop, so it is sample/e2e territory.
                 if (cancellationToken.IsCancellationRequested) return;
 
@@ -384,26 +347,19 @@ public sealed class InteractiveSession
             }
             finally
             {
-                // ORDER IS LOAD-BEARING (P5.5 H2). Finish() + Close() go FIRST, and the app callback
-                // goes last inside its own try/catch.
-                //
-                // This block used to run OnLoading BEFORE Finish(), and OnLoading is APP code — a
-                // splash toggle, so ObjectDisposedException is the obvious way for it to throw. This
-                // whole handler is `async void`, so a throw here escaped as an unhandled UI-thread
-                // exception and Finish() never ran. The foreground controller HOLDS the user's close
-                // until Finish() (so a driver gets its last cookie read), which means its FormClosing
-                // handler then cancelled EVERY close — the user's, and Application.Exit's. Result: an
-                // unclosable modal window, ShowDialog never returning, and the busy gate held
-                // for the process lifetime. One throwing app callback bricked the app.
+                // ORDER IS LOAD-BEARING. Finish() + Close() go FIRST; the app callback goes last, inside
+                // its own try/catch. OnLoading is APP code and this handler is `async void`, so a throw
+                // before Finish() escapes as an unhandled UI-thread exception and Finish() never runs —
+                // then the foreground controller, which HOLDS the user's close until Finish(), cancels
+                // EVERY close including Application.Exit's. One throwing app callback bricked the app.
                 controller?.Finish();               // allow the real close (a user close was held)
                 if (!form.IsDisposed) form.Close(); // ends ShowDialog → RunOnUi returns outcome
 
                 try { fallback?.Dispose(); } catch (Exception) { /* timer teardown is best-effort */ }
 
-                // Drop the splash unconditionally: a driver that threw before its own
-                // SetLoading(false) (e.g. SessionBrowser init failed) would otherwise leave the
-                // app's overlay up for the process lifetime — the measured incident the fallback
-                // timer guards, which the timer's own disposal here would defeat.
+                // Drop the splash unconditionally: a driver that threw before its own SetLoading(false)
+                // (e.g. SessionBrowser init failed) would otherwise leave the app's overlay up for the
+                // process lifetime — and the fallback timer that guards that has just been disposed.
                 try
                 {
                     _options.OnLoading?.Invoke(false);
@@ -425,11 +381,10 @@ public sealed class InteractiveSession
     }
 
     /// <summary>
-    /// Wipe a session's persistent profile so discarding it is REAL — deleting only the captured
-    /// blob would still let the next session silently re-establish itself from the cached profile
-    /// cookies (both siblings' measured lesson: the user "signed out" and came back already signed
-    /// in). Wipe the provider's whole tree, sub-accounts included, when the whole provider is being
-    /// discarded — a sub's cookies left behind re-establish too.
+    /// Wipe a session's persistent profile so discarding it is REAL — deleting only the captured blob
+    /// would still let the next session silently re-establish itself from the cached profile cookies
+    /// (measured: the user "signed out" and came back already signed in). Wipe the provider's whole
+    /// tree, sub-accounts included, when the whole provider is discarded.
     /// <para>
     /// 🔴 <b>CHECK THE RESULT when you are telling a user they signed out.</b> The commonest failure is
     /// a profile still LOCKED by a session window that has not finished closing, and a silent false
@@ -447,18 +402,15 @@ public sealed class InteractiveSession
     public static bool ClearProfile(string profileDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileDirectory);
-        // This is a RECURSIVE DELETE on a caller-composed path, and the path is normally built from
-        // data-driven provider/account identifiers — so a stray ".." segment would aim it outside the
-        // sessions root. Refuse rather than trust the caller (found in the P0–P5 review). Use
-        // ComposeProfileDirectory to build the path and this can't arise.
+        // A RECURSIVE DELETE on a caller-composed path, normally built from data-driven provider/account
+        // identifiers — so a stray ".." segment would aim it outside the sessions root.
         if (HasTraversalSegment(profileDirectory))
             throw new ArgumentException("profileDirectory must not contain '..' segments", nameof(profileDirectory));
 
         // ⚠ AND REFUSE A VOLUME ROOT. The traversal check above stops a path CLIMBING out of the
         // sessions tree; it says nothing about one that never pointed inside it. `C:\` and
-        // `\\server\share\` are what an empty or collapsed composition produces — `Path.Combine(root,
-        // "")` is the obvious way — and this method would have recursively deleted the volume,
-        // swallowing every error on the way. A profile always has at least one directory above it.
+        // `\\server\share\` are what an empty or collapsed composition produces, and this method would
+        // have recursively deleted the volume, swallowing every error on the way.
         var full = Path.GetFullPath(profileDirectory);
         if (string.Equals(full, Path.GetPathRoot(full), StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("profileDirectory must not be a volume root", nameof(profileDirectory));
@@ -481,8 +433,7 @@ public sealed class InteractiveSession
     /// identifier <paramref name="segments"/> (a provider id, an account id, …). Each segment must be
     /// a single plain name: separators, <c>..</c>, drive qualifiers and Windows reserved device names
     /// are rejected. Per-provider/per-account scoping is the session stack's isolation boundary — two
-    /// accounts sharing a directory share a cookie jar — and the library previously documented that
-    /// boundary while shipping no safe way to build the path.
+    /// accounts sharing a directory share a cookie jar.
     /// <para>
     /// ⚠ <b>Two identifiers differing only in CASE are the same directory here</b>, because the Windows
     /// filesystem says so and this method cannot overrule it. If account ids are case-sensitive in your

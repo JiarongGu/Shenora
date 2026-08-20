@@ -5,15 +5,13 @@ using Shenora.Engine.Files;
 namespace Shenora.Windows;
 
 /// <summary>
-/// The document-created scripts <see cref="WebViewHost"/> injects. Ported from the family apps;
-/// the global-injection builder replaces the source's raw string interpolation (unescaped values
-/// could break out of the script — the audit's escaping gap) with real JSON serialization.
+/// The document-created scripts <see cref="WebViewHost"/> injects.
 /// </summary>
 internal static partial class WebViewScripts
 {
-    // Values serialize camelCase to match the family's JS-side conventions (same policy the IPC
-    // serializer defaults will use). The default STJ encoder escapes '<', '>', '&' and quotes as
-    // \uXXXX, so a value containing "</script>" cannot terminate the injected block.
+    // 🔴 Values are JSON-serialized, never interpolated: the default STJ encoder escapes '<', '>', '&'
+    // and quotes as \uXXXX, so a value containing a script-closing tag cannot terminate the injected
+    // block. camelCase matches the JS-side conventions.
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -55,9 +53,9 @@ internal static partial class WebViewScripts
 
     /// <summary>
     /// Block browser chrome shortcuts in production (find, print, save, view-source, zoom,
-    /// devtools…). Editing shortcuts (copy/paste/undo) and Ctrl+R stay available. JavaScript
-    /// injection because the WinForms WebView2 control does not expose AcceleratorKeyPressed.
-    /// Capture phase so the block runs before the app's own handlers.
+    /// devtools…); editing shortcuts and Ctrl+R stay available. JavaScript rather than
+    /// AcceleratorKeyPressed, which the WinForms WebView2 control does not expose. Capture phase, so
+    /// the block runs before the app's own handlers.
     /// </summary>
     public const string BlockBrowserShortcuts = """
         (function() {

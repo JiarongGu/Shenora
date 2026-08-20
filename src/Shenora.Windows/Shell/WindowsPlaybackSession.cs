@@ -2,20 +2,15 @@ using Microsoft.Extensions.Logging;
 using Shenora.Modules.Platform;
 using Shenora.Modules.Media;
 
-// SystemMediaTransportControls is WinRT, and the WinRT projections only exist when the target framework
-// names a Windows SDK version — with a bare `net10.0-windows`, `Windows.Media` is not a namespace at all
-// (measured: CS0234). So this package MULTI-TARGETS and this whole file is the versioned half; the plain
-// half is WindowsPlaybackSession.Unsupported.cs, which refuses by name.
-//
-// Guarding the FILE rather than each body: the alternative was a dozen #if blocks inside one class, which
-// is harder to read and easy to get subtly wrong. The cost is that the public shape is written twice, so
+// SystemMediaTransportControls is WinRT, so this package MULTI-TARGETS: this whole file is the versioned
+// half and WindowsPlaybackSession.Unsupported.cs is the plain one, which carries the reference statement for
+// every such split here. The FILE is guarded rather than each body, so the public shape is written twice and
 // the plain TFM is gated by its own metadata baseline — see MetadataSurfaceTests.
 #if WINDOWS10_0_17763_0_OR_GREATER
 using Shenora;
-// `global::` on every WinRT namespace below, and it is not optional: inside `namespace Shenora.Windows`
+// 🔴 `global::` on every WinRT namespace below, and it is not optional: inside `namespace Shenora.Windows`
 // the bare identifier `Windows` binds to THIS namespace, so `Windows.Media` resolves to
-// `Shenora.Windows.Windows.Media` and fails with a confusing CS0234 about `Shenora.Windows`. Same trap
-// the WebView2 control alias already documents.
+// `Shenora.Windows.Windows.Media` and fails with a CS0234 that blames `Shenora.Windows`.
 using SmtcButton = global::Windows.Media.SystemMediaTransportControlsButton;
 using SmtcStatus = global::Windows.Media.MediaPlaybackStatus;
 
@@ -25,20 +20,15 @@ namespace Shenora.Windows;
 /// The desktop shell's <see cref="IPlaybackSession"/> — Windows' own media flyout, the one the volume
 /// keys and the lock screen drive, via <c>SystemMediaTransportControls</c>.
 /// <para>
-/// <b>Obtained through a <c>MediaPlayer</c>, and that is a deliberate choice between three bad options.</b>
-/// <c>SystemMediaTransportControls.GetForCurrentView()</c> needs a <c>CoreWindow</c>, which a Win32 app
-/// does not have. The documented route for a windowed app is
-/// <c>ISystemMediaTransportControlsInterop.GetForWindow(hwnd)</c> — but .NET 5+ removed the built-in WinRT
-/// marshalling, so a <c>ComImport</c> interface returning a projected WinRT type no longer marshals for
-/// free, and hand-rolling it means <c>RoGetActivationFactory</c>, HSTRINGs and manual reference counting.
-/// A <c>MediaPlayer</c> exposes an SMTC with no window and no interop at all, which is why this is the
-/// widely-used route. The cost is one idle media pipeline; the alternative was inventing exactly the kind
-/// of interop this kit prefers to extract rather than write.
+/// Obtained through a <c>MediaPlayer</c>, which exposes an SMTC with no window and no interop:
+/// <c>GetForCurrentView()</c> needs a <c>CoreWindow</c> a Win32 app does not have, and
+/// <c>ISystemMediaTransportControlsInterop.GetForWindow</c> needs hand-rolled activation since .NET 5
+/// dropped built-in WinRT marshalling. The cost is one idle media pipeline.
 /// </para>
 /// <para>
-/// <c>CommandManager.IsEnabled = false</c> is load-bearing: left on, the <c>MediaPlayer</c> handles the
-/// transport buttons ITSELF against the empty pipeline it owns, and the app's
-/// <see cref="CommandReceived"/> never fires — the controls appear to work and do nothing.
+/// 🔴 <c>CommandManager.IsEnabled = false</c> is load-bearing: left on, the <c>MediaPlayer</c> answers the
+/// transport buttons ITSELF against its own empty pipeline and <see cref="CommandReceived"/> never fires —
+/// the controls appear to work and do nothing.
 /// </para>
 /// </summary>
 public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
@@ -49,9 +39,8 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
     private readonly object _gate = new();
     private PlaybackCommands _supported;
     private TimeSpan _skipInterval = TimeSpan.FromSeconds(15);
-    // Remembered from Publish so Report can build a complete timeline. SMTC splits what one PlaybackInfo
-    // says across two calls — the duration belongs to the ITEM and the position to the moment — and nothing
-    // carried it between them, so EndTime could only ever be zero (found by the first adopter).
+    // Remembered from Publish so Report can build a complete timeline: SMTC splits what one PlaybackInfo
+    // says across two calls, the duration belonging to the ITEM and the position to the moment.
     private TimeSpan? _duration;
     private bool _disposed;
 
@@ -60,8 +49,7 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
     {
         _log = log;
         _player = new global::Windows.Media.Playback.MediaPlayer();
-        // See the remarks: without this the player answers the buttons instead of the app.
-        _player.CommandManager.IsEnabled = false;
+        _player.CommandManager.IsEnabled = false;   // see the remarks — load-bearing
         _controls = _player.SystemMediaTransportControls;
         _controls.IsEnabled = true;
         _controls.ButtonPressed += OnButtonPressed;
@@ -75,9 +63,8 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
         set
         {
             lock (_gate) _supported = value;
-            // Windows has no TogglePlayPause flag: the OS derives the single play/pause button from the
-            // two separate ones, so a caller asking only for Toggle must still light both or the flyout
-            // shows nothing pressable.
+            // Windows has no TogglePlayPause flag — it derives the single button from the two separate
+            // ones — so a caller asking only for Toggle must still light both.
             var toggle = value.HasFlag(PlaybackCommands.TogglePlayPause);
             Try(() =>
             {
@@ -86,10 +73,9 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
                 _controls.IsStopEnabled = value.HasFlag(PlaybackCommands.Stop);
                 _controls.IsNextEnabled = value.HasFlag(PlaybackCommands.Next);
                 _controls.IsPreviousEnabled = value.HasFlag(PlaybackCommands.Previous);
-                // ⚠ SMTC has no skip-by-interval button. FastForward/Rewind are the closest thing it
-                // offers and are CONTINUOUS-seek semantics on some surfaces, so this is an honest
-                // approximation rather than an exact match — documented on IPlaybackSession, and the
-                // reason the request still carries the interval the app configured.
+                // ⚠ SMTC has no skip-by-interval button, so FastForward/Rewind stand in — an approximation
+                // (they are continuous-seek on some surfaces), which is why the request still carries the
+                // interval the app configured.
                 _controls.IsFastForwardEnabled = value.HasFlag(PlaybackCommands.SkipForward);
                 _controls.IsRewindEnabled = value.HasFlag(PlaybackCommands.SkipBackward);
             }, nameof(Supported));
@@ -101,8 +87,7 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
     {
         get { lock (_gate) return _skipInterval; }
         // Nothing to push to SMTC: Windows has no preferred-interval concept, so this is only what the
-        // request carries back. The property still exists on every shell because the CONTRACT is portable —
-        // an app sets it once and the platforms that can render it, do.
+        // request carries back.
         set { lock (_gate) _skipInterval = value; }
     }
 
@@ -115,30 +100,26 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
         ArgumentNullException.ThrowIfNull(info);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        // Before the Try, and assigned unconditionally: a track published WITHOUT a duration must clear the
-        // previous one, or the OS keeps drawing the last item's length under the new item's position.
+        // Before the Try, and unconditional: a track published WITHOUT a duration must clear the previous
+        // one, or the OS keeps drawing the last item's length under the new item's position.
         lock (_gate) _duration = info.Duration;
 
         Try(() =>
         {
             var updater = _controls.DisplayUpdater;
             updater.Type = global::Windows.Media.MediaPlaybackType.Music;
-            // MusicProperties is the only one of the three shapes with all of title/artist/album, so the
-            // generic contract maps onto it regardless of what the content actually is. `Video` has no
-            // second line at all, which would silently drop Subtitle.
+            // MusicProperties whatever the content is: it is the only one of the three shapes with all of
+            // title/artist/album, and `Video` has no second line, which would silently drop Subtitle.
             updater.MusicProperties.Title = info.Title ?? string.Empty;
             updater.MusicProperties.Artist = info.Subtitle ?? string.Empty;
             updater.MusicProperties.AlbumTitle = info.GroupName ?? string.Empty;
-            // ⚠ Update() COMMITS the properties above; without it every field is set and nothing is
-            // published. Removing it leaves our session visible to the OS with an
+            // ⚠ Update() COMMITS the properties above; without it the session is visible to the OS with an
             // EMPTY title, which is a different symptom from having no session at all.
             updater.Update();
         }, nameof(Publish));
 
-        // Artwork LAST and off this thread. Building a thumbnail means an InMemoryRandomAccessStream,
-        // whose only write path is async — and blocking on it from a WinForms thread (which has a
-        // SynchronizationContext) is the classic deadlock. So the text lands immediately and the image
-        // follows, which is also how every real player behaves.
+        // ⚠ Artwork LAST and off this thread: a thumbnail means an InMemoryRandomAccessStream whose only
+        // write path is async, and blocking on it from a WinForms thread is the classic deadlock.
         if (!info.Artwork.IsEmpty) ApplyArtwork(info.Artwork);
     }
 
@@ -168,9 +149,8 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
                 StartTime = TimeSpan.Zero,
                 MinSeekTime = TimeSpan.Zero,
                 Position = position,
-                // BOTH, not one: EndTime is what the flyout draws the scrubber against and MaxSeekTime is
-                // what bounds a DRAG, so setting only EndTime renders a length the user is not allowed to
-                // reach. They stay zero when the duration is unknown — see TimelineFor.
+                // BOTH, not one: EndTime is what the flyout draws the scrubber against and MaxSeekTime
+                // bounds a DRAG, so setting only EndTime renders a length the user cannot reach.
                 EndTime = end,
                 MaxSeekTime = end,
             };
@@ -180,21 +160,14 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
 
     /// <summary>
     /// The timeline to hand SMTC, from the position the app reported and the duration
-    /// <see cref="Publish"/> remembered.
-    /// <para>
-    /// Pure and <c>internal</c> so it is unit-testable with no media pipeline. That matters here more than
-    /// usual: the defect this exists for shipped because the only evidence was "the call did not throw", and
-    /// a timeline is the kind of thing that comes out silently wrong rather than loudly broken.
-    /// </para>
+    /// <see cref="Publish"/> remembered. Pure and <c>internal</c> so it is unit-testable with no media
+    /// pipeline. A null OR non-positive duration means UNKNOWN and leaves <c>EndTime</c> at zero (an item
+    /// that ends at 0 renders a permanently-full scrubber, and a live stream has no end).
     /// <para>
     /// ⚠ <b>A position past the end is CLAMPED, not passed through.</b> SMTC wants
-    /// <c>StartTime ≤ Position ≤ MaxSeekTime ≤ EndTime</c> and rejects the whole timeline otherwise — which
-    /// would lose the duration as well as the position. An app reporting a position a tick past the end is
-    /// ordinary at the moment a track finishes, so the incoherent input must not cost the coherent field.
-    /// </para>
-    /// <para>
-    /// A null OR non-positive duration both mean UNKNOWN and both leave <c>EndTime</c> at zero. Telling the
-    /// OS an item ends at 0 renders a permanently-full scrubber, and a live stream legitimately has no end.
+    /// <c>StartTime ≤ Position ≤ MaxSeekTime ≤ EndTime</c> and silently rejects the whole timeline
+    /// otherwise, losing the duration too — and a position a tick past the end is ordinary at the moment a
+    /// track finishes.
     /// </para>
     /// </summary>
     internal static (TimeSpan Position, TimeSpan End) TimelineFor(TimeSpan position, TimeSpan? duration)
@@ -208,15 +181,14 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
     public void Clear()
     {
         if (_disposed) return;
-        // The duration belongs to the item that is going away. Left set, the next Publish that omits one
-        // would inherit it — the same staleness the assignment in Publish prevents, from the other side.
+        // The duration belongs to the item going away; left set, the next Publish that omits one inherits it.
         lock (_gate) _duration = null;
         Try(() =>
         {
             _controls.DisplayUpdater.ClearAll();
             _controls.DisplayUpdater.Update();
-            // Closed, not Stopped: Stopped keeps the app in the flyout with nothing playing, which is
-            // what PlaybackState.Stopped means. Clear() means take us off it.
+            // Closed, not Stopped: Stopped keeps the app in the flyout with nothing playing, which is what
+            // PlaybackState.Stopped means. Clear() means take us off it.
             _controls.PlaybackStatus = SmtcStatus.Closed;
         }, nameof(Clear));
     }
@@ -229,8 +201,8 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
             try
             {
                 var stream = new global::Windows.Storage.Streams.InMemoryRandomAccessStream();
-                // CryptographicBuffer, because `byte[].AsBuffer()` lived in System.Runtime.WindowsRuntime
-                // and that assembly does not exist after .NET 5. This is the projection-only equivalent.
+                // CryptographicBuffer: `byte[].AsBuffer()` lived in System.Runtime.WindowsRuntime, which
+                // does not exist after .NET 5.
                 await stream.WriteAsync(
                     global::Windows.Security.Cryptography.CryptographicBuffer.CreateFromByteArray(bytes));
                 stream.Seek(0);
@@ -261,8 +233,8 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
             SmtcButton.Rewind => PlaybackCommand.SkipBackward,
             _ => (PlaybackCommand?)null,
         };
-        // An unmapped button (record, channel up, fast-forward…) is dropped rather than guessed at. The
-        // app declared what it supports; inventing a mapping here would fire a command it never offered.
+        // An unmapped button (record, channel up…) is dropped: the app declared what it supports, and
+        // inventing a mapping would fire a command it never offered.
         if (command is not { } mapped) return;
         var interval = mapped is PlaybackCommand.SkipForward or PlaybackCommand.SkipBackward
             ? SkipInterval
@@ -279,9 +251,8 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
     }
 
     /// <summary>
-    /// Hand a command to the app through the ONE guard. ⚠ This runs on a WinRT callback thread — NOT the
-    /// UI thread — so an escaping exception has no catcher and would take the process down;
-    /// <see cref="AppCallback"/> is what stops that, and the contract tells the app to marshal.
+    /// Hand a command to the app through the ONE guard. ⚠ This runs on a WinRT callback thread, NOT the
+    /// UI thread, so an escaping exception has no catcher and would take the process down.
     /// </summary>
     private void Raise(PlaybackCommandRequest request)
     {
@@ -293,9 +264,8 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
     }
 
     /// <summary>
-    /// Every SMTC call goes through here. These are cross-process COM calls to a system service that can
-    /// be restarting or gone, and each one throws on its own — a media-key press against a torn-down
-    /// session must not become an app crash.
+    /// Every SMTC call goes through here: these are cross-process COM calls to a system service that can be
+    /// restarting or gone, and a media-key press against a torn-down session must not crash the app.
     /// </summary>
     private void Try(Action action, string what)
     {
@@ -320,8 +290,7 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
             _controls.PlaybackPositionChangeRequested -= OnPositionChangeRequested;
             _controls.IsEnabled = false;
         }, nameof(Dispose));
-        // The player is ours and holds a media pipeline; leaving it would keep the app in the flyout for
-        // the rest of the process.
+        // The player is ours; leaving it keeps the app in the flyout for the rest of the process.
         try { _player.Dispose(); } catch (Exception ex) { Log(() => "[Shenora.Windows] Player dispose", ex); }
     }
 }

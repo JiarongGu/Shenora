@@ -27,25 +27,15 @@ public sealed class DropZoneManagerOptions
 }
 
 /// <summary>
-/// Native drag-drop zones synced to page elements, ported from the primary desktop sibling (its
-/// third copy was already annotated "ported from…" — this ends that): transparent overlays are
-/// positioned over the page's zone elements to capture REAL OS file paths, including drags from
-/// other apps while this one is in the background. The client side is <c>useDropZone</c> in
-/// @shenora/react; the routes arrive through <see cref="DropZoneModule"/>.
+/// Native drag-drop zones synced to page elements: transparent overlays are positioned over the page's
+/// zone elements to capture REAL OS file paths, including drags from other apps while this one is in
+/// the background. The client side is <c>useDropZone</c> in @shenora/react; the routes arrive through
+/// <see cref="DropZoneModule"/>.
 ///
-/// WHY NOT HTML5 DROP — it is not merely that the page cannot see the path. A page-side drop yields
-/// a <c>File</c> handle whose only accessor is its CONTENT, so in a shell architecture (the page is
-/// UI, the host does the file work) the bytes must be read into the renderer and then pushed across
-/// the IPC boundary — a full copy of every dropped file, EAGERLY, at drop time, before the app knows
-/// whether it wants any of them. Drop 200 files to filter by extension and you pay for all 200; drop
-/// a multi-GB asset and you pay that, to reach a file the host could already have opened off the
-/// same disk. A path is a string: open it lazily, stream it, hash it incrementally, move or link it
-/// without copying, watch it for changes. That is the real reason this component exists, and it is
-/// why every app in the family rebuilt it rather than accepting the page-side version.
-///
-/// Placed in Shenora.Windows (the design sketch said WinForms) because it drives the WebView —
-/// coordinates anchor on the control and occlusion checks run DOM scripts — and the facade
-/// needs Ipc, which the WinForms package deliberately doesn't reference.
+/// WHY NOT HTML5 DROP: a page-side drop yields a <c>File</c> whose only accessor is its CONTENT, so the
+/// bytes must be read into the renderer and pushed across the IPC boundary — a full copy of every
+/// dropped file, eagerly, before the app knows whether it wants any of them. A path is a string: open
+/// it lazily, stream it, hash it incrementally, move or link it without copying.
 /// </summary>
 public sealed class DropZoneManager : IDisposable
 {
@@ -59,15 +49,16 @@ public sealed class DropZoneManager : IDisposable
     public const string DragLeaveEvent = "DRAG_LEAVE";
 
     /// <summary>Event: files were dropped: <c>{ zoneId, files, position }</c>. The payload the whole
-    /// mechanism exists to deliver — a page cannot learn a dropped file's PATH any other way.</summary>
+    /// mechanism exists to deliver — a page cannot learn a dropped file's PATH any other way.
+    /// </summary>
     public const string FileDropEvent = "FILE_DROP";
 
     private readonly DropZoneManagerOptions _options;
     private readonly ILogger<DropZoneManager> _logger;
     private readonly Shenora.Core.Shell.IUiDispatcher _ui;
     private readonly Dictionary<string, DropZoneOverlay> _overlays = [];
-    // Last CSS bounds per zone — so a DPI change (window moved to another monitor) can re-derive
-    // every overlay's physical bounds without waiting for the page to resend them (P2.3b).
+    // Last CSS bounds per zone, so a DPI change can re-derive every overlay's physical bounds without
+    // waiting for the page to resend them.
     private readonly Dictionary<string, (int X, int Y, int Width, int Height)> _cssBounds = [];
     private bool _disposed;
 
@@ -76,24 +67,20 @@ public sealed class DropZoneManager : IDisposable
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? NullLogger<DropZoneManager>.Instance;
-        // One marshalling owner (P5.5 H4.2). The guarded body matters here: a posted overlay update
-        // can throw ObjectDisposedException or a cross-thread error if the window closes between the
-        // post and its execution, and that used to surface as an unhandled UI-thread exception.
+        // The one marshalling owner. Its guarded body matters here: a posted overlay update throws if
+        // the window closes between the post and its execution, and there is no caller on that stack.
         _ui = new Shenora.Windows.WinFormsUiDispatcher(_options.ParentForm,
             ex => _logger.LogWarning(ex, "Drop-zone UI work failed."));
 
-        // Overlay visibility tracks form activation: an inactive form shows every overlay —
-        // that's what makes background drag-drop from other apps work.
+        // Overlay visibility tracks form activation: an INACTIVE form shows every overlay — that is
+        // what makes background drag-drop from other apps work.
         _options.ParentForm.Deactivate += OnFormDeactivate;
         _options.ParentForm.Activated += OnFormActivated;
-        // Window moved to a monitor with a different DPI: every stored CSS rect maps to new
-        // physical bounds. The page's own resize path converges on the same result; this covers
-        // the gap until it does.
+        // A monitor with a different DPI remaps every stored CSS rect to new physical bounds.
         _options.ParentForm.DpiChanged += OnDpiChanged;
 
-        // Zones belong to the DOCUMENT that registered them, so they are cleared when a new document
-        // begins loading. The core may not exist yet — an app constructs this before the (slow)
-        // WebView2 init — so hook whichever is true now and let initialization finish the job.
+        // The core may not exist yet — an app constructs this before the (slow) WebView2 init — so hook
+        // whichever is true now and let initialization finish the job.
         if (_options.WebView.CoreWebView2 is not null) HookDocumentChange();
         else _options.WebView.CoreWebView2InitializationCompleted += OnCoreInitialized;
     }
@@ -108,27 +95,22 @@ public sealed class DropZoneManager : IDisposable
     /// <summary>
     /// Clear the zones when a new document starts loading, so overlay lifetime follows the PAGE.
     /// <para>
-    /// <c>ContentLoading</c>, never <c>NavigationStarting</c> — the same choice, for the same reason,
-    /// as the IPC ready gate (P5.5 H3): <c>NavigationStarting</c> also fires for navigations that
-    /// never replace the document (one a policy cancels, one that fails before committing), and
-    /// destroying the live page's overlays for those would be a bug.
+    /// 🔴 <c>ContentLoading</c>, never <c>NavigationStarting</c> — the latter also fires for navigations
+    /// that never replace the document (one a policy cancels, one that fails before committing), and
+    /// destroying the live page's overlays for those would be a bug. Same choice as the IPC ready gate.
     /// </para>
     /// <para>
-    /// This replaces clearing on the READY handshake, which was ORDER-DEPENDENT and silently wrong:
-    /// a <c>REGISTER</c> that arrived before <c>READY</c> was wiped AFTER being acked, so the client
-    /// believed its zone was live while the host had forgotten it, with nothing logged on either
-    /// side. React runs CHILD effects before PARENT effects, so a root-component <c>notifyReady</c> —
-    /// the obvious reading of "call it once at startup" — produced exactly that. Keying on the
-    /// document instead cannot race the client at all, because the clear happens before the new page
-    /// can send anything.
+    /// ⚠ Never key this on the READY handshake instead: a <c>REGISTER</c> arriving before <c>READY</c>
+    /// would be wiped AFTER being acked, leaving the client sure its zone is live and the host with no
+    /// record of it, silent on both sides. React runs CHILD effects before PARENT effects, so a
+    /// root-component <c>notifyReady</c> produces exactly that.
     /// </para>
     /// </summary>
     private void HookDocumentChange()
     {
         if (_options.WebView.CoreWebView2 is not { } core) return;
         // Detach-then-attach so this is IDEMPOTENT: CoreWebView2InitializationCompleted can fire more
-        // than once (a retried init after a failure), and a double subscription would leak a handler
-        // and clear twice per navigation. Removing a handler that was never added is a no-op.
+        // than once (a retried init), and a double subscription would clear twice per navigation.
         core.ContentLoading -= OnContentLoading;
         core.ContentLoading += OnContentLoading;
     }
@@ -196,14 +178,8 @@ public sealed class DropZoneManager : IDisposable
 
     /// <summary>
     /// Remove every zone. You rarely need to call this: the manager clears itself whenever a new
-    /// document starts loading, so a reloaded or navigated page simply re-registers its own.
-    /// <para>
-    /// It used to be the APP's job, from the ready handshake, and that carried an ordering contract
-    /// sharp enough to need documenting in four places: a <c>REGISTER</c> arriving before <c>READY</c>
-    /// was destroyed AFTER being acked, leaving the client sure its zone was live and the host with
-    /// no record of it — silent on both sides. Keying on the document removed the contract rather
-    /// than documenting it, so those warnings are gone; do not reintroduce a handshake-time clear.
-    /// </para>
+    /// document starts loading, so a reloaded or navigated page simply re-registers its own. ⚠ Do not
+    /// reintroduce a handshake-time clear — see <see cref="HookDocumentChange"/> for why it races.
     /// </summary>
     public void ClearAll()
     {
@@ -223,14 +199,13 @@ public sealed class DropZoneManager : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        // Unhook FIRST: the source's handlers lingered when the form outlived the session and
-        // fired on disposed overlays.
+        // Unhook FIRST — a form outliving the manager otherwise fires these on disposed overlays.
         _options.ParentForm.Deactivate -= OnFormDeactivate;
         _options.ParentForm.Activated -= OnFormActivated;
         _options.ParentForm.DpiChanged -= OnDpiChanged;
         _options.WebView.CoreWebView2InitializationCompleted -= OnCoreInitialized;
-        // Guarded: touching CoreWebView2 after the control is disposed throws, and a manager
-        // outliving its WebView is exactly the teardown order this runs in.
+        // Guarded: touching CoreWebView2 after the control is disposed throws, and a manager outliving
+        // its WebView is exactly the teardown order this runs in.
         try
         {
             if (!_options.WebView.IsDisposed && _options.WebView.CoreWebView2 is { } core)
@@ -269,14 +244,13 @@ public sealed class DropZoneManager : IDisposable
 
     /// <summary>
     /// CSS (logical) pixels from getBoundingClientRect → physical pixels → parent-form client
-    /// coordinates. PointToScreen/PointToClient are raw Win32 calls working in PHYSICAL pixels;
-    /// at 150 % each CSS pixel is 1.5 physical. Uses the CONTROL's DeviceDpi — per-monitor under
-    /// PerMonitorV2 (the source used a process-global scale factor, wrong on mixed-DPI setups).
+    /// coordinates. PointToScreen/PointToClient are raw Win32 calls working in PHYSICAL pixels; at
+    /// 150 % each CSS pixel is 1.5 physical. Uses the CONTROL's DeviceDpi — per-monitor under
+    /// PerMonitorV2, where a process-global scale factor is wrong on a mixed-DPI desktop.
     /// </summary>
     private (int X, int Y, int Width, int Height) ToFormBounds(int cssX, int cssY, int cssWidth, int cssHeight)
     {
-        // DpiHelper owns device-DPI conversion (P5.5 H4.5) — reachable since the re-layer (D19), and
-        // it guards a non-positive DeviceDpi, which the hand-rolled `/ 96.0` did not.
+        // DpiHelper owns device-DPI conversion and guards a non-positive DeviceDpi.
         var scale = Shenora.Windows.DpiHelper.ScaleFromDeviceDpi(_options.WebView.DeviceDpi);
         var physX = (int)Math.Round(cssX * scale);
         var physY = (int)Math.Round(cssY * scale);
@@ -287,40 +261,29 @@ public sealed class DropZoneManager : IDisposable
         return (form.X, form.Y, physW, physH);
     }
 
-    // Marshal to the UI thread NON-BLOCKING (BeginInvoke). Overlay management uses Win32/
-    // WinForms calls (PointToScreen, Controls.Add) that are UI-thread-only — and a BLOCKING
-    // Invoke from a worker thread can deadlock the UI (this caused an AppHang in the source when
-    // IPC was dispatched off the UI thread). BeginInvoke never blocks the caller, so the manager
-    // is safe to call from any thread. IsHandleCreated FIRST — pre-handle, InvokeRequired lies,
-    // AND there is nothing to marshal to yet: return false so the caller proceeds inline
-    // (re-invoking the caller here recursed without end).
+    // Marshal overlay work to the UI thread NON-BLOCKING: PointToScreen/Controls.Add are UI-thread-only
+    // and a BLOCKING Invoke from a worker thread can deadlock the UI, so the manager stays callable
+    // from any thread.
+    //   TRUE  = handled here (posted, or deliberately dropped).
+    //   FALSE = the caller should proceed INLINE, which now means only "we are already on the UI
+    //           thread" — this returns a bool rather than calling back because re-invoking the caller
+    //           from here recursed without end.
     private bool MarshalToUi(Action action)
     {
-        // TRUE  = handled here (posted, or deliberately dropped).
-        // FALSE = the caller should proceed INLINE — and now that means only one thing: we are
-        //         already on the UI thread. Re-invoking the caller from here recursed without end
-        //         which is why this returns a bool at all rather than calling back.
         if (_ui.IsOnUiThread) return false;
 
         if (_ui.Post(action)) return true;
 
-        // Not Ready (no handle yet) or Gone. This used to fall into the inline path too — which ran
-        // PointToScreen / Controls.Add ON A WORKER THREAD, forcing handle creation from the wrong
-        // thread. Dropping is the correct answer: zones are registered by the page, which cannot
-        // have loaded before the form was realized.
+        // ⚠ Not Ready (no handle yet) or Gone — DROP, never fall through to the inline path, which
+        // would run PointToScreen / Controls.Add on a worker thread and force handle creation there.
+        // Zones are registered by the page, which cannot have loaded before the form was realized.
         _logger.LogDebug("Drop-zone UI work skipped — the host window is {State}.", _ui.State);
         return true;
     }
 
-    // Wire events (the bridge forwards the bus to the page). Fire-and-forget: emission must never
-    // block the drag/drop handlers — every one of these is reached from a WinForms drag event, where
-    // an escaping exception has no caller on the stack.
-    //
-    // `Emit`, not `_ = EmitAsync(…)`. The two do the same thing, and that is exactly why P6.4 added
-    // `Emit`: whether discarding the task is safe depends on an INTERNAL guarantee (the bus guards
-    // every handler, so the task cannot fault because of a subscriber), and `IEventBus.Emit`'s own doc
-    // says a caller should not have to read the implementation to learn that. This was the kit's only
-    // in-repo emitter and it still wrote the discard the new member exists to replace.
+    // Wire events (the bridge forwards the bus to the page). `Emit`, not `_ = EmitAsync(…)`: every one
+    // of these is reached from a WinForms drag event, where an escaping exception has no caller on the
+    // stack, and Emit is the member that says discarding is safe without reading the bus.
     internal void NotifyDragEnter(string zoneId) =>
         _options.EventBus.Emit(Module, DragEnterEvent, new { ZoneId = zoneId });
 

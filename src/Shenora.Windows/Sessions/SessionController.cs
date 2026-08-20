@@ -9,32 +9,27 @@ public sealed record SessionCookie(string Name, string Value, string Domain, str
 
 /// <summary>
 /// A page-initiated download, reported as <see cref="SessionEvents.DownloadStarting"/>.
-/// <para>
 /// ⚠ Whether the browser's own download is CANCELLED is the session type's policy, not this record's:
 /// a session with a <see cref="SessionController"/> cancels it so the app can fetch the URL with its own
-/// progress and resume, while a pooled render session leaves it alone. The summary here used to say
-/// "(and cancelled)" unconditionally, which stopped being true once every session type could report one.
-/// </para>
+/// progress and resume, while a pooled render session leaves it alone.
 /// </summary>
 public sealed record DownloadHit(string Url, string? FileName);
 
 /// <summary>
-/// The primitives a session driver drives over the live window, ported from the server-backed
-/// sibling (its co-browse reuses the SAME controller over an off-screen form — it doesn't care).
-/// Every browser call marshals to the form's UI thread, so the driver can call them from any
-/// continuation with plain await.
+/// The primitives a session driver drives over the live window; an off-screen co-browse host reuses the
+/// SAME controller. Every browser call marshals to the form's UI thread, so the driver can call them
+/// from any continuation with plain await.
 ///
 /// 🔴 It DRIVES; it does not report. What the browser does arrives on the app's
 /// <see cref="Shenora.Core.Events.IEventBus"/> as <see cref="SessionEvents"/>, scoped by
-/// <see cref="Id"/> — one subscription idiom for the whole kit, and a catalogue far wider than the
-/// four taps this class used to own.
+/// <see cref="Id"/>.
 ///
 /// A FOREGROUND controller (a real interactive window) adds two window behaviours the off-screen
 /// co-browse host must NOT have: the user's close is HELD (cancelled) so the driver gets a final
 /// cookie read — <see cref="WindowClosed"/> fires instead — and <see cref="Reveal"/>/
 /// <see cref="FitToBox"/> manage the on-screen window. On a background host those are inert: a
-/// hidden infrastructure window vetoing its own close would veto <c>Application.Exit</c>, and
-/// revealing/resizing an invisible screencast host is nonsense (its viewport is driven by CDP).
+/// hidden infrastructure window vetoing its own close would veto <c>Application.Exit</c>, and its
+/// viewport is driven by CDP rather than by the window size.
 /// </summary>
 public sealed class SessionController
 {
@@ -54,15 +49,14 @@ public sealed class SessionController
     /// default.
     /// <para>
     /// 🔴 <b>Without it a navigate could wait forever.</b> `NavigationCompleted` never fires if the
-    /// renderer dies mid-load, so a `StreamingSession` whose page crashed reported the death through
-    /// `OnEnded` and `Frames` correctly while the in-flight `NavigateAsync` simply never returned —
-    /// `DisposeAsync` does not complete it either. Its sibling `RenderSession.NavigateAsync` has been
-    /// capped all along; this one was not.
+    /// renderer dies mid-load, so a `StreamingSession` whose page crashed reports the death through
+    /// `OnEnded` and `Frames` while the in-flight `NavigateAsync` simply never returns — `DisposeAsync`
+    /// does not complete it either.
     /// </para>
     /// <para>
-    /// ⚠ SOFT, exactly as the sibling's is: the cap completes the wait rather than throwing, because
-    /// "the load is taking a while" is not an error and the caller can look at the page. A caller who
-    /// wants to give up passes a token, which still surfaces as cancellation.
+    /// ⚠ SOFT, as the sibling's is: the cap completes the wait rather than throwing, because "the load
+    /// is taking a while" is not an error and the caller can look at the page. A caller who wants to
+    /// give up passes a token, which still surfaces as cancellation.
     /// </para>
     /// </summary>
     private static readonly TimeSpan NavigationCap = TimeSpan.FromSeconds(30);
@@ -78,9 +72,8 @@ public sealed class SessionController
         _navigationGuard = navigationGuard;
         _onLoading = onLoading;
         _foreground = foreground;
-        // RevealImmediately windows start on screen. Derived from OffscreenWindow's own constant
-        // (P5.5 H4.5) — this used to hard-code a DIFFERENT threshold (-30000) than the park
-        // coordinate (-32000), so moving the park position would have silently broken reveal detection.
+        // RevealImmediately windows start on screen. Derived from OffscreenWindow's own constant, so
+        // moving the park position cannot silently break reveal detection.
         _revealed = foreground && !OffscreenWindow.IsParked(form);
 
         if (_foreground)
@@ -95,10 +88,8 @@ public sealed class SessionController
                 if (!_closed.IsCancellationRequested) _closed.Cancel(); // …then wrap up via WindowClosed
             };
         }
-        // 🔴 POLICY ONLY. Observing what the browser does is SessionEvents' job now, and this class no
-        // longer reports anything: the four taps it used to carry (message, download, new-window,
-        // navigation) were a second subscription idiom next to the kit's own bus, and one of them was
-        // actively harmful — see the NewWindowRequested note below.
+        // 🔴 POLICY ONLY. Observing what the browser does is SessionEvents' job; this class reports
+        // nothing.
         //
         // The browser's own download is CANCELLED: an interactive session hands the URL to the app,
         // which fetches it with its own progress and resume. The event still reaches subscribers as
@@ -108,10 +99,9 @@ public sealed class SessionController
             try { e.Cancel = true; }
             catch { /* the operation may already be gone */ }
         };
-        // ⚠ NewWindowRequested is deliberately NOT wired here. This class used to set
-        // `e.Handled = true` unconditionally, on top of SessionBrowser's own popup policy — so an app
-        // that set `OnWindowRequest` to allow a popup was silently overruled on exactly the session
-        // type a human is looking at. One owner for that decision, and it is the hook.
+        // ⚠ NewWindowRequested is NOT wired here, and must not be: setting `e.Handled = true` on top of
+        // SessionBrowser's own popup policy silently overrules an app that set `OnWindowRequest` to
+        // allow a popup — on exactly the session type a human is looking at. One owner: the hook.
     }
 
     /// <summary>
@@ -131,22 +121,18 @@ public sealed class SessionController
     /// <summary>
     /// Should this close be HELD, so the driver gets its final cookie read?
     /// <para>
-    /// 🔴 <b>ONCE, and only for a close the USER asked for.</b> The rule used to be "veto whenever the
-    /// flow has not finished", which is two bugs in one line. It vetoed
-    /// <see cref="CloseReason.ApplicationExitCall"/> and <see cref="CloseReason.WindowsShutDown"/> as
-    /// readily as a click on the X — so a session window could refuse <c>Application.Exit</c> and keep the
-    /// whole app alive — and it vetoed EVERY attempt, so a driver awaiting something that never completes
-    /// left a modal window the user could not close by any means.
-    /// </para>
-    /// <para>
-    /// The grace is therefore spent after one use: the first close asks the driver to wrap up, and a
-    /// second means the user has said it twice and is entitled to be obeyed.
+    /// 🔴 <b>ONCE, and only for a close the USER asked for.</b> Vetoing
+    /// <see cref="CloseReason.ApplicationExitCall"/> or <see cref="CloseReason.WindowsShutDown"/> lets a
+    /// session window refuse <c>Application.Exit</c> and keep the whole app alive; vetoing EVERY attempt
+    /// leaves a modal window the user cannot close by any means when a driver awaits something that
+    /// never completes. So the grace is spent after one use: the first close asks the driver to wrap up,
+    /// and a second means the user has said it twice.
     /// </para>
     /// <para>
     /// ⚠ <see cref="CloseReason.UserClosing"/> ALSO covers a programmatic <c>form.Close()</c>
-    /// (<c>winforms-shell.md</c>) — which is correct here rather than a hazard: the host's own close is
-    /// already excluded by <paramref name="finishing"/>, so anything else closing this window is a caller
-    /// the driver should still get one chance to answer.
+    /// (<c>winforms-shell.md</c>) — correct here rather than a hazard: the host's own close is already
+    /// excluded by <paramref name="finishing"/>, so anything else closing this window is a caller the
+    /// driver should get one chance to answer.
     /// </para>
     /// <para>Internal + static so the rule is testable without a live browser.</para>
     /// </summary>
@@ -157,10 +143,10 @@ public sealed class SessionController
         !finishing && !alreadyHeld && reason is CloseReason.UserClosing;
 
     /// <summary>
-    /// Navigate the window — http(s) only, and through the options' navigation guard when set:
-    /// the URLs are data-driven, and this window both DISCLOSES the rendered page and accepts
-    /// input, so an unguarded navigate at a loopback/LAN host is full interactive exposure (the
-    /// source's measured SSRF rationale). Completes when the navigation completes.
+    /// Navigate the window — http(s) only, and through the options' navigation guard when set: the URLs
+    /// are data-driven, and this window both DISCLOSES the rendered page and accepts input, so an
+    /// unguarded navigate at a loopback/LAN host is full interactive exposure. Completes when the
+    /// navigation completes.
     /// </summary>
     public Task NavigateAsync(string url, CancellationToken cancellationToken = default) => OnUiAsync(async () =>
     {
@@ -181,9 +167,9 @@ public sealed class SessionController
             using var overall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             overall.CancelAfter(NavigationCap);   // a dead renderer never raises NavigationCompleted
             _web.CoreWebView2.Navigate(uri.ToString());
-            // WhenAny never throws, and the two ways it completes MEAN different things — the cap is a
+            // WhenAny never throws, and the two ways it completes MEAN different things: the cap is a
             // soft "carry on and look at the page", the caller's own token is "I gave up" and must
-            // surface so it cannot be mistaken for a finished load. Same shape as RenderSession's.
+            // surface so it cannot be mistaken for a finished load.
             await Task.WhenAny(done.Task, Task.Delay(Timeout.Infinite, overall.Token)).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
         }
@@ -195,16 +181,14 @@ public sealed class SessionController
     });
 
     /// <summary>Run JS on the live page; returns WebView2's JSON-encoded result.</summary>
-    // WaitAsync: the source accepted these tokens but never observed them (its listed gap) — a
-    // driver cancelled mid-call must stop waiting even though the browser call itself runs on.
+    // WaitAsync: a driver cancelled mid-call must stop waiting even though the browser call runs on.
     public Task<string> ExecuteScriptAsync(string javaScript, CancellationToken cancellationToken = default) =>
         OnUiAsync(() => _web.CoreWebView2.ExecuteScriptAsync(javaScript)).WaitAsync(cancellationToken);
 
     /// <summary>
-    /// The cookies visible from <paramref name="origin"/>. NOTE the origin is a SEPARATE knob
-    /// from the navigated URL on purpose: session cookies often live on a PARENT domain the
-    /// host can't see (the primary sibling's original capture bug — verified against the
-    /// profile's cookie DB) — read from the API origin the app will actually call.
+    /// The cookies visible from <paramref name="origin"/>. ⚠ The origin is a SEPARATE knob from the
+    /// navigated URL: session cookies often live on a PARENT domain the host can't see, so read from
+    /// the API origin the app will actually call.
     /// </summary>
     public Task<IReadOnlyList<SessionCookie>> GetCookiesAsync(string origin, CancellationToken cancellationToken = default) =>
         OnUiAsync(async () =>
@@ -216,10 +200,9 @@ public sealed class SessionController
         }).WaitAsync(cancellationToken);
 
     /// <summary>
-    /// Bring a silent-refresh window on screen — interaction is needed after all. Idempotent, and
-    /// INERT on a background co-browse host (it has no on-screen presence to reveal). Centers on
-    /// the working area, activates, and focuses the WebView so keyboard/QR-scan input goes to the
-    /// page immediately (the primary sibling's reveal mechanics).
+    /// Bring a silent-refresh window on screen — interaction is needed after all. Idempotent, and INERT
+    /// on a background co-browse host. Centers on the working area, activates, and focuses the WebView
+    /// so keyboard input goes to the page immediately.
     /// </summary>
     public void Reveal()
     {
@@ -240,11 +223,10 @@ public sealed class SessionController
     }
 
     /// <summary>
-    /// Shrink the window to the content box the driver measured IN THE PAGE (CSS px) — WebView2
-    /// reports CSS px (DPI-independent), WinForms ClientSize is PHYSICAL px, so this converts by
-    /// the window's own DeviceDpi and clamps to the working area. Sub-plausible sizes are
-    /// ignored (wait for a full box, not a partial). INERT on a background co-browse host — its
-    /// physical surface is fixed and its viewport is driven by CDP, not the window size.
+    /// Shrink the window to the content box the driver measured IN THE PAGE (CSS px). WebView2 reports
+    /// CSS px (DPI-independent) and WinForms ClientSize is PHYSICAL px, so this converts by the window's
+    /// own DeviceDpi and clamps to the working area; sub-plausible sizes are ignored. INERT on a
+    /// background co-browse host.
     /// </summary>
     public void FitToBox(int cssWidth, int cssHeight)
     {
@@ -263,8 +245,7 @@ public sealed class SessionController
     /// (margins leave room for the window chrome).</summary>
     internal static Size ComputeFitSize(int cssWidth, int cssHeight, int deviceDpi, Size workArea)
     {
-        // CSS px → physical px. DpiHelper owns the conversion (P5.5 H4.5) — reachable since D19 — and
-        // it guards a non-positive DPI.
+        // DpiHelper owns the CSS-px → physical-px conversion, and guards a non-positive DPI.
         var scale = Shenora.Windows.DpiHelper.ScaleFromDeviceDpi(deviceDpi);
         return new Size(
             Math.Min((int)Math.Round(cssWidth * scale), workArea.Width - 40),
@@ -276,15 +257,10 @@ public sealed class SessionController
 
     /// <summary>
     /// Marshal a WebView2 call to the form's UI thread (a driver continuation may resume off it),
-    /// through the ONE owner (P5.5 H4.2).
-    /// <para>
-    /// This site is why the collapse mattered. The comment it used to carry said: "IsHandleCreated
-    /// FIRST: pre-handle, InvokeRequired lies (returns false), so 'no handle' would be mistaken for
-    /// 'already on the UI thread' and run the WebView2 call off-thread" — and the very next line was
-    /// <c>if (!_form.IsHandleCreated || !_form.InvokeRequired) return work();</c>, which does exactly
-    /// that. Reachable through the co-browse background controller, whose driver continuations resume
-    /// on a pool thread. The dispatcher answers <c>NotReady</c> with a faulted task instead.
-    /// </para>
+    /// through the ONE owner. ⚠ Pre-handle, <c>InvokeRequired</c> LIES — it returns false — so a
+    /// hand-rolled <c>IsHandleCreated || !InvokeRequired</c> check mistakes "no handle" for "already on
+    /// the UI thread" and runs the WebView2 call off-thread. The dispatcher answers <c>NotReady</c>
+    /// with a faulted task instead.
     /// </summary>
     private Task<T> OnUiAsync<T>(Func<Task<T>> work) => _ui.InvokeAsync(work);
 

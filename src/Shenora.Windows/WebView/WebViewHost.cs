@@ -10,9 +10,7 @@ using Shenora;
 namespace Shenora.Windows;
 
 /// <summary>
-/// The ONE place a WebView2 gets configured — merged from the three family initializers, with
-/// the gaps every source shipped with fixed here (init-timeout guard, new-window/download/
-/// permission/process-failure policies, escaped script injection, dev-gated settings hardening).
+/// The ONE place a WebView2 gets configured.
 ///
 /// Usage: create the control, then
 /// <code>
@@ -29,12 +27,12 @@ public sealed class WebViewHost
     private readonly WebViewHostOptions _options;
     private readonly ILogger? _log;
     private readonly Shenora.Core.Shell.IUiDispatcher _ui;
-    // The one open-a-URL implementation, reachable since D19 — see the NewWindowRequested policy.
+    // The one open-a-URL implementation (D19).
     private readonly Shenora.Core.Shell.IUrlLauncher _urls = new Shenora.Windows.ShellLauncher();
     private readonly WebView2Interceptor _interceptor = new();
     private DateTime _lastAutoReloadUtc = DateTime.MinValue;
-    private int _autoReloadCount;            // terminal state for the crash-reload loop (see WireEventPolicies)
-    private Task? _initialization;           // InitializeAsync is idempotent — see its remarks
+    private int _autoReloadCount;            // terminal state for the crash-reload loop
+    private Task? _initialization;
 
     /// <summary>Wraps <paramref name="webView"/>. Construct, then <see cref="InitializeAsync"/>, then navigate.</summary>
     public WebViewHost(WebView2Control webView, WebViewHostOptions options)
@@ -43,20 +41,11 @@ public sealed class WebViewHost
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _log = options.Log ?? options.Environment.Log;
 
-        // The app-level pipeline (D64), applied BEFORE anything can navigate — routes are read per
-        // request, so registering here is early enough for the first document. This is what makes
-        // `app.UseFiles(…)` reach a SECONDARY window too: it travels with the options, so every host
-        // built from them serves the same routes instead of the app re-wiring each window by hand.
-        // Not guarded: a throwing step is a composition mistake and must fail the window loudly rather
-        // than produce one that silently serves nothing.
+        // The app-level pipeline (D64), applied before anything can navigate. Not guarded: a throwing
+        // step is a composition mistake and must fail the window loudly rather than produce one that
+        // silently serves nothing.
         options.Pipeline?.ApplyTo(_interceptor);
 
-        // Fail at COMPOSITION rather than degrading to silence (the P5.5 H3 convention). A deferred
-        // scheme gets a WebResourceRequested filter below, but WebView2 accepts the SCHEME itself only
-        // at environment-creation time — so an unregistered custom scheme is rejected by the network
-        // stack before the filter is consulted, and all the page ever sees is
-        // `TypeError: Failed to fetch`, with nothing logged host-side to explain it. That was true for
-        // as long as the feature existed (P7.1); this guard is what stops it recurring.
         // http/https need no registration — those are the browser's own schemes, served by a virtual
         // host rather than a custom one.
         var registered = options.Environment.CustomSchemes.Select(s => s.Name)
@@ -78,31 +67,21 @@ public sealed class WebViewHost
                 + $"`CustomSchemes = [new {nameof(WebViewCustomScheme)} {{ Name = \"{unregistered[0]}\" }}]` "
                 + "to the environment options.");
         }
-        // The one marshalling owner (D19/D20, P5.5 H4.2).
+        // The one marshalling owner (D19/D20).
         _ui = new Shenora.Windows.WinFormsUiDispatcher(webView,
             ex => Log(() => "[Shenora.Windows] Posted UI work failed", ex));
     }
 
     /// <summary>
-    /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>). Almost every
-    /// call site below sits inside a WebView2 event handler or a posted UI-thread body, where an
-    /// escaping exception has no caller and becomes a modal crash dialog; and several messages read
-    /// WebView2/COM properties (a download's URI, a process-failed reason) that throw once the
-    /// underlying object is gone, which is why BUILDING the message must be inside the guard too.
+    /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>): these sites have no
+    /// caller to catch anything, and BUILDING a message may touch a torn-down COM object.
     /// </summary>
     private void Log(Func<string> message, Exception? failure = null) => Shenora.AppCallback.Log(_log, message, exception: failure);
 
     /// <summary>
-    /// Invoke one of the app's event-policy hooks and report whether it HANDLED the event — what the
-    /// hook ANSWERED, not merely that it ran. A hook that throws counts as "not handled" and is logged,
-    /// so the caller applies the kit's own default rather than leaving a WebView2 event unanswered
-    /// (P5.5 H2).
-    /// <para>
-    /// ⚠ It used to infer "handled" from "did not throw", which gave an app no way to observe an event
-    /// and still get the built-in policy — the only spelling for that was to THROW. Worst on
-    /// <c>OnProcessFailed</c>, where merely attaching crash telemetry silently disabled the diagnostic
-    /// log and every auto-reload option.
-    /// </para>
+    /// Invoke one of the app's event-policy hooks and report whether it HANDLED the event. A hook that
+    /// throws counts as "not handled" and is logged, so the caller applies the kit's own default rather
+    /// than leaving a WebView2 event unanswered.
     /// </summary>
     private bool AppHandled<T>(Func<T, bool> callback, T args, string hookName) =>
         Shenora.AppCallback.RunOrDefault(() => callback(args), false,
@@ -113,64 +92,40 @@ public sealed class WebViewHost
 
     /// <summary>
     /// This host's resource-interception pipeline (D45) — the portable seam a feature adds middleware to, e.g.
-    /// <c>host.Interceptor.UseFiles(new WebViewFileOptions { … })</c> to let the page load local files.
+    /// <c>host.Interceptor.UseFiles(new WebViewFileOptions { … })</c>. Usable before or after
+    /// <see cref="InitializeAsync"/>; the pipeline is read per request.
     /// <para>
-    /// Available immediately, BEFORE <see cref="InitializeAsync"/>, because routes are registered at
-    /// composition time while the webview initializes later. Registering after init works too — the pipeline is
-    /// read per request.
-    /// </para>
-    /// <para>
-    /// Middleware see requests to the PAGE'S OWN ORIGIN (the bundle's virtual host in production, the dev
-    /// server in development) — see <see cref="WebView2Interceptor.ExtraFilters"/> for exactly which, and why
-    /// not everything. A route whose path also exists in the packaged bundle loses to the bundle here, so keep
-    /// interception paths off bundle paths: relying on either winner is relying on a difference between shells.
-    /// </para>
-    /// <para>
-    /// This does not replace <see cref="WebViewHostOptions.DeferredSchemes"/>, which stays for what it is good
-    /// at: a whole custom scheme of the app's own, on its own origin. The interceptor is the portable one —
-    /// the same code compiles against the mobile shells.
+    /// 🔴 Keep interception paths OFF bundle paths. Middleware see the PAGE'S OWN ORIGIN (the bundle's
+    /// virtual host in production, the dev server in development — see
+    /// <see cref="WebView2Interceptor.ExtraFilters"/>), and a path the bundle also contains loses to the
+    /// bundle here while winning on the mobile shells.
     /// </para>
     /// </summary>
     public IWebViewInterceptor Interceptor => _interceptor;
 
     /// <summary>
     /// Obtain the environment (shared/prewarmed, or thread-own), ensure the core, then apply
-    /// settings, resource serving, scripts, and event policies. The whole sequence runs under
-    /// <see cref="WebViewHostOptions.InitTimeout"/>: an orphaned user-data-folder lock (zombie
-    /// browser process) otherwise hangs <c>EnsureCoreWebView2Async</c> forever with no window
-    /// and no error — the family's measured failure mode.
+    /// settings, resource serving, scripts, and event policies — the whole sequence under
+    /// <see cref="WebViewHostOptions.InitTimeout"/>.
     /// </summary>
     /// <remarks>
-    /// IDEMPOTENT (P5.5 H3): the first call does the work and every later call awaits that same task.
-    /// The timeout message itself advises "start again", so a Retry button is the expected recovery —
-    /// and a second call used to re-run <c>WireEventPolicies</c>, double-subscribing every policy
-    /// handler: from then on each external link opened TWICE, each download decision ran twice, and the
-    /// renderer auto-reload raced itself. Nothing in the sequence was safe to repeat. A FAILED attempt is
-    /// never handed back, so a retry is a real retry rather than a re-await of the same failure. UI thread
-    /// only, like the rest of this type — hence no locking around the cache.
+    /// IDEMPOTENT: the first call does the work and every later call awaits that same task — nothing in
+    /// the sequence is safe to repeat (a second <c>WireEventPolicies</c> double-subscribes every policy
+    /// handler). A FAILED attempt is never handed back, so a retry is a real retry. UI thread only, hence
+    /// no locking around the cache.
     /// </remarks>
     public Task InitializeAsync()
     {
-        // 🔴 A FAULTED task is a FINISHED attempt, not one in flight, so it is never handed back — that is
-        // what makes the "start again" the timeout message advises a real retry rather than a re-await of
-        // the same corpse. A transient zombie-lock at startup used to kill the window for the life of the
-        // process while the error on screen invited the user to try again.
-        //
-        // ⚠ Asked HERE rather than cleared from inside the sequence, and the difference is not style. A
-        // failure that happens before the first real suspension — an unusable user-data folder, say —
-        // completes the task BEFORE `??=` has assigned it, so a `_initialization = null` in the catch
-        // nulls a field nothing has written yet and the faulted task is then cached on the way out. The
-        // first attempt at this fix did exactly that and the regression test caught it.
+        // ⚠ Asked HERE rather than cleared from inside the sequence: a failure before the first real
+        // suspension completes the task BEFORE `??=` has assigned it, so a `_initialization = null` in
+        // the catch nulls a field nothing has written yet and the faulted task is cached on the way out.
         if (_initialization is { IsFaulted: false, IsCanceled: false } inFlight) return inFlight;
         return _initialization = InitializeCoreAsync();
     }
 
     private async Task InitializeCoreAsync()
     {
-        // ONE budget for the WHOLE sequence, not one per await (P5.5 H3). Each step used to get its own
-        // full InitTimeout, so the documented "25 s" was really 50 s before the sequence even reached
-        // ApplySettings — and ApplySettings/RegisterResourceServing/InjectScriptsAsync were unbounded on
-        // top of that, which matters because script injection is a real round-trip to the browser.
+        // ONE budget for the WHOLE sequence, not one per await.
         using var budget = new CancellationTokenSource(_options.InitTimeout);
         try
         {
@@ -188,8 +143,7 @@ public sealed class WebViewHost
         }
         catch (OperationCanceledException) when (budget.IsCancellationRequested)
         {
-            // Re-throw as a TimeoutException: the budget expiring is a timeout, and the caller never
-            // handed us a token, so an OperationCanceledException would be a lie about who gave up.
+            // A TimeoutException, not OperationCanceled: the caller never handed us a token.
             throw new TimeoutException(
                 $"WebView2 failed to initialize within {_options.InitTimeout.TotalSeconds:0}s. " +
                 $"The usual cause is a leftover browser process holding the user-data folder lock " +
@@ -210,30 +164,20 @@ public sealed class WebViewHost
     }
 
     /// <summary>
-    /// Fail loudly when the START DOCUMENT is the packaged bundle but the provider cannot serve it
-    /// (P5.5 H3).
+    /// Fail loudly when the START DOCUMENT is the packaged bundle but the provider cannot serve it: a
+    /// mistyped <see cref="EmbeddedResourceProviderOptions.ResourcePrefix"/> matches nothing, so every
+    /// request 404s and the app opens a BLACK WINDOW with no error anywhere.
     /// <para>
-    /// A mistyped or stale <see cref="EmbeddedResourceProviderOptions.ResourcePrefix"/> — a string that
-    /// depends on MSBuild's manifest-name mangling — matches nothing, so every request 404s and the app
-    /// opens a BLACK WINDOW with no error anywhere. <see cref="ResolveStartUrl"/> already throws
-    /// actionably for the neighbouring class of mistake (missing URL configuration); this closes the gap
-    /// where the URL is fine and the content behind it is not.
+    /// Checked HERE rather than in the provider's constructor, because a provider with nothing to serve
+    /// is valid when the page loads from a dev URL — and only this method knows the bundle IS the
+    /// document.
     /// </para>
-    /// <para>
-    /// It is checked HERE, not in the provider's constructor, because a provider with nothing to serve
-    /// is perfectly valid when the page loads from a dev URL — which is the normal state of a fresh
-    /// clone, whose bundle has not been built yet. The condition is "the bundle IS the document", and
-    /// only this method knows that. The probe is <see cref="IWebViewResourceProvider.Exists"/> on
-    /// <c>index.html</c>, which also catches a bundle that is present but incomplete.
-    /// </para>
-    /// <para>Internal + static (like <see cref="ResolveStartUrl"/>) so it is testable without a live
-    /// browser process — <c>Navigate</c> itself needs one.</para>
     /// </summary>
     internal static void AssertBundleServable(string url, WebViewHostOptions options)
     {
         if (options.ResourceProvider is not { } provider) return;
         // Only when the start document comes from the virtual host — an app pointing ProductionUrl
-        // elsewhere may use the provider for subresources only, and that is its business.
+        // elsewhere may use the provider for subresources only.
         if (options.VirtualHost is not { Length: > 0 } host) return;
         if (!url.StartsWith($"https://{host}/", StringComparison.OrdinalIgnoreCase)) return;
 
@@ -250,8 +194,8 @@ public sealed class WebViewHost
     /// <summary>
     /// The dev/prod start-URL decision: development → <see cref="WebViewHostOptions.DevUrl"/>;
     /// production → <see cref="WebViewHostOptions.ProductionUrl"/>, else the virtual host's
-    /// <c>index.html</c>. Missing configuration throws an actionable error instead of the source
-    /// apps' silent blank window.
+    /// <c>index.html</c>. Missing configuration throws an actionable error rather than opening a
+    /// blank window.
     /// </summary>
     internal static string ResolveStartUrl(WebViewHostOptions options)
     {
@@ -275,9 +219,8 @@ public sealed class WebViewHost
         var settings = _webView.CoreWebView2.Settings;
         var isDev = IsDevelopment;
 
-        // The family hardening preset: developer surfaces only in dev; everything the app shell
-        // doesn't use switched off (each one shaves startup/attack surface); web messages on —
-        // they're the IPC transport.
+        // The hardening preset: developer surfaces only in dev, everything the app shell doesn't use
+        // off, web messages on — they are the IPC transport.
         settings.AreDevToolsEnabled = isDev;
         settings.AreDefaultContextMenusEnabled = isDev;
         settings.IsPasswordAutosaveEnabled = false;
@@ -313,8 +256,7 @@ public sealed class WebViewHost
         {
             core.AddWebResourceRequestedFilter(scheme.Scheme + "://*", CoreWebView2WebResourceContext.All);
         }
-        // What the interceptor needs on top: in production its origin IS the bundle's, already filtered above;
-        // in development the page lives on the dev server instead. See WebView2Interceptor.ExtraFilters.
+        // What the interceptor needs on top of the above — see WebView2Interceptor.ExtraFilters.
         var interceptorFilters = WebView2Interceptor.ExtraFilters(IsDevelopment, _options.DevUrl);
         foreach (var pattern in interceptorFilters)
         {
@@ -323,47 +265,38 @@ public sealed class WebViewHost
         if (virtualHostPrefix is null && _options.DeferredSchemes.Count == 0 && interceptorFilters.Length == 0)
             return;
 
-        // Two serving strategies, and the split is load-bearing (the source app's measured lesson):
+        // 🔴 TWO SERVING STRATEGIES, AND THE SPLIT IS LOAD-BEARING.
         //
         // Virtual host = the packaged bundle, IN MEMORY, and index.html is the MAIN DOCUMENT the
-        //   startup navigation is waiting on. Serve SYNCHRONOUSLY inline: an in-memory read is
-        //   instant, and deferring the main document stalls the initial navigation → "stuck on
-        //   start" (only reproduces in production — dev loads from Vite over http, never here).
+        //   startup navigation is waiting on. Serve SYNCHRONOUSLY inline — deferring the main
+        //   document stalls the initial navigation → "stuck on start" (production only; dev loads
+        //   from Vite over http, never here).
         //
         // Deferred schemes = dynamic content (disk reads, remote fetch-and-cache). A burst of
-        //   hundreds of requests (thumbnail grids on startup/scroll) served inline would block the
-        //   UI thread → FREEZE. GetDeferral returns the UI thread immediately, the handler runs on
-        //   the pool, and the response is built back on the UI thread (CoreWebView2 is UI-affine)
-        //   via non-blocking BeginInvoke.
+        //   hundreds of requests (thumbnail grids) served inline would block the UI thread → FREEZE.
+        //   GetDeferral returns the UI thread immediately, the handler runs on the pool, and the
+        //   response is built back on the UI thread (CoreWebView2 is UI-affine).
         core.WebResourceRequested += (_, args) =>
         {
             var uri = args.Request.Uri;
-            // A cheap array-length read, and worth doing before anything else: with no route registered this
-            // handler must cost as close to nothing as possible, because it also serves the app's own bundle.
             var intercepting = _interceptor.HasRoutes;
 
             if (virtualHostPrefix is not null && uri.StartsWith(virtualHostPrefix, StringComparison.OrdinalIgnoreCase))
             {
-                // The shared implementation, also used by an off-screen SessionBrowser (E1) so a
-                // session can render the app's OWN packaged frontend. One copy on purpose.
                 if (!intercepting)
                 {
-                    // Exactly the pre-D45 behaviour, one call: serve it or 404.
                     WebViewBundleServing.Serve(args, _webView.CoreWebView2.Environment,
                         _options.ResourceProvider!, uri, virtualHostPrefix, message => Log(message));
                     return;
                 }
 
-                // TryServe rather than Serve: since D45 the interceptor shares this origin with the bundle
-                // (a relative media URL is `https://app.local/media?…`), so a path the bundle does NOT contain
-                // has to fall through to the pipeline instead of 404ing. A path it DOES contain is still served
-                // synchronously and inline — the main document never reaches the deferred path.
+                // TryServe, not Serve: the interceptor shares this origin with the bundle (D45), so a path
+                // the bundle does NOT contain falls through to the pipeline instead of 404ing. A path it
+                // DOES contain is still served synchronously — the main document never defers.
                 if (WebViewBundleServing.TryServe(args, _webView.CoreWebView2.Environment,
                         _options.ResourceProvider!, uri, virtualHostPrefix, message => Log(message)))
                     return;
 
-                // The pipeline may decline too, and then WebView2 handles it — which is a 404 from a virtual
-                // host with no mapping, i.e. the same outcome by a different route.
                 ServeInterceptor(args, uri);
                 return;
             }
@@ -372,16 +305,14 @@ public sealed class WebViewHost
             {
                 if (uri.StartsWith(scheme.Scheme + "://", StringComparison.OrdinalIgnoreCase))
                 {
-                    // The scheme owns its whole origin, so declining can only mean 404 — the behaviour this
-                    // path has always had.
+                    // The scheme owns its whole origin, so declining can only mean 404.
                     ServeAsync(args, uri, (request, _) => scheme.Handler(request), scheme.CacheControl,
                         $"deferred scheme '{scheme.Scheme}'", answerNotFoundWhenDeclined: true);
                     return;
                 }
             }
 
-            // Anything else that matched a filter — in practice the dev server's own origin, where the
-            // interceptor is the only reason we are listening at all.
+            // Anything else that matched a filter — in practice the dev server's own origin.
             if (intercepting)
             {
                 ServeInterceptor(args, uri);
@@ -392,22 +323,21 @@ public sealed class WebViewHost
     }
 
     /// <summary>
-    /// Hand a request to the D45 middleware pipeline. Composed HERE, once per request, so a route registered
+    /// Hand a request to the D45 middleware pipeline. Composed once per request, so a route registered
     /// while this one is in flight cannot half-apply; declining leaves the request to WebView2.
     /// </summary>
     private void ServeInterceptor(CoreWebView2WebResourceRequestedEventArgs args, string uri)
     {
-        // Re-checked rather than assumed: the caller's HasRoutes read and this build are separate moments, and
-        // the last route can be disposed in between.
+        // Re-checked: the caller's HasRoutes read and this build are separate moments.
         if (_interceptor.Build() is not { } pipeline) return;
         ServeAsync(args, uri, pipeline, defaultCacheControl: null, "interceptor");
     }
 
     /// <summary>
-    /// Copy the request onto a plain object, ON THE UI THREAD, before handing it to a pool thread.
-    /// The WebView2 args and their header collection are COM objects with thread affinity, so
-    /// reading <c>args.Request.Headers</c> from inside the handler's <c>Task.Run</c> is a use of a
-    /// UI-thread object off the UI thread — the kind that works until it doesn't.
+    /// 🔴 Copy the request onto a plain object, ON THE UI THREAD, before handing it to a pool thread.
+    /// The WebView2 args and their header collection are COM objects with thread affinity, so reading
+    /// <c>args.Request.Headers</c> from inside the handler's <c>Task.Run</c> is a use of a UI-thread
+    /// object off the UI thread.
     /// </summary>
     private static WebViewResourceRequest SnapshotRequest(CoreWebView2WebResourceRequestedEventArgs args, string uri)
     {
@@ -422,8 +352,8 @@ public sealed class WebViewHost
         }
         catch
         {
-            // A torn-down request has no readable headers; an empty set simply means "no Range",
-            // which degrades to serving the whole resource rather than failing.
+            // A torn-down request has no readable headers; an empty set means "no Range", which
+            // degrades to serving the whole resource rather than failing.
         }
 
         var method = "GET";
@@ -438,34 +368,24 @@ public sealed class WebViewHost
     }
 
     /// <summary>
-    /// Answer <paramref name="args"/> from <paramref name="handler"/> OFF the UI thread — the deferred path,
-    /// shared by <see cref="WebViewHostOptions.DeferredSchemes"/> and by the D45 interceptor pipeline because
-    /// every hard-won rule in it applies identically: snapshot the COM request before leaving the UI thread,
-    /// never leak handler exception text into a body page script can read, default the cache policy without
-    /// overriding one the handler set, add CORS and EXPOSE the headers, and marshal the response build back to
-    /// the UI thread through the one dispatcher.
+    /// Answer <paramref name="args"/> from <paramref name="handler"/> OFF the UI thread — the deferred
+    /// path, shared by <see cref="WebViewHostOptions.DeferredSchemes"/> and by the D45 interceptor.
     /// </summary>
     /// <param name="args">The intercepted request, still on the UI thread.</param>
     /// <param name="uri">Its raw URI, already read.</param>
     /// <param name="handler">The handler. Runs on a thread-pool thread.</param>
-    /// <param name="defaultCacheControl">
-    /// Stamped on a 2xx that does not set its own, or null for none. Null for the interceptor deliberately: a
-    /// middleware serving a local file is serving something that can change under it, and "cache for a day"
-    /// would be a policy the kit invented rather than one the app chose.
-    /// </param>
+    /// <param name="defaultCacheControl">Stamped on a 2xx that does not set its own; null for none.</param>
     /// <param name="what">What to name in the log if it fails.</param>
     /// <param name="answerNotFoundWhenDeclined">
-    /// True when this origin is EXCLUSIVELY ours (a custom scheme), so nothing declining it can mean anything
-    /// but 404. False for the interceptor, whose origin it shares with the page's own content: declining there
-    /// must complete the deferral WITHOUT a response and let WebView2 handle the request normally.
+    /// True when this origin is EXCLUSIVELY ours (a custom scheme), so declining can only mean 404. False
+    /// for the interceptor, whose origin it shares with the page's own content: declining there must
+    /// complete the deferral WITHOUT a response and let WebView2 handle the request normally.
     /// </param>
     private void ServeAsync(CoreWebView2WebResourceRequestedEventArgs args, string uri,
                             WebViewResourceHandler handler, string? defaultCacheControl, string what,
                             bool answerNotFoundWhenDeclined = false)
     {
         var deferral = args.GetDeferral();
-        // Snapshot the request on THIS thread: the args object belongs to the UI thread and its
-        // Headers collection must not be walked from the pool thread the handler runs on.
         var request = SnapshotRequest(args, uri);
 
         _ = Task.Run(async () =>
@@ -478,13 +398,11 @@ public sealed class WebViewHost
             }
             catch (Exception ex)
             {
-                // No exception text in the body (P5.5 H3) — an app handler's message is the most likely of all
-                // of these to carry a real path or a remote URL, and page script can read this body. The
-                // handler's failure goes to the host log instead.
+                // 🔴 No exception text in the body — page script can read it, and a handler's message
+                // routinely carries a real path or a remote URL. The failure goes to the host log.
                 Log(() => $"[Shenora.Windows] {what} failed for '{uri}'", ex);
-                // A THROW is a 404 even on a shared origin: falling through would hand a broken route back to
-                // WebView2, and the page would see a network error instead of the fixed refusal every other
-                // failure path here produces.
+                // A THROW is a 404 even on a shared origin: falling through would hand a broken route
+                // back to WebView2 and the page would see a network error instead of the fixed refusal.
                 response = WebViewResourceResponse.NotFound();
             }
 
@@ -497,30 +415,23 @@ public sealed class WebViewHost
 
             var headerLines = new List<string>();
             foreach (var (key, value) in response.Headers) headerLines.Add($"{key}: {value}");
-            // The caller's Cache-Control is a DEFAULT, not an override: a handler answering 206 or 404
-            // has its own caching story, and stamping "cache for a day" over it would be wrong.
+            // A DEFAULT, never an override: a handler answering 206 or 404 has its own caching story.
             if (defaultCacheControl is not null && !response.Headers.ContainsKey("Cache-Control")
                 && response.StatusCode is >= 200 and < 300)
                 headerLines.Add($"Cache-Control: {defaultCacheControl}");
 
-            // CORS, by default, for the same reason the bundle path already sets it. An app scheme is a
-            // DIFFERENT ORIGIN from the page that loads it (page on https://app.local, resource on
-            // app://…), so without this every fetch/XHR is refused by the browser — and the refusal
-            // looks identical to the scheme not existing: a bare `TypeError: Failed to fetch`, with the
-            // handler having already run and answered correctly. That is exactly how this cost an
-            // afternoon (P7.1): `handlerHits=3` while the page saw three failures.
-            // Registering the scheme's AllowedOrigins is NOT sufficient — that governs which origins
-            // may REQUEST the scheme; this governs whether the browser hands the RESPONSE to script.
-            // A handler that sets the header itself wins, so a stricter policy stays expressible.
+            // 🔴 CORS by default. An app scheme is a DIFFERENT ORIGIN from the page that loads it, so
+            // without this every fetch is refused by the browser — and the refusal is indistinguishable
+            // from the scheme not existing (a bare `TypeError: Failed to fetch`) even though the handler
+            // ran and answered correctly. Registering the scheme's AllowedOrigins is NOT sufficient:
+            // that governs which origins may REQUEST it, this governs whether the browser hands the
+            // RESPONSE to script. A handler that sets the header itself wins.
             if (!response.Headers.ContainsKey("Access-Control-Allow-Origin"))
                 headerLines.Add("Access-Control-Allow-Origin: *");
 
-            // …and EXPOSE the response headers, which is a separate rule people meet second. On a
-            // cross-origin response the browser hands script only the CORS-safelisted headers, so
-            // `Content-Range` reads back as null even on a perfectly correct 206 — the bytes arrive,
-            // the status is right, and the metadata describing them is invisible. (A media element
-            // seeking does not care, because the browser reads the header internally; anything doing
-            // its own ranged fetch in JS does.) Same override rule as above.
+            // …and EXPOSE them: on a cross-origin response the browser hands script only the
+            // CORS-safelisted headers, so `Content-Range` reads back as null on a perfectly correct 206
+            // while the bytes are fine. Same override rule.
             if (!response.Headers.ContainsKey("Access-Control-Expose-Headers"))
                 headerLines.Add("Access-Control-Expose-Headers: *");
 
@@ -543,20 +454,14 @@ public sealed class WebViewHost
                 }
             }
 
-            // We are ALWAYS on a thread-pool thread here, so the response must be marshalled to
-            // the UI thread — CoreWebView2 is UI-affine. Never build inline: before the handle
-            // exists InvokeRequired is false, and an inline build would run on the pool thread
-            // (the source app's exact bug). The one marshalling owner encodes that rule (P5.5 H4.2);
-            // it returns false when there is no handle (early-startup race) or the control is gone,
-            // and then we complete WITHOUT a response rather than serving from the wrong thread.
-            // 🔴 IF `Build` NEVER RUNS, NOTHING ELSE WILL EVER CLOSE THE BODY. `Build`'s own catch disposes
-            // when `CreateWebResourceResponse` fails, but these two paths skip `Build` entirely — a `Post`
-            // that returns false (no handle yet, or the control is gone: the two races the comment above
-            // names) and a `Post` that throws. Since 0.9.1 the body is LAZY (`BoundedBodyStream` over a real
-            // `FileStream`, and only its own at-bound self-close would otherwise release it), so what leaks
-            // is an OS FILE HANDLE per affected request — which on Windows also blocks deleting or moving
-            // the file the app was serving. Both paths are teardown/startup races, so they arrive in bursts
-            // rather than singly.
+            // 🔴 ALWAYS on a pool thread here, so the response must be marshalled through the ONE
+            // marshalling owner — CoreWebView2 is UI-affine, and before the handle exists
+            // `InvokeRequired` is FALSE, so an inline build would run on the pool thread. Post returns
+            // false when there is no handle or the control is gone; then complete WITHOUT a response.
+            // 🔴 IF `Build` NEVER RUNS, NOTHING ELSE WILL EVER CLOSE THE BODY. The body is lazy
+            // (`BoundedBodyStream` over a real `FileStream`), so a `Post` that returns false or throws
+            // leaks an OS FILE HANDLE per request — which on Windows also blocks deleting or moving the
+            // file being served.
             try
             {
                 if (!_ui.Post(Build))
@@ -596,35 +501,26 @@ public sealed class WebViewHost
 
         if (_options.OpenExternalLinksInSystemBrowser)
         {
-            // External links (target=_blank / window.open) go to the SYSTEM browser — never a
-            // bare WebView2 popup. Scheme-checked so a page can't shell-execute odd protocols.
             core.NewWindowRequested += (_, e) =>
             {
                 e.Handled = true;
                 try
                 {
-                    // Delegate to the ONE open-a-URL implementation (P5.5 H4.5) — reachable since the
-                    // re-layer (D19). This used to be a hand-copied duplicate of
-                    // ShellLauncher.OpenUrl that had drifted: it was missing the Win11 process-handle
-                    // Dispose, so every external link click leaked a handle. It also re-implemented
-                    // the http/https scheme gate, which the launcher enforces itself.
+                    // The ONE open-a-URL implementation — it enforces the http/https scheme gate itself.
                     _urls.OpenUrl(e.Uri);
                 }
                 catch (Exception ex)
                 {
-                    // Rejected scheme, or no default browser — a page must not be able to crash the
-                    // host by asking to open something odd.
+                    // Rejected scheme, or no default browser — a page must not be able to crash the host.
                     Log(() => $"[Shenora.Windows] Ignoring new-window request for {e.Uri}", ex);
                 }
             };
         }
 
-        // ALL THREE app policy hooks below run inside a WebView2 event handler, so a throw from one
-        // has no caller on its stack and becomes an unhandled UI-thread exception (P5.5 H2). Each is
-        // therefore invoked through AppCallback, and each FALLS BACK TO THE KIT'S OWN DEFAULT when the
-        // app's hook fails — because leaving the event unanswered is its own bug: an un-cancelled
-        // download proceeds, an unanswered permission request stalls whatever asked for it, and a
-        // renderer crash goes unhandled at the exact moment things are already going wrong.
+        // All three app policy hooks below run inside a WebView2 event handler, so each is invoked
+        // through AppCallback and each FALLS BACK to the kit's own default when the app's hook fails:
+        // an un-cancelled download proceeds, an unanswered permission request stalls whatever asked for
+        // it, and a renderer crash goes unhandled exactly when things are already wrong.
 
         core.DownloadStarting += (_, e) =>
         {
@@ -653,24 +549,17 @@ public sealed class WebViewHost
                 && AppHandled(onFailed, e, nameof(WebViewHostOptions.OnProcessFailed)))
                 return;
 
-            // 🔴 EVERYTHING WebView2 KNOWS, not just the kind. "RenderProcessExited (reason: Crashed)"
-            // names the event and nothing about the cause, so an adopter — and this repo — could stare at
-            // it without a next step. The three fields below are the ones that actually identify a crash:
-            // ExitCode (a STATUS_* code names the fault class), ProcessDescription (WHICH utility/GPU
-            // process, since those kinds cover several), and FailureSourceModulePath (the module the
-            // crash came from — usually a codec, a GPU driver or a shell extension injected into the
-            // renderer, and the single most useful field there is).
-            // ⚠ Same defect shape as a WinRT COMException reported without its HRESULT: naming a failure
-            // while withholding its identity reads as a diagnostic and is not one.
+            // The three fields that identify a crash rather than merely naming the event: ExitCode (a
+            // STATUS_* code names the fault class), ProcessDescription (WHICH utility/GPU process) and
+            // FailureSourceModulePath (usually a codec, GPU driver or injected shell extension).
             Log(() =>
             {
                 var detail = $"[Shenora.Windows] Process failed: {e.ProcessFailedKind} (reason: {e.Reason}"
                     + $", exitCode: {e.ExitCode})";
                 var description = AppCallback.RunOrDefault(() => e.ProcessDescription, null);
                 if (!string.IsNullOrWhiteSpace(description)) detail += $" process='{description}'";
-                // Guarded and read separately: these are newer members on the args, and an older runtime
-                // can throw rather than return empty — which must not turn a crash REPORT into a second
-                // crash inside the handler.
+                // ⚠ Guarded and read separately: these are newer members on the args and an older runtime
+                // can throw, which must not turn a crash REPORT into a second crash inside the handler.
                 var module = AppCallback.RunOrDefault(() => e.FailureSourceModulePath, null);
                 if (!string.IsNullOrWhiteSpace(module)) detail += $" module='{module}'";
                 return detail;
@@ -680,10 +569,8 @@ public sealed class WebViewHost
 
             if (DateTime.UtcNow - _lastAutoReloadUtc <= _options.AutoReloadCooldown) return;
 
-            // TERMINAL after MaxAutoReloads (P5.5 H3). The cooldown alone only slowed the loop down: a
-            // page that faults during load kept crash-reload-crashing every 10 s for the process
-            // lifetime, spawning a renderer each time. Log the give-up ONCE — at the cap, not on every
-            // later crash — so the log says what happened without becoming the new spin.
+            // TERMINAL after MaxAutoReloads — the cooldown alone is not a stopping condition. Log the
+            // give-up ONCE, at the cap, or the log becomes the new spin.
             if (_autoReloadCount >= _options.MaxAutoReloads)
             {
                 if (_autoReloadCount == _options.MaxAutoReloads)
@@ -702,9 +589,7 @@ public sealed class WebViewHost
             try { _webView.Reload(); } catch { }
         };
 
-        // A page that actually loads clears the budget, so a long-running app is not slowly used up by
-        // unrelated crashes hours apart — the cap is meant to catch a CRASH LOOP, not to ration a
-        // session. Only a successful navigation counts; an error page must not reset it.
+        // Only a SUCCESSFUL navigation clears the budget; an error page must not reset it.
         core.NavigationCompleted += (_, e) =>
         {
             if (e.IsSuccess) _autoReloadCount = 0;

@@ -4,19 +4,15 @@ namespace Shenora.Android;
 
 /// <summary>
 /// Android's <see cref="IMediaCapability"/> — what THIS device's <c>MediaCodecList</c> declares.
-///
 /// <para>
-/// 🔴 <b>Asked at runtime because there is no other honest way.</b> Android codec support is vendor-declared
-/// per device, which is exactly why <c>MediaCodecList</c> exists as a query rather than a table. Measured
-/// 2026-08-07 on an API 36 AOSP emulator: audio decode was
-/// <c>aac flac mp3 opus pcm vorbis</c> plus telephony, with an AAC encoder and <b>no AC-3, E-AC-3 or DTS at
-/// all</b> — while an iPhone on the same day decoded AC-3 happily. A handset may differ again from the
-/// emulator, so a hardcoded set here would be confidently wrong on the one device that matters.
+/// 🔴 <b>Asked at runtime because there is no other honest way:</b> Android codec support is
+/// vendor-declared per device, so a hardcoded set would be confidently wrong on the one device that
+/// matters (measured — <c>.claude/knowledge/mobile-shells.md</c>).
 /// </para>
 /// <para>
 /// ⚠ <b>This is the PLATFORM's stack, not the webview's</b> — see <see cref="IMediaCapability"/>. A device
-/// decoding a codec says nothing about whether the page will play it, and treating the two as one is how an
-/// AC-3 file becomes "Direct" and plays silent.
+/// decoding a codec says nothing about whether the page will play it, and treating the two as one is how
+/// an AC-3 file becomes "Direct" and plays silent.
 /// </para>
 /// </summary>
 public sealed class AndroidMediaCapability : IMediaCapability
@@ -30,8 +26,7 @@ public sealed class AndroidMediaCapability : IMediaCapability
     {
         MediaStreamKind.Audio => _sets.Value.DecodableAudio,
         MediaStreamKind.Video => _sets.Value.DecodableVideo,
-        // A kind this device knows nothing about answers EMPTY rather than throwing: "I know of none" is
-        // the honest answer and the safe direction for a planner reading it.
+        // An unknown kind answers EMPTY rather than throwing — the safe direction for a planner.
         _ => None,
     };
 
@@ -49,18 +44,14 @@ public sealed class AndroidMediaCapability : IMediaCapability
         HashSet<MediaStreamCodec> DecodableVideo,
         HashSet<MediaStreamCodec> EncodableVideo);
 
-    /// <summary>
-    /// Walk the codec list once and cache it — the set cannot change while the process runs, and the walk
-    /// allocates a Java object per codec.
-    /// </summary>
+    /// <summary>Walk the codec list once and cache it — the set cannot change while the process runs.</summary>
     private static Sets Read()
     {
         var sets = new Sets(New(), New(), New(), New());
         try
         {
-            // RegularCodecs, not ALL: the wider set includes codecs an app may not instantiate, so counting
-            // them would report a capability that fails the moment it is used — the same "advertised but
-            // does nothing" shape `ISegmentEngine.HasRenderedPicture` exists for one layer down.
+            // RegularCodecs, not ALL: the wider set includes codecs an app may not instantiate, so
+            // counting them would report a capability that fails the moment it is used.
             var list = new global::Android.Media.MediaCodecList(global::Android.Media.MediaCodecListKind.RegularCodecs);
             foreach (var codec in list.GetCodecInfos() ?? [])
             {
@@ -78,12 +69,10 @@ public sealed class AndroidMediaCapability : IMediaCapability
                         _ => sets.DecodableVideo,
                     };
 
-                    // 🔴 THE BARE NAME AS WELL AS EVERY PROFILE, and both halves matter.
-                    // The bare entry is what keeps a device that reports profiles matching a stream
-                    // probed WITHOUT one (MediaStreamCodec's rule: no profile = any profile). The
-                    // profiled entries are what let a Main-10-capable device be told apart from one
-                    // that only advertises `hevc` — the case where a name alone says "supported" about
-                    // a stream that decodes nothing, with no error anywhere.
+                    // 🔴 THE BARE NAME AS WELL AS EVERY PROFILE, and both halves matter. The bare entry
+                    // matches a stream probed WITHOUT one (MediaStreamCodec: no profile = any profile).
+                    // The profiled entries tell a Main-10-capable device from one that only advertises
+                    // `hevc` — where the name alone says "supported" about a stream that decodes nothing.
                     target.Add(name);
                     foreach (var profile in ProfilesOf(codec, mime))
                     {
@@ -94,9 +83,8 @@ public sealed class AndroidMediaCapability : IMediaCapability
         }
         catch (Exception)
         {
-            // A device that will not answer is reported as "knows nothing", which the planner reads as
-            // "cannot encode" — the safe direction. No exception text escapes; this is asked on behalf of
-            // app logic that may be answering a page.
+            // A device that will not answer reports "knows nothing", which the planner reads as "cannot"
+            // — the safe direction. No exception text escapes; this may be answering a page.
         }
 
         return sets;
@@ -106,17 +94,8 @@ public sealed class AndroidMediaCapability : IMediaCapability
 
     /// <summary>
     /// The profile names this codec declares for <paramref name="mime"/>, as the planner spells them.
-    /// <para>
-    /// ⚠ <b>Android is the ONE platform that can answer this</b>, which is why the profile half of
-    /// <see cref="MediaStreamCodec"/> is worth carrying at all: <c>MediaCodecList</c> hands back
-    /// <c>ProfileLevels</c> and this used to discard them, so a Main-10 HEVC file on a Main-only
-    /// decoder was planned as playable and rendered nothing.
-    /// </para>
-    /// <para>
-    /// Best-effort by construction: an unrecognised profile constant yields NO entry rather than a
-    /// guessed name, and the bare-name entry added beside these keeps such a device matching every
-    /// stream it did before.
-    /// </para>
+    /// ⚠ Best-effort: an unrecognised profile constant yields NO entry rather than a guessed name, and the
+    /// bare-name entry added beside these keeps such a device matching every stream it did before.
     /// </summary>
     private static IEnumerable<string> ProfilesOf(
         global::Android.Media.MediaCodecInfo codec, string mime)
@@ -134,9 +113,8 @@ public sealed class AndroidMediaCapability : IMediaCapability
     }
 
     /// <summary>
-    /// The profile constants worth naming, spelled as a probe reports them. Deliberately SHORT: only
-    /// profiles that change whether a stream decodes are listed, because an unknown profile must add
-    /// nothing rather than invent vocabulary a policy cannot match.
+    /// The profile constants worth naming, spelled as a probe reports them. ⚠ Only profiles that change
+    /// whether a stream decodes — an unknown one must add nothing rather than invent vocabulary.
     /// </summary>
     private static string? ProfileName(string mime, int profile) => mime.ToLowerInvariant() switch
     {
@@ -159,12 +137,8 @@ public sealed class AndroidMediaCapability : IMediaCapability
     };
 
     /// <summary>
-    /// Android MIME types to the lowercase names the planner and every policy speak.
-    /// <para>
-    /// Translated rather than passed through for the same reason <c>MatroskaProbe</c> translates its
-    /// CodecIDs: a policy written against one vocabulary must not have to know three. An unrecognised MIME
-    /// is DROPPED rather than guessed — an invented name in a capability set reads as a capability.
-    /// </para>
+    /// Android MIME types to the lowercase names the planner and every policy speak. ⚠ An unrecognised
+    /// MIME is DROPPED rather than guessed — an invented name in a capability set reads as a capability.
     /// </summary>
     private static string? NameOf(string mime) => mime.ToLowerInvariant() switch
     {

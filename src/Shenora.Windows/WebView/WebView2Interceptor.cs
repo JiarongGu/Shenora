@@ -5,20 +5,11 @@ namespace Shenora.Windows;
 
 /// <summary>
 /// The desktop shell's <see cref="IWebViewInterceptor"/> — the same middleware pipeline the mobile shells
-/// expose, over WebView2.
+/// expose (D45), over WebView2.
 /// <para>
-/// <b>Why the desktop needs one at all.</b> It is tempting to read interception as a mobile workaround, since
-/// that is where it was first needed; it is not. A page cannot reach a local file on Windows either —
-/// <c>file://</c> is refused from a virtual-host origin — so serving local content to the page is interception
-/// here too, and it has been all along: <see cref="WebViewDeferredScheme"/> is that mechanism with an
-/// app-shaped API. What this adds is the SHARED contract (D45): one <c>UseFiles</c> route, one containment
-/// check, one range-delivery rule, written once and correct on three shells instead of once per app.
-/// </para>
-/// <para>
-/// Obtained from <see cref="WebViewHost.Interceptor"/> rather than constructed: it must be wired into the
-/// host's ONE <c>WebResourceRequested</c> subscription. A second subscription assigning <c>args.Response</c>
-/// is last-writer-wins by subscription order, which is not a contract anything should rest on — the same
-/// reasoning that made <c>SessionBrowser.DecideRequest</c> one decision instead of two handlers.
+/// ⚠ Obtained from <see cref="WebViewHost.Interceptor"/> rather than constructed: it must be wired into
+/// the host's ONE <c>WebResourceRequested</c> subscription, because a second subscription assigning
+/// <c>args.Response</c> is last-writer-wins by subscription order.
 /// </para>
 /// </summary>
 internal sealed class WebView2Interceptor : IWebViewInterceptor
@@ -29,13 +20,11 @@ internal sealed class WebView2Interceptor : IWebViewInterceptor
 
     /// <inheritdoc />
     /// <remarks>
-    /// MEASURED on this platform, not inferred from the other two. Setting this to
-    /// <see cref="WebViewRangeDelivery.Unsliced"/> and running the sample's <c>InterceptorProbe</c> answers
-    /// <c>Range: bytes=3-7</c> with the whole file from offset 3 — and the page reads back 1000 bytes starting
-    /// at <c>A</c>, not at <c>D</c>. WebView2 therefore does NOT apply the offset itself: it sends exactly the
-    /// body it is handed, so a handler must slice. (Restored to <c>Sliced</c>, the same probe reads
-    /// <c>DEFGH</c>.) Android's webview does the opposite, which is the whole reason this is a property
-    /// rather than a constant (D44).
+    /// 🔴 WebView2 sends exactly the body it is handed and does NOT apply the <c>Range</c> offset itself,
+    /// so a handler must SLICE. Android's webview does the opposite, which is why this is a property
+    /// rather than a constant (D44); getting it wrong applies the offset twice and a player asking for a
+    /// file's tail retries the identical range for ever. Measured with the sample's
+    /// <c>InterceptorProbe</c>.
     /// </remarks>
     public WebViewRangeDelivery RangeDelivery => WebViewRangeDelivery.Sliced;
 
@@ -43,8 +32,8 @@ internal sealed class WebView2Interceptor : IWebViewInterceptor
     public IDisposable Use(WebViewResourceMiddleware middleware) => _pipeline.Use(middleware);
 
     /// <summary>
-    /// Whether anything is registered — an array-length read, cheap enough for the host's shared handler to
-    /// ask on every request before it does anything else.
+    /// Whether anything is registered — an array-length read, cheap enough for the host's shared handler
+    /// to ask on every request before it does anything else.
     /// </summary>
     internal bool HasRoutes => !_pipeline.IsEmpty;
 
@@ -54,28 +43,25 @@ internal sealed class WebView2Interceptor : IWebViewInterceptor
     internal void Clear() => _pipeline.Clear();
 
     /// <summary>
-    /// The <c>WebResourceRequested</c> filter patterns the interceptor needs BEYOND the ones the bundle and the
-    /// deferred schemes already register. Pure and tested, because it is the whole answer to "which requests can
-    /// a middleware even see" and getting it wrong is silent — a route that works in production and 404s in dev.
+    /// The <c>WebResourceRequested</c> filter patterns the interceptor needs BEYOND the ones the bundle and
+    /// the deferred schemes already register.
     /// <para>
-    /// <b>The rule: the interceptor sees the PAGE'S OWN ORIGIN.</b> That is what D44 settled — a relative URL on
-    /// the page's own origin is the one form intercepted on all three shells — so it is the origin that has to be
-    /// filtered. In production that origin is the bundle's virtual host, whose pattern is already registered; in
-    /// development it is the Vite server, which is not, and without this a media route would work in a packaged
-    /// build and 404 during every day of development.
+    /// 🔴 The rule is that the interceptor sees the PAGE'S OWN ORIGIN (D44). In production that is the
+    /// bundle's virtual host, already registered; in development it is the Vite server, which is not —
+    /// and without this a route works in a packaged build and 404s all through development.
     /// </para>
     /// <para>
-    /// ⚠ A <see cref="WebViewHostOptions.ProductionUrl"/> origin is deliberately NOT filtered. That profile puts a
-    /// real in-process HTTP server behind the page, and Kestrel already serves files with correct ranges; letting
-    /// middleware shadow its routes would mean two servers for one origin, silently disagreeing. Nor is a blanket
-    /// <c>"*"</c> used: it raises the event for every request the page makes, including ones on the open internet.
+    /// ⚠ A <see cref="WebViewHostOptions.ProductionUrl"/> origin is deliberately NOT filtered: a real
+    /// in-process HTTP server is behind it, and shadowing its routes means two servers for one origin.
+    /// Nor is a blanket <c>"*"</c> used — it raises the event for every request the page makes, the open
+    /// internet included.
     /// </para>
     /// </summary>
     internal static string[] ExtraFilters(bool isDevelopment, string? devUrl)
     {
         if (!isDevelopment || string.IsNullOrWhiteSpace(devUrl)) return [];
-        // The ORIGIN, not the configured string: a DevUrl carrying a path ("http://localhost:3517/index.html")
-        // would otherwise produce a filter that matches only that one document.
+        // The ORIGIN, not the configured string: a DevUrl carrying a path would otherwise produce a
+        // filter matching only that one document.
         return Uri.TryCreate(devUrl, UriKind.Absolute, out var parsed)
             ? [parsed.GetLeftPart(UriPartial.Authority) + "/*"]
             : [];

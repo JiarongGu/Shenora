@@ -16,27 +16,19 @@ public enum SessionPointerAction
 }
 
 /// <summary>
-/// One client input to replay into a co-browsed page.
+/// One client input to replay into a co-browsed page. Use <see cref="TryParseLegacyJson"/> to migrate a
+/// client that still speaks the pre-typed JSON protocol (D21).
 /// <para>
-/// This replaced <c>DispatchInputAsync(string json)</c>, which took the ORIGINATING APP'S WIRE
-/// PROTOCOL as an opaque JSON string (P5.5 H9.1 / D21). That was "ship the consumer's shape" in its
-/// purest form: a consumer could not know what to pass without reading that app's client, and the
-/// framework's contract was one application's message format. The mechanics underneath are unchanged
-/// and still the proven ones — only the seam is now typed. Use
-/// <see cref="TryParseLegacyJson"/> to migrate an existing client mechanically.
-/// </para>
-/// <para>
-/// COORDINATES ARE FRACTIONS of the viewport (0..1), not pixels, and that choice is load-bearing:
-/// the client knows only the size of the image it is showing, so fractions are what make the protocol
+/// COORDINATES ARE FRACTIONS of the viewport (0..1), not pixels, and that choice is load-bearing: the
+/// client knows only the size of the image it is showing, so fractions are what make the protocol
 /// resolution- and DPI-independent. The session maps them to CSS px using the viewport IT set, so no
 /// round-trip to the page is needed.
 /// </para>
 /// <para>
-/// The constructor is <c>private protected</c>, so the cases below are the intended whole set and
-/// adding one is a deliberate act inside this package. Note this is NOT an airtight seal — a record's
-/// compiler-generated COPY constructor is <c>protected</c>, so an outside type could still derive
-/// through it — which is exactly why <see cref="StreamingSession.DispatchAsync"/> keeps an explicit
-/// default arm rather than assuming its switch is exhaustive.
+/// The constructor is <c>private protected</c>, so the cases below are the intended whole set. ⚠ It is
+/// NOT an airtight seal — a record's compiler-generated COPY constructor is <c>protected</c>, so an
+/// outside type can still derive through it, and <see cref="StreamingSession.DispatchAsync"/> therefore
+/// keeps an explicit default arm.
 /// </para>
 /// </summary>
 public abstract record SessionInput
@@ -44,14 +36,10 @@ public abstract record SessionInput
     private protected SessionInput() { }
 
     /// <summary>
-    /// Parse one message in the pre-H9 wire format — the ADOPTION SHIM (D21's "accepted cost"), so an
-    /// existing client that already speaks that protocol migrates without changing its frontend.
-    /// Explicitly named "legacy" so nobody mistakes it for the contract: new callers construct the
-    /// records directly.
-    /// <para>
-    /// Returns false for anything unrecognised or malformed rather than throwing — a single bad input
-    /// message must never break a session, which was the old dispatcher's contract too.
-    /// </para>
+    /// Parse one message in the pre-typed wire format — the ADOPTION SHIM (D21's "accepted cost"), so an
+    /// existing client migrates without changing its frontend. Named "legacy" so nobody mistakes it for
+    /// the contract: new callers construct the records directly. Returns false for anything unrecognised
+    /// or malformed rather than throwing — a single bad input message must never break a session.
     /// </summary>
     /// <param name="json">
     /// <c>{"type":"viewport","width":…,"height":…,"dpr"?:…}</c> ·
@@ -89,8 +77,7 @@ public abstract record SessionInput
                     return true;
 
                 case "mouse":
-                    // Anything that is not an explicit press/release is a MOVE — matching the old
-                    // switch, whose default arm was mouseMoved.
+                    // Anything that is not an explicit press/release is a MOVE.
                     input = new SessionPointerInput(
                         root.TryGetProperty("event", out var ev) ? ev.GetString() switch
                         {
@@ -134,13 +121,11 @@ public abstract record SessionInput
 }
 
 /// <summary>
-/// Cursor movement or a primary-button press/release, at viewport FRACTIONS.
-/// <para>
-/// A button pressed by <see cref="SessionPointerAction.Down"/> stays held across subsequent
-/// <see cref="SessionPointerAction.Move"/>s until <see cref="SessionPointerAction.Up"/> — the
-/// session tracks that, because Chromium reads held state from the CDP <c>buttons</c> field and a
-/// drag is impossible without it.
-/// </para>
+/// Cursor movement or a primary-button press/release, at viewport FRACTIONS. A button pressed by
+/// <see cref="SessionPointerAction.Down"/> stays held across subsequent
+/// <see cref="SessionPointerAction.Move"/>s until <see cref="SessionPointerAction.Up"/> — the session
+/// tracks that, because Chromium reads held state from the CDP <c>buttons</c> field and a drag is
+/// impossible without it.
 /// </summary>
 /// <param name="Action">Move, press, or release.</param>
 /// <param name="X">Horizontal position as a fraction of the viewport (0..1).</param>
@@ -154,9 +139,8 @@ public sealed record SessionPointerInput(SessionPointerAction Action, double X, 
 public sealed record SessionWheelInput(double X, double Y, double DeltaY) : SessionInput;
 
 /// <summary>
-/// Plain typed text, inserted as a unit (CDP <c>Input.insertText</c>) — the right primitive for
-/// typing, including IME and pasted content. Use <see cref="SessionKeyInput"/> for keys that ACT
-/// rather than type.
+/// Plain typed text, inserted as a unit (CDP <c>Input.insertText</c>) — the right primitive for typing,
+/// including IME and pasted content. Use <see cref="SessionKeyInput"/> for keys that ACT rather than type.
 /// </summary>
 /// <param name="Text">The text to insert.</param>
 public sealed record SessionTextInput(string Text) : SessionInput;
@@ -183,15 +167,11 @@ public sealed record SessionKeyInput(string Key) : SessionInput
 }
 
 /// <summary>
-/// The client's content box, mirrored into the page through device metrics ALONE — never a
-/// physical resize (that mechanic is a kept primitive, see <see cref="StreamingSession"/>). Send this
-/// whenever the viewer is resized; the session caches the result so pointer fractions need no
-/// round-trip to the page.
-/// <para>
-/// ⚠ <b>1:1 WITHIN THE SUPPORTED RANGE, not unconditionally</b> — this used to say "mirrored 1:1" flat,
-/// and a viewer outside <see cref="SessionViewport"/>'s bounds is fitted to the nearest edge instead.
-/// That type documents the numbers; they are not repeated here so the two cannot drift apart.
-/// </para>
+/// The client's content box, mirrored into the page through device metrics ALONE — never a physical
+/// resize. Send this whenever the viewer is resized; the session caches the result so pointer fractions
+/// need no round-trip to the page.
+/// ⚠ <b>1:1 WITHIN <see cref="SessionViewport"/>'s supported range, not unconditionally</b> — a viewer
+/// outside those bounds is fitted to the nearest edge. That type documents the numbers.
 /// </summary>
 /// <param name="Width">Client content-box width in CSS px.</param>
 /// <param name="Height">Client content-box height in CSS px.</param>

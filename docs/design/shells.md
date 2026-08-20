@@ -116,6 +116,12 @@ shrinks to the target's work area.
 per app, because two things can only be decided at environment-creation time: the user-data folder (and
 its OS lock) and **custom scheme registration**.
 
+**Prewarm is worth doing because the expensive part needs nothing from you.** The browser-process spawn
+plus user-data init is the dominant chunk of WebView2 startup — **measured at ~1–2 s** — and it needs no
+control and no message loop. Started first thing, it overlaps DI build, window-state load and form
+creation, so by the time a window wants it the task is usually already done and the remaining wait is
+often zero.
+
 - **`InitializeAsync` is idempotent and capped** by `InitTimeout`. A faulted or cancelled attempt is NOT
   cached, so the timeout message's "start again" is advice a caller can act on; an orphaned
   user-data-folder lock would otherwise hang init forever.
@@ -135,6 +141,21 @@ WebView2's UI thread**, where a dialog conflicts with its message handling.
 `StaThread` has two entry points, and the difference is the apartment's LIFETIME: `RunAsync` gives a call
 its own thread (what a blocking modal dialog wants), `RunSharedAsync` queues onto one long-lived **pumped**
 apartment (`Application.Run`) — required because OLE must service `OleFlushClipboard` on that thread.
+
+🔴 **Both halves of that are MEASURED, and both failures are silent.** `SetDataObject(copy: true)` ends in
+`OleFlushClipboard`, which asks the data object to render every advertised format into global memory through
+the apartment's message loop. Over 8 runs of a copy carrying text + files + HTML + PNG + a private format:
+
+| apartment | result |
+|---|---|
+| set-then-exit (torn down mid-flush) | **~1 run in 6** returned the PNG as ZEROS of the right length and lost `text/html` — no exception, no error |
+| long-lived but NOT pumping | **every run** failed |
+| long-lived and pumping (what ships) | clean |
+
+⚠ **Two plausible fixes were tried and REJECTED**: `Application.DoEvents()` after the flush made it *worse*
+(34/40 against 29/40), and the residual flakiness after the real defects were fixed turned out to sit below
+this repo — PowerShell's own `Set-Clipboard` failed alongside it. So a copy losing half of itself is a
+design failure, not a flaky environment, and the pumped apartment is what prevents it.
 
 `ClipboardService` builds ONE `DataObject` for every representation and sets it once, which is what makes
 a copy atomic. ⚠ **It TRANSLATES well-known media types into the formats other Windows apps actually

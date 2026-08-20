@@ -109,18 +109,17 @@ public sealed class TrayIcon : IDisposable
 
         if (options.CloseToTray)
             options.Window.FormClosing += OnWindowClosing;
-        // Hide the shell icon only once the close COMPLETED. Hiding in FormClosing is premature: a later
-        // handler cancelling the close leaves a running app with no tray icon and close-to-tray still
-        // armed → an unreachable window.
+        // ⚠ Hide the shell icon only once the close COMPLETED: hiding in FormClosing means a later handler
+        // cancelling the close leaves a running app with no tray icon and close-to-tray still armed — an
+        // unreachable window.
         options.Window.FormClosed += OnWindowClosed;
     }
 
     /// <summary>The tray menu (built-in Open first, app items, separator, Exit last).</summary>
     public ContextMenuStrip Menu { get; }
 
-    /// <summary>Restore + focus the window (double-click / the Open item), through the one activation
-    /// owner — without its <c>SetForegroundWindow</c>, restoring while another app holds the foreground
-    /// leaves the window BEHIND everything.</summary>
+    /// <summary>Restore + focus the window (double-click / the Open item), through
+    /// <see cref="WindowActivation"/>.</summary>
     public void ShowWindow() => WindowActivation.BringToFront(_options.Window);
 
     /// <summary>Close the window FOR REAL — bypasses close-to-tray.</summary>
@@ -129,18 +128,16 @@ public sealed class TrayIcon : IDisposable
         _exiting = true;
         if (_options.Window.IsDisposed) return;
         _options.Window.Close();
-        // Another FormClosing handler may have CANCELED the close (an unsaved-changes prompt). Re-arm
+        // ⚠ Another FormClosing handler may have CANCELED the close (an unsaved-changes prompt). Re-arm
         // close-to-tray, or the next plain user close would exit.
         if (!_options.Window.IsDisposed) _exiting = false;
     }
 
     private void OnWindowClosing(object? sender, FormClosingEventArgs e)
     {
-        // Closing the window hides to the tray — the app keeps running.
-        // Passes through: _exiting (the Exit item / ExitApplication), ApplicationExitCall
-        // (Application.Exit), WindowsShutDown, TaskManagerClosing, FormOwnerClosing, MdiFormClosing.
-        // Hides to tray: UserClosing — the user's X AND a bare Form.Close().
-        // To close for real from code, call ExitApplication() or Application.Exit(), never Close().
+        // Hides to tray: UserClosing — the user's X AND a bare Form.Close() (see CloseToTray).
+        // Passes through: _exiting, ApplicationExitCall, WindowsShutDown, TaskManagerClosing,
+        // FormOwnerClosing, MdiFormClosing.
         if (_exiting || e.CloseReason != CloseReason.UserClosing)
             return;
         e.Cancel = true;

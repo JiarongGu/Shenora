@@ -2,14 +2,11 @@ using Microsoft.Extensions.Logging;
 using Shenora.Modules.Platform;
 using Shenora.Modules.Media;
 
-// CodecQuery is WinRT (Windows 10 1809), so the same multi-target split the playback session uses applies
-// here: this file is the versioned half, WindowsMediaCapability.Unsupported.cs refuses by name on plain
-// net10.0-windows. Guarding the FILE rather than each body, for the reason recorded there.
+// CodecQuery is WinRT (Windows 10 1809): this is the versioned half of the multi-target split, and
+// WindowsMediaCapability.Unsupported.cs is the plain one. See WindowsPlaybackSession.cs for the split, and
+// for why every WinRT namespace below needs `global::`.
 #if WINDOWS10_0_17763_0_OR_GREATER
 using Shenora;
-// `global::` on every WinRT namespace, and it is not optional: inside `namespace Shenora.Windows` the bare
-// identifier `Windows` binds to THIS namespace, so `Windows.Media` resolves to `Shenora.Windows.Windows.Media`
-// and fails with a confusing CS0234. Same trap WindowsPlaybackSession documents.
 using CodecQuery = global::Windows.Media.Core.CodecQuery;
 using CodecKind = global::Windows.Media.Core.CodecKind;
 using CodecCategory = global::Windows.Media.Core.CodecCategory;
@@ -18,24 +15,13 @@ namespace Shenora.Windows;
 
 /// <summary>
 /// The desktop shell's <see cref="IMediaCapability"/> — what THIS Windows machine can decode and encode,
-/// asked of the platform through <c>CodecQuery</c> rather than assumed.
+/// asked of the platform through <c>CodecQuery</c> rather than assumed (D42). Results are cached; the codec
+/// set cannot change while the process runs.
 /// <para>
-/// <b>Why this exists: the planner had no answer on desktop.</b> Both mobile shells registered an
-/// <see cref="IMediaCapability"/> and Windows registered none, so <c>MediaPlaybackPlanner</c> could ask the
-/// device what it supports on a phone and had to be told on a PC. That asymmetry is the thing D42 exists to
-/// prevent — the kit ships the QUESTION, never a hard-coded codec list, and a shell that cannot answer it
-/// pushes the guess back onto every app.
-/// </para>
-/// <para>
-/// <b>⚠ It answers about the MACHINE, not about the webview.</b> WebView2 accepts a narrower set than
-/// Media Foundation decodes — a machine with an HEVC extension installed decodes HEVC while the element
-/// still refuses it. That is exactly the delta D59 names as the converter's job, and it is why the two
-/// inputs to the planner are separate: this is the DEVICE half, <c>MediaPlaybackPolicy</c> is the webview
-/// half, and the gap between them is what gets converted.
-/// </para>
-/// <para>
-/// Results are cached. The codec set cannot change while the process runs — an installed extension needs a
-/// restart to register — and each query walks the platform's MFT list, which is not free.
+/// ⚠ <b>It answers about the MACHINE, not about the webview.</b> WebView2 accepts a narrower set than Media
+/// Foundation decodes — a machine with the HEVC extension installed decodes HEVC while the element still
+/// refuses it. That gap is what the planner converts: this is the DEVICE half,
+/// <c>MediaPlaybackPolicy</c> is the webview half (D59).
 /// </para>
 /// </summary>
 public sealed class WindowsMediaCapability : IMediaCapability
@@ -77,28 +63,21 @@ public sealed class WindowsMediaCapability : IMediaCapability
         {
             MediaStreamKind.Video => CodecKind.Video,
             MediaStreamKind.Audio => CodecKind.Audio,
-            // Subtitles and anything a later version adds: the platform has no codec concept for them, and
-            // an empty set says "I know of none" rather than inventing an answer.
+            // Subtitles and anything a later version adds: the platform has no codec concept for them.
             _ => (CodecKind?)null,
         };
         if (codecKind is not { } resolved) return new HashSet<MediaStreamCodec>();
 
         var category = encode ? CodecCategory.Encoder : CodecCategory.Decoder;
-        // GetAwaiter().GetResult() rather than .Wait(): this is called from a planner that is synchronous by
-        // contract, the query is a local MFT enumeration with no UI thread involved, and unwrapping the
-        // AggregateException a Wait() would produce buys nothing here.
-        // An INSTANCE method, not static — checked against the projection after assuming otherwise, the same
-        // way MPNowPlayingInfoCenter.playbackState turned out not to exist on the iOS side.
+        // Blocking is safe: the planner is synchronous by contract and this is a local MFT enumeration with
+        // no UI thread involved.
         var codecs = new CodecQuery().FindAllAsync(resolved, category, string.Empty)
             .AsTask().GetAwaiter().GetResult();
 
         var names = new HashSet<MediaStreamCodec>();
-        // 🔴 The UNRECOGNISED ones are logged too, and that is not tidiness. An unknown subtype is dropped,
-        // which reads downstream as "the device does not support it" — indistinguishable from the machine
-        // genuinely lacking the codec (D63's failure mode, in a translation table). Without this line a
-        // missing row here and an absent decoder produce identical evidence, so a device measurement can
-        // never be attributed. This one was written after `MFVideoFormat_HEVC` turned out to be missing
-        // from the table while `H265` was present.
+        // 🔴 The UNRECOGNISED ones are logged too. An unknown subtype is dropped, which reads downstream as
+        // "the device does not support it" — indistinguishable from the machine genuinely lacking the codec,
+        // so without this line a missing row here and an absent decoder produce identical evidence.
         var unknown = new HashSet<MediaStreamCodec>();
         foreach (var codec in codecs)
         {
@@ -119,15 +98,9 @@ public sealed class WindowsMediaCapability : IMediaCapability
 
     /// <summary>
     /// Map a Media Foundation subtype GUID onto the kit's codec vocabulary — the same short names the
-    /// Matroska probe and <see cref="MediaPlaybackPolicy"/> use.
-    /// <para>
-    /// ⚠ <b>A translation table is unavoidable and it is deliberately SMALL.</b> Every platform names codecs
-    /// differently (`MediaCodec` says <c>audio/mp4a-latm</c>, Matroska says <c>A_AAC</c>, Media Foundation
-    /// says a GUID), so something must translate — and the kit already decided the vocabulary. What this
-    /// must not become is a codec DATABASE: an unknown subtype is dropped, which reads as "the device does
-    /// not support it", and the planner then converts. Being conservative here costs a needless conversion;
-    /// being generous would claim support the element does not have.
-    /// </para>
+    /// Matroska probe and <see cref="MediaPlaybackPolicy"/> use. ⚠ Deliberately small, never a codec
+    /// DATABASE: an unknown subtype is dropped and the planner converts, so being conservative costs a
+    /// needless conversion while being generous would claim support the element does not have.
     /// </summary>
     private static string? Normalise(string subtype) => subtype.Trim('{', '}').ToLowerInvariant() switch
     {
@@ -144,10 +117,8 @@ public sealed class WindowsMediaCapability : IMediaCapability
         // Video subtypes are FOURCCs in the same GUID shape — Data1 is the FOURCC read little-endian, so
         // 'H264' (48 32 36 34) prints as 34363248.
         "34363248-0000-0010-8000-00aa00389b71" => "h264",
-        // ⚠ HEVC has THREE registered subtypes and listing only one is how a machine that decodes it gets
-        // reported as not doing so. MFVideoFormat_HEVC is FOURCC 'HEVC' and is what the HEVC Video
-        // Extension advertises; 'H265' and 'HEVS' (elementary stream) are the other two. Only 'H265' was
-        // here, which made "no HEVC on this box" unattributable — see the unknown-subtype log above.
+        // ⚠ HEVC has THREE registered subtypes, and listing only one is how a machine that decodes it gets
+        // reported as not doing so. 'HEVC' (MFVideoFormat_HEVC) is what the HEVC Video Extension advertises.
         "43564548-0000-0010-8000-00aa00389b71" => "hevc",   // 'HEVC'
         "35363248-0000-0010-8000-00aa00389b71" => "hevc",   // 'H265'
         "53564548-0000-0010-8000-00aa00389b71" => "hevc",   // 'HEVS' — elementary stream

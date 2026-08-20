@@ -3,26 +3,22 @@ using System.Runtime.InteropServices;
 namespace Shenora.Windows;
 
 /// <summary>
-/// The ONE "bring this window to the front" sequence. It existed four times — the single-instance
-/// activation filter, <see cref="SecondaryWindows.Activate"/>, <see cref="TrayIcon"/>'s restore, and
-/// the session controller's reveal — and each copy was incomplete in a DIFFERENT way, which is what
-/// made this worth collapsing rather than just noting (P5.5 H4.5). The tray copy in particular
-/// omitted <c>SetForegroundWindow</c>, so restoring from the tray while another app held the
-/// foreground could leave the window behind everything — visible in the taskbar, not on screen.
+/// The ONE "bring this window to the front" sequence, for the single-instance activation filter,
+/// <see cref="SecondaryWindows.Activate"/>, <see cref="TrayIcon"/>'s restore and the session
+/// controller's reveal.
 /// <para>
-/// Order matters and is the part people get wrong: <b>un-minimize BEFORE activating</b> (activating a
+/// ⚠ <b>The ORDER is the part people get wrong:</b> un-minimize BEFORE activating (activating a
 /// minimized window leaves it minimized), then <c>Show</c>/<c>Activate</c>/<c>BringToFront</c> for the
-/// managed side, and finally <c>SetForegroundWindow</c> for the OS side — WinForms' own methods do
-/// not always cross the foreground-permission boundary.
+/// managed side, and finally <c>SetForegroundWindow</c> for the OS side — without which restoring while
+/// another app holds the foreground leaves the window behind everything, visible only in the taskbar.
 /// </para>
 /// </summary>
 internal static class WindowActivation
 {
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-    // GetWindowLong/SetWindowLong rather than the ...Ptr forms: GWL_EXSTYLE holds a 32-bit value on
-    // every architecture, and the Ptr entry points do not exist on x86 (they are macros there), so the
-    // narrow pair is the portable one for this index.
+    // The narrow pair, not the ...Ptr forms: GWL_EXSTYLE is 32-bit on every architecture and the Ptr
+    // entry points do not exist on x86.
     [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongW")]
     private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
@@ -37,27 +33,17 @@ internal static class WindowActivation
 
     /// <summary>
     /// Give <paramref name="form"/> a taskbar button, WITHOUT recreating its window handle.
-    ///
     /// <para>
-    /// 🔴 <b><c>Form.ShowInTaskbar = true</c> destroys and recreates the HWND</b>, because the flag is a
-    /// <c>CreateParams</c> extended style and WinForms' setter calls <c>RecreateHandle()</c> whenever the
-    /// handle already exists. Measured on this machine: the handle moved from <c>31595706</c> to
-    /// <c>31661242</c> across the assignment. That is fine for an ordinary form and materially not fine
-    /// for one HOSTING A LIVE WEBVIEW2 — the browser is bound to a parent HWND, and the one place this
-    /// is reached (<c>SessionController.Reveal</c>) is precisely a window with a running browser in it,
-    /// mid-session, at the moment a user is about to be shown it.
+    /// 🔴 <b><c>Form.ShowInTaskbar = true</c> destroys and recreates the HWND</b> — the flag is a
+    /// <c>CreateParams</c> extended style and WinForms' setter calls <c>RecreateHandle()</c> (measured).
+    /// Fine for an ordinary form, not for one HOSTING A LIVE WEBVIEW2, which is exactly where this is
+    /// used. So the style is set directly; the hide/show either side is what makes the shell notice,
+    /// since the taskbar only reads the flag when a window is shown.
     /// </para>
     /// <para>
-    /// So the style is set DIRECTLY. The hide/show either side is what makes the shell notice: the
-    /// taskbar reads the flag when a window is shown, so flipping it on a visible window changes nothing
-    /// until the next show. Neither call recreates a handle.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>WinForms' own <c>ShowInTaskbar</c> property still reports <c>false</c> afterwards</b>, and
-    /// that is the honest cost of not going through it: a LATER change that legitimately recreates the
-    /// handle (<c>FormBorderStyle</c>, <c>TopMost</c>) rebuilds <c>CreateParams</c> from WinForms' state
-    /// and drops the button again. Acceptable where this is used — a session window is revealed once and
-    /// then closed — and a caller that restyles a revealed window must call this again.
+    /// ⚠ <b>WinForms' own <c>ShowInTaskbar</c> still reports <c>false</c> afterwards</b>, so a later
+    /// change that legitimately recreates the handle (<c>FormBorderStyle</c>, <c>TopMost</c>) rebuilds
+    /// <c>CreateParams</c> from WinForms' state and drops the button again — call this again.
     /// </para>
     /// </summary>
     internal static void ShowTaskbarButton(Form form)
@@ -75,8 +61,7 @@ internal static class WindowActivation
         }
         catch (Exception)
         {
-            // Racing teardown, exactly as BringToFront: a window that is going away does not need a
-            // taskbar button, and failing to give it one is never worth an exception on the UI thread.
+            // Racing teardown — a window that is going away does not need a taskbar button.
         }
     }
 

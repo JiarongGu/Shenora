@@ -161,7 +161,7 @@ Registering the page regions a native file drop is matched against.
 | Constant | Value | |
 |---|---|---|
 | `DropZoneModule.RegisterType` | `REGISTER` | Route: declare a zone at { zoneId, x, y, width, height } (page coordinates). |
-| `DropZoneModule.UpdateType` | `UPDATE` | Route: same payload as RegisterType — updating IS registering with new bounds, which is why they share a case. |
+| `DropZoneModule.UpdateType` | `UPDATE` | Route: move a zone to new bounds; same payload as RegisterType. |
 | `DropZoneModule.UnregisterType` | `UNREGISTER` | Route: forget a zone: { zoneId }. |
 | `DropZoneModule.ShowType` | `SHOW` | Route: raise the drop overlay over a zone: { zoneId }. |
 

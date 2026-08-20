@@ -16,9 +16,9 @@ public sealed class WebViewEnvironmentOptions
     public bool IsDevelopment { get; init; }
 
     /// <summary>
-    /// Extra dev-only switches. Defaults to the <c>WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS</c> env
-    /// var when null — WebView2 ignores that env var once AdditionalBrowserArguments is set, so
-    /// the devtools CDP port must be re-appended manually (the family's measured gotcha).
+    /// Extra dev-only switches. Defaults to the <c>WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS</c> env var
+    /// when null — ⚠ WebView2 IGNORES that env var once AdditionalBrowserArguments is set, so the
+    /// devtools CDP port must be re-appended manually.
     /// </summary>
     public string? DevExtraArguments { get; init; }
 
@@ -34,19 +34,12 @@ public sealed class WebViewEnvironmentOptions
     /// <summary>
     /// Custom URI schemes this environment serves, e.g. <c>app</c> for <c>app://…</c>.
     /// <para>
-    /// REQUIRED for every non-http(s) scheme in <see cref="WebViewHostOptions.DeferredSchemes"/>, and
-    /// it has to live HERE rather than beside the handler because WebView2 accepts scheme
-    /// registrations only when the ENVIRONMENT is created — before any control exists. Without it the
-    /// browser does not know the scheme, so the request is rejected by the network stack before the
-    /// <c>WebResourceRequested</c> filter is ever consulted, and the page sees a bare
-    /// <c>TypeError: Failed to fetch</c> with nothing in the host log.
-    /// </para>
-    /// <para>
-    /// That was a real defect, not a hypothetical: the deferred-scheme feature shipped with the filter
-    /// and no registration, so it could never have worked for an actual custom scheme, while the unit
-    /// tests, the API baseline and the docs all looked fine (P7.1 — found by an e2e probe).
-    /// <see cref="WebViewHost"/> now validates the pairing at construction, so a missing registration
-    /// fails loudly at composition instead of as a fetch error at runtime.
+    /// 🔴 REQUIRED for every non-http(s) scheme in <see cref="WebViewHostOptions.DeferredSchemes"/>, and
+    /// it lives HERE rather than beside the handler because WebView2 accepts scheme registrations only
+    /// when the ENVIRONMENT is created. Without it the network stack rejects the request before the
+    /// <c>WebResourceRequested</c> filter is consulted, and the page sees a bare
+    /// <c>TypeError: Failed to fetch</c> with nothing in the host log. <see cref="WebViewHost"/>
+    /// validates the pairing at construction so this fails at composition instead.
     /// </para>
     /// </summary>
     public IReadOnlyList<WebViewCustomScheme> CustomSchemes { get; init; } = [];
@@ -63,9 +56,8 @@ public sealed class WebViewCustomScheme
 
     /// <summary>
     /// Treat as a SECURE origin (default true). Secure schemes reach the APIs a modern page needs —
-    /// service workers, <c>crypto.subtle</c>, and being allowed to load subresources into an https
-    /// document — so the useful default is the secure one; a page served from an insecure custom
-    /// scheme is mysteriously restricted.
+    /// service workers, <c>crypto.subtle</c>, loading subresources into an https document; an insecure
+    /// custom scheme is mysteriously restricted instead.
     /// </summary>
     public bool TreatAsSecure { get; init; } = true;
 
@@ -76,27 +68,24 @@ public sealed class WebViewCustomScheme
     public bool HasAuthorityComponent { get; init; } = true;
 
     /// <summary>
-    /// Origins allowed to fetch this scheme cross-origin. Empty (default) = same-origin only, which
-    /// is the safe starting point: widen it deliberately when the page's origin differs from the
-    /// scheme's, not by reflex.
+    /// Origins allowed to fetch this scheme cross-origin. Empty (default) = same-origin only, so widen
+    /// it when the page's origin differs from the scheme's.
     /// </summary>
     public IReadOnlyList<string> AllowedOrigins { get; init; } = [];
 }
 
 /// <summary>
-/// The process-global WebView2 environment: prewarm, shared access, per-thread creation, and the
-/// runtime presence check no source app had.
+/// The process-global WebView2 environment: prewarm, shared access, per-thread creation, and a runtime
+/// presence check.
 ///
-/// Prewarm: the browser-process spawn + user-data init is the dominant chunk of WebView2 init
-/// (~1–2 s measured) and needs no control or message loop — so kick it off first thing at
-/// startup and it overlaps DI build, window-state load, and form creation; by the time the
-/// window needs it the task is usually already complete.
+/// Prewarm: the browser-process spawn + user-data init is the dominant chunk of WebView2 init and needs
+/// no control or message loop, so starting it first thing overlaps DI build, window-state load and form
+/// creation.
 ///
-/// Thread affinity (the source app's hard-won rule): a <see cref="CoreWebView2Environment"/> is
-/// affine to the thread that created it. ONLY the main UI thread may use
-/// <see cref="GetSharedAsync"/>; a secondary window on its own STA thread MUST use
-/// <see cref="CreateForCurrentThreadAsync"/> (same options + user-data folder ⇒ the environments
-/// share one browser process).
+/// 🔴 THREAD AFFINITY: a <see cref="CoreWebView2Environment"/> is affine to the thread that created it.
+/// ONLY the main UI thread may use <see cref="GetSharedAsync"/>; a secondary window on its own STA
+/// thread MUST use <see cref="CreateForCurrentThreadAsync"/> (same options + user-data folder ⇒ the
+/// environments share one browser process).
 /// </summary>
 public static class WebViewEnvironment
 {
@@ -104,9 +93,8 @@ public static class WebViewEnvironment
     private static Task<CoreWebView2Environment>? _shared;
 
     /// <summary>
-    /// The installed WebView2 runtime version, or null when NO runtime is available — in which
-    /// case show an actionable install prompt instead of letting <c>EnsureCoreWebView2Async</c>
-    /// fail obscurely later (the gap every source app shipped with).
+    /// The installed WebView2 runtime version, or null when NO runtime is available — in which case
+    /// show an install prompt rather than letting <c>EnsureCoreWebView2Async</c> fail obscurely later.
     /// </summary>
     public static string? GetAvailableRuntimeVersion(string? browserExecutableFolder = null)
     {
@@ -128,10 +116,9 @@ public static class WebViewEnvironment
     public static void Prewarm(WebViewEnvironmentOptions options) => _ = GetSharedAsync(options);
 
     /// <summary>
-    /// The shared environment task, started on first call — the main window awaits this instead
-    /// of creating its own, paying only the remaining (often zero) prewarm time. Main UI thread
-    /// only (see class docs). Options are honored on the FIRST call; later calls return the
-    /// existing task.
+    /// The shared environment task, started on first call — the main window awaits this instead of
+    /// creating its own. Main UI thread only (see class docs). Options are honored on the FIRST call;
+    /// later calls return the existing task.
     /// </summary>
     public static Task<CoreWebView2Environment> GetSharedAsync(WebViewEnvironmentOptions options)
     {
@@ -139,16 +126,13 @@ public static class WebViewEnvironment
         {
             if (_shared is { } existing)
             {
-                // PENDING or SUCCEEDED → reuse; that is the whole point of prewarming.
+                // PENDING or SUCCEEDED → reuse; that is what prewarming buys.
                 if (!existing.IsCompleted || existing.Status == TaskStatus.RanToCompletion) return existing;
 
-                // FAULTED or CANCELLED → forget it (P5.5 H3). `??=` cached a faulted task FOREVER, so a
-                // single transient failure — a profile lock that has since cleared, a runtime update
-                // mid-launch — was terminal for the whole process: every retry, including the one the
-                // init-timeout message tells the user to make, got the original exception back without
-                // ever touching WebView2 again. Evicting on observation is what makes a retry real.
-                // (`Shenora.Windows.SessionEnvironmentCache` deliberately copies this shape
-                // rather than the old one.)
+                // 🔴 FAULTED or CANCELLED → forget it. `??=` caches a faulted task forever, which makes
+                // ONE transient failure (a profile lock since cleared, a runtime update mid-launch)
+                // terminal for the whole process — including the retry the init-timeout message asks
+                // for. Evicting on observation is what makes a retry real.
                 _shared = null;
             }
             return _shared = CreateAsync(options);
@@ -171,11 +155,10 @@ public static class WebViewEnvironment
             ?? (options.IsDevelopment ? Environment.GetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") : null);
         var browserArguments = BrowserArguments.Build(options.IsDevelopment, devExtra, options.AdditionalArguments);
 
-        // Custom schemes go through the CONSTRUCTOR, never the property. `CustomSchemeRegistrations`
-        // is NULL on a default-constructed CoreWebView2EnvironmentOptions in this SDK, so both
-        // `.Add(...)` and a `{ ... }` collection initializer NullReference — and because that happens
-        // inside an async environment factory the symptom is not a stack trace but a startup that
-        // never completes. Cost an afternoon; there is an isolation probe in the P7.1 write-up.
+        // ⚠ Custom schemes go through the CONSTRUCTOR, never the property. `CustomSchemeRegistrations`
+        // is NULL on a default-constructed CoreWebView2EnvironmentOptions, so both `.Add(...)` and a
+        // `{ ... }` initializer NullReference — and inside an async environment factory the symptom is
+        // not a stack trace but a startup that never completes.
         var envOptions = options.CustomSchemes.Count == 0
             ? new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = browserArguments }
             : new CoreWebView2EnvironmentOptions(browserArguments, null, null, false,
@@ -197,8 +180,8 @@ public static class WebViewEnvironment
             TreatAsSecure = scheme.TreatAsSecure,
             HasAuthorityComponent = scheme.HasAuthorityComponent,
         };
-        // AllowedOrigins IS a live list on a constructed registration (unlike the options property
-        // above), so adding is correct here.
+        // AllowedOrigins IS a live list on a constructed registration, unlike the options property
+        // above, so adding is correct here.
         foreach (var origin in scheme.AllowedOrigins) registration.AllowedOrigins.Add(origin);
         return registration;
     }

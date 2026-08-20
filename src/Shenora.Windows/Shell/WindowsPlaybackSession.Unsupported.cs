@@ -9,25 +9,25 @@ namespace Shenora.Windows;
 
 /// <summary>
 /// The plain-<c>net10.0-windows</c> half of <see cref="WindowsPlaybackSession"/>: a NAMED refusal.
+/// <b>This type carries the reference statement for every <c>*.Unsupported.cs</c> half in this package.</b>
 /// <para>
-/// <b>Why this file exists at all.</b> Windows' only system-wide media transport is
-/// <c>SystemMediaTransportControls</c>, which is WinRT — and the WinRT projections only exist when the target
-/// framework names a Windows SDK version. With a bare <c>net10.0-windows</c>, <c>Windows.Media</c> is not a
-/// namespace (measured: <c>CS0234</c>). So rather than force a TFM on every consumer for a capability most do
-/// not use, the package multi-targets and this variant refuses with the exact fix in the message.
+/// <b>Why they exist.</b> The capabilities they stand in for are WinRT
+/// (<c>SystemMediaTransportControls</c>, <c>MediaPlayer</c>, <c>CodecQuery</c>), and the WinRT projections
+/// only exist when the target framework names a Windows SDK version — with a bare <c>net10.0-windows</c>,
+/// <c>Windows.Media</c> is not a namespace (measured: <c>CS0234</c>). So the package multi-targets rather
+/// than forcing a TFM on every consumer for a capability most do not use.
 /// </para>
 /// <para>
-/// <b>It refuses at CONSTRUCTION, not per call.</b> The registration in <c>UseWindows</c> is lazy, so the
-/// throw lands the first time an app resolves <see cref="IPlaybackSession"/> — at the point it asked for the
-/// capability, naming the platform and the one-line remedy. A per-method refusal would let an app publish
-/// metadata and report progress into nothing for a while first, which is the silent-degradation this kit
-/// treats as the worse failure (<see cref="ShellCapability"/>).
+/// <b>A FEATURE refuses at CONSTRUCTION</b> (this type, <see cref="WindowsMediaPlayer"/>), with the fix in
+/// the message: the registration in <c>UseWindows</c> is lazy, so the throw lands where the app asked for the
+/// capability. A per-method refusal would let it publish into nothing first, which is the silent degradation
+/// the kit treats as the worse failure (<see cref="ShellCapability"/>). <b>A QUESTION answers EMPTY</b>
+/// (<see cref="WindowsMediaCapability"/>) — the contract already has an answer for "I cannot tell".
 /// </para>
 /// <para>
-/// ⚠ The public shape here MUST match the versioned variant exactly — it is the same type name in the same
-/// package, differing only by TFM, and a consumer that retargets must find the same members. That is why the
-/// plain TFM has its own entry in <c>MetadataSurfaceTests</c>: two hand-written shapes need a gate, and the
-/// runtime API baseline only ever sees whichever variant the test project itself references.
+/// ⚠ The public shape MUST match the versioned variant exactly — same type name, same package, different
+/// TFM — which is why each plain-TFM half has its own entry in <c>MetadataSurfaceTests</c>: the runtime API
+/// baseline only ever sees whichever variant the test project references.
 /// </para>
 /// </summary>
 public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
@@ -43,37 +43,31 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
             + "changes: that floor is Windows 10 1809 and the rest of Shenora.Windows is identical.");
     }
 
+    // Every member below is unreachable — the constructor refuses first.
+
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
     public PlaybackCommands Supported { get; set; }
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
     public TimeSpan SkipInterval { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
     public event Action<PlaybackCommandRequest>? CommandReceived;
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
     public void Publish(PlaybackInfo info) => throw Unreachable();
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
     public void Report(PlaybackProgress progress) => throw Unreachable();
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
     public void Clear() => throw Unreachable();
 
     /// <inheritdoc />
     public void Dispose() { }
 
-    /// <summary>
-    /// Keeps <see cref="CommandReceived"/> from being an event nothing ever raises (CS0067, an error here)
-    /// while stating the truth: on this TFM nothing can raise it.
-    /// </summary>
+    /// <summary>Raises <see cref="CommandReceived"/> only to keep it from being an event nothing ever
+    /// raises (CS0067, an error here).</summary>
     private InvalidOperationException Unreachable()
     {
         CommandReceived?.Invoke(new PlaybackCommandRequest { Command = PlaybackCommand.Stop });

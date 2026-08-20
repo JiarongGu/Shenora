@@ -7,28 +7,13 @@ using Shenora.Modules.Media;
 namespace Shenora.Windows;
 
 /// <summary>
-/// The plain-<c>net10.0-windows</c> half of <see cref="WindowsMediaCapability"/>.
+/// The plain-<c>net10.0-windows</c> half of <see cref="WindowsMediaCapability"/>. See
+/// <see cref="WindowsPlaybackSession"/> for why these halves exist.
 /// <para>
-/// <b>⚠ It answers EMPTY rather than throwing, and that is the opposite of what
-/// <see cref="WindowsPlaybackSession"/> does on this TFM — deliberately.</b> The two contracts fail
-/// differently because they mean different things:
-/// </para>
-/// <list type="bullet">
-///   <item><b>A transport surface is a FEATURE.</b> An app asking for Now Playing on a TFM that cannot
-///   provide it has made a mistake, and a named refusal at construction is the kindest answer.</item>
-///   <item><b>A capability query is a QUESTION</b>, and the contract already has an answer for "I cannot
-///   tell": the empty set. Every caller handles it, because a device that genuinely decodes nothing is
-///   legitimate. Throwing here would make an app branch on the TFM to ask a question that is safe to ask
-///   anywhere.</item>
-/// </list>
-/// <para>
-/// The consequence is honest and small: on plain <c>net10.0-windows</c> the planner is told the machine
-/// decodes nothing it knows about, so it converts where it might not have needed to. Slower, never wrong.
-/// Retarget to <c>net10.0-windows10.0.17763.0</c> and it asks the platform instead.
-/// </para>
-/// <para>
-/// ⚠ The public shape MUST match the versioned variant exactly — same type, same package, different TFM —
-/// which is why the plain TFM has its own entry in <c>MetadataSurfaceTests</c>.
+/// ⚠ <b>It answers EMPTY rather than throwing</b> — a capability query is a QUESTION, and the contract
+/// already means "I cannot tell" by the empty set. So the planner is told this machine decodes nothing it
+/// knows about and converts where it might not have needed to: slower, never wrong. Retarget to
+/// <c>net10.0-windows10.0.17763.0</c> and it asks the platform instead.
 /// </para>
 /// </summary>
 public sealed class WindowsMediaCapability : IMediaCapability
@@ -39,11 +24,9 @@ public sealed class WindowsMediaCapability : IMediaCapability
     public WindowsMediaCapability(ILogger? log = null) => _ = log;
 
     /// <inheritdoc />
-    /// <remarks>Always empty on this TFM — <c>CodecQuery</c> is WinRT. See the type remarks.</remarks>
     public IReadOnlySet<MediaStreamCodec> Decodable(MediaStreamKind kind) => None;
 
     /// <inheritdoc />
-    /// <remarks>Always empty on this TFM — <c>CodecQuery</c> is WinRT. See the type remarks.</remarks>
     public IReadOnlySet<MediaStreamCodec> Encodable(MediaStreamKind kind) => None;
 }
 #endif

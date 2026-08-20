@@ -9,11 +9,9 @@ namespace Shenora.Windows;
 /// REGISTRATION: map it LATE, from wherever the window is created —
 /// <c>dispatcher.MapModule(new DropZoneModule(manager))</c> on the plain
 /// <see cref="IMessageDispatcher"/> resolved from DI (no cast; late mapping is safe while requests
-/// are in flight). This doc used to add "or through <c>UseMessageDispatcher</c>'s configure callback
-/// once the manager exists", which CANNOT work and is the same wrong advice
-/// <c>WindowCommandModule</c>'s doc already records having carried (P5.5 H6): that callback runs at
-/// provider-build time, and a <see cref="DropZoneManager"/> requires a live <c>WebView2</c> control
-/// and <see cref="Form"/>, neither of which exists yet.
+/// are in flight). ⚠ NOT <c>UseMessageDispatcher</c>'s configure callback, which runs at
+/// provider-build time, before the live <c>WebView2</c> and <see cref="Form"/> a
+/// <see cref="DropZoneManager"/> needs exist.
 /// </para>
 /// </summary>
 public sealed class DropZoneModule : ModuleBase
@@ -21,8 +19,7 @@ public sealed class DropZoneModule : ModuleBase
     /// <summary>Route: declare a zone at <c>{ zoneId, x, y, width, height }</c> (page coordinates).</summary>
     public const string RegisterType = "REGISTER";
 
-    /// <summary>Route: same payload as <see cref="RegisterType"/> — updating IS registering with new
-    /// bounds, which is why they share a case.</summary>
+    /// <summary>Route: move a zone to new bounds; same payload as <see cref="RegisterType"/>.</summary>
     public const string UpdateType = "UPDATE";
 
     /// <summary>Route: forget a zone: <c>{ zoneId }</c>.</summary>
@@ -67,7 +64,7 @@ public sealed class DropZoneModule : ModuleBase
                 return Done();
 
             default:
-                throw UnknownType(request);   // ModuleBase owns the shape (P5.5 H4.5)
+                throw UnknownType(request);   // ModuleBase owns the shape
         }
     }
 }

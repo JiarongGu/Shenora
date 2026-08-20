@@ -5,11 +5,8 @@ namespace Shenora.Windows;
 
 /// <summary>
 /// The WinForms <see cref="IUiDispatcher"/> — the ONE place UI-thread marshalling semantics live.
-/// Constructed PER CONTROL (a form, a WebView2 control, a secondary window's own form), because
-/// different targets run different message pumps.
-/// <para>
-/// Public so an app can construct one for a <see cref="Control"/> the kit never sees (D19/D20).
-/// </para>
+/// Constructed PER CONTROL, because different targets run different message pumps. Public so an app can
+/// construct one for a <see cref="Control"/> the kit never sees.
 /// </summary>
 public sealed class WinFormsUiDispatcher : UiDispatcherBase
 {
@@ -68,11 +65,10 @@ public sealed class WinFormsUiDispatcher : UiDispatcherBase
 }
 
 /// <summary>
-/// The DI-registered <see cref="IUiDispatcher"/>: dispatches to the application's main window,
-/// resolved LAZILY per call. The service provider is built BEFORE the runner creates the main form, so
-/// a dispatcher captured at registration time captures null; and the runner never CLEARS the
-/// registration, so after shutdown the form is still reachable but disposed
-/// (<see cref="UiTargetState.Gone"/> is a real outcome here).
+/// The DI-registered <see cref="IUiDispatcher"/>: dispatches to the application's main window, resolved
+/// LAZILY per call — the provider is built BEFORE the runner creates the form, so a dispatcher capturing
+/// it at registration captures null. After shutdown the form is reachable but disposed, so
+/// <see cref="UiTargetState.Gone"/> is a real outcome here.
 /// </summary>
 internal sealed class MainFormUiDispatcher(IFormInteraction interaction) : IUiDispatcher
 {
