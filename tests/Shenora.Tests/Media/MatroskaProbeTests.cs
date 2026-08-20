@@ -360,4 +360,46 @@ public class MatroskaProbeTests
     public void A_native_codec_id_ignores_the_private_data_entirely()
         => Assert.Equal("h264", MatroskaProbe.CodecNameOf("V_MPEG4/ISO/AVC", Bih("XVID")));
 
+    /// <summary>
+    /// 🔴 <b>THROUGH <see cref="MatroskaProbe.Read(Stream, string)"/>, not through the overload — which is
+    /// the gap that let this ship broken.</b> Every VfW case above called <c>CodecNameOf</c> directly, so
+    /// they all passed while <c>ReadTracks</c> called the ONE-ARGUMENT overload and never read
+    /// <c>CodecPrivate</c> at all: the probe reported <c>vfw</c> for exactly the family the translation
+    /// exists to name.
+    /// </summary>
+    /// <remarks>
+    /// ⚠ <b>The expensive case is <c>H264</c>, not <c>XVID</c>.</b> An XviD file reported as <c>vfw</c> is
+    /// still re-encoded, which it needed anyway — right answer, wrong reason. H.264 in a VfW wrapper is
+    /// decodable, so reporting <c>vfw</c> makes the planner answer <see cref="MediaPlaybackAction.Transcode"/>
+    /// for a file that a lossless <see cref="MediaPlaybackAction.Remux"/> would have served.
+    /// </remarks>
+    [Theory]
+    [InlineData("XVID", "mpeg4")]
+    [InlineData("H264", "h264")]
+    [InlineData("ZZZZ", "vfw")]           // unknown really is "vfw" — the container said nothing more
+    public void A_VfW_track_reports_its_FOURCC_when_probed_as_a_FILE(string fourCc, string expected)
+    {
+        using var file = File_(
+            Info(120_000),
+            Track(1, "V_MS/VFW/FOURCC", El(0x63A2, Bih(fourCc))));
+
+        var video = Assert.Single(MatroskaProbe.Read(file)!.Streams, s => s.Kind == MediaStreamKind.Video);
+        Assert.Equal(expected, video.Codec);
+    }
+
+    /// <summary>
+    /// ⚠ A <c>CodecPrivate</c> too short to hold a FourCC must not be read past its end, and must not stop
+    /// the probe — the same guard as the overload's, exercised through the file path.
+    /// </summary>
+    [Fact]
+    public void A_truncated_private_header_still_probes_as_the_wrapper()
+    {
+        using var file = File_(
+            Info(120_000),
+            Track(1, "V_MS/VFW/FOURCC", El(0x63A2, new byte[8])));
+
+        var video = Assert.Single(MatroskaProbe.Read(file)!.Streams, s => s.Kind == MediaStreamKind.Video);
+        Assert.Equal("vfw", video.Codec);
+    }
+
 }

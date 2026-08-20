@@ -24,12 +24,16 @@ public static class MatroskaProbe
     private const ulong IdTrackEntry = 0xAE;
     private const ulong IdTrackType = 0x83;
     private const ulong IdCodecId = 0x86;
+    private const ulong IdCodecPrivate = 0x63A2;
     private const ulong IdVideo = 0xE0;
     private const ulong IdAudio = 0xE1;
     private const ulong IdPixelWidth = 0xB0;
     private const ulong IdPixelHeight = 0xBA;
     private const ulong IdChannels = 0x9F;
     private const ulong IdSamplingFrequency = 0xB5;
+
+    /// <summary>Enough of a <c>BITMAPINFOHEADER</c> to reach its FourCC: 16 bytes of header, then four of code.</summary>
+    private const int FourCcHeaderBytes = 20;
 
     /// <summary>Matroska's track-type numbers. Only the three the planner can act on are named.</summary>
     private const ulong TrackTypeVideo = 1;
@@ -159,6 +163,7 @@ public static class MatroskaProbe
             var entry = tracks.Nested(size);
             ulong type = 0;
             string? codecId = null;
+            byte[]? codecPrivate = null;
             int? channels = null;
             int? sampleRate = null;
 
@@ -171,6 +176,11 @@ public static class MatroskaProbe
                         break;
                     case IdCodecId:
                         codecId = entry.ReadAscii(fieldSize);
+                        break;
+                    // Only the BITMAPINFOHEADER's FourCC is wanted, and it sits at offset 16 — see
+                    // CodecNameOf's remarks for what reporting "vfw" costs.
+                    case IdCodecPrivate:
+                        codecPrivate = entry.ReadBytes(fieldSize, FourCcHeaderBytes);
                         break;
                     case IdVideo:
                         ReadVideo(entry.Nested(fieldSize), ref width, ref height);
@@ -191,7 +201,8 @@ public static class MatroskaProbe
                 TrackTypeSubtitle => MediaStreamKind.Subtitle,
                 _ => MediaStreamKind.Unknown,
             };
-            streams.Add(new MediaStreamInfo(kind, CodecNameOf(codecId), Channels: channels, SampleRate: sampleRate));
+            streams.Add(new MediaStreamInfo(kind, CodecNameOf(codecId, codecPrivate ?? ReadOnlyMemory<byte>.Empty),
+                                           Channels: channels, SampleRate: sampleRate));
         }
     }
 
@@ -409,6 +420,21 @@ public static class MatroskaProbe
             return take == 4
                 ? BinaryPrimitives.ReadSingleBigEndian(buffer[..4])
                 : BinaryPrimitives.ReadDoubleBigEndian(buffer[..8]);
+        }
+
+        /// <summary>
+        /// The first <paramref name="max"/> bytes of an element, the rest skipped. ⚠ Bounded like every
+        /// other read here — this parses a file the PAGE supplied.
+        /// </summary>
+        public byte[]? ReadBytes(long size, int max)
+        {
+            var take = (int)Math.Min(size, Math.Min(_remaining, max));
+            if (take <= 0) { Skip(size); return null; }
+            var buffer = new byte[take];
+            var read = stream.ReadAtLeast(buffer, take, throwOnEndOfStream: false);
+            _remaining -= read;
+            if (size > take) Skip(size - take);
+            return read == take ? buffer : buffer[..read];
         }
 
         public string? ReadAscii(long size)

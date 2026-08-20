@@ -331,6 +331,22 @@ both.
   each a grep through the kit's source, because a fold re-namespaces within the package too: **154
   types moved where the notes named five.**
 
+### Fixed
+
+- **`MatroskaProbe` reported `"vfw"` for a whole family of real files, so they were transcoded when a
+  lossless remux would have served them.** Matroska has native ids for h264, HEVC, MPEG-2, MPEG-4 Part 2,
+  VP8/9 and AV1; everything else uses the Video-for-Windows wrapper with the true codec as a FourCC inside a
+  `BITMAPINFOHEADER`. The translation for that existed and was correct — but `ReadTracks` called the
+  one-argument `CodecNameOf` and the probe had no `CodecPrivate` element id at all, so it could never reach
+  it. The probe now reads the first 20 bytes of `CodecPrivate` (enough for the FourCC at offset 16) and
+  reports what it names.
+  - **The costly case is not the obvious one.** An XviD file reported as `vfw` was re-encoded, which it
+    needed anyway. **H.264 in a VfW wrapper is decodable**, so reporting `vfw` made the planner answer
+    `Transcode` for a file `Remux` would have served — slow and lossy instead of fast and lossless.
+  - ⚠ **Every engine-side caller already passed the private data**, which is why nothing noticed: only the
+    PROBE path was wrong, and the tests exercised the translating overload directly rather than through
+    `Read`. There are now cases that go through `Read`, and they are sabotage-verified.
+
 ### Changed
 
 - **A production run now indexes the source AS IT WRITES, instead of walking every cluster first.** It
