@@ -149,6 +149,29 @@ rather than letting it read as a malformed container.
 which `RemoteMediaSource` lets the app supply — so serving one for bytes nobody can read hands the page a
 complete playlist whose every entry `503`s for ever.
 
+### The kit ships the ADAPTER, not the transport (D78)
+
+`MediaByteSource.ForRanges(label, length, fetch)` turns *"fetch bytes `[offset, offset+count)`"* into the
+seekable stream the demuxer needs. The app writes the fetch — over its own client, its own auth, its own
+retry policy — and the kit writes everything else.
+
+🔴 **The buffering is why this ships here, and it is not an optimisation.** The EBML parser reads varints
+**one `ReadByte` at a time**, so the adapter an app writes first — a fetch per read — costs a round trip
+**per byte**, and it is *unusable* rather than slower. A local `FileStream` buffers for free, so porting
+from `ForFile` gives no warning at all. `RangeFetchStream` keeps a 256 KB window, serves reads at or above
+that size straight from the source, and **fetches nothing on `Seek`** — a Cues-driven read seeks far more
+often than it reads.
+
+**Measured, over a fake transport on the 456 KB fixture: 4 fetches to produce the whole plan**
+(`RealSourceSegmentTests`). ⚠ That number proves the adapter BUFFERS, not that the index was used — at this
+size a full walk is also a couple of fetches, and the absent *"walking its clusters"* line is what proves
+the index.
+
+⚠ **The length must be known up front**, because Matroska is read by offset from the END — SeekHead, then
+Cues. Over HTTP it is `Content-Length`, from a HEAD or from any one ranged response's `Content-Range`.
+**What the kit still does not ship is the transport itself** (D78): no `HttpClient` appears anywhere in
+`src/`, so auth, refresh, proxies and redirects stay the app's, and no url ever reaches the kit.
+
 **Containment cannot guard a url**, which is why the second door is not the first one widened. `AllowedRoots`
 answers "is this path inside a directory I trust", and a url has no such relation to anything. The conversion
 route asks the app to judge instead (`AllowRemoteSource`, a predicate over the url); `SegmentStream` inverts

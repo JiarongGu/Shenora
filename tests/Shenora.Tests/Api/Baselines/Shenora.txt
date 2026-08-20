@@ -1098,10 +1098,12 @@ sealed class Shenora.Modules.Media.MediaAccessOptions
   public required string CacheRoot { get; init; }
   public string Module { get; init; }
 sealed class Shenora.Modules.Media.MediaByteSource
+  public const int DefaultWindowBytes = 262144
   public override string ToString()
   public required System.Func<System.Threading.CancellationToken, System.IO.Stream> Open { get; init; }
   public required string Label { get; init; }
   public static Shenora.Modules.Media.MediaByteSource ForFile(string path)
+  public static Shenora.Modules.Media.MediaByteSource ForRanges(string label, long length, System.Func<long, int, System.Threading.CancellationToken, System.Threading.Tasks.Task<System.IO.Stream>> fetch, int windowBytes = 262144)
 static class Shenora.Modules.Media.MediaCapabilityExtensions
   public static Shenora.Modules.Media.MediaPlaybackPolicy WithDeviceEncoders(Shenora.Modules.Media.MediaPlaybackPolicy policy, Shenora.Modules.Media.IMediaCapability device, System.Collections.Generic.IReadOnlySet<Shenora.Modules.Media.MediaStreamKind>? convertible = null)
   public static System.Collections.Generic.IReadOnlySet<Shenora.Modules.Media.MediaStreamCodec> DecodableAudio(Shenora.Modules.Media.IMediaCapability device)

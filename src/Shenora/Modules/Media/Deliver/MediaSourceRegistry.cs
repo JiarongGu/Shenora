@@ -25,6 +25,11 @@ public sealed record RemoteMediaSource
     /// How to READ the bytes: open a fresh SEEKABLE stream over the source, however it is fetched — the kit
     /// ships no transport, and Matroska is read by offset (<see cref="MediaByteSource.Open"/>).
     /// <para>
+    /// ⚠ <b>For a ranged source, do not write this by hand</b> — take
+    /// <see cref="MediaByteSource.ForRanges"/>'s <c>Open</c>. It supplies the buffering, without which the
+    /// EBML parser costs one round trip PER BYTE; only the range fetch itself is yours.
+    /// </para>
+    /// <para>
     /// 🔴 <b>Null means this source can be described but never PRODUCED from, and the route refuses it at
     /// the MANIFEST</b> — a playlist is derived from the duration, which is suppliable, so serving one for
     /// bytes nobody can read hands the page a complete playlist whose every entry <c>503</c>s for ever.

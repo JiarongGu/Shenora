@@ -97,6 +97,20 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`MediaByteSource.ForRanges` — a remote media source needs only a byte-range fetch now** (D78). Supply
+  `(offset, count, ct) => Task<Stream>` over your own client and the kit supplies the seekable, buffered
+  stream the demuxer needs; it is what `RemoteMediaSource.Open` wants, so the two compose directly.
+  - **The buffering is the reason it ships, and it is not an optimisation.** Matroska is parsed by EBML
+    varint — one `ReadByte` at a time — so the adapter an app writes first costs one round trip **per byte**.
+    A local `FileStream` buffers for free, so porting from `ForFile` gives no warning that the naive version
+    is unusable rather than merely slower. Measured at **4 fetches to plan a 456 KB file**.
+  - **The kit still ships no transport.** No `HttpClient` appears anywhere in `src/`: auth, refresh, proxies,
+    redirects and retry stay the app's, and no url ever reaches the kit — which is what keeps a credential
+    out of a kit log line by construction rather than by care.
+  - ⚠ **The source's length must be known up front** (`Content-Length`, or any ranged response's
+    `Content-Range`): Matroska is read by offset from the END, so a source that cannot state its size cannot
+    be indexed at all.
+
 - **`@shenora/cli` can drive a Mac that is somewhere else.** Every `ios` verb takes `--host user@mac.local`
   (or `SHENORA_IOS_HOST`, or a `remote` block in `shenora.deploy.json`), because the adopter this kit is
   pitched at is a .NET developer on Windows whose Mac is on the LAN rather than under the desk. `ios.ts`

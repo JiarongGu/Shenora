@@ -118,6 +118,55 @@ public class RealSourceSegmentTests
     }
 
     /// <summary>
+    /// The same real file, read through <see cref="MediaByteSource.ForRanges"/> instead of off the disk —
+    /// the shape a remote source has.
+    ///
+    /// <para>
+    /// 🔴 <b>A fake TRANSPORT, and the plan must come out identical.</b> The adapter exists so the Cues work
+    /// pays off for a source that is not a local file; nothing else in the suite proves the real demuxer can
+    /// drive it, because every other test hands the engine a <c>FileStream</c> whose own buffer hides the
+    /// access pattern entirely.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>The two assertions prove DIFFERENT things and neither substitutes for the other.</b> The absent
+    /// "walking its clusters" line is what proves the INDEX was used. The fetch ceiling proves the ADAPTER
+    /// BUFFERS — measured at 4 round trips for the whole plan, against the hundreds of thousands an
+    /// unbuffered fetch-per-`ReadByte` would take. ⚠ The count cannot tell walk from index at this size: the
+    /// file is ~456 KB and the window 256 KB, so even a full walk would be a couple of fetches.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_real_source_plans_identically_through_a_RANGE_transport()
+    {
+        var content = File.ReadAllBytes(Fixture);
+        var fetches = 0;
+        var bytes = MediaByteSource.ForRanges("clip-h264-aac.mkv", content.Length, (offset, count, _) =>
+        {
+            Interlocked.Increment(ref fetches);
+            var give = (int)Math.Min(count, content.Length - offset);
+            return Task.FromResult<Stream>(new MemoryStream(content, (int)offset, give, writable: false));
+        });
+
+        var lines = new List<string>();
+        var engine = new DefaultSegmentEngine(new RecordingConversion(), AppCallback.Logger(lines.Add));
+
+        var overRanges = engine.PlanSegments(bytes, SegmentLengths.Of(SegmentSeconds));
+        var overFile = engine.PlanSegments(FixtureBytes, SegmentLengths.Of(SegmentSeconds));
+
+        Assert.NotNull(overRanges);
+        Assert.NotNull(overFile);
+        Assert.Equal(overFile.Count, overRanges.Count);
+        Assert.Equal(overFile.GridSeconds, overRanges.GridSeconds);
+        for (var i = 0; i < overFile.Count; i++)
+            Assert.Equal(overFile.StartOf(i), overRanges.StartOf(i), precision: 6);
+
+        Assert.DoesNotContain(lines, l => l.Contains("walking its clusters", StringComparison.Ordinal));
+        Assert.True(fetches > 0, "the range source was never asked for anything — the fake was not used");
+        Assert.True(fetches < 64,
+            $"{fetches} fetches to plan a {content.Length / 1024} KB file — the adapter has stopped buffering");
+    }
+
+    /// <summary>
     /// 🔴 <b>The file's own index and a full cluster walk must produce THE SAME CUTS.</b> Planning from Cues
     /// is what removes the walk from the first request — the walk seeks past every frame in the source and
     /// touches about a third of its pages — and the only thing that makes the shortcut safe is that it

@@ -34,6 +34,51 @@ public sealed class MediaByteSource
     /// </remarks>
     public required Func<CancellationToken, Stream> Open { get; init; }
 
+    /// <summary>How much of a source is held in memory to serve reads, when the caller states no preference.</summary>
+    public const int DefaultWindowBytes = 256 * 1024;
+
+    /// <summary>
+    /// A source read in RANGES — the shape a remote or ranged-HTTP file has. The caller supplies only
+    /// <paramref name="fetch"/>; the kit supplies the seekable, buffered <see cref="Stream"/> over it.
+    /// <para>
+    /// 🔴 <b>The buffering is not optional and is why this ships here.</b> Matroska is parsed by EBML varint,
+    /// one <c>ReadByte</c> at a time, so the obvious adapter — a fetch per read — issues a round trip per
+    /// BYTE. A local <c>FileStream</c> buffers for free, so an app porting from <see cref="ForFile"/> has no
+    /// warning that the naive version is unusable rather than merely slower.
+    /// </para>
+    /// </summary>
+    /// <param name="label">What diagnostics print. See <see cref="Label"/> — never build it from a url.</param>
+    /// <param name="length">
+    /// The source's total size, which must be known up front: Matroska is read by offset from the END
+    /// (SeekHead, then Cues), so a source that cannot state its length cannot be indexed. Over HTTP this is
+    /// <c>Content-Length</c>, from a HEAD or from the <c>Content-Range</c> of any one ranged response.
+    /// </param>
+    /// <param name="fetch">
+    /// <c>(offset, count, token)</c> ⇒ a body holding at most <c>count</c> bytes starting at <c>offset</c>.
+    /// Returning FEWER is legal — it is asked again for the rest. Ownership of the body passes to the kit.
+    /// <para>
+    /// ⚠ <b>The address, the credentials and the retry policy stay on YOUR side</b> — the kit never sees
+    /// them, which is what keeps a url out of a kit diagnostic by construction. Throwing is an ordinary
+    /// answer for a source that has gone away. Called on a POOL thread and waited on.
+    /// </para>
+    /// </param>
+    /// <param name="windowBytes">Read-ahead per fetch. Larger trades memory for round trips.</param>
+    public static MediaByteSource ForRanges(string label, long length,
+                                            Func<long, int, CancellationToken, Task<Stream>> fetch,
+                                            int windowBytes = DefaultWindowBytes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(label);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+        ArgumentNullException.ThrowIfNull(fetch);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(windowBytes);
+
+        return new MediaByteSource
+        {
+            Label = label,
+            Open = token => new RangeFetchStream(length, fetch, windowBytes, token),
+        };
+    }
+
     /// <summary>A file on this machine — a local source or a mounted LAN share.</summary>
     public static MediaByteSource ForFile(string path)
     {
