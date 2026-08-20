@@ -36,15 +36,24 @@ The whole arc (opener seam · atomic publish · plan from Cues · index-as-you-w
 for one reported symptom: **a long initial wait playing video on an iPhone.** That wait was never measured,
 before or after. Everything below is unit-level and arithmetic.
 
-- [ ] **Measure first paint on the phone, and split the terms** — manifest response, `init.mp4` response,
-  seg0 response. Without the split a total says nothing about which change earned it.
-- [ ] 🔴 **A SEEK run is the one that matters**, not a play-from-zero run. A run starting past segment 0 is
-  where chunked indexing meets the run-relative audio clock, and that intersection has bitten once already:
-  the converted-soundtrack bug was *"arithmetically invisible at segment 0"* and needed a seek AND an
-  unsupported soundtrack together. `SegmentRouteProbe.CheckSeekRun` exists for exactly this.
-  - The guards it would exercise: shift taken from the FIRST chunk only · decode times never going
-    backwards across a chunk seam · negative composition clamped. All three are asserted off-device by a
-    differential test against a real B-frame clip; none has met hardware.
+✅ **The correctness half is DONE — iPhone 16 Pro simulator, iOS 26.x, 2026-08-21.** What ran and passed:
+- **`SEEK-RUN: PASS`** — `soundTicks=264600 expected≈264600 rate=44100 pictureTicks=6000`, an exact match.
+  A run starting at segment 1 puts its converted sound exactly where segment 1 begins, which is the
+  intersection that bit before (the converted-soundtrack bug was *"arithmetically invisible at segment 0"*).
+- **Chunked indexing works, and the log shows it directly**: `producing from seg0 (sample 0 of 80)` →
+  `picture (copied) from=0 of=600 read=600 emitted=600`. The index was 80 samples at run start and 600 by
+  the end — it grew as the pump consumed it — and every frame came out.
+- **The head ramp landed**: 12 segments for the 60.02 s / 2 s-GOP clip. Uniform 6 s gives 11 with a 6 s
+  seg0; the ramp gives 12 with a **2 s** seg0 (bounded by the source's GOP, as documented).
+- Also green: `MERGE: PASS`, the shipped `@shenora/react` binder (`appended=3 frame=480x270
+  buffered=0.20-6.70`), `REMUX`/`REMUX-SEEK`/`REMUX-WARM`, `HEADERS`.
+
+- [ ] 🔴 **THE TIMING HALF IS STILL NOT MEASURED, and it is the reason the work was done.** Nothing above
+  is a stopwatch. Measure first paint and SPLIT the terms — manifest response · `init.mp4` response · seg0
+  response — because a total cannot say which change earned it. ⚠ And do it on a **real iPhone**: the
+  symptom was reported on hardware, the simulator has a different codec table and different storage.
+- [ ] **The re-encode picture path is still unmeasured** — `REORDER: SKIPPED — this shell does not convert
+  h263`. The simulator converts no video at all, so only a device reaches an encoder (`mobile-shells.md`).
 - [ ] **Confirm the Android encoder change on a device.** The bitrate was ~1/30th of intent (no frame-rate
   factor); the fix is arithmetic and changes output size and encode cost on a phone. ⚠ It also became
   reachable for ORDINARY 1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be
