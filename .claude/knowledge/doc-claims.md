@@ -42,6 +42,14 @@ false claim while removing an old one:
 - **Say which claims the gate did not check.** `dev.mjs verify` compiles and runs tests; on a
   docs-only change it proves nothing about the prose. Report that explicitly rather than letting a
   green gate imply the words were checked.
+- 🔴 **A claim about the WORLD decays with nothing in the repo changing, and NO gate can catch it** —
+  a registry's configuration, a machine's state, a deadline. `decision-audit` checks names against the
+  tree and finds these untouched, so the file keeps asserting them and a reader takes the backlog for
+  the present. **Ask the world, not the doc**: `npm view <pkg> --json` (`_npmUser` names the publisher),
+  `Get-Process` / `adb devices`. Twice on 2026-08-20: "npm needs a token until the publisher is
+  configured" (it had been configured for days — 0.11.0 published over OIDC) and "the wedged emulator
+  needs a reboot" (already dead, `adb` saw nothing). ⚠ **`TASKS.md` is the worst offender**, because an
+  entry describes a world that moved on while the entry sat still.
 
 - 🔴 **AUDIT THE SENTENCES, NOT THE CODE FENCES — measured, and it settles where the effort goes.** The
   snippets are fine and always have been: a checker that reads every `.Method(…)` in a `csharp` fence and
