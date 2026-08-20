@@ -47,27 +47,6 @@ they are configured, a release needs the `NPM_TOKEN` fallback.
 - [ ] After the first OIDC release: require 2FA / disallow tokens on both packages so the trusted
   publisher is the only path, and drop the token-fallback sentence from `RELEASING.md`.
 
-### 🎬 STREAMING — the media tier (D71), two questions left
-
-> ⚠ DIRECTION (owner, 2026-08-14), and it still steers every undecided detail: the tier was built
-> AHEAD of an adopter, so **bias anything undecided toward what a later adopter can change** — seams
-> over baked-in policy — and write down which choices were guesses, so the first adoption report knows
-> what to attack.
-
-- [ ] ⚠ **A frame-index cache: only the COLD-cache case is still open; the CPU case is CLOSED.** Measured
-  2026-08-15 (10 min / 89 MiB H.264+AAC, warm): the walk is 65 ms for 40,841 samples while a two-hour
-  index would be ~51 MiB — the walk is cheap and the INDEX is expensive, the opposite of the assumption
-  that filed this. **Do not build a cache for CPU.** A cold two-hour file is disk-bound and is the only
-  remaining argument; it needs its own measurement first, and any cache kept must be bounded by BYTES
-  and evict on memory pressure.
-**ANSWERED 2026-08-20 — the cost STAYS, and `Unsliced` is correct.** The open question was whether D44
-still holds on current Android: does a proper `206` + `Content-Range` get honoured, letting the shell
-move to `Sliced`? Measured on Android 16 (SDK 36, WebView 133.0.6943.137) by flipping the constant and
-serving a non-faststart file: **35 requests, 28 of them the identical tail range**, each answered `206`
-with a correct `Content-Range` — the retry loop, unchanged. `Unsliced` serves the same clip in FOUR.
-The reasoning now lives on `WebViewRangeDelivery.Unsliced` with the numbers; re-measure there if a much
-later WebView is worth retesting.
-
 ### 🔧 THE BOX REFUSES ~30 % OF CLIPBOARD WRITES FROM A LOOPING TEST PROCESS
 
 🔴 **The code is exonerated — do not "fix" `ClipboardService`.** Diagnosed 2026-08-16: a PowerShell

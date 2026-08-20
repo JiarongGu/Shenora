@@ -136,6 +136,12 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
 
         try
         {
+            // 🔴 THE DEFAULT 4 KiB BUFFER IS LOAD-BEARING — DO NOT RAISE IT. The walk SEEKS past every frame
+            // payload and reads only block headers, so a bigger buffer drags in the very bytes it is skipping.
+            // Measured on a 5 min / 166 MB / 4.6 Mbps MKV: at 4 KiB the walk makes the OS fetch 34 % of the
+            // file, at 64 KiB 96 %, at 1 MiB 99 % — and buys NO time back (66 ms vs 60 ms warm). The 7,201
+            // syscalls look like something to optimise and are not: unbuffered cuts the fetch to 20 % but
+            // costs 4x the time (268 ms). 4 KiB is the knee.
             using var source = File.OpenRead(sourcePath);
             using var destination = File.Create(destinationPath);
             return Remux(source, destination, conversion, cancellationToken);

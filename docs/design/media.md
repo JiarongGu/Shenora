@@ -135,6 +135,29 @@ PRE-walk figure.
 read there deadlocked the iOS main thread. So the walk is a MISSION, and the first request for an unplanned
 source answers `503 Retry-After: 1` rather than waiting.
 
+#### What the walk costs, and why there is NO frame-index cache
+
+**Measured 2026-08-20** on a 5 min / 166 MB / 4.6 Mbps Matroska (20,121 samples), counting the DISTINCT
+4 KiB pages the reads land in — that is what a cold open must fetch, and it is exact where timing a "cold"
+read is not reproducible:
+
+| read buffer | warm | syscalls | pages the OS must fetch |
+|---|---|---|---|
+| unbuffered | 268 ms | 108,907 | 34 MB — **20 %** of the file |
+| **4 KiB (the default, and what ships)** | **66 ms** | 7,201 | 59 MB — **34 %** |
+| 64 KiB | 82 ms | 2,405 | 167 MB — **96 %** |
+| 1 MiB | 60 ms | 165 | 173 MB — **99 %** |
+
+🔴 **A BIGGER BUFFER MAKES THE COLD READ WORSE, WHICH IS THE OPPOSITE OF THE INSTINCT.** The walk seeks past
+every frame payload and reads only block headers — it asks for **149 KB in total, 7.4 bytes per sample** —
+so a large buffer drags in exactly the bytes it is skipping, and buys no time back. The invariant lives on
+the `File.OpenRead` call in `Mp4Remuxer`, where someone would change it.
+
+**So the cache question is closed: do not build one.** It could only help a SECOND walk of the same source,
+and there is never one — `IComputedRemuxRoute.PlanAsync` already caches the layout by identity, so a planned
+source "answers from the cache without touching the file". A frame index would cost ~51 MiB of RAM for a
+two-hour file to serve a case that cannot occur.
+
 ✅ **The `Remux` arm is proven on hardware, including the claim the whole design turns on:** a **cold seek to
 80 %** lands and plays on, with nothing produced before or after it. That is what "a computed file" buys —
 any range is serviceable without having produced a byte of the rest.
