@@ -459,6 +459,11 @@ if (mediaUrl) aud.src = clipUrl('clip-faststart.mp4');
 // ⚠ It logs only while playing, so an idle app is not noisy.
 setInterval(() => { if (!aud.paused) log('in', `audio t=${aud.currentTime.toFixed(2)}s`); }, 2000);
 
+// ⚠ A THROWAWAY AUTO-START PROBE RAN HERE AND HAS BEEN DELETED — it answered its question (the 5 min 19 s
+// figure in `docs/design/mobile-shells.md`) and `PageProbe.StartBackgroundAudioAsync` already does the job
+// from the HOST, which is the only driver that works: synthetic input does not reach these controls on
+// either simulator. It sets `loop` because a single play of this 60 s clip cannot report more than 60 s.
+
 // ── Keeping playback alive across a background, by HANDING OFF video -> audio ────────────────────
 //
 // 🔴 MEASURED 2026-08-12 AND IT DOES NOT WORK. This block is kept as the DEMONSTRATION of why, because

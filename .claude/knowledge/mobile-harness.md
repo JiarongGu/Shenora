@@ -96,6 +96,15 @@ the alternative was believed and turned out wrong.
   independently wants the SDK headers Xcode ships. `PublishTrimmed=false` is rejected outright and
   `MtouchLink=None` still fails MT0180 — do not retry either. Simulator-debug only; matching the pair
   is the real fix. Machine-specific, so it belongs in gitignored config, never a tracked csproj.
+  ⚠ **`ios push` mirrors the tracked tree and destroys any edit you made to the csproj on the build
+  host.** Pinning there works exactly until the next push, and the failure then arrives on an unrelated
+  change and reads as that change breaking the build.
+  🔴 **CHANGING LINKER CONFIGURATION NEEDS A CLEAN `obj/` — otherwise you debug the intermediates.**
+  Switching between these options over an existing tree produced two DIFFERENT broken apps from the same
+  source: one that launched and exited with an `ObjCRuntime.Class.ResolveToken` failure, and one that ran
+  but whose PAGE never loaded (`NO-VIDEO-ELEMENT`, then "the page never answered" — which reads as a page
+  bug, not a build one). `rm -rf obj/Debug/net10.0-ios bin/Debug/net10.0-ios` fixed both. ⚠ Neither
+  symptom is attributable to a particular flag; the stale tree explains both.
 - **A LINK-time package defect is invisible to every project-reference check — only an app-shaped
   PACKAGE consumer finds it.** `Shenora.iOS` 0.9.0 could not be linked by any iOS app that had not
   enabled the Live Activity devkit (five undefined `_shenora_activity_*`), and shipped anyway because
@@ -340,6 +349,15 @@ identical to a widget that failed. Two more things measured the hard way:
   as a repaint failure.
 - **Disable the sample's media probes for any Island measurement**: once page audio starts the system
   audio indicator takes the compact TRAILING region, which looks identical to a frozen value.
+- 🔴 **THE SAMPLE'S STARTUP PROBE SUITE IS STILL RUNNING A MINUTE IN, AND IT ENDS YOUR MEASUREMENT LOOKING
+  EXACTLY LIKE THE PLATFORM DOING IT.** `CheckReloadAsync` reloads the page and `CheckUiPlaybackAsync`
+  drives the `<video>` — and **a page reload cannot be told apart from the OS cutting playback off**, since
+  both send the value back to zero. Two background-audio runs read as hard ~76 s and ~87 s ceilings that
+  way; waiting for the suite to go quiet first raised it past 319 s with no ceiling found. **Confirm the
+  page log has stopped before you start timing.**
+- 🔴 **AND CHECK THE FIXTURE CANNOT BE THE ANSWER.** The same measurement played a 60 s clip ONCE, so no
+  run could report survival past 60 s — 43 s and 16 s both sat under that ceiling and read as real limits
+  for months. **If your longest possible reading is close to your reading, you measured the fixture.**
 - **An activity outlives its app**, so a previous run's is still up when the next starts — `simctl
   uninstall` + `install` is the only reset, and a pre-launch screenshot proves it worked.
 

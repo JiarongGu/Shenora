@@ -38,9 +38,12 @@ they are configured, a release needs the `NPM_TOKEN` fallback.
 - [ ] **Configure the trusted publisher on BOTH packages**: npmjs.com → package → Settings → Trusted
   publisher → GitHub Actions → this repo + `release.yml` (no environment) — for `@shenora/react` AND
   `@shenora/cli`. Then the release runs fully tokenless.
-- [ ] **The `@shenora/cli@0.0.1-seed.0` placeholder.** `npm unpublish` works until **2026-08-20 15:27
-  UTC**; after that `npm deprecate` is the only tool. (`latest` already points at 0.11.0 — npm
-  force-creates `latest` on a first publish whatever `--tag` says, so the stub was briefly it.)
+- [ ] **The `@shenora/cli@0.0.1-seed.0` placeholder — COSMETIC, and nothing depends on it.** The registry
+  reads `latest = 0.11.0`, `seed = 0.0.1-seed.0`, so nobody installing the package can reach the stub;
+  it is tidiness, not a release problem. `npm unpublish` removes it while npm's 72-hour window is open
+  (it closes 2026-08-20 15:27 UTC); `npm deprecate` marks it afterwards. **The window chooses the verb,
+  not the outcome**, so letting it lapse costs nothing. (npm force-creates `latest` on a first publish
+  whatever `--tag` says, which is why the stub was briefly it.)
 - [ ] After the first OIDC release: require 2FA / disallow tokens on both packages so the trusted
   publisher is the only path, and drop the token-fallback sentence from `RELEASING.md`.
 
@@ -122,22 +125,4 @@ because the bridge does not care who wrote.
 - 🔴 **The general lesson, worth more than the answer**: on an emulator the clipboard is SHARED WITH THE
   HOST, so any clipboard measurement there is measuring the bridge. That applies to the Windows
   clipboard suite too.
-
-### 🎧 BACKGROUND PLAYBACK — how long it survives is unmeasured
-
-**ANDROID IS ANSWERED — the page cannot do it, and that is the kit's thesis rather than a gap.** A
-backgrounded `<audio>` advances ~15 s and then pauses mid-clip; the process is suspended and no page code
-prevents it. Now measured three times by two independent instruments: twice from inside the page (the
-`audio t=` timer, ~15.3–15.6 s, recorded on the sample's own handoff block) and once from OUTSIDE via
-`dumpsys audio` on 2026-08-20 — `started` at t+6 s, `stopped` by t+15 s, still stopped at t+300 s.
-The page pausing itself was ELIMINATED by reading: its two `visibilitychange` handlers report and hand
-off, and the only `aud.pause()` is on the handback, which fires when the app returns. So the answer is a
-NATIVE anchor — `IPlaybackSession`/`IMediaPlayer` — which is what the tier exists for.
-
-- [ ] **iOS past 43 s is still unmeasured**, and it is the half the documentation claim rests on: *"an
-  `<audio>` keeps playing while backgrounded"* rests on a 16.0 s window there. Until it is measured the
-  same way, do not promise page-side background audio on iOS either.
-  - **The route is built**: drive the simulator from Windows (`shenora ios deploy --simulator`), and read
-    the survival the way Android was read — the page's own `audio t=` gap, or `xcrun simctl spawn booted
-    log` for the equivalent of `dumpsys`.
 

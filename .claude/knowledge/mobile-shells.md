@@ -229,8 +229,10 @@ What is left here is what a code change must not break.
   wastes a device cycle.** Two settings are required for either, and they are a pair — without
   `UIBackgroundModes: [audio]` iOS suspends the process; without an active `AVAudioSession(.Playback)` the
   system does not believe the app is playing. Then:
-  - **`<audio>` already playing CONTINUES** when the app is backgrounded. What is restricted is STARTING
-    new playback while backgrounded or locked.
+  - **`<audio>` already playing CONTINUES** when the app is backgrounded — for MINUTES, not a grace period
+    (measured; the number is in `docs/design/mobile-shells.md`). What is restricted is STARTING new
+    playback while backgrounded or locked. ⚠ Android is the opposite: its page element dies in ~15 s, so
+    a page that relies on this works on one shell only.
   - **`<video>` is PAUSED on backgrounding** — the video track cannot render — and does not resume by
     itself on return. That is expected iOS behaviour, not a fault in the host.
   - ⚠ **So test background playback with an `<audio>` element.** Testing it with `<video>` measures the

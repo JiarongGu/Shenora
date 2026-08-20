@@ -375,8 +375,12 @@ window.Resumed += async (_, _) => { try { await transfer.ToForegroundAsync(); } 
 - **A playback that FINISHED while you were away is parked, not restarted** — handing its position back
   would seek a finished element to its own duration and rewind it. That is the `Finished` outcome, and it
   pauses rather than plays.
-- ⚠ **How long it survives is UNMEASURED past ~45 s** (Android 45 s, iOS 43 s, against a 60 s clip, on an
-  emulator and a simulator — both gentler than a handset). Minutes are nobody's claim yet. A foreground
-  service is the APP's to post; that split is what `IPlaybackSession` documents.
+- ⚠ **How long the NATIVE player survives is UNMEASURED past ~45 s** (Android 45 s, iOS 43 s, against a
+  60 s clip, on an emulator and a simulator — both gentler than a handset). Both runs were bounded by the
+  fixture, not by the platform. A foreground service is the APP's to post; that split is what
+  `IPlaybackSession` documents.
+  - ⚠ **The one case measured in MINUTES is the PAGE's `<audio>` on iOS** — 319 s and still going
+    (2026-08-20, simulator, looped clip). That does not transfer to Android, where the page element dies
+    at ~15.4 s and a native anchor is the answer.
 
 ---

@@ -599,6 +599,9 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
      ordinary autoplay policy, NOT an "too late to start in background" rule.
   2. **An ALREADY-PLAYING `<audio>` advances ~15.3–15.6 s while hidden and then PAUSES**, measured twice,
      mid-clip (`t=20.30` of 60, `ended=false`) so it is not the end of the file. The process is suspended.
+     ⚠ **Confirmed a third time from OUTSIDE the page** (2026-08-20, `dumpsys audio`): `started` at t+6 s,
+     `stopped` by t+15 s, **still stopped at t+300 s** — so it is a stop, not a stall that recovers. An
+     external instrument matters here because the page cannot report its own suspension.
   **Therefore the answer is a NATIVE anchor** — `IPlaybackSession` (MediaSession) and/or `IMediaPlayer` —
   which is the kit's thesis rather than a workaround. The sample keeps the failing handoff as a
   demonstration with the measurement beside it, because it is the first thing anyone tries.
@@ -628,7 +631,9 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     hands off, the HOST hands back.
   - ✅ **The page CAN resume without a fresh gesture**, which was the open question: `play()` resolved on
     return and playback continued to the end. An element already played by a real gesture keeps that
-    privilege, so the return trip does not need a button. ⚠ Android only; iOS unmeasured.
+    privilege, so the return trip does not need a button. ⚠ **Measured on ANDROID.** On iOS the policy is
+    not gating this at all — `play()` resolved on a COLD page with no gesture ever (2026-08-20) — so the
+    question does not arise there, but the return path itself was not run.
   - ⚠ **`Stopped` arriving AFTER the app is hidden is fine, and that is the whole reason this design works**
     — a native player is not subject to the webview's autoplay policy, so there is no race to lose. The
     page-side handoff had to win one, which is why it could not.
@@ -659,12 +664,30 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
   - ⚠ **My prediction was that it would die too**, on the reasoning that Android freezes a backgrounded
     process without a foreground service. It did not. Worth recording because the reasoning was sound and
     the measurement still overruled it — 45 s of grace exists before any service is needed.
-- ⚠ **An `<audio>` element keeps playing while backgrounded on iOS** — given `UIBackgroundModes: [audio]`
-  and an active `AVAudioSession(.Playback)`. Measured on an iPhone 17 Pro: 16.01 s of audio across a
-  16.0 s background window.
-  🔴 **THAT WINDOW IS 16 SECONDS AND ANDROID DIES AT ~15.4, so treat "keeps playing" as PROVEN FOR 16 s
-  AND NO LONGER.** The two numbers are suspiciously close. Nobody has run the iOS case for minutes, which
-  is what an adopter means by background playback — do that before promising it. **`<video>` pauses by design** — the track cannot render — so a
+- ✅ **An `<audio>` element keeps playing while backgrounded on iOS, and it is not a short grace period** —
+  given `UIBackgroundModes: [audio]` and an active `AVAudioSession(.Playback)`. Measured 2026-08-20 on an
+  iPhone 16 Pro simulator: backgrounded at 08:39:38, still playing at 08:44:57 when the log stream was cut
+  — **319 s (5 min 19 s), ended by the observer and not by the platform**. `t` advanced 1:1 with the wall
+  clock (08:39:57 `t=42.97` → 08:40:12 `t=57.97`: 15 s of clock, 15.00 s of audio) across FIVE crossings of
+  the 60 s clip's loop boundary. The app process was alive at the end.
+  🔴 **THE OLD 16 s WAS A 16 s WINDOW, NOT A LIMIT — nobody had left it backgrounded for longer.** It was
+  then read as a platform ceiling because it landed next to Android's ~15.4 s, and **that closeness was
+  coincidence**, which is what made it convincing. Two facts about the instrument had to be fixed before a
+  longer run could mean anything:
+  - **The probe played the 60 s clip ONCE**, so "survives 60 s" and "survives forever" gave the identical
+    reading. `StartBackgroundAudioAsync` now sets `loop`. This ceiling was latent — no earlier figure is
+    known to have hit it — but it made a long run unable to answer the question.
+  - **The startup probe suite was still running inside the measurement window.**
+    `StartBackgroundAudioAsync` re-clicks the audio button, `CheckUiPlaybackAsync` drives the `<video>`
+    (which took the audio one second before a pause), and `CheckReloadAsync` reloads the page — and **a
+    page reload is indistinguishable from the OS cutting playback off**, because both send `t` back to
+    zero. Two runs here read as hard ceilings of ~76 s and ~87 s for exactly that reason.
+  **To re-run**: `StartBackgroundAudioAsync`, wait for the suite to go quiet (~70 s after launch — watch
+  the page log stop; 210 s was used and was ample), then `simctl launch booted com.apple.mobilesafari`.
+  ⚠ **SIMULATOR, not a handset** — the same caveat the Android figure above carries.
+  ⚠ **`play()` needs NO user gesture on iOS** — it resolved on a cold page load in this run, where Android
+  refuses. So an iOS page can start its own audio; an Android one cannot.
+  **`<video>` pauses by design** — the track cannot render — so a
   background test driven from a video element measures that rule and nothing else. ⚠ An earlier session
   concluded "iOS blocks webview background audio" from exactly that mistake. **So "only a native player
   survives backgrounding" is false**; the native player's case rests on codecs and the webview's ceiling.
