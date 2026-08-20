@@ -50,11 +50,31 @@ readings are a simulator's, and there is no BEFORE number on any machine — the
   factor); the fix is arithmetic and changes output size and encode cost on a phone. ⚠ It also became
   reachable for ORDINARY 1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be
   copied — so this path is newly hot, not newly correct.
-- [ ] **A remote source has never crossed a real NETWORK.** `MediaByteSource.ForRanges` (D78) now runs
-  against a real HTTP server over loopback — real `Range` headers, real `206`, real `HttpClient`, plan
-  identical to the file's in 4 requests — so what is left is what loopback cannot be: **TLS, a proxy, a
-  redirect, latency, and a connection that dies mid-body.** ⚠ Do this against the ADOPTER's server (owner,
-  2026-08-21: *"we can test this when the adoption completes"*), not a synthetic one.
+
+**A remote source HAS now crossed a real network — measured by an adopter, 2026-08-21.** Driven against
+that adopter's own running server over a LAN hop (not loopback, and not synthetic), through
+`MediaByteSource.ForRanges` on 0.12.0, against a real 882,044-byte track served with real
+`206`/`Content-Range`:
+
+| arm | result |
+|---|---|
+| whole file over the LAN | bytes match — **4 fetches**, 11 ms in fetch, 18 ms total |
+| seek to the midpoint, then read 64 KiB | bytes match — **1 fetch** (no re-read from zero) |
+| body DIES mid-read (8 KiB in, connection aborted) | **throws `IOException`** rather than truncating |
+| every fetch answers a QUARTER of the ask, cleanly | bytes match — 173 fetches |
+
+The 4-request plan holds over a real network — the same number the loopback run produced. A seek costs one
+fetch rather than a re-read. The documented *"returning FEWER is legal — it is asked again for the rest"*
+is true in practice at a 4× short-answer rate, with no truncation. And a dying body **throws**, which is
+the outcome worth having: a caller can retry, where a silent short read cannot be noticed — worth keeping
+as a stated guarantee, since a future change that "helpfully" swallowed it would be invisible.
+
+🔴 **The open list narrows from five to two by CONSTRUCTION, not by measurement.** Of *TLS, a proxy, a
+redirect, latency, a connection that dies mid-body* — the first three **cannot reach the kit at all**. The
+fetch delegate is caller-side: it receives `(offset, count, token)` and returns a `Stream`, so the
+transport, the redirect policy and the credentials live entirely on the adopter's side of the seam and the
+kit never observes them. That is the seam doing its job. Only latency and mid-body death were ever
+testable here, and both now are.
 
 ### 🔧 CLIPBOARD WRITES ARE REFUSED WHILE AN ANDROID EMULATOR RUNS — A/B RUN, CAUSE ESTABLISHED
 
