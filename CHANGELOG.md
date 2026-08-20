@@ -110,6 +110,12 @@ at the first list and missed five more breaking changes.
   - ⚠ **The source's length must be known up front** (`Content-Length`, or any ranged response's
     `Content-Range`): Matroska is read by offset from the END, so a source that cannot state its size cannot
     be indexed at all.
+  - 🔴 **A server that ignores `Range` and answers `200` with the whole file is refused by name.** It is the
+    one such failure that is otherwise silent — it satisfies `EnsureSuccessStatusCode` and every length check
+    while handing the demuxer the START of the file, which then reads as corrupt media. Proven against a real
+    HTTP server configured to misbehave, and proven quiet against an honest one.
+  - **`docs/guides/media.md` carries the fetch to copy**, including the `ResponseHeadersRead` that stops
+    `HttpClient` buffering a whole film to answer a 256 KB range.
 
 - **`@shenora/cli` can drive a Mac that is somewhere else.** Every `ios` verb takes `--host user@mac.local`
   (or `SHENORA_IOS_HOST`, or a `remote` block in `shenora.deploy.json`), because the adopter this kit is

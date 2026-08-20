@@ -1092,8 +1092,12 @@ docs cite them — so the number is the column to scan.
     reach a kit log line by construction rather than by care (`MediaByteSource`, `RemoteMediaSource.Url`).
   - ⚠ **The length must be known up front** — Matroska is read by offset from the END (SeekHead, then Cues),
     so a source that cannot state its size cannot be indexed at all.
+  - 🔴 **The kit cannot see a status code, so it checks what a bare `Stream` CAN reveal:** a range starting
+    past zero answered with the container's opening bytes means the server ignored `Range` and sent the whole
+    file. That failure is otherwise silent — it satisfies every length check while feeding the demuxer the
+    START of the file — and format-specific detection is the price of catching it at all.
   - **Consequence:** this is what makes D76's Cues work pay off away from local disk; measured at 4 fetches
-    to plan a 456 KB file. `docs/design/media.md`.
+    to plan a 456 KB file, the same over a real HTTP server as over a fake one. `docs/design/media.md`.
 
 
 ## Anti-goals — deliberately NOT built

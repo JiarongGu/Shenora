@@ -162,10 +162,20 @@ from `ForFile` gives no warning at all. `RangeFetchStream` keeps a 256 KB window
 that size straight from the source, and **fetches nothing on `Seek`** — a Cues-driven read seeks far more
 often than it reads.
 
-**Measured, over a fake transport on the 456 KB fixture: 4 fetches to produce the whole plan**
-(`RealSourceSegmentTests`). ⚠ That number proves the adapter BUFFERS, not that the index was used — at this
-size a full walk is also a couple of fetches, and the absent *"walking its clusters"* line is what proves
-the index.
+**Measured on the 456 KB fixture: 4 fetches to produce the whole plan — the same count over a fake
+transport and over a REAL HTTP server** (`RealSourceSegmentTests`, `RangeFetchOverHttpTests`, the latter a
+loopback socket speaking HTTP/1.1 to a real `HttpClient`). ⚠ That number proves the adapter BUFFERS, not
+that the index was used — at this size a full walk is also a couple of fetches, and the absent *"walking its
+clusters"* line is what proves the index.
+
+🔴 **The one real-server failure that is otherwise SILENT is a server ignoring `Range` and answering `200`
+with the whole file.** Every other way a fetch goes wrong is loud — a throw, a short body, no bytes — but a
+`200` satisfies `EnsureSuccessStatusCode` and every length check, and the demuxer is then handed the START
+of the file believing it is elsewhere; the result reads as corrupt media and blames the file. The kit is
+given a bare `Stream` and cannot see a status code, so it checks what it can: **a range starting past zero
+that comes back with the EBML magic**, which is legitimate only at offset 0. Format-specific deliberately —
+a specific detector that fires beats a general one that cannot. Proven against a real server configured to
+misbehave, and proven QUIET against an honest one whose file genuinely opens with that magic.
 
 ⚠ **The length must be known up front**, because Matroska is read by offset from the END — SeekHead, then
 Cues. Over HTTP it is `Content-Length`, from a HEAD or from any one ranged response's `Content-Range`.

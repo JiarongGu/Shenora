@@ -343,6 +343,44 @@ add a lifecycle without adding a capability. Call it from an effect.
 - **The init segment is produced, not pre-existing.** A page asking before production starts gets a
   "not ready" 503 — never a 404, and never an empty file, which would poison the buffer.
 
+### Playing a file that is not on this machine
+
+The engine reads through an OPENER, not a path, so a remote file needs one thing from you: **how to fetch a
+byte range**. The kit supplies the seekable, buffered stream over it (D78) — write the fetch, not the stream.
+
+```csharp
+var http = new HttpClient();
+
+var bytes = MediaByteSource.ForRanges("Episode 3", contentLength, async (offset, count, token) =>
+{
+    var request = new HttpRequestMessage(HttpMethod.Get, myUrl);
+    request.Headers.Range = new RangeHeaderValue(offset, offset + count - 1);
+    request.Headers.Authorization = myToken;                 // never seen by the kit
+
+    // ⚠ ResponseHeadersRead — otherwise HttpClient buffers the whole body before you see it.
+    var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+    response.EnsureSuccessStatusCode();
+    return await response.Content.ReadAsStreamAsync(token);
+});
+
+registry.Register(new RemoteMediaSource { Url = myUrl, Label = "Episode 3", Open = bytes.Open });
+```
+
+- 🔴 **Do not write the `Stream` yourself.** The EBML parser reads varints ONE BYTE AT A TIME, so the
+  obvious adapter costs a round trip per byte and never finishes. A local `FileStream` buffers for free, so
+  porting from `ForFile` gives no warning. `ForRanges` keeps a 256 KB window, sends large reads straight
+  through and fetches nothing on `Seek`. **Measured: 4 HTTP requests to plan a 456 KB file.**
+- 🔴 **`EnsureSuccessStatusCode` does NOT catch a server ignoring your `Range`** — a `200` with the whole
+  body is a success. The kit catches it and says so by name, but a server answering `200` to every range is
+  re-downloading the file per read: **check for `206`** if you control the deployment.
+- ⚠ **The length must be known before the first read** — `Content-Length` from a HEAD, or the total in any
+  one response's `Content-Range`. Matroska is read by offset from the END, so a source that cannot state its
+  size cannot be indexed at all.
+- **Set `Identity` whenever the url rotates.** Segments are cached under a key derived from it, so a
+  presigned url that changes hourly re-segments the same film from scratch each time.
+- **Supply `Duration` and `HasPicture` if you already know them** — each one the kit has to discover costs a
+  network read before the first manifest can be answered.
+
 ## Background playback — handing off when the app leaves the screen
 
 A page-backed player stops when the page does: both mobile platforms suspend a backgrounded webview within

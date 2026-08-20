@@ -47,11 +47,11 @@ find out; what is missing is a stopwatch.
   factor); the fix is arithmetic and changes output size and encode cost on a phone. ⚠ It also became
   reachable for ORDINARY 1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be
   copied — so this path is newly hot, not newly correct.
-- [ ] **A remote source has never been run against a REAL server.** `MediaByteSource.ForRanges` (D78) is
-  proven over a fake transport only — a `MemoryStream` per range, which cannot produce a redirect, a `200`
-  answering a `Range` request, a mid-file connection drop, or a server that clamps ranges differently from
-  the fixture. ⚠ The failure to look for is a SHORT answer treated as an end: it hands the parser a silently
-  truncated file, which reads as corrupt media and blames the file.
+- [ ] **A remote source has never crossed a real NETWORK.** `MediaByteSource.ForRanges` (D78) now runs
+  against a real HTTP server over loopback — real `Range` headers, real `206`, real `HttpClient`, plan
+  identical to the file's in 4 requests — so what is left is what loopback cannot be: **TLS, a proxy, a
+  redirect, latency, and a connection that dies mid-body.** ⚠ Do this against the ADOPTER's server (owner,
+  2026-08-21: *"we can test this when the adoption completes"*), not a synthetic one.
 
 ### 🔧 THE BOX REFUSES ~30 % OF CLIPBOARD WRITES FROM A LOOPING TEST PROCESS
 

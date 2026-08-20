@@ -136,6 +136,33 @@ internal sealed class RangeFetchStream : Stream
     private bool WindowHolds(long offset)
         => _windowStart >= 0 && offset >= _windowStart && offset < _windowStart + _windowLength;
 
+    /// <summary>The four bytes every Matroska file opens with. They are legitimate at offset 0 and nowhere else.</summary>
+    private static ReadOnlySpan<byte> EbmlMagic => [0x1A, 0x45, 0xDF, 0xA3];
+
+    /// <summary>
+    /// 🔴 <b>A server that IGNORES <c>Range</c> and answers the whole file is the one real-world failure this
+    /// adapter cannot survive silently.</b> Every other way a fetch can go wrong is loud — a throw, a short
+    /// read, no bytes — but a <c>200</c> carrying the file from byte 0 satisfies every check, and the parser
+    /// is then handed the START of the file while believing it is somewhere else. The result reads as corrupt
+    /// media and blames the file.
+    /// <para>
+    /// The kit is given a bare <see cref="Stream"/>, so it cannot see the status code. What it CAN see is
+    /// that a range starting past zero came back beginning with the container's opening bytes — which is
+    /// legitimate only at offset 0. Format-specific on purpose: this adapter exists to be read by a Matroska
+    /// demuxer, and a specific detector beats a general one that cannot fire.
+    /// </para>
+    /// </summary>
+    private static void RefuseAWholeFileAnsweringARange(byte[] target, int at, int length, long offset)
+    {
+        if (offset == 0 || length < EbmlMagic.Length) return;
+        if (!target.AsSpan(at, EbmlMagic.Length).SequenceEqual(EbmlMagic)) return;
+
+        throw new IOException(
+            $"a range starting at {offset} came back with the bytes that open the file — the source is "
+          + "answering the WHOLE file and ignoring the requested range. Check the fetch sends a Range "
+          + "header and treats anything but 206 Partial Content as a failure.");
+    }
+
     /// <summary>
     /// Fill <paramref name="count"/> bytes at <paramref name="start"/>, asking again while the source keeps
     /// answering short — a server is free to clamp a range to less than was asked for.
@@ -167,6 +194,7 @@ internal sealed class RangeFetchStream : Stream
             if (fromBody == 0)
                 throw new IOException($"the range source returned no bytes at offset {offset + filled}");
 
+            RefuseAWholeFileAnsweringARange(target, start + filled, fromBody, offset + filled);
             filled += fromBody;
         }
 
