@@ -11,19 +11,13 @@ namespace Shenora.iOS;
 
 /// <summary>
 /// iOS's <see cref="IPlaybackSession"/> — <c>MPNowPlayingInfoCenter</c> for what is playing and
-/// <c>MPRemoteCommandCenter</c> for the controls coming back.
-/// <para>
-/// Both are process-wide singletons, which is why this class holds no session object of its own: unlike
-/// Android's <c>MediaSession</c> or Windows' <c>SystemMediaTransportControls</c> there is nothing to create,
-/// only shared state to write. That makes <see cref="Dispose"/> genuinely important — the command targets
-/// are added to a singleton and would otherwise outlive this object and keep firing into a dead handler.
-/// </para>
+/// <c>MPRemoteCommandCenter</c> for the controls coming back. Both are process-wide singletons, so this
+/// class holds no session object of its own: there is nothing to create, only shared state to write.
 /// <para>
 /// ⚠ <b>iOS shows this only for an app the system believes is playing audio.</b> Setting the info is
-/// necessary and not sufficient: without an active <c>AVAudioSession</c> the lock screen may show nothing,
-/// which is the same shape of limit as Android needing a MediaStyle notification. Configuring an audio
-/// session is the APP's call — it decides the category, whether it mixes, and what happens on interruption —
-/// so the kit publishes and stays out of it.
+/// necessary and not sufficient: without an active <c>AVAudioSession</c> the lock screen may show nothing.
+/// Configuring one is the APP's call — the category, the mixing, the interruption behaviour — so the kit
+/// publishes and stays out of it.
 /// </para>
 /// </summary>
 public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
@@ -40,9 +34,8 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
     public IosPlaybackSession(ILogger? log = null)
     {
         _log = log;
-        // Every command is wired ONCE here and enabled/disabled by `Supported` afterwards. Adding and
-        // removing targets as the supported set changes is the obvious alternative and it leaks: each
-        // AddTarget returns a new token, and the shared command center accumulates them.
+        // ⚠ Every command is wired ONCE and enabled/disabled by `Supported` afterwards: adding and removing
+        // targets as the set changes LEAKS — each AddTarget returns a new token on a shared command center.
         Wire(MPRemoteCommandCenter.Shared.PlayCommand, PlaybackCommand.Play);
         Wire(MPRemoteCommandCenter.Shared.PauseCommand, PlaybackCommand.Pause);
         Wire(MPRemoteCommandCenter.Shared.TogglePlayPauseCommand, PlaybackCommand.TogglePlayPause);
@@ -66,9 +59,8 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
             Try(() =>
             {
                 var c = MPRemoteCommandCenter.Shared;
-                // Same rule as the other two shells: a toggle also lights the concrete pair, because
-                // hardware sends whichever it likes and an app that declared only the toggle would find
-                // half its buttons dead.
+                // A toggle also lights the concrete pair: hardware sends whichever it likes, and an app that
+                // declared only the toggle would find half its buttons dead.
                 c.PlayCommand.Enabled = toggle || value.HasFlag(PlaybackCommands.Play);
                 c.PauseCommand.Enabled = toggle || value.HasFlag(PlaybackCommands.Pause);
                 c.TogglePlayPauseCommand.Enabled = toggle;
@@ -78,9 +70,7 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
                 c.ChangePlaybackPositionCommand.Enabled = value.HasFlag(PlaybackCommands.Seek);
                 c.SkipForwardCommand.Enabled = value.HasFlag(PlaybackCommands.SkipForward);
                 c.SkipBackwardCommand.Enabled = value.HasFlag(PlaybackCommands.SkipBackward);
-                // The interval is re-applied here as well as in the setter, because an app may set
-                // Supported first — and without PreferredIntervals iOS draws a bare arrow with no number,
-                // which reads to a user as a different control entirely.
+                // Re-applied here as well as in the setter, because an app may set Supported first.
                 ApplySkipInterval();
             }, nameof(Supported));
         }
@@ -97,15 +87,11 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
         }
     }
 
-    /// <summary>
-    /// Push the interval to both commands. ⚠ This is what makes iOS render the NUMBER on the button —
-    /// PreferredIntervals is a display contract as much as a behavioural one, so an unset interval looks
-    /// like a bare skip arrow rather than a 15-second one.
-    /// </summary>
+    /// <summary>Push the interval to both commands. ⚠ <c>PreferredIntervals</c> is a DISPLAY contract as
+    /// well as a behavioural one — unset, iOS draws a bare skip arrow with no number on it.</summary>
     private void ApplySkipInterval() => Try(() =>
     {
-        // double[], NOT NSNumber[] — checked against the binding after assuming otherwise, the same way
-        // MPNowPlayingInfoCenter.playbackState turned out not to exist here at all.
+        // double[], NOT NSNumber[] — checked against the binding.
         double[] seconds = [SkipInterval.TotalSeconds];
         MPRemoteCommandCenter.Shared.SkipForwardCommand.PreferredIntervals = seconds;
         MPRemoteCommandCenter.Shared.SkipBackwardCommand.PreferredIntervals = seconds;
@@ -122,9 +108,8 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
 
         Try(() =>
         {
-            // The info center takes a WHOLE object, so a partial update erases the rest. This keeps the
-            // last one and mutates it, which is why Report() can move the position without re-sending the
-            // title — the trap being that the naive version blanks the metadata on every position update.
+            // ⚠ The info center takes a WHOLE object, so a partial update ERASES the rest. Keeping the last
+            // one and mutating it is what lets Report() move the position without blanking the metadata.
             _info.Title = info.Title;
             _info.Artist = info.Subtitle;
             _info.AlbumTitle = info.GroupName;
@@ -135,10 +120,8 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
                 var image = UIKit.UIImage.LoadFromData(Foundation.NSData.FromArray(info.Artwork.ToArray()));
                 if (image is not null)
                 {
-                    // The size+handler ctor, not MPMediaItemArtwork(UIImage) — that one is obsolete since
-                    // iOS 10 and the analyser fails the build on it. The handler is called by the system
-                    // with the size it wants; returning the decoded image unscaled is acceptable and is
-                    // what a lock-screen thumbnail needs, since the image is already small.
+                    // The size+handler ctor, not MPMediaItemArtwork(UIImage) — obsolete since iOS 10, and the
+                    // analyser fails the build on it. Returning the decoded image unscaled is fine here.
                     _info.Artwork = new MPMediaItemArtwork(image.Size, _ => image);
                 }
                 else
@@ -161,9 +144,8 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
         Try(() =>
         {
             _info.ElapsedPlaybackTime = progress.Position.TotalSeconds;
-            // The RATE is how iOS knows whether to keep counting. A paused session reporting 1.0 shows a
-            // clock that keeps advancing over audio that stopped, which is why Buffering reports 0 too:
-            // the position is not moving, whatever the app's intent.
+            // The RATE is how iOS knows whether to keep counting: a paused session reporting 1.0 shows a
+            // clock advancing over audio that stopped, which is why Buffering reports 0 too.
             _info.PlaybackRate = progress.State switch
             {
                 PortableState.Playing => (float)progress.Rate,
@@ -171,11 +153,9 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
             };
             MPNowPlayingInfoCenter.DefaultCenter.NowPlaying = _info;
 
-            // ⚠ There is NO explicit playback-state property to set here. `MPNowPlayingInfoCenter`'s
-            // `playbackState` is macOS/tvOS only — it is absent from the iOS binding entirely, verified
-            // against the reference assembly after assuming otherwise and being corrected by the compiler.
-            // So on this platform the RATE carries the state, which is why the mapping above is the whole
-            // story and Paused/Stopped/Buffering all report 0.
+            // ⚠ There is NO explicit playback-state property to set here: `MPNowPlayingInfoCenter`'s
+            // `playbackState` is macOS/tvOS only and absent from the iOS binding entirely, so on this
+            // platform the RATE carries the state and Paused/Stopped/Buffering all report 0.
         }, nameof(Report));
     }
 
@@ -187,9 +167,8 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
         {
             _info = new MPNowPlayingInfo();
             // ObjC `nil`, not an empty info object: an empty one leaves the app on the lock screen with
-            // blank text — the "present but broken" look rather than "not playing" — and nil is what
-            // Apple documents for clearing. `null!` because the binding annotates this non-nullable, which
-            // is stricter than the API it wraps; the suppression is the honest way to say so.
+            // blank text — "present but broken" rather than "not playing". `null!` because the binding
+            // annotates this non-nullable, which is stricter than the API it wraps.
             MPNowPlayingInfoCenter.DefaultCenter.NowPlaying = null!;
         }, nameof(Clear));
     }
@@ -204,17 +183,14 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
         _targets.Add((command, target));
     }
 
-    /// <summary>
-    /// iOS sends the interval WITH the event, so that is what is reported rather than the configured value
-    /// — honouring what arrived is more correct than assuming what was asked for, and the two can differ if
-    /// the system chose from the preferred list.
-    /// </summary>
+    /// <summary>iOS sends the interval WITH the event, so that is what is reported rather than the
+    /// configured value — the system may have chosen from the preferred list.</summary>
     private void WireSkip(MPSkipIntervalCommand command, PlaybackCommand mapped)
     {
         var target = command.AddTarget(args =>
         {
-            // Interval is a plain double on the event (not an NSNumber, unlike the ObjC signature), and
-            // it can arrive as 0 — in which case the configured value is the honest fallback.
+            // Interval is a plain double on the event (not an NSNumber) and can arrive as 0, where the
+            // configured value is the honest fallback.
             var seconds = args is MPSkipIntervalCommandEvent e && e.Interval > 0
                 ? e.Interval
                 : SkipInterval.TotalSeconds;
@@ -272,6 +248,5 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
             catch (Exception ex) { Log(() => "[Shenora.iOS] RemoveTarget", ex); }
         }
         _targets.Clear();
-        Clear();
     }
 }

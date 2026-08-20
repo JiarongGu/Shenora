@@ -214,6 +214,17 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **Android's H.264 encoder was configured at roughly a thirtieth of its intended bitrate.**
+  `AndroidMediaVideoConversion` computed `w * h * 3 / 10` — 0.3 bits per PIXEL, with no frame-rate factor —
+  where the intent was 0.15 bits per pixel per FRAME. 720p30 fell through to the 400 kbps floor and 1080p30
+  got 622 kbps. Now `w * h * fps * 15 / 100`: 4.1 Mbps and 9.3 Mbps respectively.
+  - **What proves it was the code and not the comment: the upper clamp was unreachable.** Hitting the
+    12 Mbps ceiling needed a 40-megapixel frame, and a clamp that can never fire at either end is the
+    signature of a lost `× fps`.
+  - ⚠ **Newly reachable for ordinary content.** A grid or head-ramp plan re-encodes the picture even when it
+    could have been copied, so 1080p H.264 — previously copied straight past this encoder — now meets it.
+  - ⚠ **Arithmetic only; not verified on hardware.**
+
 - **`MatroskaProbe` reported `"vfw"` for a whole family of real files, so they were transcoded when a
   lossless remux would have served them.** Matroska has native ids for h264, HEVC, MPEG-2, MPEG-4 Part 2,
   VP8/9 and AV1; everything else uses the Video-for-Windows wrapper with the true codec as a FourCC inside a

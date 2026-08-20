@@ -8,30 +8,16 @@ using static Shenora.Android.AndroidMediaCodecs;
 namespace Shenora.Android;
 
 /// <summary>
-/// Android's PICTURE converter — a platform decoder rendering into a platform H.264 encoder.
-///
+/// Android's PICTURE converter — a platform decoder rendering into a platform H.264 encoder, for a codec
+/// the device decodes but its webview refuses. Measured: <c>mpeg4</c>, which reaches <c>readyState = 4</c>
+/// with <c>error</c> null and a <c>0×0</c> picture (<c>.claude/knowledge/mobile-shells.md</c>).
 /// <para>
-/// <b>The gap it closes is measured, not assumed</b> (API 36 / WebView 133, 2026-08-10): the device decodes
-/// <c>mpeg4</c> to a real 480×270 frame while its own webview answers <c>""</c> for
-/// <c>video/mp4; codecs="mp4v.20.8"</c> — and a page pointed at such a file reaches <c>readyState = 4</c>
-/// with <c>error</c> null and a <c>0×0</c> picture. Sound over a blank rectangle, with nothing raised.
-/// This is the same job the audio converter does, on the same seam, for the other stream kind.
+/// 🔴 <b>SURFACE-TO-SURFACE:</b> the decoder renders into the ENCODER'S OWN INPUT SURFACE and no frame is
+/// ever read back — no colour conversion, no stride arithmetic, nothing device-specific to get wrong.
 /// </para>
-///
 /// <para>
-/// 🔴 <b>SURFACE-TO-SURFACE, and that choice is the whole reason this is short.</b> The obvious path —
-/// decode into a <c>ByteBuffer</c>, feed the encoder — means handling whatever YUV layout the device
-/// returns (<c>COLOR_FormatYUV420Flexible</c> covers planar, semi-planar and every stride/slice-height
-/// quirk a vendor ships). Handing the decoder the ENCODER'S OWN INPUT SURFACE makes the pixels the
-/// platform's problem end to end: no colour conversion, no stride arithmetic, and nothing device-specific
-/// to get wrong.
-/// </para>
-///
-/// <para>
-/// ⚠ <b>It is a SOFTWARE decoder for the case that motivated it</b> (<c>c2.android.mpeg4.decoder</c>), so
-/// the work is real per frame — unlike the audio tier, which rides hardware. The encoder is normally
-/// hardware. That asymmetry is a fact about the codec, not a defect here, and it is why the planner still
-/// prefers a COPY wherever the container can carry the stream.
+/// ⚠ The decoder for the motivating case (<c>c2.android.mpeg4.decoder</c>) is SOFTWARE, so the work is
+/// real per frame; the planner still prefers a COPY wherever the container can carry the stream.
 /// </para>
 /// </summary>
 public static class AndroidMediaVideoConversion
@@ -39,11 +25,8 @@ public static class AndroidMediaVideoConversion
     private const string AvcMime = "video/avc";
 
     /// <summary>
-    /// Register this platform converter into a conversion pipeline. Dispose to remove it.
-    /// <para>
-    /// A MIDDLEWARE, like its audio peer: it DECLINES anything that is not a video stream it can handle, so
-    /// one pipeline carries both kinds and nothing can be registered into the wrong one.
-    /// </para>
+    /// Register this platform converter into a conversion pipeline as a MIDDLEWARE — it DECLINES anything
+    /// that is not a video stream it can handle, so one pipeline carries both kinds. Dispose to remove it.
     /// </summary>
     public static IDisposable Use(MediaConversionPipeline pipeline, ILogger? log = null)
     {
@@ -52,13 +35,8 @@ public static class AndroidMediaVideoConversion
     }
 
     /// <summary>
-    /// What this converter OFFERS to attempt — the declaration the pipeline answers <c>CanConvert</c> from
-    /// before any codec is built.
-    /// <para>
-    /// ⚠ Derived from the SAME table <see cref="MimeOf"/> reads, so the claim and the behaviour cannot
-    /// drift. ⚠ Computed on access, not cached: a static initialiser runs in declaration order and would
-    /// read that table before it exists, producing a converter that silently claims nothing.
-    /// </para>
+    /// What this converter OFFERS, from the same table <see cref="MimeOf"/> reads. ⚠ Computed on access,
+    /// never a static initialiser: that would read the table before it exists and claim nothing at all.
     /// </summary>
     public static IReadOnlyList<MediaStreamClaim> Claims =>
         [.. Mimes.Keys.Select(codec => new MediaStreamClaim(MediaStreamKind.Video, codec))];
@@ -75,14 +53,12 @@ public static class AndroidMediaVideoConversion
                                                    ILogger? log)
     {
         ArgumentNullException.ThrowIfNull(source);
-        // Kind first: this converter answers for pictures and nothing else, and saying so here is what lets
-        // one pipeline serve every kind.
+        // Pictures and nothing else, which is what lets one pipeline serve every kind.
         if (source.Kind is not MediaStreamKind.Video) return null;
         if (source.Codec is null || MimeOf(source.Codec) is not { } mime) return null;
         if (!HasCodec(mime, encoder: false) || !HasCodec(AvcMime, encoder: true)) return null;
 
-        // A codec cannot be configured without dimensions, and a probe that omits them is asking whether the
-        // device COULD rather than starting one — answer yes without building anything.
+        // A codec cannot be configured without dimensions; a probe that omits them is not starting a run.
         if (source.Width is not > 0 || source.Height is not > 0) return null;
 
         try
@@ -97,15 +73,9 @@ public static class AndroidMediaVideoConversion
         }
     }
 
-    // `Report` and `HasCodec` live in `AndroidMediaCodecs` — see the audio converter.
-
     /// <summary>
-    /// The planner's lowercase names to Android's MIME types.
-    /// <para>
-    /// ⚠ <b>H.264 and HEVC are deliberately ABSENT.</b> MP4 already carries both, so the remuxer COPIES
-    /// them — offering to re-encode what can be copied would turn a lossless, gigabyte-per-second operation
-    /// into a lossy one that takes minutes.
-    /// </para>
+    /// The planner's lowercase names to Android's MIME types. ⚠ H.264 and HEVC are ABSENT: MP4 carries
+    /// both, so the remuxer COPIES them losslessly instead of re-encoding.
     /// </summary>
     private static readonly Dictionary<string, string> Mimes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -116,15 +86,9 @@ public static class AndroidMediaVideoConversion
         ["av1"] = "video/av01",
     };
 
-    /// <summary>
-    /// ⚠ ONE table, read by both <see cref="Claims"/> and this — so what the converter DECLARES and what it
-    /// ACCEPTS cannot drift.
-    /// </summary>
     private static string? MimeOf(string codec) => Mimes.TryGetValue(codec, out var mime) ? mime : null;
 
-    /// <summary>
-    /// One picture's decode-then-encode, driven synchronously through a shared Surface.
-    /// </summary>
+    /// <summary>One picture's decode-then-encode, driven synchronously through a shared Surface.</summary>
     private sealed class Run : IMediaStreamConversionRun
     {
         private const int TimeoutUs = 10_000;
@@ -154,13 +118,15 @@ public static class AndroidMediaVideoConversion
             // ── the encoder first, because the decoder needs its input surface ────────────────────────────
             var output = MediaFormat.CreateVideoFormat(AvcMime, _width, _height)!;
             output.SetInteger(MediaFormat.KeyColorFormat, (int)MediaCodecCapabilities.Formatsurface);
-            // A bitrate proportional to the picture rather than a constant: 0.15 bits per pixel per frame is
-            // the usual rule of thumb for H.264, and the alternative — one number for every resolution —
-            // is either wasteful on a thumbnail or visibly bad on a film.
-            output.SetInteger(MediaFormat.KeyBitRate, (int)Math.Clamp(_width * (long)_height * 3 / 10, 400_000, 12_000_000));
-            output.SetInteger(MediaFormat.KeyFrameRate, (int)Math.Clamp(source.FrameRate ?? 30, 1, 120));
-            // One keyframe a second. ⚠ This is a SEEKING decision, not a quality one: the sync sample table
-            // is what a player seeks to, so a long GOP produces a file that scrubs badly however good it looks.
+            var frameRate = (int)Math.Clamp(source.FrameRate ?? 30, 1, 120);
+            // ⚠ Bits per pixel per FRAME, so the rate has to carry the frame rate — 0.15 bpp/frame is
+            // ordinary for H.264. Without the frame-rate factor 720p lands on the 400 kbps floor and the
+            // 12 Mbps ceiling needs a 40-megapixel picture to reach, which is how the omission was spotted.
+            output.SetInteger(MediaFormat.KeyBitRate,
+                (int)Math.Clamp(_width * (long)_height * frameRate * 15 / 100, 400_000, 12_000_000));
+            output.SetInteger(MediaFormat.KeyFrameRate, frameRate);
+            // 🔴 One keyframe a SECOND, which `SegmentGrid` cuts its segments on — changing this makes the
+            // media tier's grid illegal. Also a seeking decision: a long GOP scrubs badly however good it looks.
             output.SetInteger(MediaFormat.KeyIFrameInterval, 1);
 
             _encoder = MediaCodec.CreateEncoderByType(AvcMime)!;
@@ -168,12 +134,10 @@ public static class AndroidMediaVideoConversion
             _bridge = _encoder.CreateInputSurface()!;
             _encoder.Start();
 
-            // ── the decoder, and the MINIMAL format is a measured trap rather than tidiness ───────────────
-            // 🔴 `MediaCodecList.FindDecoderForFormat` REFUSES the format MediaExtractor hands you: it
-            // carries `profile`, `level`, `max-bitrate`, `frame-count` and `sar-*`, and nothing matches all
-            // of them — so a working decoder looks ABSENT. Measured: the extractor's own format
-            // found nothing, while mime + dimensions found `c2.android.mpeg4.decoder` on the same device.
-            // Configuring is the same story, so the format built here carries only what a decoder needs.
+            // ── the decoder, whose MINIMAL format is a measured trap rather than tidiness ─────────────────
+            // 🔴 `MediaCodecList.FindDecoderForFormat` REFUSES the format `MediaExtractor` hands you — it
+            // carries `profile`/`level`/`sar-*` and nothing matches — so a working decoder looks ABSENT,
+            // and configuring is the same story (`.claude/knowledge/mobile-shells.md`).
             var input = MediaFormat.CreateVideoFormat(mime, _width, _height)!;
             if (!codecPrivate.IsEmpty)
             {
@@ -209,8 +173,7 @@ public static class AndroidMediaVideoConversion
             }
             else
             {
-                // The buffer-too-large case above is reported; this one was silent. A picture never
-                // queued is a visible glitch in the output with nothing anywhere saying why.
+                // A picture never queued is a visible glitch with nothing else saying why.
                 Report(_log, $"[Shenora.Android] the decoder had no input buffer free; "
                            + $"a {frame.Data.Length}-byte picture frame was dropped.");
             }
@@ -227,9 +190,8 @@ public static class AndroidMediaVideoConversion
             ObjectDisposedException.ThrowIf(_disposed, this);
             var produced = new List<MediaFrame>();
 
-            // The decoder must HEAR the end of stream or pictures it is still reordering never flush —
-            // the same hazard the encoder comment below names, one stage earlier. A buffer can be
-            // briefly scarce right after the last Push, so wait a few timeouts before giving up.
+            // The decoder must HEAR the end of stream or pictures it is still reordering never flush. A
+            // buffer can be briefly scarce right after the last Push, so wait a few timeouts.
             var index = -1;
             for (var i = 0; i < 10 && index < 0; i++) index = _decoder.DequeueInputBuffer(TimeoutUs);
             if (index >= 0) _decoder.QueueInputBuffer(index, 0, 0, 0, MediaCodecBufferFlags.EndOfStream);
