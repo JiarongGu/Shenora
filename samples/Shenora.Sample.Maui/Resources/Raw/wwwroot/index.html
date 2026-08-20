@@ -751,11 +751,22 @@ window.__shenoraSegCheck = function (base, mime) {
     const out = [];
     const say = (k, v) => out.push(k + '=' + v);
     const done = () => { window.__shenoraSegProbe = out.join('|'); };
+    // TIME-TO-FIRST-FRAME, split per term. A total cannot say which change earned it: the manifest pays
+    // the probe+plan, `init.mp4` STARTS production and blocks until segment 0 is whole, and seg0 is then
+    // usually a cache hit. `tries` counts 503s, so a wait that was polled is told apart from one that blocked.
+    const t0 = performance.now();
+    const since = () => Math.round(performance.now() - t0);
     // Poll a resource the ENGINE has to produce: 503 means "not ready", which is the route working.
     const fetchProduced = async (url, label) => {
+      const start = performance.now();
       for (let attempt = 0; attempt < 60; attempt++) {
         const r = await fetch(url);
-        if (r.status === 200) return new Uint8Array(await r.arrayBuffer());
+        if (r.status === 200) {
+          const body = new Uint8Array(await r.arrayBuffer());
+          say('t' + label[0].toUpperCase() + label.slice(1), Math.round(performance.now() - start));
+          say(label + 'Tries', attempt + 1);
+          return body;
+        }
         if (r.status !== 503) { say(label, 'status ' + r.status); return null; }
         await new Promise(res => setTimeout(res, 1000));
       }
@@ -763,10 +774,14 @@ window.__shenoraSegCheck = function (base, mime) {
       return null;
     };
     try {
+      const mStart = performance.now();
       const m = await fetch(base + 'index.m3u8');
       say('manifest', m.status);
       if (!m.ok) return done();
       const text = await m.text();
+      // The manifest pays the probe AND the plan — for a copying source that used to mean a walk of every
+      // cluster, and is now the file's own Cues index when it has a usable one.
+      say('tManifest', Math.round(performance.now() - mStart));
       say('version', /#EXT-X-VERSION:(\d+)/.exec(text)?.[1] ?? 'none');
       const initName = /#EXT-X-MAP:URI="([^"]+)"/.exec(text)?.[1] ?? null;
       say('map', initName ?? 'MISSING');
@@ -879,6 +894,10 @@ window.__shenoraSegCheck = function (base, mime) {
          frame rather than with the append. */
       for (let i = 0; i < 40 && !el.videoWidth; i++) await new Promise(r => setTimeout(r, 100));
       say('frame', el.videoWidth + 'x' + el.videoHeight);
+      /* TIME TO FIRST FRAME — the number the whole first-load rewrite exists to move. Measured to the
+         DECODED frame rather than to the last append, because an append that buffers nothing renders
+         nothing. ⚠ Coarse by 100 ms, the poll above; the per-term splits are the precise part. */
+      if (el.videoWidth) say('tFirstFrame', since());
       /* ⚠ AFTER the wait, not before it. `endstreaming` arrives when the platform decides it has
          enough — which is never synchronous with the last append, and the earlier reading was taken
          several seconds too early to see it. Given its own window rather than borrowing the frame
