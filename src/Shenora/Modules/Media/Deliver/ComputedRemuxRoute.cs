@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Shenora.Core.WebView;
 using Shenora.Engine;
 using Shenora.Engine.Missions;

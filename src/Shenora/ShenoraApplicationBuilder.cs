@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 // The framework's own layers, defaulted in Build() (D64/D65). ⚠ The COMPOSITION ROOT is the one place
 // allowed to reach every layer; nothing else crosses upward.
 using Shenora.Core.Events;            // core — the event pipeline
-using Shenora.Engine.Missions;        // engine — the scheduler
 using Shenora.Modules.Media;          // module — the player
 using Shenora.Modules.Requests;     // module — the operation registry's registration
 

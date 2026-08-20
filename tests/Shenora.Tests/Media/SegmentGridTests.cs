@@ -72,7 +72,9 @@ public class SegmentGridTests
     [InlineData(600)]
     public void A_segment_s_start_is_the_first_tick_of_that_segment(int index)
     {
-        var start = SegmentGrid.StartTicks(index, TicksPerSecond, 6.0);
+        // ⚠ Computed here rather than asked of the grid: checking `SegmentOf` against a sibling helper
+        // tests two functions against each other and passes if both are wrong the same way.
+        var start = (long)(index * 6.0 * TicksPerSecond);
 
         Assert.Equal(index, SegmentGrid.SegmentOf(start, TicksPerSecond, 6.0));
         if (index > 0) Assert.Equal(index - 1, SegmentGrid.SegmentOf(start - 1, TicksPerSecond, 6.0));
@@ -83,7 +85,6 @@ public class SegmentGridTests
     public void A_missing_timescale_answers_zero_rather_than_throwing()
     {
         Assert.Equal(0, SegmentGrid.SegmentOf(5_000, 0, 6.0));
-        Assert.Equal(0, SegmentGrid.StartTicks(3, 0, 6.0));
         Assert.Equal(0, SegmentGrid.SegmentOf(-1_000, TicksPerSecond, 6.0));
     }
 
@@ -138,43 +139,9 @@ public class SegmentGridTests
         Assert.Equal(0, SegmentGrid.SeekIndex(samples, 5_000));
     }
 
-    // ── cutting the output ─────────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Both halves of the cut are required. Without the boundary test the segments are whatever length the
-    /// encoder felt like and stop matching the manifest; without the keyframe test a segment opens mid-GOP
-    /// and cannot be decoded alone — which is exactly what a page seeking into a film asks of it.
-    /// </summary>
-    [Fact]
-    public void A_cut_needs_BOTH_a_new_boundary_and_a_keyframe()
-    {
-        // Past the boundary and a keyframe: cut.
-        Assert.True(SegmentGrid.StartsNewSegment(6_000, keyFrame: true, current: 0, TicksPerSecond, 6.0));
-
-        // Past the boundary but NOT a keyframe: keep writing — cutting here is undecodable.
-        Assert.False(SegmentGrid.StartsNewSegment(6_040, keyFrame: false, current: 0, TicksPerSecond, 6.0));
-
-        // A keyframe inside the CURRENT segment: not a boundary, so not a cut. The encoder emits one every
-        // second while segments are six, so this is the common case rather than an edge one.
-        Assert.False(SegmentGrid.StartsNewSegment(3_000, keyFrame: true, current: 0, TicksPerSecond, 6.0));
-
-        // Never cut backwards — a late frame from a reordering encoder must not reopen a finished segment.
-        Assert.False(SegmentGrid.StartsNewSegment(5_900, keyFrame: true, current: 1, TicksPerSecond, 6.0));
-    }
-
-    /// <summary>
-    /// A run that starts mid-source cuts against ABSOLUTE segment indices, not a count of its own output.
-    /// Getting this wrong is how a seek produces segment 0 named seg40 — the numbers agree with the manifest
-    /// and the content does not.
-    /// </summary>
-    [Fact]
-    public void A_run_that_starts_late_cuts_on_the_absolute_grid()
-    {
-        var start = SegmentGrid.StartTicks(40, TicksPerSecond, 6.0);
-        Assert.Equal(240_000, start);
-        Assert.Equal(40, SegmentGrid.SegmentOf(start, TicksPerSecond, 6.0));
-
-        Assert.False(SegmentGrid.StartsNewSegment(start, keyFrame: true, current: 40, TicksPerSecond, 6.0));
-        Assert.True(SegmentGrid.StartsNewSegment(start + 6_000, keyFrame: true, current: 40, TicksPerSecond, 6.0));
-    }
+    // ⚠ Cutting the output is NOT tested here any more, and that is not a coverage loss.
+    // `SegmentGrid.StartsNewSegment`/`StartTicks` were deleted: nothing in `src/` or `samples/` called them
+    // — production cuts on `SegmentPlan.StartsNewSegment` and seeks with `SegmentPlan.StartOf`. Both cases
+    // these tests covered (all four halves of the cut, and a run starting at segment 40 cutting on the
+    // ABSOLUTE grid) are asserted against the live path in `SegmentPlanTests`.
 }

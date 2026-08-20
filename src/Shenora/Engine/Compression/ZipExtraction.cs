@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using Shenora.Engine.Files;
 
 namespace Shenora.Engine.Compression;
 

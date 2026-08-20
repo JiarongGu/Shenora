@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 
 namespace Shenora.Engine.Missions;
 

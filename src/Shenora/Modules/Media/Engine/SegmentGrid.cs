@@ -128,13 +128,6 @@ internal static class SegmentGrid
         return seconds <= 0 ? 0 : (int)(seconds / segmentSeconds);
     }
 
-    /// <summary>Where a segment begins on the media timeline, in the source's own ticks.</summary>
-    public static long StartTicks(int segment, long ticksPerSecond, double segmentSeconds)
-    {
-        if (segment <= 0 || ticksPerSecond <= 0 || segmentSeconds <= 0) return 0;
-        return (long)(segment * segmentSeconds * ticksPerSecond);
-    }
-
     /// <summary>
     /// Where a run must START READING the source to produce a segment beginning at
     /// <paramref name="startTicks"/> — the last keyframe at or before it.
@@ -163,19 +156,6 @@ internal static class SegmentGrid
         }
         return found;
     }
-
-    /// <summary>
-    /// Should the frame at <paramref name="ticks"/> OPEN a new segment, given the one being written? The
-    /// tick-based twin of <see cref="SegmentPlan.StartsNewSegment"/>, which states why both halves matter.
-    /// </summary>
-    /// <param name="ticks">The candidate frame's time on the media timeline.</param>
-    /// <param name="keyFrame">Whether it is a sync sample.</param>
-    /// <param name="current">The segment index currently being written.</param>
-    /// <param name="ticksPerSecond">The media timeline's unit.</param>
-    /// <param name="segmentSeconds">The grid, already checked by <see cref="IsUsable"/>.</param>
-    public static bool StartsNewSegment(long ticks, bool keyFrame, int current,
-                                        long ticksPerSecond, double segmentSeconds)
-        => keyFrame && SegmentOf(ticks, ticksPerSecond, segmentSeconds) > current;
 }
 
 /// <summary>
