@@ -56,21 +56,38 @@ readings are a simulator's, and there is no BEFORE number on any machine — the
   redirect, latency, and a connection that dies mid-body.** ⚠ Do this against the ADOPTER's server (owner,
   2026-08-21: *"we can test this when the adoption completes"*), not a synthetic one.
 
-### 🔧 THE BOX REFUSES ~30 % OF CLIPBOARD WRITES FROM A LOOPING TEST PROCESS
+### 🔧 CLIPBOARD WRITES ARE REFUSED WHILE AN ANDROID EMULATOR RUNS — A/B RUN, CAUSE ESTABLISHED
 
-🔴 **The code is exonerated — do not "fix" `ClipboardService`.** A PowerShell `Set-Clipboard` loop sharing
-none of our code fails identically, so this is an OS-level condition on this machine. The suite is held out
-of the gate deliberately (`[Trait("Category", "RealClipboard")]` — `dev.mjs test clipboard`).
-⚠ **Only the SPREAD means anything**: the same day ran 13-of-15 failing and 15-of-15 clean, so neither a
-healthy sample nor an unhealthy one settles anything on its own.
+🔴 **The code is exonerated and so is the machine: the variable is a RUNNING EMULATOR.** The A/B this
+entry asked for was run by an adopter on 2026-08-21, on the box that reported it, with a live MuMu
+instance — their earlier attempt had only a zombie qemu, which is exactly why it never reproduced:
 
-- [ ] **Run the A/B when it next bites — the fault is not reproducing now, and that is what blocks it.**
-  `dev.mjs test clipboard` several times with no Android emulator serving, then again with one running, and
-  compare the SPREAD. The suspect is the emulator's clipboard bridge, PROVEN to write the Windows clipboard
-  (`mobile-harness.md`); a second writer is exactly this entry's shape.
+| arm | emulator | failures |
+|---|---|---|
+| A | shut down | **0 of 45** |
+| B | **running** | **59 of 60** |
+| A′ | shut down again | **1 of 45** |
+
+Off → on → off. Deterministic rather than a spread, so the ~30 % in the old title was sampling an emulator
+that came and went. The instrument was this entry's own control — a 15-iteration PowerShell
+`Set-Clipboard` loop sharing none of the kit's code — with a read-back added.
+
+⚠ **The mechanism is NOT a second writer, which this entry assumed.** Measured at the instant of failure:
+
+- `Set-Clipboard` **throws** `Requested Clipboard operation did not succeed`. It is a REFUSED write, not a
+  value overwritten afterwards — a write-then-read-back probe records **zero** mismatches, only throws.
+- `GetOpenClipboardWindow()` is **null** at that moment, so nothing is holding the clipboard open.
+- The clipboard **owner** after each failed call is the CALLING process itself — so the call got as far as
+  taking ownership and then failed.
+
+That is the shape of a clipboard-format **listener** misbehaving on the update notification — which is
+precisely what a host↔guest clipboard bridge registers — rather than a competing `SetClipboardData`.
+
+- [ ] **Decide whether to state this as an operating condition rather than chase it further.** The suite is
+  already held out of the gate (`[Trait("Category", "RealClipboard")]`), the code is now exonerated twice
+  over, and the trigger is known and avoidable — so the remaining question is one line in
+  `mobile-harness.md` ("shut the emulator down before `dev.mjs test clipboard`"), not an investigation.
   - ⚠ **Already ruled out — do not re-check:** Cloud Clipboard and clipboard history
     (`EnableClipboardHistory`, `EnableCloudClipboard`, `CloudClipboardAutomaticUpload` all unset under
-    `HKCU\Software\Microsoft\Clipboard`). `cbdhsvc_*` is implicated but is not the whole story — restarting
-    it moved 13/15 → 3–6/15.
-  - ⚠ **No reboot is needed for the no-emulator arm**: the long-running qemu is a zombie with no live
-    emulator behind it (`adb devices` lists nothing), and a dead process cannot write the clipboard.
+    `HKCU\Software\Microsoft\Clipboard`). `cbdhsvc_*` is implicated but was never the whole story —
+    restarting it moved 13/15 → 3–6/15, which this now explains: restarting it never removed the emulator.
