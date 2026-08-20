@@ -308,6 +308,26 @@ both.
   each a grep through the kit's source, because a fold re-namespaces within the package too: **154
   types moved where the notes named five.**
 
+### Changed
+
+- **A segment stream now plans from the source's OWN keyframe index instead of walking every cluster to
+  rediscover it.** `SeekHead` → `Cues` gives the keyframe times directly, in two small reads. The walk it
+  replaces seeks past every frame in the file to read block headers and touches about a third of its pages
+  — on the request that answers the first manifest, before any segment can be produced. No API changed.
+  - **The walk remains the answer whenever the index is absent or untrustworthy**, and that is the larger
+    half of this change: Cues are optional in Matroska, and a live mux, an interrupted recording or a
+    truncated download all lack them. Both paths share one implementation of the greedy-forward boundary
+    rule, so a file planned either way cuts in exactly the same places — pinned against a real ffmpeg-muxed
+    clip, where the index and a full walk produce identical keyframe times.
+  - **A broken index is refused rather than believed**, because it is worse than an absent one: absent
+    falls back, broken puts every boundary where no decoder can start and nothing downstream can notice.
+    Refused are an index with fewer than two points, times that do not ascend, a last cue past the declared
+    duration, cues describing a different track, and — the one that is otherwise invisible — positions that
+    do not land on a Cluster, which is what an absolute-vs-segment-relative mix-up produces.
+  - **A `SeekHead` pointing at a second `SeekHead` is followed.** MKVToolNix writes that layout whenever an
+    in-place header edit outgrows its reserved space; it is spec-legal, it is common, and handling only one
+    level reports "no index" for files that have a good one.
+
 ## 0.11.0 — 2026-08-17
 
 ### Breaking

@@ -174,6 +174,29 @@ PRE-walk figure.
 read there deadlocked the iOS main thread. So the walk is a MISSION, and the first request for an unplanned
 source answers `503 Retry-After: 1` rather than waiting.
 
+#### The INDEX first — the walk is the fallback, not the plan
+
+🔴 **A source's keyframes come from its own Cues element when it has a usable one**, reached through the
+`SeekHead` at the front. That is the entire question `PlanSegments` asks, and the walk below exists only to
+answer it the expensive way. ⚠ **A `SeekHead` may point at a second `SeekHead`** — MKVToolNix writes that
+whenever an in-place header edit outgrows its reserved space — so it is followed once; a reader handling one
+level reports "no index" for ordinary files.
+
+**Both paths share ONE implementation of `KeyFrameStarts`**, so a file planned from its index and the same
+file planned from a walk cut in identical places. That is not a nicety: a cache entry produced one way and a
+manifest written the other would otherwise disagree about where every segment starts.
+
+🔴 **A BROKEN index is worse than an absent one, so the checks are the feature.** Absent falls back and
+everything works; broken puts every boundary where no decoder can start, in a stream whose bytes are valid
+and whose manifest agrees with itself. Refused: fewer than two points, non-ascending times, a last cue past
+the declared duration, cues for a different track (every audio frame is a sync sample, so an audio index says
+"cut anywhere"), and positions that do not land on a Cluster — the tell for the absolute-vs-segment-relative
+mix-up, which is otherwise structurally perfect and points at nothing.
+
+⚠ **Cues are OPTIONAL** and their real-world prevalence is not something this repo has measured. mkvmerge and
+ffmpeg both write them by default; live muxes, interrupted recordings and truncated downloads do not have
+them. The walk is therefore permanent.
+
 #### What the walk costs, and why there is NO frame-index cache
 
 **Measured 2026-08-20** on a 5 min / 166 MB / 4.6 Mbps Matroska (20,121 samples), counting the DISTINCT

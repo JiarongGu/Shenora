@@ -50,6 +50,16 @@ internal sealed class MatroskaSampleReader(Stream source)
     private const ulong IdAudio = 0xE1;
     private const ulong IdSamplingFrequency = 0xB5;
     private const ulong IdChannels = 0x9F;
+    private const ulong IdSeekHead = 0x114D9B74;
+    private const ulong IdSeek = 0x4DBB;
+    private const ulong IdSeekId = 0x53AB;
+    private const ulong IdSeekPosition = 0x53AC;
+    private const ulong IdCues = 0x1C53BB6B;
+    private const ulong IdCuePoint = 0xBB;
+    private const ulong IdCueTime = 0xB3;
+    private const ulong IdCueTrackPositions = 0xB7;
+    private const ulong IdCueTrack = 0xF7;
+    private const ulong IdCueClusterPosition = 0xF1;
     private const ulong IdCluster = 0x1F43B675;
     private const ulong IdClusterTimestamp = 0xE7;
     private const ulong IdSimpleBlock = 0xA3;
@@ -77,6 +87,15 @@ internal sealed class MatroskaSampleReader(Stream source)
     private long _segmentEnd;
     private long _firstClusterAt = -1;
 
+    /// <summary>
+    /// Where the Segment's DATA begins. Every position Matroska stores — a <c>SeekPosition</c>, a
+    /// <c>CueClusterPosition</c> — is relative to this, not to the start of the file.
+    /// </summary>
+    private long _segmentAt;
+
+    /// <summary>The Cues element's absolute position, or -1 when the file declares none.</summary>
+    private long _cuesAt = -1;
+
     /// <summary>Nanoseconds per tick. Matroska's default, and what almost every real file uses.</summary>
     public long TimestampScaleNs { get; private set; } = 1_000_000;
 
@@ -100,6 +119,8 @@ internal sealed class MatroskaSampleReader(Stream source)
         if (size < 0 || !SkipTo(source.Position + size)) return false;
 
         if (!TryReadElement(out id, out size) || id != IdSegment) return false;
+        // Every position the container STORES is relative to here — see the field.
+        _segmentAt = source.Position;
         // An unknown-size Segment means "to the end of the file", which is what a live-muxed file writes.
         _segmentEnd = size < 0 ? Length : Math.Min(source.Position + size, Length);
 
@@ -117,6 +138,18 @@ internal sealed class MatroskaSampleReader(Stream source)
                 case IdTracks when childSize >= 0:
                     ReadTracks(payloadAt + childSize);
                     break;
+                case IdSeekHead when childSize >= 0:
+                    // Where the INDEX is. Normally the only thing at the front that knows, since Cues are
+                    // written at the end. Moves the position, so the skip below is not optional.
+                    ReadSeekHead(payloadAt + childSize, depth: 0);
+                    if (!SkipTo(payloadAt + childSize)) return Tracks.Count > 0;
+                    break;
+                case IdCues when childSize >= 0:
+                    // Cues at the FRONT — what `cues_to_front` and `mkclean --keep-cues` produce. Rare, and
+                    // free to honour since we are standing on it.
+                    _cuesAt = elementAt;
+                    if (!SkipTo(payloadAt + childSize)) return Tracks.Count > 0;
+                    break;
                 case IdCluster:
                     // Stop here and remember where, so ReadSamples resumes without a second walk.
                     _firstClusterAt = elementAt;
@@ -129,6 +162,230 @@ internal sealed class MatroskaSampleReader(Stream source)
         }
 
         return Tracks.Count > 0;
+    }
+
+    /// <summary>Record where the SeekHead says the index is. ⚠ Moves the stream; the caller restores it.</summary>
+    /// <param name="end">One past the SeekHead's payload.</param>
+    /// <param name="depth">
+    /// 🔴 <b>A SeekHead may point at ANOTHER SeekHead, and that is not a curiosity.</b> MKVToolNix writes
+    /// exactly that layout whenever an in-place header edit outgrows its reserved space, so a reader handling
+    /// only one level reports "no index" for ordinary files people really have. Followed ONCE: a cycle would
+    /// otherwise be a hang, on a file the page chose.
+    /// </param>
+    private void ReadSeekHead(long end, int depth)
+    {
+        while (source.Position < end)
+        {
+            if (!TryReadElement(out var id, out var size) || size < 0) return;
+            var payloadAt = source.Position;
+            if (payloadAt + size > end) return;
+            if (id == IdSeek) ReadSeekEntry(payloadAt + size, depth);
+            if (!SkipTo(payloadAt + size)) return;
+        }
+    }
+
+    private void ReadSeekEntry(long end, int depth)
+    {
+        ulong target = 0;
+        var position = -1L;
+
+        while (source.Position < end)
+        {
+            if (!TryReadElement(out var id, out var size) || size < 0) return;
+            var payloadAt = source.Position;
+            if (payloadAt + size > end) return;
+
+            // A SeekID's bytes ARE an element id, length marker included — the same form these constants are
+            // written in, so this comparison is equality rather than a translation.
+            if (id == IdSeekId) target = ReadUnsigned(size);
+            else if (id == IdSeekPosition) position = (long)ReadUnsigned(size);
+
+            if (!SkipTo(payloadAt + size)) return;
+        }
+
+        if (position < 0) return;
+        var at = _segmentAt + position;
+        if (at < _segmentAt || at >= _segmentEnd) return;      // outside the segment is malformed, not large
+
+        if (target == IdCues) { _cuesAt = at; return; }
+        if (target != IdSeekHead || depth >= 1) return;
+
+        var resume = source.Position;
+        if (SkipTo(at) && TryReadElement(out var nested, out var nestedSize)
+            && nested == IdSeekHead && nestedSize >= 0)
+        {
+            ReadSeekHead(Math.Min(source.Position + nestedSize, _segmentEnd), depth + 1);
+        }
+        source.Position = resume;
+    }
+
+    /// <summary>
+    /// The track's keyframe times, in the file's own ticks, taken from its INDEX rather than by walking it.
+    ///
+    /// <para>
+    /// 🔴 <b>This is the cheap answer to "where can this be cut": two small reads instead of touching a third
+    /// of the file.</b> A cluster walk seeks past every frame in the source to find block headers; the Cues
+    /// element already states where the keyframes are, and Matroska says a file that is not a live stream
+    /// SHOULD carry one.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Null means "ask the clusters instead" and is an ORDINARY answer</b> — no index, an index for other
+    /// tracks, or one that fails the checks below. Cues are optional and this must never be the only way the
+    /// tier can plan.
+    /// </para>
+    /// </summary>
+    /// <param name="trackNumber">
+    /// ⚠ Cues are PER TRACK and a cue for the soundtrack says nothing about where the picture has a keyframe
+    /// — every audio frame is a sync sample, so taking the wrong track's cues yields boundaries no decoder
+    /// can start at.
+    /// </param>
+    /// <param name="cancellationToken">This runs on a web request, like the walk it replaces.</param>
+    public IReadOnlyList<long>? KeyFrameTicksFromCues(ulong trackNumber,
+                                                     CancellationToken cancellationToken = default)
+    {
+        if (_cuesAt < 0 || !source.CanSeek) return null;
+
+        try
+        {
+            if (!SkipTo(_cuesAt)) return null;
+            if (!TryReadElement(out var id, out var size) || id != IdCues || size < 0) return null;
+            var end = Math.Min(source.Position + size, _segmentEnd);
+
+            var ticks = new List<long>();
+            var firstClusterAt = -1L;
+
+            while (source.Position < end)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!TryReadElement(out var childId, out var childSize) || childSize < 0) break;
+                var payloadAt = source.Position;
+                if (payloadAt + childSize > end) break;
+
+                if (childId == IdCuePoint && ReadCuePoint(payloadAt + childSize, trackNumber) is { } cue)
+                {
+                    ticks.Add(cue.Ticks);
+                    if (firstClusterAt < 0) firstClusterAt = cue.ClusterAt;
+                    if (ticks.Count > MaxSamples) return null;
+                }
+
+                if (!SkipTo(payloadAt + childSize)) break;
+            }
+
+            return IsUsableIndex(ticks) && PointsAtACluster(firstClusterAt) ? ticks : null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // A malformed index is one the cluster walk still answers. Never a throw.
+            return null;
+        }
+    }
+
+    /// <summary>One CuePoint's time and cluster, when it is about <paramref name="trackNumber"/>.</summary>
+    private (long Ticks, long ClusterAt)? ReadCuePoint(long end, ulong trackNumber)
+    {
+        long? time = null;
+        var clusterAt = -1L;
+        var mine = false;
+
+        while (source.Position < end)
+        {
+            if (!TryReadElement(out var id, out var size) || size < 0) return null;
+            var payloadAt = source.Position;
+            if (payloadAt + size > end) return null;
+
+            if (id == IdCueTime)
+            {
+                time = (long)ReadUnsigned(size);
+            }
+            else if (id == IdCueTrackPositions)
+            {
+                var (track, at) = ReadCueTrackPositions(payloadAt + size);
+                if (track == trackNumber) { mine = true; clusterAt = at; }
+            }
+
+            if (!SkipTo(payloadAt + size)) return null;
+        }
+
+        return mine && time is { } ticks ? (ticks, clusterAt) : null;
+    }
+
+    /// <summary>Which track a CueTrackPositions is about, and where its cluster is. Track 0 means "could not tell".</summary>
+    private (ulong Track, long ClusterAt) ReadCueTrackPositions(long end)
+    {
+        ulong track = 0;
+        var clusterAt = -1L;
+
+        while (source.Position < end)
+        {
+            if (!TryReadElement(out var id, out var size) || size < 0) return (0, -1);
+            var payloadAt = source.Position;
+            if (payloadAt + size > end) return (0, -1);
+
+            if (id == IdCueTrack) track = ReadUnsigned(size);
+            else if (id == IdCueClusterPosition) clusterAt = _segmentAt + (long)ReadUnsigned(size);
+
+            if (!SkipTo(payloadAt + size)) return (0, -1);
+        }
+
+        return (track, clusterAt);
+    }
+
+    /// <summary>
+    /// Is this index worth believing? The checks other demuxers learned to apply, because a BROKEN index is
+    /// worse than an absent one — absent falls back to the walk, broken puts every cut in the wrong place and
+    /// nothing reports it.
+    /// </summary>
+    private bool IsUsableIndex(List<long> ticks)
+    {
+        // Fewer than two points says nothing about spacing, and is what ffmpeg refuses outright.
+        if (ticks.Count < 2 || ticks[0] < 0) return false;
+
+        // Strictly ascending, or it is not a timeline. A plan cannot express a boundary that goes backwards.
+        for (var i = 1; i < ticks.Count; i++)
+        {
+            if (ticks[i] <= ticks[i - 1]) return false;
+        }
+
+        // A last cue past the declared duration is a real shape from real tools, and it has broken real
+        // players. One percent of tolerance absorbs rounding without accepting a nonsense tail.
+        if (DurationTicks is { } duration) return ticks[^1] <= duration * 1.01 + 1;
+
+        // No declared duration to check against: refuse an implausible magnitude the way ffmpeg does, whose
+        // guard is 1e14 nanoseconds — about twenty-seven hours.
+        return TimestampScaleNs <= 0 || ticks[^1] <= 100_000_000_000_000L / TimestampScaleNs;
+    }
+
+    /// <summary>
+    /// Does the first cue's position actually land on a Cluster?
+    /// <para>
+    /// 🔴 <b>The classic Matroska index bug is an OFF-BY-SEGMENT one</b> — a stored position is relative to
+    /// the Segment's data, and reading it as a file offset (or the reverse) yields an index that is
+    /// structurally perfect and points at nothing. That produces cut boundaries no decoder can start at,
+    /// silently. Landing on a Cluster header is cheap and refutes it.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>It does NOT prove the cue TIMES are keyframes</b> — that would need the cluster's blocks parsed,
+    /// and this is a sanity check rather than a verification. True when there was no position to check, since
+    /// a missing <c>CueClusterPosition</c> is not evidence of anything.
+    /// </para>
+    /// </summary>
+    private bool PointsAtACluster(long clusterAt)
+    {
+        if (clusterAt < 0) return true;
+        if (clusterAt < _segmentAt || clusterAt >= _segmentEnd) return false;
+        var resume = source.Position;
+        try
+        {
+            return SkipTo(clusterAt) && TryReadElement(out var id, out _) && id == IdCluster;
+        }
+        finally
+        {
+            source.Position = resume;
+        }
     }
 
     /// <summary>

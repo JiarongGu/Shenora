@@ -201,7 +201,10 @@ public class SegmentPlanTests
         var samples = Enumerable.Range(0, 8).Select(i => Sample(i * 250, keyFrame: i == 0)).ToList();
 
         Assert.Equal([0], SegmentGrid.KeyFrameStarts(samples, Ms, 1.0));
-        Assert.Equal([0], SegmentGrid.KeyFrameStarts([], Ms, 1.0));
+        // Typed, because an empty collection expression cannot pick between the samples overload and the
+        // keyframe-ticks one. Both are asserted: the two sources must agree on an empty source too.
+        Assert.Equal([0], SegmentGrid.KeyFrameStarts(Array.Empty<MatroskaSample>(), Ms, 1.0));
+        Assert.Equal([0], SegmentGrid.KeyFrameStarts(Array.Empty<long>(), Ms, 1.0));
         // The result always opens with 0 even when nothing sits there — segment 0 starts at the start.
         Assert.Equal([0], SegmentGrid.KeyFrameStarts([Sample(0, false), Sample(250, false)], Ms, 1.0));
     }

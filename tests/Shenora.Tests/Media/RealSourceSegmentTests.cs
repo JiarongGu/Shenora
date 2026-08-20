@@ -102,7 +102,8 @@ public class RealSourceSegmentTests
     [Fact]
     public void A_real_source_plans_on_its_own_keyframes()
     {
-        var engine = new DefaultSegmentEngine(new RecordingConversion());
+        var lines = new List<string>();
+        var engine = new DefaultSegmentEngine(new RecordingConversion(), AppCallback.Logger(lines.Add));
 
         var plan = engine.PlanSegments(FixtureBytes, SegmentSeconds);
 
@@ -110,6 +111,50 @@ public class RealSourceSegmentTests
         Assert.Null(plan.GridSeconds);          // derived, not uniform
         Assert.InRange(plan.Count, 14, 16);     // 60 s at ~4 s a cut
         Assert.InRange(plan.LongestSeconds, 3.5, 4.5);
+
+        // 🔴 And it got there from the INDEX. This is the whole point of reading Cues: the walk it replaces
+        // touches about a third of the file's pages, on the request that answers the first manifest.
+        Assert.DoesNotContain(lines, l => l.Contains("walking its clusters", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 🔴 <b>The file's own index and a full cluster walk must produce THE SAME CUTS.</b> Planning from Cues
+    /// is what removes the walk from the first request — the walk seeks past every frame in the source and
+    /// touches about a third of its pages — and the only thing that makes the shortcut safe is that it
+    /// answers identically. A cheaper answer that is a DIFFERENT answer would put every boundary somewhere
+    /// the manifest does not claim, silently.
+    /// <para>
+    /// ⚠ Asserted on a real ffmpeg-muxed file, because a built fixture carries whatever index the builder
+    /// writes and would be checking this suite against itself.
+    /// </para>
+    /// <para>
+    /// ⚠ A SPARSE index — one cue per several keyframes — is legal and would legitimately give a COARSER
+    /// plan rather than a wrong one, since every boundary it names is still a real keyframe. This fixture
+    /// carries a cue per keyframe, so equality is the right assertion HERE; it is not a general law.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void The_files_own_index_and_a_full_walk_agree_about_where_to_cut()
+    {
+        using var file = File.OpenRead(Fixture);
+        var reader = new MatroskaSampleReader(file);
+        Assert.True(reader.ReadHeader());
+
+        var video = reader.Tracks.First(t => t.Kind is MediaStreamKind.Video);
+        var timeline = SourceTimeline.For(reader.TimestampScaleNs);
+
+        // ffmpeg and mkvmerge both write Cues by default. A null here means the fixture changed, or the
+        // reader's own checks rejected an index that is in fact fine — either is worth failing over.
+        var fromIndex = reader.KeyFrameTicksFromCues(video.Number);
+        Assert.NotNull(fromIndex);
+        Assert.True(fromIndex!.Count > 1, "the index named fewer than two keyframes");
+
+        Assert.True(reader.ReadSamples(new HashSet<ulong> { video.Number }));
+        var fromWalk = video.Samples.Where(s => s.KeyFrame).Select(s => s.Ticks).ToList();
+
+        Assert.Equal(fromWalk, fromIndex);
+        Assert.Equal(SegmentGrid.KeyFrameStarts(fromWalk, timeline, SegmentSeconds),
+                     SegmentGrid.KeyFrameStarts(fromIndex, timeline, SegmentSeconds));
     }
 
     /// <summary>

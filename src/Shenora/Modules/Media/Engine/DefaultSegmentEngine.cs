@@ -108,11 +108,23 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
             // cut on the grid; a soundtrack has a keyframe on every frame, so any boundary suits it.
             if (Pick(reader, MediaStreamKind.Video) is not { Copy: true } lead) return null;
 
-            // ⚠ The long walk, inside a web request — which is why the token reaches it.
-            if (!reader.ReadSamples(new HashSet<ulong> { lead.Track.Number }, cancellationToken)) return null;
-
             var timeline = SourceTimeline.For(reader.TimestampScaleNs);
-            var starts = SegmentGrid.KeyFrameStarts(lead.Track.Samples, timeline, segmentSeconds);
+
+            // 🔴 THE FILE'S OWN INDEX FIRST. Cues state where the keyframes are, which is the entire
+            // question here — where the walk below seeks past every frame in the source to rediscover it,
+            // touching about a third of the file's pages before the first manifest can be answered.
+            // ⚠ Null is ORDINARY: Cues are optional in Matroska, may be for other tracks, or may fail the
+            // reader's checks. The walk is the answer then, and the boundaries are identical either way.
+            var keyFrames = reader.KeyFrameTicksFromCues(lead.Track.Number, cancellationToken);
+            if (keyFrames is null)
+            {
+                Report($"segments: '{source.Label}' has no usable keyframe index — walking its clusters");
+                // ⚠ The long walk, inside a web request — which is why the token reaches it.
+                if (!reader.ReadSamples(new HashSet<ulong> { lead.Track.Number }, cancellationToken)) return null;
+                keyFrames = [.. lead.Track.Samples.Where(s => s.KeyFrame).Select(s => s.Ticks)];
+            }
+
+            var starts = SegmentGrid.KeyFrameStarts(keyFrames, timeline, segmentSeconds);
             if (SegmentPlan.Cuts(starts, duration) is not { } plan)
             {
                 Report("segments: the source's keyframes do not describe a playlist — falling back to the grid");

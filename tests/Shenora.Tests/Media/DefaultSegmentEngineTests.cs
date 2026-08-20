@@ -310,6 +310,29 @@ public class DefaultSegmentEngineTests
     }
 
     /// <summary>
+    /// 🔴 <b>A source with no index is planned by WALKING it, and says so.</b> Cues are optional in
+    /// Matroska — a live mux, an interrupted recording and a truncated download all lack them — so the walk
+    /// can never stop being the answer. ⚠ Every built fixture in this file is index-less, which is why the
+    /// real-file suite carries the other half: this one alone would leave the fast path unexercised and
+    /// look like full coverage.
+    /// </summary>
+    [Fact]
+    public void A_source_with_no_index_falls_back_to_the_cluster_walk_and_reports_it()
+    {
+        using var dir = TempDir.Create();
+        var lines = new List<string>();
+        var engine = new DefaultSegmentEngine(new FakeConversion(), AppCallback.Logger(lines.Add));
+        var path = Write(dir, Carriable(frames: 24, keyEvery: 12));
+
+        var plan = engine.PlanSegments(Bytes(path), 1.0);
+
+        // The fallback is a WORKING plan, not a refusal — the same 3 s cuts the walk has always produced.
+        Assert.NotNull(plan);
+        Assert.Equal(2, plan!.Count);
+        Assert.Contains(lines, l => l.Contains("no usable keyframe index", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// A picture that must be RE-ENCODED answers no plan at all: the kit's encoders emit a keyframe every
     /// second, so the caller's whole-second grid is hittable and is the right answer.
     /// </summary>

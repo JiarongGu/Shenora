@@ -17,7 +17,7 @@ namespace Shenora.Modules.Media;
 /// <para>
 /// 🔴 <b>All of which is about a RE-ENCODED track, and stops applying the moment one is COPIED</b> (D76): a
 /// copied stream keeps the ORIGINAL encoder's keyframes, so there is no grid to hit. Those runs take their
-/// boundaries from <see cref="KeyFrameStarts"/> instead.
+/// boundaries from <see cref="KeyFrameStarts(IReadOnlyList{long}, SourceTimeline, double)"/> instead.
 /// </para>
 /// </summary>
 internal static class SegmentGrid
@@ -81,14 +81,40 @@ internal static class SegmentGrid
     {
         ArgumentNullException.ThrowIfNull(samples);
 
+        var ticks = new List<long>();
+        foreach (var sample in samples)
+        {
+            if (sample.KeyFrame) ticks.Add(sample.Ticks);
+        }
+
+        return KeyFrameStarts(ticks, timeline, targetSeconds);
+    }
+
+    /// <summary>
+    /// The same boundaries from keyframe TIMES alone — what a file's own Cues index states directly, without
+    /// a walk of every cluster.
+    /// <para>
+    /// 🔴 <b>ONE implementation, shared, because the two sources must agree.</b> The plan a source gets must
+    /// not depend on whether its index was readable: a file planned from Cues and the same file planned from
+    /// the walk have to cut in exactly the same places, or a cache entry produced one way and a manifest
+    /// written the other disagree about where every segment starts.
+    /// </para>
+    /// </summary>
+    /// <param name="keyFrameTicks">Keyframe times in the source's ticks, in storage order.</param>
+    /// <param name="timeline">The source's clock. ⚠ The same converter the RUN uses.</param>
+    /// <param name="targetSeconds">The length asked for. Every segment is at least this long except the last.</param>
+    public static IReadOnlyList<double> KeyFrameStarts(IReadOnlyList<long> keyFrameTicks,
+                                                      SourceTimeline timeline, double targetSeconds)
+    {
+        ArgumentNullException.ThrowIfNull(keyFrameTicks);
+
         var starts = new List<double> { 0 };
         if (timeline.Timescale == 0 || targetSeconds <= 0) return starts;
 
         var last = 0.0;
-        foreach (var sample in samples)
+        foreach (var tick in keyFrameTicks)
         {
-            if (!sample.KeyFrame) continue;
-            var at = timeline.SecondsOf(sample.Ticks);
+            var at = timeline.SecondsOf(tick);
             // Also rejects a keyframe whose time went BACKWARDS, which a reordering stream can present and
             // which makes the plan non-ascending — the one shape a manifest cannot express.
             if (at < last + targetSeconds) continue;

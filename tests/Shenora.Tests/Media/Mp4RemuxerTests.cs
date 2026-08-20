@@ -123,6 +123,73 @@ public class Mp4RemuxerTests
                 clusters.SelectMany(c => c).ToArray()),
         ]);
 
+    /// <summary>
+    /// A file that carries a real INDEX: <c>SeekHead</c> at the front, <c>Cues</c> at the end, which is what
+    /// mkvmerge and ffmpeg both write. The stored positions are relative to the SEGMENT's data, not to the
+    /// file, which is the relativity a reader most often gets wrong.
+    /// </summary>
+    /// <param name="cueTrack">Which track the cues are about — cues are per track.</param>
+    /// <param name="cues">Cue time (in ticks) and which cluster it points at.</param>
+    /// <param name="viaSecondSeekHead">
+    /// 🔴 Put a SECOND SeekHead between the first and the Cues — the layout MKVToolNix writes whenever an
+    /// in-place header edit outgrows its reserved space. Spec-legal, common, and the shape that made one
+    /// well-known player report "no index" and hang.
+    /// </param>
+    /// <param name="positionShift">
+    /// Added to every stored cue position, to model the classic Matroska index bug: a position is relative
+    /// to the Segment's data, and reading or writing it as a FILE offset yields an index that is
+    /// structurally perfect and points at nothing.
+    /// </param>
+    internal static MemoryStream MkvIndexed(byte[] info, byte[][] tracks, ulong cueTrack,
+                                            (ulong Time, int Cluster)[] cues, bool viaSecondSeekHead,
+                                            long positionShift, params byte[][] clusters)
+    {
+        var tracksEl = El(0x1654AE6B, tracks.SelectMany(t => t).ToArray());
+        var clustersFlat = clusters.SelectMany(c => c).ToArray();
+
+        // ⚠ FIXED-WIDTH positions, so an element's LENGTH does not depend on the values inside it. That is
+        // what lets the offsets below be computed from sizes measured with placeholder values.
+        static byte[] Pos(long value)
+        {
+            var bytes = BitConverter.GetBytes((ulong)value);
+            if (BitConverter.IsLittleEndian) Array.Reverse(bytes);
+            return bytes;
+        }
+
+        byte[] SeekHead(uint target, long at) =>
+            El(0x114D9B74, El(0x4DBB, El(0x53AB, IdBytes(target)), El(0x53AC, Pos(at))));
+
+        byte[] Cues(long[] offsets) => El(0x1C53BB6B,
+            cues.Select(c => El(0xBB,
+                    El(0xB3, UInt(c.Time)),
+                    El(0xB7, El(0xF7, UInt(cueTrack)), El(0xF1, Pos(offsets[c.Cluster] + positionShift)))))
+                .SelectMany(x => x).ToArray());
+
+        var placeholder = new long[Math.Max(clusters.Length, 1)];
+        var headLength = SeekHead(0x1C53BB6B, 0).Length;
+        var cuesLength = Cues(placeholder).Length;
+
+        var before = headLength + info.Length + tracksEl.Length;
+        var offsets = new long[clusters.Length];
+        var at = (long)before;
+        for (var i = 0; i < clusters.Length; i++)
+        {
+            offsets[i] = at;
+            at += clusters[i].Length;
+        }
+
+        var secondAt = at;
+        var cuesAt = viaSecondSeekHead ? secondAt + headLength : secondAt;
+
+        var first = SeekHead(viaSecondSeekHead ? 0x114D9B74u : 0x1C53BB6Bu, viaSecondSeekHead ? secondAt : cuesAt);
+        var second = viaSecondSeekHead ? SeekHead(0x1C53BB6B, cuesAt) : [];
+
+        return new MemoryStream([
+            .. El(0x1A45DFA3, Ascii("hdr")),
+            .. El(0x18538067, first, info, tracksEl, clustersFlat, second, Cues(offsets)),
+        ]);
+    }
+
     /// <summary>Frame <paramref name="index"/>, filled with a value only that frame has.</summary>
     internal static byte[] Frame(int index, int length) => [.. Enumerable.Repeat((byte)(index + 1), length)];
 
