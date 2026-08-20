@@ -71,35 +71,9 @@ healthy sample nor an unhealthy one settles anything on its own.
   - ⚠ **No reboot is needed for the no-emulator arm**: the long-running qemu is a zombie with no live
     emulator behind it (`adb devices` lists nothing), and a dead process cannot write the clipboard.
 
-### 🔧 `android build` NEVER RESOLVES A JDK — so `doctor` goes green and the build then dies XA5300
+### 🔧 `shenora ios *` IS UNUSABLE ON WINDOWS UNTIL THE NEXT RELEASE IS CUT
 
-Found by an adopter wiring the CLI in (Windows, no global `JAVA_HOME`). `android doctor` printed
-`jdk  C:\Program Files\Android\Android Studio\jbr` and `android build` immediately failed with
-`error XA5300: The Java SDK directory could not be found`. **A green check that does not predict the
-thing it checks is worse than no check** — the adopter's next move is to distrust the SDK install, which
-is the one thing that was fine.
-
-The asymmetry is in `src/Shenora.Cli/src/android.ts`, and it is one line:
-
-- `cmdDeploy` (~143) resolves `jdk`, refuses at ~154 when there is none, and passes it at ~167 —
-  `run('dotnet', [...], { cwd: cfg.root, env: { JAVA_HOME: jdk } })`.
-- `cmdBuild` (~248) **never calls the resolver at all**; its publish runs `{ cwd: cfg.root }` with no env.
-- `doctor` (~353) resolves it a third time, and its comment says "`deploy` uses the same resolution" —
-  which is exactly true and exactly why the row misleads: `build` does not.
-
-**Fix:** give `cmdBuild` the same `jdkHome()` call + `env: { JAVA_HOME: jdk }`, and the same refusal when
-none is found. Worth a test that runs a publish with `JAVA_HOME` scrubbed from the environment, since the
-maintainer's box almost certainly has one set — which is why this survived.
-
-⚠ Same shape worth checking in `ios.ts` before closing: any command whose preflight resolves a tool that
-the command itself then does not pass on.
-
-**Verified in BOTH the published build and the tree**, so it is not something the unreleased work already
-fixed: npm `@shenora/cli@0.11.0` `dist/android.js` passes `env: { JAVA_HOME: jdk }` at its deploy call
-(~155) and `{ cwd: cfg.root }` alone at its publish call (~262) — the same asymmetry as the source.
-
-⚠ **Checked and NOT a bug, recorded so nobody re-files it:** on that same published build `ios doctor`
-refuses on Windows outright ("iOS work needs macOS … no way around it"), which looks like the remote-Mac
-feature being ignored. It is not — that string exists ONLY in 0.11.0's `dist`, not in the tree, so the
-LAN-Mac path (`resolveHost`/`SHENORA_IOS_KEY`/`SshTarget`) is simply UNRELEASED. An adopter on Windows
-cannot use `shenora ios *` until the next release is cut.
+Not a bug and nothing to fix — **an adoption fact with a shelf life**, kept only so it is not re-filed as
+one. Published `@shenora/cli@0.11.0` refuses outright ("iOS work needs macOS … no way around it"); that
+string exists only in its `dist`, so the LAN-Mac path (`resolveHost` / `SHENORA_IOS_KEY` / `SshTarget`) is
+simply UNRELEASED. **Delete this entry when the release ships.**

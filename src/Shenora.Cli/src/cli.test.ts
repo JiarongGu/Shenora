@@ -565,6 +565,30 @@ describe('resolveJdk — the dependency that fails LATE', () => {
   it('answers null when there is nothing to find, so the caller can say what to do', () => {
     expect(resolveJdk({} as NodeJS.ProcessEnv)).toBeNull();
   });
+
+  it('🔴 every dotnet invocation passes the resolved JDK on', () => {
+    // The defect this exists for: `android doctor` printed `jdk C:\…\jbr` and `android build` then died
+    // `error XA5300: The Java SDK directory could not be found`, because only `cmdDeploy` resolved a JDK
+    // and `cmdBuild`'s publish ran with no env at all — so it inherited whatever the shell carried.
+    //
+    // ⚠ Scanned from the SOURCE rather than run, and that is the point: a publish only proves anything on
+    // a box with no JAVA_HOME, and the maintainer's has one — which is exactly why this survived to an
+    // adopter. Scrubbing it from `process.env` would not help either, since `resolveJdk` then finds
+    // Android Studio's `jbr`. What can be checked anywhere is that no call site is left without the env.
+    const source = fs.readFileSync(new URL('./android.ts', import.meta.url), 'utf8');
+    const calls: string[] = [];
+    for (let at = source.indexOf("run('dotnet'"); at >= 0; at = source.indexOf("run('dotnet'", at + 1)) {
+      const end = source.indexOf(');', at);
+      calls.push(source.slice(at, end < 0 ? source.length : end));
+    }
+    // Anti-vacuity: `run` renamed or the calls reshaped makes the loop above find nothing and every
+    // assertion below pass. Both commands spawn dotnet, so fewer than two means the scan missed one.
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    for (const call of calls) {
+      expect(call).toContain('cwd:');                    // the options object really was captured
+      expect(call).toContain('env: { JAVA_HOME: jdk }');
+    }
+  });
 });
 
 describe('findPackage — the Android artifact', () => {

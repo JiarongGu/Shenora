@@ -255,6 +255,16 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
   const aab = own.includes('--aab');
   if (passthrough.length) console.log(`shenora: extra build args: ${passthrough.join(' ')}`);
 
+  // ⚠ The SAME resolution and the SAME refusal as `cmdDeploy`, and `doctor` reports this row. Without it
+  // the publish inherits whatever `JAVA_HOME` the shell happens to carry — so a box with none gets
+  // `error XA5300: The Java SDK directory could not be found` from a `doctor` that just printed a JDK.
+  const jdk = resolveJdk();
+  if (!jdk) {
+    fail('no JDK found, and the Android build needs one.',
+      '  Set JAVA_HOME to a JDK 17+. Android Studio ships one in its `jbr` folder.');
+    return;
+  }
+
   console.log(`shenora: publishing ${cfg.project} (${cfg.androidTfm}, ${configuration}`
     + `${aab ? ', aab' : ''})…`);
   // Stamped BEFORE the publish: the SDK does not clean between runs, so anything in the output directory
@@ -266,7 +276,7 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
     '-f', cfg.androidTfm,
     ...(aab ? ['-p:AndroidPackageFormat=aab'] : []),
     ...passthrough,
-  ], { cwd: cfg.root });
+  ], { cwd: cfg.root, env: { JAVA_HOME: jdk } });
   if (r.status !== 0) {
     fail('the publish failed — see the output above.');
     return;
@@ -350,8 +360,10 @@ export function cmdDoctor(): void {
   const adb = captureRun(adbPath(), ['version']);
   rows.push(['adb', adb.status === 0 ? (adb.out.split(/\r?\n/)[0] ?? 'ok').trim() : 'NOT FOUND']);
 
-  // Reported as RESOLVED rather than as `JAVA_HOME` — `deploy` uses the same resolution, so this row is
-  // the truth `deploy` will act on. See `resolveJdk` for what its absence looks like.
+  // Reported as RESOLVED rather than as `JAVA_HOME` — `deploy` AND `build` both use this resolution and
+  // both refuse without it, so this row is the truth they will act on. ⚠ It was not: `build` never called
+  // the resolver, so this row went green and the publish then died `XA5300` on a box with no `JAVA_HOME`.
+  // A row that does not predict the command it describes is worse than no row.
   const jdk = resolveJdk();
   rows.push(['jdk', jdk ?? 'NOT FOUND — set JAVA_HOME to a JDK 17+ (Android Studio ships one in `jbr`)']);
 

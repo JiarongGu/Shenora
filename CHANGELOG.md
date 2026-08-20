@@ -214,6 +214,15 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **`shenora android build` never resolved a JDK, so `android doctor` went green and the publish then died.**
+  `cmdDeploy` resolved one, refused without it and passed it as `JAVA_HOME`; `cmdBuild` did none of the three
+  and published with no environment at all — inheriting whatever the shell happened to carry. On a Windows box
+  with Android Studio and no global `JAVA_HOME`, `doctor` printed the `jbr` path it found and the very next
+  command failed `error XA5300: The Java SDK directory could not be found`.
+  - **A green check that does not predict the command it checks is worse than no check** — it sends the reader
+    to distrust the SDK install, which is the one thing that was fine.
+  - Reported by an adopter, and present in published `@shenora/cli@0.11.0` as well as the tree.
+
 - **Android's H.264 encoder was configured at roughly a thirtieth of its intended bitrate.**
   `AndroidMediaVideoConversion` computed `w * h * 3 / 10` — 0.3 bits per PIXEL, with no frame-rate factor —
   where the intent was 0.15 bits per pixel per FRAME. 720p30 fell through to the 400 kbps floor and 1080p30
