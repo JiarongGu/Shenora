@@ -113,9 +113,11 @@ burns no version:
    --access public`, then the same for `shenora-cli-X.Y.Z.tgz`.
    Note it publishes the tarball **Pack produced**, not a rebuild: `npm publish` from the package
    directory would re-run `prepublishOnly` and ship a second artifact, so the thing whose sha256 step 3
-   printed would not be the thing that shipped. Uses npm Trusted Publishing (OIDC) once the publisher
-   policy is configured on npmjs.com for `@shenora/react` **and `@shenora/cli`** + this repo/workflow;
-   until then set a granular `NPM_TOKEN` repo secret (the workflow uses it when present).
+   printed would not be the thing that shipped. **Both packages publish over Trusted Publishing (OIDC)**
+   — the policies are configured on npmjs.com and 0.11.0 went out that way, which the registry records as
+   `_npmUser: GitHub Actions <npm-oidc-no-reply@github.com>` — worth knowing as the way to CHECK a
+   publish went out the way you think it did. **There is no token fallback**: npm no longer accepts a
+   token publish, so a broken policy fails the release rather than quietly downgrading it.
    ⚠ **A second package doubles the ways a release half-lands.** The skip-if-already-published guard below
    must be applied per package, not once — otherwise a re-run after the react publish succeeded and the cli
    publish failed will stop at the first one and never reach the second.

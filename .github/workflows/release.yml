@@ -11,9 +11,9 @@ name: Release
 #    Account -> Trusted Publishing -> add a policy for this repository and workflow file
 #    `release.yml`, scoped to the Shenora.* package glob.
 #  - npm publishes with provenance, TWO packages (@shenora/react + the build-time @shenora/cli, D67).
-#    Configure npm Trusted Publishing (OIDC) for BOTH of them on
-#    npmjs.com (package -> Settings -> Trusted publisher -> this repo + release.yml); until that
-#    exists, set a granular NPM_TOKEN repo secret and the publish step uses it instead.
+#    BOTH use Trusted Publishing (OIDC) — configured on npmjs.com and PROVEN by 0.11.0, whose
+#    registry `_npmUser` is `GitHub Actions <npm-oidc-no-reply@github.com>` on both packages. There is
+#    no token alternative to fall back to: npm no longer accepts a token publish.
 #
 # ⚠ `draft: true` is NOT a dry run. It only makes the GITHUB RELEASE a draft — both registry pushes
 # happen BEFORE that step and are irreversible (nuget.org never deletes a version, only unlists it;
@@ -335,11 +335,12 @@ jobs:
       # precise half-landed state the guard exists to recover from.
       - name: Publish npm (@shenora/react, @shenora/cli)
         if: ${{ !inputs.dry_run }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # npm Trusted Publishing (OIDC) needs a newer npm CLI than Node 22 bundles; harmless
-          # when NPM_TOKEN auth is used instead.
+          # 🔴 THERE IS NO TOKEN FALLBACK, and that is npm's rule rather than a preference here: npm no
+          # longer accepts a token publish at all. A `NODE_AUTH_TOKEN` env used to sit on this step and
+          # was removed as a dead path — it could not have worked, and an unused credential line reads
+          # to the next person like a supported alternative.
+          # Trusted Publishing (OIDC) needs a newer npm CLI than Node 22 bundles.
           npm install -g npm@latest
 
           $v = '${{ steps.version.outputs.version }}'

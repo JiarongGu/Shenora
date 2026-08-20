@@ -30,22 +30,17 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 📦 NPM TRUSTED PUBLISHING — owner-side UI, and it cannot be verified from here
+### 📦 NPM — one cosmetic leftover
 
-Both packages now exist on the registry, so both Trusted Publisher settings pages are reachable. Until
-they are configured, a release needs the `NPM_TOKEN` fallback.
+Trusted publishing is done: both packages publish over OIDC and there is no token path to close, npm
+having removed token publishing. The detail lives in `docs/RELEASING.md` and `release.yml`.
 
-- [ ] **Configure the trusted publisher on BOTH packages**: npmjs.com → package → Settings → Trusted
-  publisher → GitHub Actions → this repo + `release.yml` (no environment) — for `@shenora/react` AND
-  `@shenora/cli`. Then the release runs fully tokenless.
 - [ ] **The `@shenora/cli@0.0.1-seed.0` placeholder — COSMETIC, and nothing depends on it.** The registry
   reads `latest = 0.11.0`, `seed = 0.0.1-seed.0`, so nobody installing the package can reach the stub;
   it is tidiness, not a release problem. `npm unpublish` removes it while npm's 72-hour window is open
   (it closes 2026-08-20 15:27 UTC); `npm deprecate` marks it afterwards. **The window chooses the verb,
   not the outcome**, so letting it lapse costs nothing. (npm force-creates `latest` on a first publish
   whatever `--tag` says, which is why the stub was briefly it.)
-- [ ] After the first OIDC release: require 2FA / disallow tokens on both packages so the trusted
-  publisher is the only path, and drop the token-fallback sentence from `RELEASING.md`.
 
 ### 🔧 THE BOX REFUSES ~30 % OF CLIPBOARD WRITES FROM A LOOPING TEST PROCESS
 
