@@ -331,6 +331,33 @@ channel's times against another's is how the sound side of every cut lands somew
 - **No thumbnail type spanning both mechanisms** (D43) — extracting a frame needs a decoder, resizing an
   image needs an image codec; they are different capabilities wearing one word.
 
+## First load does not scale with the file — measured 2026-08-21
+
+iPhone 16 Pro simulator, iOS 26.x, one run each. Times are from the PAGE, per term: `tManifest` is the
+manifest fetch (probe + plan), `tInit` is the `init.mp4` fetch — **which starts production and does not
+answer until segment 0 is whole** — and `tSeg0` is the segment fetch that follows.
+
+| fixture | duration / size | segments | tManifest | tInit | tSeg0 | tries |
+|---|---|---|---|---|---|---|
+| `clip-video-ac3.mkv` | 6.5 s | 3 | 22 ms | 110 ms | 3 ms | 1 |
+| `clip-h264-aac.mkv` | 60 s · 488 KB | 12 | 7 ms | 57 ms | 6 ms | 1 |
+| **`clip-big-h264-aac.mkv`** | **~1000 s · 78 MB** | **120** | **18 ms** | **55 ms** | 19 ms | 1 |
+
+🔴 **THE BOTTOM ROW IS THE CLAIM: a file 160× longer and 160× larger costs the same.** That is what the
+Cues plan and the index-as-you-write run were for, and it is the shape — flat, not merely fast — that says
+so. ⚠ **A full-file walk is structurally incompatible with 18 ms**: the walk touches about a third of the
+file's pages (see the table below), so ~26 MB of seeking reads would have to complete in that window.
+
+⚠ **`tries=1` on every produced resource, so nothing ever answered `503`.** The route BLOCKED inside the
+first request rather than making the page poll — production now finishes faster than one round trip, which
+is atomic publish and the short first segment together.
+
+🔴 **WHAT THIS DOES NOT SHOW, and both gaps matter.** **(1) There is no BEFORE number** — every reading
+here is of the current code, so the improvement is argued from the flatness and from what the old path
+provably did, not from an A/B on one machine. **(2) It is a SIMULATOR**, reading a Mac's SSD through a
+virtualised filesystem, with a different codec table from any phone; the symptom this work exists for was
+reported on hardware and remains unmeasured there.
+
 ## What IS proven, and how
 
 The pump, the cutting and the fragment bytes are unit-tested against a FAKE `IMediaStreamConversion`, which
