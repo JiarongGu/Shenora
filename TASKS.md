@@ -70,3 +70,26 @@ healthy sample nor an unhealthy one settles anything on its own.
     it moved 13/15 → 3–6/15.
   - ⚠ **No reboot is needed for the no-emulator arm**: the long-running qemu is a zombie with no live
     emulator behind it (`adb devices` lists nothing), and a dead process cannot write the clipboard.
+
+### 🔧 `android build` NEVER RESOLVES A JDK — so `doctor` goes green and the build then dies XA5300
+
+Found by an adopter wiring the CLI in (Windows, no global `JAVA_HOME`). `android doctor` printed
+`jdk  C:\Program Files\Android\Android Studio\jbr` and `android build` immediately failed with
+`error XA5300: The Java SDK directory could not be found`. **A green check that does not predict the
+thing it checks is worse than no check** — the adopter's next move is to distrust the SDK install, which
+is the one thing that was fine.
+
+The asymmetry is in `src/Shenora.Cli/src/android.ts`, and it is one line:
+
+- `cmdDeploy` (~143) resolves `jdk`, refuses at ~154 when there is none, and passes it at ~167 —
+  `run('dotnet', [...], { cwd: cfg.root, env: { JAVA_HOME: jdk } })`.
+- `cmdBuild` (~248) **never calls the resolver at all**; its publish runs `{ cwd: cfg.root }` with no env.
+- `doctor` (~353) resolves it a third time, and its comment says "`deploy` uses the same resolution" —
+  which is exactly true and exactly why the row misleads: `build` does not.
+
+**Fix:** give `cmdBuild` the same `jdkHome()` call + `env: { JAVA_HOME: jdk }`, and the same refusal when
+none is found. Worth a test that runs a publish with `JAVA_HOME` scrubbed from the environment, since the
+maintainer's box almost certainly has one set — which is why this survived.
+
+⚠ Same shape worth checking in `ios.ts` before closing: any command whose preflight resolves a tool that
+the command itself then does not pass on.
