@@ -30,18 +30,6 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 📦 NPM — one cosmetic leftover
-
-Trusted publishing is done: both packages publish over OIDC and there is no token path to close, npm
-having removed token publishing. The detail lives in `docs/RELEASING.md` and `release.yml`.
-
-- [ ] **The `@shenora/cli@0.0.1-seed.0` placeholder — COSMETIC, and nothing depends on it.** The registry
-  reads `latest = 0.11.0`, `seed = 0.0.1-seed.0`, so nobody installing the package can reach the stub;
-  it is tidiness, not a release problem. `npm unpublish` removes it while npm's 72-hour window is open
-  (it closes 2026-08-20 15:27 UTC); `npm deprecate` marks it afterwards. **The window chooses the verb,
-  not the outcome**, so letting it lapse costs nothing. (npm force-creates `latest` on a first publish
-  whatever `--tag` says, which is why the stub was briefly it.)
-
 ### 🔧 THE BOX REFUSES ~30 % OF CLIPBOARD WRITES FROM A LOOPING TEST PROCESS
 
 🔴 **The code is exonerated — do not "fix" `ClipboardService`.** Diagnosed 2026-08-16: a PowerShell
