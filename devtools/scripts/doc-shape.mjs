@@ -81,7 +81,11 @@ const SESSION_LOG = [
   // ⚠ A COUNT is required, or this is a false positive 16 times over in `src/`. "a lossy round-trip",
   // "never round-trip to read it", "the CDP round-trips are cheap but not free" are all SYSTEM facts —
   // the phrase only reports a session when it is counting them ("three device round-trips").
-  [/\b(one|two|three|four|five|\d+)\s+(device\s+)?round[- ]trips?\b/i, 'counts the session, not the system'],
+  // ⚠ ...and a count is still not enough on its own: "one round trip PER BYTE" is a RATE — a fact about
+  // what the code costs — where "three device round-trips" is a tally of what the author did. `per <unit>`
+  // is what separates them, so a rate is excluded rather than reworded around.
+  [/\b(one|two|three|four|five|\d+)\s+(device\s+)?round[- ]trips?\b(?!\s+per\b)/i,
+    'counts the session, not the system'],
   [/\b(found|caught|fixed|raised)\s+(by|in)\s+(a\s+)?(review|test)\b/i, 'attributes to a review or a test'],
   [/\bre-?raised in review\b/i, 'attributes to a review'],
   [/\b(found|caught|hit|reproduced)\s+live\b/i, 'attributes to a session'],

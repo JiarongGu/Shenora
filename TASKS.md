@@ -13,11 +13,12 @@ diagnosis kept for two open lines under it. ⚠ **The test is not "is there a �
 this paragraph lose anything a future session must ACT on?"** If the answer is no, the commit that
 landed it is where it lives.
 
-**Status: v0.11.0 published (2026-08-17); the tree is well AHEAD of it and the next release is not cut.**
-`CHANGELOG.md`'s `## Unreleased` carries the media first-load rewrite and a repo-wide comment/doc pass, and
-it is **mostly BREAKING** — read `### Breaking` before touching the surface. ⚠ The version in
-`src/Directory.Build.props` is still `0.11.0` and must STAY there: the release workflow owns the bump, and a
-hand-bump moves the baseline and skips a release (`release-discipline.md`).
+**Status: v0.12.0 is PUBLISHED and verified live** — all 5 NuGet packages plus `@shenora/react` and
+`@shenora/cli`, checked against the registries rather than the tree. It carried the media first-load
+rewrite, the remote byte-range source (D78) and a repo-wide comment/doc pass, and it was **mostly
+BREAKING** — `CHANGELOG.md`'s `## 0.12.0` is the migration record. ⚠ `src/Directory.Build.props` must now
+stay at `0.12.0`: the release workflow owns the bump, and a hand-bump moves the baseline and skips a
+release (`release-discipline.md`).
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This is the maintainer's remaining work,
 > and a short list means the kit is in good shape rather than that nothing is happening. Several entries
@@ -31,11 +32,13 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 📱 THE MEDIA FIRST-LOAD REWRITE IS UNMEASURED — its correctness passed, its SPEED never ran
+### 📱 THE MEDIA FIRST-LOAD WIN IS MEASURED ON A SIMULATOR, NEVER ON THE PHONE IT WAS REPORTED ON
 
-Built for one reported symptom — **a long initial wait playing video on an iPhone** — which was never
-timed, before or after. ⚠ Correctness is covered on the simulator, so do not re-run the seek probe to
-find out; what is missing is a stopwatch.
+Shipped in v0.12.0 and timed: **first load is FLAT across a 160× range** in duration and size — 18 ms
+manifest, 55 ms init, 19 ms seg0 on a 78 MB / 1000 s file, `tries=1` throughout
+(`docs/design/media.md` § "First load does not scale with the file"). ⚠ Correctness is covered too, so do
+not re-run the seek probe. **What is missing is hardware**: the symptom was reported on a real iPhone, the
+readings are a simulator's, and there is no BEFORE number on any machine — the case rests on the flatness.
 
 - [ ] 🔴 **MEASURE FIRST PAINT, AND SPLIT THE TERMS** — manifest response · `init.mp4` response · seg0
   response. A total cannot say which change earned it, and the four changes are separable. ⚠ On a **real
@@ -71,10 +74,3 @@ healthy sample nor an unhealthy one settles anything on its own.
     it moved 13/15 → 3–6/15.
   - ⚠ **No reboot is needed for the no-emulator arm**: the long-running qemu is a zombie with no live
     emulator behind it (`adb devices` lists nothing), and a dead process cannot write the clipboard.
-
-### 🔧 `shenora ios *` IS UNUSABLE ON WINDOWS UNTIL THE NEXT RELEASE IS CUT
-
-Not a bug and nothing to fix — **an adoption fact with a shelf life**, kept only so it is not re-filed as
-one. Published `@shenora/cli@0.11.0` refuses outright ("iOS work needs macOS … no way around it"); that
-string exists only in its `dist`, so the LAN-Mac path (`resolveHost` / `SHENORA_IOS_KEY` / `SshTarget`) is
-simply UNRELEASED. **Delete this entry when the release ships.**

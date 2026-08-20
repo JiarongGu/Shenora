@@ -6,10 +6,10 @@ namespace Shenora.Modules.Media;
 /// A seekable <see cref="Stream"/> over an app-supplied range fetch — the half of a remote media source
 /// that is identical for every transport, so the kit ships it and the app ships only the fetch.
 /// <para>
-/// 🔴 <b>THE WINDOW IS THE WHOLE POINT, NOT AN OPTIMISATION.</b> Matroska is parsed by EBML varint, which
-/// reads ONE BYTE AT A TIME (<c>MatroskaSampleReader</c>), so an unbuffered adapter issues one round trip
-/// per byte and a remote source never finishes. A local <c>FileStream</c> hides this behind its own buffer,
-/// which is why nothing noticed until the tier grew a transport-agnostic seam.
+/// 🔴 <b>THE WINDOW IS THE WHOLE POINT, NOT AN OPTIMISATION.</b> Matroska is parsed by EBML varint, reading
+/// ONE BYTE AT A TIME (<c>MatroskaSampleReader</c>), so an unbuffered adapter costs one round trip per byte
+/// and a remote source never finishes. ⚠ A local <c>FileStream</c> buffers for free, so a caller porting
+/// from <see cref="MediaByteSource.ForFile"/> gets no warning that the naive version is UNUSABLE.
 /// </para>
 /// <para>
 /// ⚠ <b>Blocking, and safe only where this is used.</b> The parser is synchronous, so an async fetch has to

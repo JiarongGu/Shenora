@@ -133,7 +133,7 @@ docs cite them — so the number is the column to scan.
 | **D75** | THE SEGMENT TIER IS fMP4, THE GRID IS WHOLE SECONDS, AND THE DEFAULT ENGINE RUNS WHEREVER A CONVERTER IS REGISTERED. |
 | **D76** | THE SEGMENT ENGINE COPIES WHAT MP4 CAN CARRY AND RE-ENCODES ONLY WHAT IT CANNOT; A COPIED TRACK IS CUT ON THE SOURCE'S OWN KEYFRAMES, SO THE BOUNDARIES TRAVEL AS A PLAN. |
 | **D77** | THREE HOMES, and this file holds only the first: a DECISION here, a subsystem's DESIGN under `docs/design/`, an invariant in `.claude/knowledge/`. |
-| **D78** | FOR A REMOTE MEDIA SOURCE THE KIT SHIPS THE ADAPTER, NEVER THE TRANSPORT: `MediaByteSource.ForRanges` turns an app-supplied byte-range fetch into the seekable, buffered stream the demuxer needs. |
+| **D78** | FOR A REMOTE MEDIA SOURCE THE KIT SHIPS THE ADAPTER, NEVER THE TRANSPORT: |
 
 <!-- decisions-index:end -->
 
@@ -1078,26 +1078,19 @@ docs cite them — so the number is the column to scan.
   - **The test:** *re-read when about to relitigate?* → here. *When about to change this subsystem?* →
     `docs/design/`. *Every time you touch the area?* → `.claude/knowledge/`. **Or better: a gate or test.**
 
-- **D78 — FOR A REMOTE MEDIA SOURCE THE KIT SHIPS THE ADAPTER, NEVER THE TRANSPORT:
+- **D78 — FOR A REMOTE MEDIA SOURCE THE KIT SHIPS THE ADAPTER, NEVER THE TRANSPORT:**
   `MediaByteSource.ForRanges` turns an app-supplied byte-range fetch into the seekable, buffered stream the
-  demuxer needs.** The app owns the address, the auth and the retry policy; the kit owns the `Stream`.
-  - 🔴 **The buffering is the part that had to ship, and it is not an optimisation.** Matroska is parsed by
-    EBML varint — one `ReadByte` at a time — so the obvious adapter costs a round trip **per byte**. A local
-    `FileStream` buffers for free, which is exactly why an app porting from `ForFile` gets no warning that
-    its version is unusable rather than merely slower.
-  - **Why not the transport (D54).** Owning an `HttpClient` means owning auth, refresh, proxies, redirects,
-    TLS and retry — the app's policy, not the kit's — and ranged HTTP is not "what .NET can do and React
-    cannot". `src/` still contains no `HttpClient`.
-  - **And it keeps the credential property the seam was designed for**: no url reaches the kit, so it cannot
-    reach a kit log line by construction rather than by care (`MediaByteSource`, `RemoteMediaSource.Url`).
-  - ⚠ **The length must be known up front** — Matroska is read by offset from the END (SeekHead, then Cues),
-    so a source that cannot state its size cannot be indexed at all.
-  - 🔴 **The kit cannot see a status code, so it checks what a bare `Stream` CAN reveal:** a range starting
-    past zero answered with the container's opening bytes means the server ignored `Range` and sent the whole
-    file. That failure is otherwise silent — it satisfies every length check while feeding the demuxer the
-    START of the file — and format-specific detection is the price of catching it at all.
-  - **Consequence:** this is what makes D76's Cues work pay off away from local disk; measured at 4 fetches
-    to plan a 456 KB file, the same over a real HTTP server as over a fake one. `docs/design/media.md`.
+  demuxer needs — the app owns the address, the auth and the retry policy; the kit owns the `Stream`.
+  - 🔴 **The buffering is what had to ship, and it is not an optimisation.** EBML is parsed one `ReadByte`
+    at a time, so the obvious adapter costs a round trip **per byte**; a `FileStream` buffers for free, so
+    porting from `ForFile` gives no warning it is unusable.
+  - **Why not the transport (D54).** An `HttpClient` brings auth, refresh, proxies, redirects, TLS and retry
+    — the app's policy — and ranged HTTP is not "what .NET can do and React cannot".
+  - ⚠ **The length must be known up front:** Matroska is read by offset from the END, so a source that
+    cannot state its size cannot be indexed.
+  - 🔴 **A server ignoring `Range` and answering `200` is refused by name** — otherwise silent, since it
+    passes every length check while feeding the demuxer the file's START. The kit sees a `Stream`, not a
+    status, so it checks a range past zero opening with the container's magic. `docs/design/media.md`.
 
 
 ## Anti-goals — deliberately NOT built

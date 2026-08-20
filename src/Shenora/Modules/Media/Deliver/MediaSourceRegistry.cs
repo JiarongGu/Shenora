@@ -26,8 +26,8 @@ public sealed record RemoteMediaSource
     /// ships no transport, and Matroska is read by offset (<see cref="MediaByteSource.Open"/>).
     /// <para>
     /// ⚠ <b>For a ranged source, do not write this by hand</b> — take
-    /// <see cref="MediaByteSource.ForRanges"/>'s <c>Open</c>. It supplies the buffering, without which the
-    /// EBML parser costs one round trip PER BYTE; only the range fetch itself is yours.
+    /// <see cref="MediaByteSource.ForRanges"/>'s <c>Open</c>, which supplies the buffering the EBML parser
+    /// needs; without it a read costs one round trip PER BYTE. Only the range fetch itself is yours.
     /// </para>
     /// <para>
     /// 🔴 <b>Null means this source can be described but never PRODUCED from, and the route refuses it at
