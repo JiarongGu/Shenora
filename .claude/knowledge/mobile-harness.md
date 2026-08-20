@@ -101,7 +101,7 @@ the alternative was believed and turned out wrong.
   change and reads as that change breaking the build.
   🔴 **CHANGING LINKER CONFIGURATION NEEDS A CLEAN `obj/` — otherwise you debug the intermediates.**
   Switching between these options over an existing tree produced two DIFFERENT broken apps from the same
-  source: one that launched and exited with an `ObjCRuntime.Class.ResolveToken` failure, and one that ran
+  source: one that launched and exited inside ObjCRuntime's token resolution, and one that ran
   but whose PAGE never loaded (`NO-VIDEO-ELEMENT`, then "the page never answered" — which reads as a page
   bug, not a build one). `rm -rf obj/Debug/net10.0-ios bin/Debug/net10.0-ios` fixed both. ⚠ Neither
   symptom is attributable to a particular flag; the stale tree explains both.

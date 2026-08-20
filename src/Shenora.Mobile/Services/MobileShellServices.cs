@@ -87,8 +87,7 @@ public sealed class MobileClipboardService : IClipboardService
     /// <para>
     /// 🔴 <b>`UIPasteboard` is UIKit, and UIKit throws off the main thread</b> —
     /// <c>UIKitThreadAccessException: you are calling a UIKit method that can only be invoked from the UI
-    /// thread</c>. Measured on a simulator 2026-08-19, the first time these paths ever ran on a device:
-    /// every multi-format read and write failed.
+    /// thread</c>. Without this, every multi-format read and write fails.
     /// </para>
     /// <para>
     /// ⚠ <b>It bit only the FORMATS path, which is why a compile and the text path both looked fine.</b>
