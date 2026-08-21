@@ -49,15 +49,16 @@ internal sealed class MediaRangeProbe : IDisposable
 	public MediaRangeProbe(Action<string> log) => _log = log;
 
 	/// <summary>
-	/// The shell's interceptor, once <see cref="PrepareAsync"/> has built it — so a second probe can add its
+	/// The shell's interceptor, once <see cref="Attach"/> has built it — so a second probe can add its
 	/// own middleware to the SAME pipeline rather than constructing a second interceptor over one webview.
 	/// (Two interceptors would mean two <c>WebResourceRequested</c> subscriptions, which is exactly the
 	/// last-writer-wins hazard the desktop host's single-subscription comment warns about.)
 	/// </summary>
 	public IWebViewInterceptor? Interceptor => _interceptor;
 
-	/// <summary>Where the staged clips live, once <see cref="PrepareAsync"/> has copied them out of the
-	/// app package — so a second route can serve the SAME files without re-deriving the path.</summary>
+	/// <summary>Where the staged clips live — the path is known from <see cref="Attach"/>, and
+	/// <see cref="PrepareAsync"/> is what puts the files in it, so a second route can serve the SAME files
+	/// without re-deriving the path.</summary>
 	public string? SourceRoot => _root;
 
 	/// <summary>
@@ -116,22 +117,67 @@ internal sealed class MediaRangeProbe : IDisposable
 	}
 
 	/// <summary>
-	/// Stage the clips out of the app package, then wire the route.
-	/// <para>
-	/// The route is registered LAST, so a request arriving mid-copy finds no handler rather than a
-	/// half-written file — the same write-the-marker-last ordering <c>UpdateStage</c> uses.
-	/// </para>
+	/// Subscribe to the webview and register the route. <b>Call this from the page CONSTRUCTOR</b>, before
+	/// <c>Content = webView</c>.
 	/// </summary>
+	/// <remarks>
+	/// 🔴 <b>CONSTRUCTOR TIME, NOT <c>Loaded</c> — and this sample had it wrong until 2026-08-21.</b> The
+	/// interceptor's constructor is where <c>WebResourceRequested</c> is subscribed, so building it in
+	/// <c>Loaded</c> is after the webview has navigated: the DOCUMENT and every asset are served by the
+	/// platform and only requests the page makes LATER ever reach the pipeline. It hid here for exactly the
+	/// reason it hides in a real app — <c>/media</c> is a late request, so nothing this probe measures was
+	/// ever affected. The kit now says so out loud (<c>MobileWebViewInterceptor</c> warns once), and this
+	/// sample was the first thing its warning caught. Same reason <c>_safeArea</c> is built in the page
+	/// constructor.
+	/// <para>
+	/// ⚠ The route is registered here too, not deferred until the clips are staged. Its allow-list is a path
+	/// this can compute synchronously; <see cref="PrepareAsync"/> then fills that directory. A request
+	/// arriving mid-copy finds a handler and no file, which <c>UseFiles</c> answers as a 404 — strictly
+	/// better than the old ordering, where it found no route and the platform served a page-shaped 404.
+	/// </para>
+	/// </remarks>
 	/// <param name="webView">The page's webview — this is the app's ORDINARY window, not a probe-owned one.</param>
 	/// <param name="pipeline">
 	/// The application's <see cref="WebViewPipeline"/>. Required rather than optional so the choice is made
 	/// at the call site instead of forgotten — the same reason the interceptor's own parameter is required.
 	/// </param>
-	public async Task PrepareAsync(HybridWebView webView, WebViewPipeline pipeline)
+	public void Attach(HybridWebView webView, WebViewPipeline pipeline)
 	{
 		ArgumentNullException.ThrowIfNull(pipeline);
+
 		var root = Path.Combine(FileSystem.CacheDirectory, "media");
 		Directory.CreateDirectory(root);
+		_root = root;
+
+		// 🔴 THE APP'S PIPELINE, and it used to be a fresh empty one. The comment justifying that said "this
+		// probe owns an isolated webview", which was simply not true — this is handed the page's MAIN
+		// webview, so this is the ordinary window the same comment said should pass `app.Pipeline`.
+		// The cost of the mistake was not a wrong measurement, it was ABSENCE: `app.Use(…)` reached no
+		// webview on Android or iOS, so the mobile half of D64's pipeline surface had never once executed —
+		// and an unapplied pipeline is indistinguishable from one whose routes nothing requested (D63).
+		// Corrected 2026-08-09. Isolation is still available and still correct for a probe that genuinely
+		// owns its webview: pass `new WebViewPipeline()`.
+		_interceptor = new MobileWebViewInterceptor(webView, pipeline, AppCallback.Logger(_log));
+
+		// THE WHOLE WIRING. No BodyMode, no content-type table, no range arithmetic, no containment check —
+		// UseFiles reads the platform's delivery rule off the interceptor so it cannot be passed in wrong.
+		_route = _interceptor.UseFiles(new WebViewFileOptions
+		{
+			AllowedRoots = [root],
+			Resolve = Resolve,
+		});
+
+		_log($"media: attached ({_interceptor.RangeDelivery} on this platform) before the webview navigated");
+	}
+
+	/// <summary>
+	/// Stage the clips out of the app package. <see cref="Attach"/> must have run first — it owns the root
+	/// and the route.
+	/// </summary>
+	public async Task PrepareAsync()
+	{
+		var root = _root ?? throw new InvalidOperationException(
+			"MediaRangeProbe.Attach must run first — it owns the media root and the route.");
 
 		foreach (var clip in Clips)
 		{
@@ -149,26 +195,7 @@ internal sealed class MediaRangeProbe : IDisposable
 			_log($"media: staged {clip} -> cache ({target.Length} bytes)");
 		}
 
-		_root = root;
-		// 🔴 THE APP'S PIPELINE, and it used to be a fresh empty one. The comment justifying that said "this
-		// probe owns an isolated webview", which was simply not true — `PrepareAsync` is handed the page's
-		// MAIN webview, so this is the ordinary window the same comment said should pass `app.Pipeline`.
-		// The cost of the mistake was not a wrong measurement, it was ABSENCE: `app.Use(…)` reached no
-		// webview on Android or iOS, so the mobile half of D64's pipeline surface had never once executed —
-		// and an unapplied pipeline is indistinguishable from one whose routes nothing requested (D63).
-		// Corrected 2026-08-09. Isolation is still available and still correct for a probe that genuinely
-		// owns its webview: pass `new WebViewPipeline()`.
-		_interceptor = new MobileWebViewInterceptor(webView, pipeline, AppCallback.Logger(_log));
-
-		// THE WHOLE WIRING. No BodyMode, no content-type table, no range arithmetic, no containment check —
-		// UseFiles reads the platform's delivery rule off the interceptor so it cannot be passed in wrong.
-		_route = _interceptor.UseFiles(new WebViewFileOptions
-		{
-			AllowedRoots = [root],
-			Resolve = Resolve,
-		});
-
-		_log($"media: ready ({_interceptor.RangeDelivery} on this platform) — the page may load /media?<payload>");
+		_log("media: ready — the page may load /media?<payload>");
 	}
 
 	/// <summary>

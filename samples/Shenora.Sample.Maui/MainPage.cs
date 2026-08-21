@@ -93,6 +93,13 @@ public sealed class MainPage : ContentPage
 			Splash = true,
 		}, AppCallback.Logger(MauiProgram.Log));
 
+		// 🔴 HERE, NOT IN `OnLoaded`, and for the same reason as `_safeArea` above: the interceptor
+		// subscribes to `WebResourceRequested` in its CONSTRUCTOR, so by `Loaded` the webview has already
+		// navigated and the document is the platform's. This sample got it wrong until 2026-08-21 and the
+		// kit's own new warning is what caught it — see `MediaRangeProbe.Attach`. Staging the clips is
+		// still async work and still belongs in `OnLoaded`; SUBSCRIBING does not.
+		_media.Attach(_webView, MauiProgram.Shenora!.Pipeline);
+
 		Loaded += OnLoaded;
 		Unloaded += OnUnloaded;
 	}
@@ -214,12 +221,13 @@ public sealed class MainPage : ContentPage
 		// unhandled UI-thread exception rather than a failed copy.
 		_ = Task.Run(async () =>
 		{
-			try { await _media.PrepareAsync(_webView, MauiProgram.Shenora!.Pipeline); }
+			try { await _media.PrepareAsync(); }
 			catch (Exception ex) { MauiProgram.Log($"media: staging FAILED — {ex}"); }
 
-			// The two adopter-filed seam tests, and they run HERE — after a route is registered — because
-			// that is the precondition for both. Give the page a moment to finish its own load first: a
-			// reload probe that fires mid-load would be testing the wrong navigation.
+			// The two adopter-filed seam tests, and they run HERE — after the clips are STAGED — because
+			// that is the precondition for both. (The route itself is registered in the page constructor
+			// now; only the files it serves arrive here.) Give the page a moment to finish its own load
+			// first: a reload probe that fires mid-load would be testing the wrong navigation.
 			try
 			{
 				await Task.Delay(TimeSpan.FromSeconds(3));
