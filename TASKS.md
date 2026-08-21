@@ -32,6 +32,36 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
+### 🎬 THE SEGMENT TIER NEEDS A FIXTURE CORPUS — TWO DEFECTS ARE OPEN AND UNFIXABLE WITHOUT ONE
+
+The 2026-08-21 full review found 14 blocking defects; 13 are fixed (`git log`). These two are not, and
+they are held open deliberately rather than patched blind: **nothing in the suite constructs a
+`SegmentRunWriter` at all**, so a change to muxer sequencing or buffering would be unverifiable, and a
+wrong guess produces a silently corrupt stream. The tier is labelled EXPERIMENTAL in `README.md` until
+they close.
+
+🔴 **The root cause is one thing, and it is why patches will not settle it:** the tier had only ever been
+tested against media THIS KIT produced. Every fault found sits on a shape our own muxer never emits.
+The already-fixed `esds` defect is the proof — our `Mp4Builder` always writes the expanded 4-byte
+descriptor length, so the broken scan never matched our own files and a fallback supplied the right
+answer for months.
+
+- [ ] 🔴 **Build the corpus first: MP4Box, Bento4, mkvmerge and Apple output**, covering laced audio, a
+  track that starts late, and short-form descriptor encodings. Small files, committed as fixtures.
+- [ ] **`SegmentRunWriter.cs:444` — a track absent from the FIRST fragment is dropped for the whole run.**
+  The init segment is written beside the first fragment and declares only the tracks that had produced by
+  then; a copied track produces from frame one while an encoder may hold a whole segment. So the late
+  track is undeclared, its samples are dropped for ever, and `VerifyPicture` only checks for picture —
+  nothing downstream notices. **Silent film, entire length.** The likely fix is declaring the EXPECTED
+  track set rather than the observed one, which is a sequencing change.
+- [ ] **`SegmentRunWriter.cs:372` — `Pending` grows to whole-source size when the lead channel never
+  cuts**, then is doubled by the final flush. ~150–200 MB, i.e. OOM on a phone. `StalledWithoutPicture`
+  explicitly cannot stop it. A bound is easy; choosing one that does not corrupt the segmentation is not.
+  - ⚠ **`SegmentRunWriter.cs:91` rides along** — the index-extend guard uses `All()`, so the first track
+    to run out consumes its last sample with a fallback duration. Same file, same corpus.
+- [ ] ⚠ **`SegmentRunWriter`'s SpreadTies fix (`d59ec84`) is UNPINNED.** It mirrors `Mp4Remuxer`'s proven
+  call site exactly, which is the argument for it — not evidence. The corpus is what would pin it.
+
 ### 📱 THE MEDIA FIRST-LOAD WIN IS MEASURED ON A SIMULATOR, NEVER ON THE PHONE IT WAS REPORTED ON
 
 Shipped in v0.12.0 and timed: **first load is FLAT across a 160× range** in duration and size — 18 ms
