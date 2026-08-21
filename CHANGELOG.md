@@ -49,6 +49,22 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A response the platform refuses no longer kills the Android process.** `MobileWebViewInterceptor`
+  guarded middleware *execution* but not the handover to the platform, and `SetResponse` is where the
+  Android `WebResourceResponse` is constructed. Android rejects a status in `[300,399]`, an empty reason
+  phrase and a non-ASCII one, so a middleware answering `302` — or, more ordinarily, `304 Not Modified`
+  from a caching route — threw across JNI out of `shouldInterceptRequest` and took the app down. Measured
+  on Android 12: `FATAL EXCEPTION … statusCode can't be in the [300, 399] range`, process gone. The
+  handover is now guarded; the request falls back to the platform and the body is disposed rather than
+  leaking its handle. ⚠ **The underlying asymmetry stands**: the desktop shell passes such a status
+  through to WebView2, so a redirect status is still a per-shell behaviour, not a portable one.
+- **A `Set`-, `Map`- or `Date`-valued selector re-renders again.** `@shenora/react`'s store compared
+  selector results by own keys, and `Object.keys` is `[]` for anything holding its state in internal
+  slots — so two Sets of different contents compared EQUAL, the component was pinned to its first value
+  for its whole life, and the early return also skipped the cache refresh so it never self-corrected.
+  Nothing threw and nothing warned. Those three types now compare by content; anything else exotic with
+  no own keys is treated as changed rather than silently equal. Class instances carrying own fields
+  compare shallowly exactly as before.
 - **`ios doctor`'s `ios bindings` row can go green.** It compared installed binding bands to the Xcode SDK
   and never read the csproj, so pinning `TargetPlatformVersion` exactly as the row instructed still left it
   `MISSING` and the doctor `not ready`. It now reads the project's effective value. The row also names
