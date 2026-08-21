@@ -308,7 +308,21 @@ internal sealed class SegmentStream : IDisposable
         {
             if (_disposed) return null;
             _touched[key] = DateTime.UtcNow;
-            if (_sources.TryGetValue(key, out var existing)) return existing;
+            if (_sources.TryGetValue(key, out var existing))
+            {
+                // 🔴 ADOPT THE NEW OPENER. `RemoteMediaSource.Identity` exists precisely so the cache key
+                // stays STABLE while the url rotates — and this used to return the cached source and drop
+                // the freshly supplied `bytes`, so an app following that instruction kept the EXPIRED
+                // presigned url for the life of the process and every later read 503'd with nothing in
+                // the log naming a stale url. Only the opener changes; the plan, the directory and
+                // everything already produced stay, which is the whole point of a stable identity.
+                if (!ReferenceEquals(existing.Bytes, bytes))
+                {
+                    existing.Bytes = bytes;
+                    Log(() => $"segments: refreshed the opener for {label} (same identity, new source)");
+                }
+                return existing;
+            }
         }
 
         // ⚠ The caller's value wins: a supplied duration is the app's own claim, and it saves a probe launch.
@@ -500,7 +514,12 @@ internal sealed class SegmentStream : IDisposable
         if (index < source.WindowStart) return $"seek back inside the window from seg{source.WindowStart}";
         // The run is over. Anything it did not write, it never will.
         if (source.Run.HasExited)
-            return File.Exists(SegmentPath(source, index)) ? null : "the run ended without writing it";
+            // 🔴 `IsComplete`, not `File.Exists`. The reader requires a NON-EMPTY file, so a zero-byte
+            // segment left behind by a run that died mid-write satisfied `Exists`, this answered "keep
+            // waiting", and the stream wedged at 503 for ever — burning the full wait budget on a mobile
+            // platform thread, inside the source gate, on every single request. The two tests have to be
+            // the same test.
+            return IsComplete(source, index) ? null : "the run ended without writing it";
         // Far enough ahead that waiting means encoding everything in between — seek instead.
         var newest = NewestProduced(source);
         return index > newest + _options.Lookahead ? $"seek forward past seg{newest}" : null;
@@ -715,7 +734,9 @@ internal sealed class SegmentStream : IDisposable
         /// ⚠ An address never reaches this type: a remote source's url stays inside the app's own opener
         /// closure, so the only printable member is <see cref="MediaByteSource.Label"/>.
         /// </summary>
-        public required MediaByteSource Bytes { get; init; }
+        /// <remarks>⚠ SETTABLE so a re-registration under the same identity can swap in a fresh opener —
+        /// a rotated presigned url. Only ever replaced wholesale, and only under the registry's gate.</remarks>
+        public required MediaByteSource Bytes { get; set; }
 
         /// <summary>The safe name for diagnostics: a file name, or the label the app registered.</summary>
         public string Label => Bytes.Label;

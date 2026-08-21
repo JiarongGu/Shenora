@@ -52,6 +52,18 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A rotated url now replaces the opener it was registered with.** `RemoteMediaSource.Identity` exists
+  so the cache key survives a rotation — and the source kept the opener it was FIRST registered with,
+  discarding the new one. An app following that property's own instruction held an expired presigned url
+  for the life of the process, and every later read failed with nothing naming a stale url.
+- **A zero-byte segment no longer wedges a stream at `503` for ever.** The "is it coming?" check tested
+  `File.Exists` while the reader requires a NON-EMPTY file, so a segment a dying run left empty read as
+  "still producing" — burning the full wait budget on every request, inside the source gate, permanently.
+  Both now ask the same question.
+- **A laced audio track keeps its frame durations in a segment run.** The segment writer derived timing
+  without first spreading tied timestamps, which `Mp4Remuxer` has always done on the same data. Lacing
+  packs several audio frames into one block sharing a timestamp; tied times become zero-length `stts`
+  entries, and the soundtrack plays as a fraction of a second of noise while every box still validates.
 - **A foreign-muxed AAC track plays again.** `codecsFromInitSegment` read the byte after
   `objectTypeIndication` as the audio object type — that byte is the STREAM type, so every short-form
   `esds` produced `mp4a.40.21`, `addSourceBuffer` threw, and nothing played. It also assumed a one-byte

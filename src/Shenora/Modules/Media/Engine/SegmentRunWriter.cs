@@ -247,6 +247,13 @@ internal sealed class SegmentRunWriter(
         var presentation = new long[count];
         for (var i = 0; i < count; i++) presentation[i] = samples[from + i].Ticks * timeline.Factor;
 
+        // 🔴 SPREAD THE TIES FIRST, exactly as `Mp4Remuxer` does before its own `Derive`. Lacing packs
+        // several audio frames into one Matroska block and they arrive sharing a timestamp; tied times
+        // become zero-length `stts` entries, so a soundtrack whose frames all claim to last no time plays
+        // as a fraction of a second of noise while every box in the file still validates. This path had
+        // the same producer and skipped the same call — a no-op on a picture track, where ties cannot arise.
+        presentation = SampleTiming.SpreadTies(presentation, channel.Step);
+
         var (decode, _, chunkShift) = SampleTiming.Derive(presentation);
 
         // 🔴 The shift belongs to the RUN, not to the chunk. See Channel.Shift.

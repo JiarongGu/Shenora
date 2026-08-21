@@ -343,6 +343,44 @@ public class SegmentStreamRemoteTests : IDisposable
     }
 
     [Fact]
+    public async Task A_rotated_url_replaces_the_OPENER_it_was_registered_with()
+    {
+        // 🔴 `Identity` exists so the cache key survives a url rotation — and the source used to keep the
+        // opener it was FIRST registered with, silently discarding the new one. So an app doing exactly
+        // what that property's doc instructs held an EXPIRED presigned url for the life of the process,
+        // and every later read failed with nothing in the log naming a stale url.
+        // ⚠ The rotation test above cannot see this: it passes the SAME delegate both times.
+        var log = new Recorder();
+        var registry = new MediaSourceRegistry();
+        var engine = new CountingEngine();
+        var interceptor = new FakeInterceptor();
+        using var _ = interceptor.UseSegmentStream(engine, Options(registry, log));
+
+        var opened = new List<string>();
+        Func<CancellationToken, Stream> Opener(string tag) => _ => { opened.Add(tag); return new MemoryStream(); };
+
+        var first = registry.Register(new RemoteMediaSource
+        {
+            Url = new Uri("https://cdn/film.mkv?sig=EXPIRED"), Label = "film",
+            Identity = "catalogue:film-7", Open = Opener("expired"),
+        });
+        await interceptor.AskAsync(Url(first, "seg0.m4s"));
+
+        var second = registry.Register(new RemoteMediaSource
+        {
+            Url = new Uri("https://cdn/film.mkv?sig=FRESH"), Label = "film",
+            Identity = "catalogue:film-7", Open = Opener("fresh"),
+        });
+        await interceptor.AskAsync(Url(second, "seg0.m4s"));
+
+        // Still one cache, still one run — and the source now holds the FRESH opener, said out loud so a
+        // stale url is diagnosable at all.
+        Assert.Single(engine.Starts);
+        Assert.Contains("refreshed the opener", log.All, StringComparison.Ordinal);
+        Assert.DoesNotContain("EXPIRED", log.All, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Two_different_sources_do_not_share_a_cache()
     {
         // The direction that would make the test above pass with a constant key.
