@@ -13,10 +13,10 @@ length**, and then a marker written as `**✅ …**`, which its regex read strai
 "is there a ✅", it is "would deleting this paragraph lose anything a future session must ACT on?"** If
 the answer is no, the commit that landed it is where it lives.
 
-**Status: v0.13.0 is PUBLISHED** — tag `v0.13.0`, release commit `35d065a`. `@shenora/react` and
-`@shenora/cli` answer 0.13.0 on npm; the five NuGet packages were still serving 0.12.0 immediately after,
-which is the validation/CDN lag 0.11.0 also showed — **re-check rather than re-push**. The tag is the
-evidence they went out: the workflow creates it only after every publish succeeds.
+**Status: v0.13.0 is PUBLISHED and VERIFIED LIVE** — all 5 NuGet packages plus `@shenora/react` and
+`@shenora/cli` answer 0.13.0, checked against the registries rather than the tree. Tag `v0.13.0`, release
+commit `35d065a`. ⚠ They did not land together: npm was immediate, NuGet took ~1 minute and
+`Shenora.iOS` a further minute — **a partial read is validation lag, not a half-landed release**.
 It carried all 14 blockers from the 2026-08-21 full review — two of them critical (a `Set`/`Map`/`Date`
 selector pinned for a component's life in `@shenora/react`; a `302`/`304` response killing the Android
 process) — and it is **not breaking**: 0 removals, 0 new `required`, 0 namespace moves.
