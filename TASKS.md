@@ -51,25 +51,29 @@ readings are a simulator's, and there is no BEFORE number on any machine — the
   reachable for ORDINARY 1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be
   copied — so this path is newly hot, not newly correct.
 
-### 🍎 THE ADOPTER FIXES ARE PROVEN ON ANDROID — iOS IS THE HALF NO MACHINE HERE CAN REACH
+### 🍎 THE BUILD MAC CANNOT BUILD FOR A DEVICE — TWO OF ITS THREE AOT PACKS LACK THE RESOLVED VERSION
 
-Three findings from an adopter on 2026-08-21 are fixed and landed: the interceptor's two diagnostics, the
-two `ios doctor` rows, and the sample that the first of those caught. Both interceptor warnings are
-sabotage-verified in both directions on an Android emulator, and the pack row's MSBuild assumption is
-confirmed on this box — `git log` carries the evidence. What is left needs a Mac.
+Found by the new `aot cross pack` row on its first real run, 2026-08-21. The SDK resolves the AOT cross
+pack at **10.0.10** and only ONE of the Mac's three ios cross packs has it:
 
-- [ ] 🔴 **Prove the two `ios doctor` rows on a Mac, including where they must stay QUIET.** The decision
-  halves (`describeBindings`, `describeAotCrossPack`) have 11 tests; the PROBERS (`msbuildProperty`,
-  `aotCrossPack`) have none and need `xcrun`, a real iOS `packs/` tree, and the `…Cross.ios*` pack name —
-  which is inferred from this box's `…Cross.android-arm64` rather than seen. **A row that reports
-  `MISSING` on a healthy Mac is worse than the silence it replaced**, so run it on one that BUILDS first.
-  - The adopter's symlink (`packs/<pack>/10.0.10 -> 10.0.11`) is how to reproduce the failing side.
-- [ ] **Run both interceptor warnings on iOS.** They compile for `net10.0-ios` here — `verify` builds it
-  on this Windows box, so a compile break is caught — but the iOS arm has never executed, and
-  `RangeDelivery` is the one place the two shells deliberately differ.
+| pack | versions | a build for that target |
+|---|---|---|
+| `…Cross.ios-arm64` (device) | 10.0.11, 9.0.19 | **dies in `AOTCompile`** |
+| `…Cross.iossimulator-arm64` | 10.0.11, 9.0.19 | **dies in `AOTCompile`** |
+| `…Cross.iossimulator-x64` | **10.0.10**, 10.0.11, 9.0.19 | works — this is the adopter's symlink |
+
+So the simulator loop works on that Intel Mac purely because someone patched the one pack it uses, and a
+DEVICE build is still broken. This is a machine condition, not a kit defect, and the row now names it
+instead of letting a build die in an MSBuild task.
+
+- [ ] **Decide whether to repair that Mac or leave it simulator-only.** The adopter's repair is a symlink
+  (`packs/<pack>/10.0.10 -> 10.0.11`), offered as evidence rather than a recommendation — the packs are
+  compatible, the skew is only in the version the SDK asks for. ⚠ It blocks every device item below.
 - [ ] **Decide the disk-served document limit.** The bridge-tag check reads only a `MemoryStream`, so
   `ToArray()` cannot disturb a response where seeking a `FileStream` could; it stays UNSPENT when it skips
   one. So a document served from disk is never checked at all. That is a design question, not a run.
+  - ⚠ **Also unproven: the bridge-tag check FIRING on iOS.** Its quiet direction is proven there and both
+    directions are proven on Android; the source is shared, so this is low risk rather than no risk.
 
 **⚠ Unattributed, and deliberately NOT a defect claim:** `SEEK-RUN: FAIL — seg1 declares no sound
 (picture=6000)` on the Android emulator. A/B'd against the same tree with the sample change stashed and it
