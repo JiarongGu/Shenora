@@ -419,6 +419,13 @@ export function describeBindings(
  * ⚠ **An unknown expected version answers `ok`, deliberately.** Saying `MISSING` on a guess would send
  * someone to repair a machine that is fine; `ready` on a guess is the defect this row exists to fix. So
  * "could not ask" says exactly that, and leaves the other rows meaning what they say.
+ *
+ * **`BundledNETCoreAppPackageVersion` is the property that names the version, confirmed by measurement**
+ * (2026-08-21, on the Windows dev box — the SDK mechanics are not Mac-specific): it evaluates to
+ * `10.0.10`, which is exactly the version the adopter's `AOTCompile` failure reported the iOS SDK
+ * resolving the cross pack at. The pack layout is confirmed the same way —
+ * `packs/<pack>/<version>/tools/mono-aot-cross`, beside `llc` and `opt`. ⚠ What is still unmeasured is
+ * Mac-only: that an iOS pack is named `…Cross.ios*` the way the android ones are named `…Cross.android*`.
  */
 export function describeAotCrossPack(
   { pack, expected, installed, compilerPresent }:

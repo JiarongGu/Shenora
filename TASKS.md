@@ -91,18 +91,23 @@ stated separately, because no choice of band can satisfy the pack's EXACT-Xcode 
 document served with no `hybridwebview.js` in it. `docs/guides/mobile.md` carries the attach rule, the
 runtime-served-document half of the bridge-tag warning, and the `transferSize` trap.
 
+**✅ The pack row's assumption is CONFIRMED, and it was confirmable here** — the SDK mechanics are not
+Mac-specific. Measured on the Windows dev box, 2026-08-21: `-getProperty:<name>` returns a bare value at
+exit 0 (so the parsing is right), `BundledNETCoreAppPackageVersion` evaluates to **`10.0.10`** — exactly
+the version the adopter's `AOTCompile` failure reported the iOS SDK resolving the cross pack at — and the
+layout is `packs/<pack>/<version>/tools/mono-aot-cross`, beside `llc` and `opt`, which is the path the row
+tests. **What remains Mac-only is the NAMING**: this box carries `…AOT.win-x64.Cross.android-arm64`, so
+the `…Cross.ios*` pattern is inferred from the android ones rather than seen.
+
 - [ ] 🔴 **Prove the two `ios doctor` rows on a Mac — including the case where they must stay QUIET.** The
   pure halves (`describeBindings`, `describeAotCrossPack`) have 11 tests; the PROBERS (`msbuildProperty`,
-  `aotCrossPack`) have none and cannot have any here — they need `xcrun`, `dotnet msbuild` and a real
-  `packs/` tree. A row that reports `MISSING` on a healthy Mac is worse than the silence it replaced.
-  - ⚠ **The one assumption to check first: `BundledNETCoreAppPackageVersion`.** It is the property the pack
-    row asks for "the version the SDK resolves the AOT cross pack at", chosen because it fits the measured
-    evidence (SDK asks 10.0.10, installed 10.0.11) — **the correspondence itself is unverified.** If it is
-    the wrong property the row degrades to `(could not ask MSBuild …)` and stays `ok`, which is the safe
-    direction, but it would also never catch the skew it exists to catch. Confirm against a Mac that
-    reproduces it; the adopter's symlink (`packs/<pack>/10.0.10 -> 10.0.11`) is how to get one back.
+  `aotCrossPack`) have none, and after the confirmation above what is left for them is the Mac-only half:
+  `xcrun`, the `…Cross.ios*` pack name, and a real iOS `packs/` tree. A row that reports `MISSING` on a
+  healthy Mac is worse than the silence it replaced, so run it on one that BUILDS before trusting it.
+  - The adopter's symlink (`packs/<pack>/10.0.10 -> 10.0.11`) is how to reproduce the failing side.
 - [ ] 🔴 **Prove the interceptor's two warnings on a device or the simulator, in BOTH directions.** They
-  compile for `net10.0-android` here and have never fired. The quiet direction is the one that matters: a
+  compile for BOTH mobile TFMs here — `verify` builds `net10.0-ios` on this Windows box, so a compile
+  break in the iOS arm is caught — but neither has ever fired. The quiet direction is what matters: a
   correctly-attached interceptor must produce NEITHER warning, or the kit ships a log line telling every
   adopter they got it wrong.
   - The attach warning needs both halves to be true — a realized handler at construction AND a
