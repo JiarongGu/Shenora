@@ -374,7 +374,23 @@ intermittency is a race between the read and the bridge's sync. It hit a direct 
 hard as the kit's, because the bridge does not care who wrote — which is the tell, if you think to
 compare them.
 
-**So: measure the clipboard on HARDWARE, or not at all.** The same warning applies to the Windows
-clipboard suite for the mirror-image reason — a VM or RDP session syncing the host clipboard is another
-writer nobody accounted for.
+**So: measure the clipboard on HARDWARE, or not at all.**
+
+### And a running emulator REFUSES Windows clipboard writes — shut it down before `dev.mjs test clipboard`
+
+🔴 **The emulator is the variable, and the mechanism is a REFUSED write rather than a second writer.**
+A/B'd 2026-08-21 with a 15-iteration `Set-Clipboard` loop sharing none of the kit's code: **0/45 failures
+emulator down · 59/60 up · 1/45 down again.** Off → on → off, so the "~30 %, intermittent" reading this
+replaced was sampling an emulator that came and went.
+
+⚠ **Do not re-derive the mechanism — it was measured at the instant of failure.** `Set-Clipboard` itself
+THROWS `Requested Clipboard operation did not succeed`; a write-then-read-back records zero mismatches,
+only throws. `GetOpenClipboardWindow()` is null, and the clipboard OWNER is the calling process — so the
+call took ownership and then failed. That is a clipboard-format listener misbehaving on the update
+notification, which is what a host↔guest clipboard bridge registers.
+
+⚠ **Ruled out, do not re-check:** Cloud Clipboard and clipboard history (`EnableClipboardHistory`,
+`EnableCloudClipboard`, `CloudClipboardAutomaticUpload` all unset under `HKCU\Software\Microsoft\Clipboard`).
+Restarting `cbdhsvc_*` moved 13/15 → 3–6/15 and never explained it, because restarting it never removed the
+emulator.
 

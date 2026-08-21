@@ -28,10 +28,15 @@ namespace Shenora.Tests.WinForms;
 /// <para>
 /// 🔴 <b>OUT OF THE DEFAULT GATE — <c>Category=RealClipboard</c>, run with <c>dev.mjs test clipboard</c>.</b>
 /// Not because it is flaky, which was the wrong diagnosis twice, but because its SUBJECT is a shared OS
-/// resource no gate can guarantee. Measured 2026-08-16 on the dev machine: PowerShell's own
-/// <c>Set-Clipboard</c> — none of this code — failed 13 times in 15, and after restarting the clipboard
-/// history service (<c>cbdhsvc</c>) it still failed 3–6 in 15. A release gate cannot depend on that, and
-/// the honest place for a claim about the real clipboard is a command someone runs deliberately.
+/// resource no gate can guarantee, and the honest place for a claim about the real clipboard is a command
+/// someone runs deliberately.
+/// </para>
+/// <para>
+/// ⚠ <b>If this suite fails, shut any Android emulator down and re-run before reading anything into it.</b>
+/// A/B'd 2026-08-21: PowerShell's own <c>Set-Clipboard</c> — none of this code — failed 0 of 45 with the
+/// emulator down and <b>59 of 60 with it up</b>, and the write is REFUSED rather than overwritten. The
+/// earlier <c>cbdhsvc</c> reading (13 of 15, then 3–6 of 15 after restarting it) was the same cause
+/// unrecognised. <c>.claude/knowledge/mobile-harness.md</c> carries the mechanism.
 /// </para>
 /// <para>
 /// ⚠ <b>What did NOT move: everything provable without the OS.</b> The CF_HTML byte offsets, the
