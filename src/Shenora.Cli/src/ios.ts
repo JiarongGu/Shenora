@@ -256,7 +256,7 @@ export function cmdDoctor(cfg: DeployConfig | null, args: readonly string[]): vo
   // version. Same class as the bindings row above — a PAIRING that only fails at build time.
   if (cfg) {
     const expected = msbuildProperty(target, cfg, 'BundledNETCoreAppPackageVersion');
-    const pack = describeAotCrossPack({ expected, ...aotCrossPack(target, expected) });
+    const pack = describeAotCrossPack({ expected, packs: aotCrossPacks(target, expected) });
     line('aot cross pack', pack.text, pack.good);
   }
 
@@ -352,13 +352,16 @@ export function describeBindings(
   const newest = [...bands].sort(compareVersions).at(-1)!;
   const usable = pickBindingBand(bands, sdk);
 
-  // Named whenever the bindings in force are not the Xcode's own band, because that is exactly when no
-  // pack can match — and the error it produces reads like a capability limit, so it must be pre-empted.
+  // 🔴 NAMES NO VERSION, deliberately. An earlier draft said "cut for Xcode ${sdk}" and `sdk` is the
+  // iPhoneOS SDK version, NOT the Xcode version — measured on a Mac reporting `Xcode 26.3` and
+  // `Xcode SDK 26.2`, so the advice sent the reader hunting for a pack cut for an Xcode that does not
+  // exist. The pack asserts an Xcode version this tool cannot read, so it describes the ERROR instead of
+  // predicting the number.
   const bypass = (band: string): string[] => band === sdk ? [] : [
-    `⚠ \`-p:ValidateXcodeVersion=false\` is required unless an installed pack was cut for Xcode ${sdk}`,
-    '  exactly. The pack asserts an EXACT Xcode independently of the band, so no pin can satisfy it —',
-    '  and the error ("requires Xcode X, the current version is Y") reads like a capability limit when',
-    '  it is only a policy. Pass it after `--`, not in the csproj.',
+    '⚠ If the build then fails with "requires Xcode X, the current version is Y", that is the .NET-for-iOS',
+    '  PACK asserting an EXACT Xcode — a separate constraint from the band, which no pin can satisfy. It is',
+    '  a validation POLICY, not a capability limit (measured: Xcode 26.3 builds the 26.0 bindings fine).',
+    '  Clear it with `-p:ValidateXcodeVersion=false`, passed after `--` rather than set in the csproj.',
   ];
   const pinAdvice = (band: string): string[] => [
     `(a build works pinned to ${band}; the newest bindings name APIs this Xcode has never shipped.`,
@@ -428,18 +431,26 @@ export function describeBindings(
  * Mac-only: that an iOS pack is named `…Cross.ios*` the way the android ones are named `…Cross.android*`.
  */
 export function describeAotCrossPack(
-  { pack, expected, installed, compilerPresent }:
-  { pack: string | null; expected: string | null; installed: string[]; compilerPresent: boolean },
+  { packs, expected }:
+  { packs: { pack: string; installed: string[]; compilerPresent: boolean }[]; expected: string | null },
 ): { text: string; good: boolean } {
-  if (!pack) return { text: '(none installed — `dotnet workload install maui-ios`)', good: false };
+  if (packs.length === 0) return { text: '(none installed — `dotnet workload install maui-ios`)', good: false };
   if (!expected) {
-    return { text: `${pack} (could not ask MSBuild which version it wants; installed: `
-      + `${installed.join(', ') || 'none'})`, good: true };
+    return { text: `${packs.length} pack(s) installed; could not ask MSBuild which version it wants`, good: true };
   }
-  if (compilerPresent) return { text: `${pack} ${expected}`, good: true };
+
+  // 🔴 EVERY ios cross pack, not the first one found. A Mac carries one per target — device arm64,
+  // simulator arm64, simulator x64 — and they version INDEPENDENTLY: measured on an Intel Mac where
+  // `Cross.iossimulator-x64` had 10.0.10 and the other two did not, so picking one made the verdict a
+  // coin flip on directory order and hid two targets that could not build.
+  const broken = packs.filter((p) => !p.compilerPresent);
+  if (broken.length === 0) return { text: `${packs.length} pack(s) at ${expected}`, good: true };
+
   return {
-    text: `${pack}: the SDK resolves ${expected}, installed ${installed.join(', ') || 'none'} — `
-      + 'the build dies in the AOTCompile task on a missing `mono-aot-cross`',
+    text: `the SDK resolves ${expected}; ${broken.length} of ${packs.length} pack(s) lack it — `
+      + broken.map((p) => `${p.pack.replace(/^Microsoft\.NETCore\.App\.Runtime\.AOT\./, '…')} `
+        + `(has ${p.installed.join(', ') || 'nothing'})`).join('; ')
+      + ' — a build for those targets dies in the AOTCompile task on a missing `mono-aot-cross`',
     good: false,
   };
 }
@@ -564,23 +575,20 @@ function msbuildProperty(target: Target, cfg: DeployConfig, name: string): strin
  * rather than reconstructed: an Intel Mac, an Apple Silicon Mac, a simulator build and a device build each
  * name a different one, and only the installed set knows which this machine has.
  */
-function aotCrossPack(target: Target, expected: string | null):
-  { pack: string | null; installed: string[]; compilerPresent: boolean } {
-  const absent = { pack: null, installed: [], compilerPresent: false };
+function aotCrossPacks(target: Target, expected: string | null):
+  { pack: string; installed: string[]; compilerPresent: boolean }[] {
   const packs = packsDirectory(target);
-  if (!packs) return absent;
+  if (!packs) return [];
 
-  const pack = target.list(packs)
-    .find((name) => /^Microsoft\.NETCore\.App\.Runtime\.AOT\..+\.Cross\.ios/.test(name));
-  if (!pack) return absent;
-
-  return {
-    pack,
-    installed: target.list(target.join(packs, pack)),
-    // The exact path the failing task names, minus its `Sdk/..` detour.
-    compilerPresent: Boolean(expected)
-      && target.exists(target.join(packs, pack, expected!, 'tools', 'mono-aot-cross')),
-  };
+  return target.list(packs)
+    .filter((name) => /^Microsoft\.NETCore\.App\.Runtime\.AOT\..+\.Cross\.ios/.test(name))
+    .map((pack) => ({
+      pack,
+      installed: target.list(target.join(packs, pack)),
+      // The exact path the failing task names, minus its `Sdk/..` detour.
+      compilerPresent: Boolean(expected)
+        && target.exists(target.join(packs, pack, expected!, 'tools', 'mono-aot-cross')),
+    }));
 }
 
 /** Xcode's known Apple IDs, or null when the preference cannot be read. */

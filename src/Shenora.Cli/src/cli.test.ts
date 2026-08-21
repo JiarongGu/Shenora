@@ -713,37 +713,75 @@ describe('describeBindings — the row has to reflect the PROJECT, not only the 
 });
 
 describe('describeAotCrossPack — the packs `doctor` said `ready` without ever looking at', () => {
-  const pack = 'Microsoft.NETCore.App.Runtime.AOT.osx-x64.Cross.iossimulator-x64';
+  const device = 'Microsoft.NETCore.App.Runtime.AOT.osx-x64.Cross.ios-arm64';
+  const simArm = 'Microsoft.NETCore.App.Runtime.AOT.osx-x64.Cross.iossimulator-arm64';
+  const simX64 = 'Microsoft.NETCore.App.Runtime.AOT.osx-x64.Cross.iossimulator-x64';
 
   it('🔴 catches the SKEW that made a `ready` Mac unbuildable, and names both versions', () => {
-    // Measured: the iOS SDK resolved 10.0.10; every pack installed was 10.0.11. The build died in
+    // Measured: the iOS SDK resolved 10.0.10; the pack installed was 10.0.11. The build died in
     // AOTCompile naming an MSBuild task rather than the problem.
-    const r = describeAotCrossPack({ pack, expected: '10.0.10', installed: ['10.0.11'], compilerPresent: false });
+    const r = describeAotCrossPack({
+      expected: '10.0.10',
+      packs: [{ pack: device, installed: ['10.0.11'], compilerPresent: false }],
+    });
     expect(r.good).toBe(false);
     expect(r.text).toContain('10.0.10');
     expect(r.text).toContain('10.0.11');
   });
 
-  it('passes when the resolved version is there WITH its compiler', () => {
-    expect(describeAotCrossPack({ pack, expected: '10.0.11', installed: ['10.0.11'], compilerPresent: true }).good)
-      .toBe(true);
+  it('🔴 reports EVERY ios cross pack, not the first — the real Mac has three that version apart', () => {
+    // Measured on the Intel Mac 2026-08-21: `Cross.iossimulator-x64` carried 10.0.10 (an adopter's
+    // symlink) while the device and simulator-arm64 packs did not. Checking one made the verdict a coin
+    // flip on directory order, and hid two targets that genuinely cannot build.
+    const r = describeAotCrossPack({
+      expected: '10.0.10',
+      packs: [
+        { pack: device, installed: ['10.0.11', '9.0.19'], compilerPresent: false },
+        { pack: simArm, installed: ['10.0.11', '9.0.19'], compilerPresent: false },
+        { pack: simX64, installed: ['10.0.10', '10.0.11', '9.0.19'], compilerPresent: true },
+      ],
+    });
+    expect(r.good).toBe(false);
+    expect(r.text).toContain('2 of 3');
+    expect(r.text).toContain('Cross.ios-arm64');
+    expect(r.text).toContain('Cross.iossimulator-arm64');
+    // The healthy one must NOT be listed as broken.
+    expect(r.text).not.toContain('Cross.iossimulator-x64');
+  });
+
+  it('passes only when EVERY pack carries the resolved version with its compiler', () => {
+    const r = describeAotCrossPack({
+      expected: '10.0.11',
+      packs: [
+        { pack: device, installed: ['10.0.11'], compilerPresent: true },
+        { pack: simX64, installed: ['10.0.11'], compilerPresent: true },
+      ],
+    });
+    expect(r.good).toBe(true);
+    expect(r.text).toContain('2 pack(s)');
   });
 
   it('🔴 fails on a present version whose BINARY is missing — the file the task actually opens', () => {
     // Version-matching is not the check; `mono-aot-cross` existing is. A pack directory can be there
     // with nothing usable in it, and that is indistinguishable from the skew at the point of failure.
-    const r = describeAotCrossPack({ pack, expected: '10.0.11', installed: ['10.0.11'], compilerPresent: false });
+    const r = describeAotCrossPack({
+      expected: '10.0.11',
+      packs: [{ pack: device, installed: ['10.0.11'], compilerPresent: false }],
+    });
     expect(r.good).toBe(false);
   });
 
   it('does not GUESS when MSBuild could not be asked — "ready" on a guess is the defect it fixes', () => {
-    const r = describeAotCrossPack({ pack, expected: null, installed: ['10.0.11'], compilerPresent: false });
+    const r = describeAotCrossPack({
+      expected: null,
+      packs: [{ pack: device, installed: ['10.0.11'], compilerPresent: false }],
+    });
     expect(r.good).toBe(true);
     expect(r.text).toContain('could not ask');
   });
 
   it('reports a machine with no cross pack at all as MISSING, with the install command', () => {
-    const r = describeAotCrossPack({ pack: null, expected: '10.0.11', installed: [], compilerPresent: false });
+    const r = describeAotCrossPack({ expected: '10.0.11', packs: [] });
     expect(r.good).toBe(false);
     expect(r.text).toContain('workload install');
   });
