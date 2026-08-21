@@ -217,10 +217,15 @@ if (fs.existsSync(decPath)) {
 // The prose rule has been there since 2026-08-05 and was broken twice: the file reached 502 lines
 // holding six open tasks, then 570 lines holding three and 25 done-blocks. A `✅` is the same defect
 // as `DONE` — it reads as progress while it is really an entry that failed to leave.
+//
+// 🔴 THE PATTERN USED TO ANCHOR ON ONE OPTIONAL BULLET CHAR (`[-*]?`), so `**✅ …**` walked straight
+// past it — the `*` matched, and the SECOND `*` was not a marker. Every heading-ish line in that file
+// is bold, so this is the shape a writer reaches for first, and three of them landed under a green
+// `verify` on 2026-08-21. Leading markup is now skipped as a GROUP rather than a single character.
 const tasksPath = path.join(repo, 'TASKS.md');
 if (fs.existsSync(tasksPath)) {
   fs.readFileSync(tasksPath, 'utf8').split(/\r?\n/).forEach((line, i) => {
-    if (/^\s*[-*]?\s*(✅|\[x\]|\*\*DONE\*\*|\bDONE\b:)/.test(line)) {
+    if (/^[\s>*_-]*(✅|\[x\]|\*\*DONE\*\*|\bDONE\b:)/.test(line)) {
       flag('TASKS.md', i + 1, line.trim().slice(0, 100),
         'an entry is OPEN or GONE — a done marker is an entry that failed to leave, and the file stops tracking remaining work');
     }

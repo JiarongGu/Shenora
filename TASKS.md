@@ -5,13 +5,13 @@ this file is the size of the remaining work, which is the whole point of looking
 archive; `CHANGELOG.md` is the release-facing log. `> DIRECTION (owner):` blockquotes capture steering
 verbatim and stay as long as they still steer.
 
-🔴 **A `✅` is the same defect as `DONE`: an entry that failed to leave.** This drift has recurred four
+🔴 **A `✅` is the same defect as `DONE`: an entry that failed to leave.** This drift has recurred five
 times — 502 lines holding six open tasks, then 570 holding three, then 458 holding seven, then 197
-holding six. `node devtools/dev.mjs doc-shape` fails on a done MARKER here, and the fourth recurrence is
-the one it could not see: **no marker anywhere, just finished work narrated at length** — a 70-line
-diagnosis kept for two open lines under it. ⚠ **The test is not "is there a ✅", it is "would deleting
-this paragraph lose anything a future session must ACT on?"** If the answer is no, the commit that
-landed it is where it lives.
+holding six, then 123 holding five. `node devtools/dev.mjs doc-shape` fails on a done MARKER here, and the
+last two recurrences are the ones it could not see: **no marker at all, just finished work narrated at
+length**, and then a marker written as `**✅ …**`, which its regex read straight past. ⚠ **The test is not
+"is there a ✅", it is "would deleting this paragraph lose anything a future session must ACT on?"** If
+the answer is no, the commit that landed it is where it lives.
 
 **Status: v0.12.0 is PUBLISHED and verified live** — all 5 NuGet packages plus `@shenora/react` and
 `@shenora/cli`, checked against the registries rather than the tree. It carried the media first-load
@@ -51,87 +51,29 @@ readings are a simulator's, and there is no BEFORE number on any machine — the
   reachable for ORDINARY 1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be
   copied — so this path is newly hot, not newly correct.
 
-**A remote source HAS now crossed a real network — measured by an adopter, 2026-08-21.** Driven against
-that adopter's own running server over a LAN hop (not loopback, and not synthetic), through
-`MediaByteSource.ForRanges` on 0.12.0, against a real 882,044-byte track served with real
-`206`/`Content-Range`:
+### 🍎 THE ADOPTER FIXES ARE PROVEN ON ANDROID — iOS IS THE HALF NO MACHINE HERE CAN REACH
 
-| arm | result |
-|---|---|
-| whole file over the LAN | bytes match — **4 fetches**, 11 ms in fetch, 18 ms total |
-| seek to the midpoint, then read 64 KiB | bytes match — **1 fetch** (no re-read from zero) |
-| body DIES mid-read (8 KiB in, connection aborted) | **throws `IOException`** rather than truncating |
-| every fetch answers a QUARTER of the ask, cleanly | bytes match — 173 fetches |
+Three findings from an adopter on 2026-08-21 are fixed and landed: the interceptor's two diagnostics, the
+two `ios doctor` rows, and the sample that the first of those caught. Both interceptor warnings are
+sabotage-verified in both directions on an Android emulator, and the pack row's MSBuild assumption is
+confirmed on this box — `git log` carries the evidence. What is left needs a Mac.
 
-The 4-request plan holds over a real network — the same number the loopback run produced. A seek costs one
-fetch rather than a re-read. The documented *"returning FEWER is legal — it is asked again for the rest"*
-is true in practice at a 4× short-answer rate, with no truncation. And a dying body **throws**, which is
-the outcome worth having: a caller can retry, where a silent short read cannot be noticed — worth keeping
-as a stated guarantee, since a future change that "helpfully" swallowed it would be invisible.
-
-🔴 **The open list narrows from five to two by CONSTRUCTION, not by measurement.** Of *TLS, a proxy, a
-redirect, latency, a connection that dies mid-body* — the first three **cannot reach the kit at all**. The
-fetch delegate is caller-side: it receives `(offset, count, token)` and returns a `Stream`, so the
-transport, the redirect policy and the credentials live entirely on the adopter's side of the seam and the
-kit never observes them. That is the seam doing its job. Only latency and mid-body death were ever
-testable here, and both now are.
-
-### 🍎🧩 THREE ADOPTER FINDINGS ARE FIXED IN THE TREE AND NONE HAS RUN WHERE IT MATTERS
-
-All three were reported by an adopter on 2026-08-21 and all three are now written, typechecked and
-unit-tested — but **every one of them executes only on hardware this repo cannot reach**, so what is left
-is a run, not a design. The narrative that produced them is in the commit; what a future session must ACT
-on is below.
-
-**What landed.** `ios doctor` gained an `aot cross pack` row and its `ios bindings` row now reads the
-project's effective `TargetPlatformVersion` (so a correctly-pinned csproj finally reports `ok`) and names
-`-p:ValidateXcodeVersion=false` whenever the band in force is not the Xcode's own band — two constraints,
-stated separately, because no choice of band can satisfy the pack's EXACT-Xcode assertion.
-`MobileWebViewInterceptor` gained two one-shot warnings: attached-after-the-webview-was-realized, and a
-document served with no `hybridwebview.js` in it. `docs/guides/mobile.md` carries the attach rule, the
-runtime-served-document half of the bridge-tag warning, and the `transferSize` trap.
-
-**✅ The pack row's assumption is CONFIRMED, and it was confirmable here** — the SDK mechanics are not
-Mac-specific. Measured on the Windows dev box, 2026-08-21: `-getProperty:<name>` returns a bare value at
-exit 0 (so the parsing is right), `BundledNETCoreAppPackageVersion` evaluates to **`10.0.10`** — exactly
-the version the adopter's `AOTCompile` failure reported the iOS SDK resolving the cross pack at — and the
-layout is `packs/<pack>/<version>/tools/mono-aot-cross`, beside `llc` and `opt`, which is the path the row
-tests. **What remains Mac-only is the NAMING**: this box carries `…AOT.win-x64.Cross.android-arm64`, so
-the `…Cross.ios*` pattern is inferred from the android ones rather than seen.
-
-- [ ] 🔴 **Prove the two `ios doctor` rows on a Mac — including the case where they must stay QUIET.** The
-  pure halves (`describeBindings`, `describeAotCrossPack`) have 11 tests; the PROBERS (`msbuildProperty`,
-  `aotCrossPack`) have none, and after the confirmation above what is left for them is the Mac-only half:
-  `xcrun`, the `…Cross.ios*` pack name, and a real iOS `packs/` tree. A row that reports `MISSING` on a
-  healthy Mac is worse than the silence it replaced, so run it on one that BUILDS before trusting it.
+- [ ] 🔴 **Prove the two `ios doctor` rows on a Mac, including where they must stay QUIET.** The decision
+  halves (`describeBindings`, `describeAotCrossPack`) have 11 tests; the PROBERS (`msbuildProperty`,
+  `aotCrossPack`) have none and need `xcrun`, a real iOS `packs/` tree, and the `…Cross.ios*` pack name —
+  which is inferred from this box's `…Cross.android-arm64` rather than seen. **A row that reports
+  `MISSING` on a healthy Mac is worse than the silence it replaced**, so run it on one that BUILDS first.
   - The adopter's symlink (`packs/<pack>/10.0.10 -> 10.0.11`) is how to reproduce the failing side.
-
-**✅ THE ATTACH WARNING IS PROVEN ON ANDROID, BOTH DIRECTIONS** (MuMu emulator, x86_64, SDK 32,
-2026-08-21). Late attach FIRES, naming the first request it saw; the constructor attach is SILENT. It ran
-twice on the firing side and named a different first request each time (`_framework/hybridwebview.js`, then
-`shenora/transport.js`), which is the diagnostic reading the world rather than matching a fixed string.
-**Its first catch was this repo's own sample** — fixed in `6c75d3f`, since the sample is what an adopter
-copies.
-
-**✅ AND THE BRIDGE-TAG CHECK IS PROVEN BOTH WAYS TOO** — sabotage-verified on the same emulator. QUIET on a
-tagged document (the fragment repair serves the packaged `index.html` as a `MemoryStream`, which is exactly
-the path the check runs on); FIRES within a millisecond on an untagged one, naming the URI. The sabotage
-was a throwaway middleware claiming the fragment document request with `<html><body>no bridge here</body>`,
-removed after, and the restored build is silent again.
-⚠ `PageProbe.SabotageMainDocument` is NOT the tool for this — it answers `404`, and the check runs only on
-a `200` that is `text/html`.
-
-⚠ **A document served from DISK is still never checked** — the check reads only a `MemoryStream`,
-deliberately, and stays UNSPENT when it skips one. That limit is unexercised either way; it is a design
-question, not a run.
-- [ ] **Run both on iOS.** Everything above is Android. They compile for `net10.0-ios` here — `verify`
-  builds it on this Windows box, so a compile break is caught — but the iOS arm has never executed, and
+- [ ] **Run both interceptor warnings on iOS.** They compile for `net10.0-ios` here — `verify` builds it
+  on this Windows box, so a compile break is caught — but the iOS arm has never executed, and
   `RangeDelivery` is the one place the two shells deliberately differ.
+- [ ] **Decide the disk-served document limit.** The bridge-tag check reads only a `MemoryStream`, so
+  `ToArray()` cannot disturb a response where seeking a `FileStream` could; it stays UNSPENT when it skips
+  one. So a document served from disk is never checked at all. That is a design question, not a run.
 
-**⚠ Noticed while doing the above, NOT a regression and NOT yet a defect:** `SEEK-RUN: FAIL — seg1 declares
-no sound (picture=6000)` on that Android emulator. A/B'd with the sample change stashed and it is
-IDENTICAL on both arms, so it is pre-existing rather than caused by the attach move; `REMUX: PASS` and
-`REMUX-SEEK: PASS` throughout. The only recorded `SEEK-RUN: PASS` is from the **iOS simulator**, so there is
-no Android baseline to compare against — this may be an emulator codec quirk (MuMu is a consumer emulator,
-not a standard AVD) rather than the kit. Worth one run on a real Android device before reading anything
-into it.
+**⚠ Unattributed, and deliberately NOT a defect claim:** `SEEK-RUN: FAIL — seg1 declares no sound
+(picture=6000)` on the Android emulator. A/B'd against the same tree with the sample change stashed and it
+is IDENTICAL on both arms, so it is pre-existing; `REMUX: PASS` and `REMUX-SEEK: PASS` throughout. The only
+recorded `SEEK-RUN: PASS` is from the **iOS simulator**, so there is no Android baseline to compare
+against, and that emulator is a consumer product rather than a standard AVD. Worth one run on a real
+Android device before reading anything into it.
