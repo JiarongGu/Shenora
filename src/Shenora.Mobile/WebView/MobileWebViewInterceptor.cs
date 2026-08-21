@@ -12,17 +12,35 @@ namespace Shenora.Mobile;
 /// </summary>
 public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
 {
+    /// <summary>The MAUI bridge script a page must load for <c>window.HybridWebView</c> to exist.</summary>
+    private const string BridgeScript = "hybridwebview.js";
+
+    /// <summary>Largest document the bridge-tag check will read. A document is small; anything bigger is not one.</summary>
+    private const int BridgeTagScanLimit = 2 * 1024 * 1024;
+
     private readonly HybridWebView _webView;
     private readonly ILogger? _log;
     private readonly Task<BundleDocument?> _document;
     private readonly WebViewResourcePipeline _pipeline = new();
+    private readonly string _defaultFile;
+    private readonly bool _attachedAfterRealize;
+    private bool _firstRequestSeen;
+    private bool _bridgeTagChecked;
     private bool _disposed;
 
-    /// <param name="webView">The webview to intercept. Its <c>WebResourceRequested</c> is subscribed here.</param>
+    /// <param name="webView">
+    /// The webview to intercept. Its <c>WebResourceRequested</c> is subscribed here — <b>so the moment this
+    /// constructor runs is what decides whether the app's DOCUMENT reaches the pipeline</b>. Construct it in
+    /// the page CONSTRUCTOR, before <c>Content = webView</c>; <c>Loaded</c>/<c>OnAppearing</c> is already too
+    /// late, because the handler is realized and the webview has navigated by then
+    /// (<see cref="WarnIfAttachedTooLate"/> says so at runtime).
+    /// </param>
     /// <param name="pipeline">
     /// The app-level pipeline (<c>app.UseFiles(…)</c>, <c>app.UseMediaPlayer()</c>), applied now — routes
-    /// are read per request, so this is early enough for the first document. Pass <c>app.Pipeline</c>, or a
-    /// fresh <see cref="WebViewPipeline"/> for a webview that must serve nothing.
+    /// are read per request, so this is early enough for the first document <b>provided this constructor
+    /// ran before the webview navigated</b> (see <paramref name="webView"/>: the routes being late is not
+    /// the failure mode, the SUBSCRIPTION being late is). Pass <c>app.Pipeline</c>, or a fresh
+    /// <see cref="WebViewPipeline"/> for a webview that must serve nothing.
     /// </param>
     /// <param name="log">Optional diagnostics. Guarded — a throwing sink must not break serving.</param>
     public MobileWebViewInterceptor(HybridWebView webView, WebViewPipeline pipeline, ILogger? log = null)
@@ -30,7 +48,16 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
         ArgumentNullException.ThrowIfNull(pipeline);
         _log = log;
+
+        // 🔴 SAMPLED BEFORE ANYTHING ELSE, because it is the only moment it means anything. A realized
+        // handler says the platform view already exists, so this interceptor is being attached to a webview
+        // that has probably navigated — the shape that silently sends the document to the platform. Half of
+        // a diagnosis, never a warning on its own: `WarnIfAttachedTooLate` waits for the first request.
+        _attachedAfterRealize = webView.Handler is not null;
+
         _webView.WebResourceRequested += OnWebResourceRequested;
+
+        _defaultFile = string.IsNullOrWhiteSpace(_webView.DefaultFile) ? "index.html" : _webView.DefaultFile.Trim('/');
 
         // Warmed here so the fragment repair answers from memory, never doing I/O on the platform's event
         // thread. A first load is always fragment-free, so it has that whole navigation to finish.
@@ -73,11 +100,15 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
 
     private void OnWebResourceRequested(object? sender, WebViewWebResourceRequestedEventArgs e)
     {
+        WarnIfAttachedTooLate(e.Uri);
+
         // Null = no routes registered. ⚠ The platform repair must still run: the defect it repairs is the
         // PLATFORM's and fires whether or not the app serves anything of its own.
         if (_pipeline.Build() is not { } handler)
         {
-            Answer(e, RepairDocumentRequest(e.Uri));
+            var repaired = RepairDocumentRequest(e.Uri);
+            WarnIfDocumentHasNoBridge(e.Uri, repaired);
+            Answer(e, repaired);
             return;
         }
 
@@ -104,7 +135,104 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
             return;
         }
 
+        WarnIfDocumentHasNoBridge(e.Uri, response);
         Answer(e, response);
+    }
+
+    /// <summary>
+    /// Say ONCE, on the first request, that this interceptor was attached after its webview was realized
+    /// <b>and</b> the first thing it ever saw was not the app's document.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 <b>Attachment TIME decides whether any route works, and getting it wrong is otherwise perfectly
+    /// silent</b> — nothing throws, nothing warns, and <see cref="Use"/> returns a live registration either
+    /// way. Measured in an adopter's app: constructed in <c>MainPage.OnLoaded</c>, which is the natural
+    /// place because that is where the DI services are reachable, so the webview had already navigated and
+    /// the document and every asset came from <c>Resources/Raw/wwwroot</c> — only the favicons ever reached
+    /// the pipeline. It survived months because offline files and the media routes all answer requests the
+    /// PAGE makes later; it surfaces the first time an app serves the app SHELL from the interceptor, and
+    /// then reports a WRONG answer rather than none (a client-update watchdog confirmed a deliberately
+    /// broken bundle, because the previously packaged client was what was really running).
+    /// <para>
+    /// ⚠ <b>BOTH halves are required, so this cannot cry wolf.</b> A realized handler alone is not proof of
+    /// anything, and a non-document first request alone is normal for a webview that serves nothing. A
+    /// correctly attached interceptor sees the document FIRST and never reaches this log.
+    /// </para>
+    /// </remarks>
+    private void WarnIfAttachedTooLate(Uri uri)
+    {
+        if (_firstRequestSeen) return;
+        _firstRequestSeen = true;
+        if (!_attachedAfterRealize || IsDocumentRequest(uri)) return;
+
+        Log(() => "[Shenora.Mobile] This interceptor was constructed after its webview's handler already "
+                + $"existed, and the first request it saw was '{uri}' rather than the app's document — so "
+                + "the document was served by the PLATFORM and none of the pipeline's routes answered it. "
+                + "Construct the interceptor in the page CONSTRUCTOR, before `Content = webView`; "
+                + "`Loaded`/`OnAppearing` is already too late.");
+    }
+
+    /// <summary>
+    /// Say ONCE that a document this pipeline served carries no MAUI bridge script — which silently
+    /// disables every <c>invoke</c>/<c>post</c> the page makes.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 <b>Only the kit is in a position to notice, which is why it does.</b> The tag exists solely
+    /// because the kit's transport needs it, and a document served from the PIPELINE never passes through
+    /// the build step that injects it into the packaged <c>index.html</c> — so a client-update bundle or a
+    /// dev proxy arrives untagged and <c>window.HybridWebView</c> never exists. With no bridge there is no
+    /// handshake, so anything gated on the page confirming itself (exactly what a safe client update is)
+    /// can never confirm and rolls back for ever.
+    /// <para>
+    /// ⚠ <b>It must never cost a response, so it reads only what it cannot disturb.</b>
+    /// <see cref="MemoryStream.ToArray"/> does not move <c>Position</c>, so the platform still receives the
+    /// whole body; a body the kit would have to seek to read (a <c>FileStream</c>) is left alone rather
+    /// than risked, and leaves the check unspent for the next document. Synchronous by construction — an
+    /// <c>await</c> on this thread deadlocks iOS's main thread (<see cref="RepairDocumentRequest"/>).
+    /// </para>
+    /// </remarks>
+    private void WarnIfDocumentHasNoBridge(Uri uri, WebViewResourceResponse? response)
+    {
+        if (_bridgeTagChecked || response is null) return;
+        if (response.StatusCode != 200 || !IsDocumentRequest(uri)) return;
+        if (!response.Headers.TryGetValue("Content-Type", out var type)
+            || !type.Contains("html", StringComparison.OrdinalIgnoreCase)) return;
+
+        try
+        {
+            // 🔴 The latch is set only once a body has actually been SCANNED, and that ordering is the
+            // whole feature. Latching on the first document REQUEST would spend it on the packaged
+            // index.html — commonly a FileStream, which is not read — and then skip the in-memory bundle
+            // served later, which is precisely the document this check exists for.
+            if (response.Content is not MemoryStream body || body.Length is 0 or > BridgeTagScanLimit) return;
+            _bridgeTagChecked = true;
+
+            if (System.Text.Encoding.UTF8.GetString(body.ToArray())
+                    .Contains(BridgeScript, StringComparison.OrdinalIgnoreCase)) return;
+
+            Log(() => $"[Shenora.Mobile] The document served for '{uri}' does not reference "
+                    + $"'{BridgeScript}', so `window.HybridWebView` will not exist and every bridge call "
+                    + "the page makes will fail silently. A document served from the pipeline does not pass "
+                    + "through the build step that tags the packaged index.html — inject the tag at serve "
+                    + "time.");
+        }
+        catch (Exception ex)
+        {
+            // A diagnostic that breaks serving is worse than no diagnostic.
+            Log(() => "[Shenora.Mobile] Bridge-tag check skipped", ex);
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="uri"/> asks for the app's own document — the site root, the root with a
+    /// <c>#fragment</c>, or the webview's configured <c>DefaultFile</c> by name.
+    /// </summary>
+    private bool IsDocumentRequest(Uri uri)
+    {
+        if (!uri.IsAbsoluteUri) return false;
+        if (WebViewResourceRequest.IsRootWithFragment(uri)) return true;
+        var path = uri.AbsolutePath.Trim('/');
+        return path.Length == 0 || path.Equals(_defaultFile, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -261,7 +389,7 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     private Task<BundleDocument?> ReadBundleDocument()
     {
         var root = (_webView.HybridRoot ?? string.Empty).Trim('/');
-        var file = string.IsNullOrWhiteSpace(_webView.DefaultFile) ? "index.html" : _webView.DefaultFile.Trim('/');
+        var file = _defaultFile;
         var asset = root.Length == 0 ? file : $"{root}/{file}";
 
         return Task.Run(async () =>

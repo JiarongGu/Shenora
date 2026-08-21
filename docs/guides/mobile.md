@@ -84,6 +84,21 @@ is what matters — the user's file gets written; nobody is left to hear the ans
 does not exist, and the failure is silent in the worst way: the page renders, the send throws a
 `TypeError` nobody sees, and the host waits forever for a handshake.
 
+⚠ **This is not only about the PACKAGED `index.html`, which is what it reads like.** A document your own
+pipeline serves — a client-update bundle fetched from a server, a dev proxy — never passes through the
+build step that injects the tag, so it arrives untagged and the same silent failure returns by a route a
+build step cannot fix. It is worse there: with no bridge there is no handshake, so anything gated on the
+page confirming itself (exactly what a safe client update is) can never confirm and rolls back for ever.
+`MobileWebViewInterceptor` logs a warning the first time it serves a document with no tag in it — **inject
+the tag at serve time.**
+
+🔴 **And the interceptor must exist before the webview navigates.** Its constructor is where
+`WebResourceRequested` is subscribed, so constructing it in `Loaded`/`OnAppearing` — the natural place,
+because that is where DI services are reachable — is already too late: the platform serves the document
+and every asset from `Resources/Raw/wwwroot`, and only late requests like the favicons ever reach your
+routes. Nothing throws and `Use(…)` returns a live registration either way. Construct it in the page
+CONSTRUCTOR, before `Content = webView`; the interceptor says so in the log when it detects the shape.
+
 ### What transfers, and what does not
 
 | | |
@@ -153,6 +168,13 @@ Two consequences, and they bite in sequence:
 so a page-side error can be genuinely invisible. Both this repo and the adopter independently ended up
 routing page → host over IPC and logging host-side (`PageDiagModule` in `samples/Shenora.Sample.Maui`). It is
 a few lines; copy the pattern.
+
+⚠ **And do not ask the PAGE where its bytes came from.** `transferSize` is **0 for every intercepted
+response** — it is what the Resource Timing API reports when no bytes crossed a network — so the reflex
+check `performance.getEntriesByType('navigation')[0].transferSize === 0` reads as *"served from cache"*
+and is wrong with total confidence. It sent one diagnosis a long way wrong and cost a `ClearCache` hook
+that was written, shipped, then measured unnecessary and removed. The reliable question is what the
+PIPELINE served, and only the host can answer it — log it there.
 
 ### The Dynamic Island for a PLAYER — what the kit gives you, and the four things you still write
 
