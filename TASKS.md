@@ -76,77 +76,39 @@ transport, the redirect policy and the credentials live entirely on the adopter'
 kit never observes them. That is the seam doing its job. Only latency and mid-body death were ever
 testable here, and both now are.
 
-### 🔧 CLIPBOARD WRITES ARE REFUSED WHILE AN ANDROID EMULATOR RUNS — A/B RUN, CAUSE ESTABLISHED
+### 🍎🧩 THREE ADOPTER FINDINGS ARE FIXED IN THE TREE AND NONE HAS RUN WHERE IT MATTERS
 
-🔴 **The code is exonerated and so is the machine: the variable is a RUNNING EMULATOR.** The A/B this
-entry asked for was run by an adopter on 2026-08-21, on the box that reported it, with a live MuMu
-instance — their earlier attempt had only a zombie qemu, which is exactly why it never reproduced:
+All three were reported by an adopter on 2026-08-21 and all three are now written, typechecked and
+unit-tested — but **every one of them executes only on hardware this repo cannot reach**, so what is left
+is a run, not a design. The narrative that produced them is in the commit; what a future session must ACT
+on is below.
 
-| arm | emulator | failures |
-|---|---|---|
-| A | shut down | **0 of 45** |
-| B | **running** | **59 of 60** |
-| A′ | shut down again | **1 of 45** |
+**What landed.** `ios doctor` gained an `aot cross pack` row and its `ios bindings` row now reads the
+project's effective `TargetPlatformVersion` (so a correctly-pinned csproj finally reports `ok`) and names
+`-p:ValidateXcodeVersion=false` whenever the band in force is not the Xcode's own band — two constraints,
+stated separately, because no choice of band can satisfy the pack's EXACT-Xcode assertion.
+`MobileWebViewInterceptor` gained two one-shot warnings: attached-after-the-webview-was-realized, and a
+document served with no `hybridwebview.js` in it. `docs/guides/mobile.md` carries the attach rule, the
+runtime-served-document half of the bridge-tag warning, and the `transferSize` trap.
 
-Off → on → off. Deterministic rather than a spread, so the ~30 % in the old title was sampling an emulator
-that came and went. The instrument was this entry's own control — a 15-iteration PowerShell
-`Set-Clipboard` loop sharing none of the kit's code — with a read-back added.
-
-⚠ **The mechanism is NOT a second writer, which this entry assumed.** Measured at the instant of failure:
-
-- `Set-Clipboard` **throws** `Requested Clipboard operation did not succeed`. It is a REFUSED write, not a
-  value overwritten afterwards — a write-then-read-back probe records **zero** mismatches, only throws.
-- `GetOpenClipboardWindow()` is **null** at that moment, so nothing is holding the clipboard open.
-- The clipboard **owner** after each failed call is the CALLING process itself — so the call got as far as
-  taking ownership and then failed.
-
-That is the shape of a clipboard-format **listener** misbehaving on the update notification — which is
-precisely what a host↔guest clipboard bridge registers — rather than a competing `SetClipboardData`.
-
-- [ ] **Decide whether to state this as an operating condition rather than chase it further.** The suite is
-  already held out of the gate (`[Trait("Category", "RealClipboard")]`), the code is now exonerated twice
-  over, and the trigger is known and avoidable — so the remaining question is one line in
-  `mobile-harness.md` ("shut the emulator down before `dev.mjs test clipboard`"), not an investigation.
-  - ⚠ **Already ruled out — do not re-check:** Cloud Clipboard and clipboard history
-    (`EnableClipboardHistory`, `EnableCloudClipboard`, `CloudClipboardAutomaticUpload` all unset under
-    `HKCU\Software\Microsoft\Clipboard`). `cbdhsvc_*` is implicated but was never the whole story —
-    restarting it moved 13/15 → 3–6/15, which this now explains: restarting it never removed the emulator.
-
-### 🍎 TWO DIFFERENT iOS CONSTRAINTS ARE CONFLATED — band-vs-SDK, and the pack's EXACT-Xcode assertion
-
-Found by an adopter on 2026-08-21 taking the 0.12.0 remote path for the first time: Windows → LAN Mac
-(Xcode 26.3) → a real iPhone. It built, signed, packaged a 29 MB `.ipa` and launched on the device — but
-only after a step `ios doctor` does not mention, and the reason is structural rather than a missing note.
-
-**There are two constraints, and only the first is what `pickBindingBand` models.**
-
-1. **bindings ≤ SDK** — real, and the asymmetry documented above `pickBindingBand` is correct: newer
-   bindings name APIs the SDK has never shipped, older ones name APIs that still exist.
-2. **the PACK asserts an EXACT Xcode**, independently of (1). Measured on that Mac:
-
-   | band | pack | demands Xcode |
-   |---|---|---|
-   | 26.0 | 26.0.11017 | 26.0 |
-   | 26.5 | 26.5.10315 | 26.6 |
-   | 27.0 | 27.0.10417-xcode27.0 | 27.0 |
-
-   The Mac runs Xcode **26.3**. **No installed band demands an Xcode it has** — so (2) is unsatisfiable
-   for every choice, and `-p:ValidateXcodeVersion=false` is not extra advice for an edge case, it is
-   MANDATORY on any Mac whose Xcode falls between pack releases. Picking a band cannot fix it, because
-   band selection is answering the other question.
-
-⚠ **This is a validation policy, not a capability limit** — worth stating plainly, because the error reads
-like one: *"This version of .NET for iOS (26.0.11017) requires Xcode 26.0. The current version of Xcode is
-26.3."* Xcode 26.3 builds the 26.0 bindings perfectly well; it did, once the assertion was disabled. So the
-comment above `pickBindingBand` ("Verified on Xcode 26.3 … pinning to 26.0 builds, links, signs and
-installs on hardware") is reproducible only WITH the bypass, which it does not record.
-
-**Separately, the bindings ROW can never go green.** It compares installed bands to the Xcode SDK and never
-reads the csproj, so pinning `TargetPlatformVersion` exactly as instructed leaves it `MISSING` and the
-doctor `not ready`. An adopter who has complied still sees red — the mirror image of the JDK row 0.12.0
-fixed: there a green check did not predict failure, here a red one does not reflect success.
-
-- [ ] **Say both halves, and let the row reflect the project.** Name the Xcode-validation bypass beside the
-  pin (it is required whenever no installed pack matches the Mac's Xcode exactly, which is the common case
-  on a machine that updates Xcode), and read the effective `TargetPlatformVersion` so a correctly-pinned
-  project reports `ok`. Both are message-level; neither changes what the kit builds.
+- [ ] 🔴 **Prove the two `ios doctor` rows on a Mac — including the case where they must stay QUIET.** The
+  pure halves (`describeBindings`, `describeAotCrossPack`) have 11 tests; the PROBERS (`msbuildProperty`,
+  `aotCrossPack`) have none and cannot have any here — they need `xcrun`, `dotnet msbuild` and a real
+  `packs/` tree. A row that reports `MISSING` on a healthy Mac is worse than the silence it replaced.
+  - ⚠ **The one assumption to check first: `BundledNETCoreAppPackageVersion`.** It is the property the pack
+    row asks for "the version the SDK resolves the AOT cross pack at", chosen because it fits the measured
+    evidence (SDK asks 10.0.10, installed 10.0.11) — **the correspondence itself is unverified.** If it is
+    the wrong property the row degrades to `(could not ask MSBuild …)` and stays `ok`, which is the safe
+    direction, but it would also never catch the skew it exists to catch. Confirm against a Mac that
+    reproduces it; the adopter's symlink (`packs/<pack>/10.0.10 -> 10.0.11`) is how to get one back.
+- [ ] 🔴 **Prove the interceptor's two warnings on a device or the simulator, in BOTH directions.** They
+  compile for `net10.0-android` here and have never fired. The quiet direction is the one that matters: a
+  correctly-attached interceptor must produce NEITHER warning, or the kit ships a log line telling every
+  adopter they got it wrong.
+  - The attach warning needs both halves to be true — a realized handler at construction AND a
+    non-document first request — so the test is to attach in `OnLoaded` (fires) and in the page
+    constructor (silent).
+  - The bridge-tag check only reads a `MemoryStream` body, deliberately: `ToArray()` cannot disturb the
+    response, where seeking a `FileStream` could. It stays UNSPENT when it skips one, so a packaged
+    `index.html` served from disk does not consume the check the later in-memory bundle needs. ⚠ **But a
+    document served from disk is never checked at all** — confirm that is the intended limit.

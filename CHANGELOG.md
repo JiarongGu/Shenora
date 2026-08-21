@@ -28,6 +28,34 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **`ios doctor` checks the .NET AOT cross pack.** It reported `ready` on a Mac where the build was
+  structurally impossible: the iOS SDK resolved the cross pack at one version, every pack installed was
+  another, and the build died in `AOTCompile` on a missing `mono-aot-cross`. The new `aot cross pack` row
+  names the resolved version against the installed ones. It bites a Debug SIMULATOR build — the loop this
+  CLI recommends — because the interpreter still shells out to that binary, and `dotnet workload restore`
+  reports success while installing nothing. ⚠ When the expected version cannot be read the row says so and
+  stays `ok`, rather than failing a healthy machine on a guess.
+- **`MobileWebViewInterceptor` reports the two ways serving your own document silently does nothing.** It
+  warns once when it was constructed after its webview was already realized *and* the first request it saw
+  was not the app's document — the shape that hands the document to the platform and leaves the pipeline
+  answering only late requests. And it warns once when a document it serves carries no
+  `_framework/hybridwebview.js`, which leaves `window.HybridWebView` undefined and every bridge call
+  failing silently. Neither changes what is served: the tag check reads only an in-memory body, and never
+  moves it.
+
+### Fixed
+
+- **`ios doctor`'s `ios bindings` row can go green.** It compared installed binding bands to the Xcode SDK
+  and never read the csproj, so pinning `TargetPlatformVersion` exactly as the row instructed still left it
+  `MISSING` and the doctor `not ready`. It now reads the project's effective value. The row also names
+  `-p:ValidateXcodeVersion=false` when the band in force is not the Xcode's own — a SECOND, independent
+  constraint, because the .NET-for-iOS pack asserts an EXACT Xcode that no choice of band can satisfy when
+  no installed pack was cut for the Mac's version. That is a validation policy, not a capability limit.
+
 ## 0.12.0 — 2026-08-20
 
 ### Breaking
