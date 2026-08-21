@@ -247,11 +247,34 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
         // Nothing claimed it — leave `Handled` alone so the platform serves it normally (the bundle).
         if (response is null) return;
 
-        // The PORTABLE overload: every header reaches the native response on both platforms, so
-        // `e.PlatformArgs` is not needed.
-        e.SetResponse(response.StatusCode, response.ReasonPhrase, PlatformHeaders(response.Headers),
-            PlatformBody(response.Content));
-        e.Handled = true;
+        try
+        {
+            // The PORTABLE overload: every header reaches the native response on both platforms, so
+            // `e.PlatformArgs` is not needed.
+            e.SetResponse(response.StatusCode, response.ReasonPhrase, PlatformHeaders(response.Headers),
+                PlatformBody(response.Content));
+            e.Handled = true;
+        }
+        catch (Exception ex)
+        {
+            // 🔴 THE HANDOVER ITSELF THROWS, and on Android an escape from here crosses JNI out of
+            // `shouldInterceptRequest` and KILLS THE PROCESS — the same death `PlatformBody` guards for the
+            // READ path, one statement earlier. Measured on Android 12 (SDK 32), a middleware answering
+            // 302: `java.lang.IllegalArgumentException: statusCode can't be in the [300, 399] range` from
+            // `WebResourceResponse.<init>`, FATAL EXCEPTION, app gone. Android also rejects an empty or
+            // non-ASCII reason phrase, and `PlatformHeaders` can throw on a duplicate header key.
+            // ⚠ The guard belongs HERE rather than around the pipeline: the try above deliberately covers
+            // middleware EXECUTION, and widening it would put a second `SetResponse` on the failure path.
+            // The desktop shell has guarded this same seam all along (`WebViewHost.CreateWebResourceResponse`).
+            Log(() => $"[Shenora.Mobile] The platform refused the response for '{e.Uri}' "
+                    + $"(status {response.StatusCode}) — it will serve this request itself.", ex);
+
+            // `Handled` is set only after a successful handover, so it is still false and the platform
+            // takes the request back. The body never reached the platform, so disposing it is OURS to do —
+            // otherwise a file-backed response leaks its handle until finalization.
+            try { response.Content.Dispose(); }
+            catch (Exception disposeFailed) { Log(() => "[Shenora.Mobile] Disposing the refused body", disposeFailed); }
+        }
     }
 
     /// <summary>
