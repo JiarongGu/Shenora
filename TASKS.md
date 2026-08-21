@@ -13,12 +13,15 @@ length**, and then a marker written as `**✅ …**`, which its regex read strai
 "is there a ✅", it is "would deleting this paragraph lose anything a future session must ACT on?"** If
 the answer is no, the commit that landed it is where it lives.
 
-**Status: v0.12.0 is PUBLISHED and verified live** — all 5 NuGet packages plus `@shenora/react` and
-`@shenora/cli`, checked against the registries rather than the tree. It carried the media first-load
-rewrite, the remote byte-range source (D78) and a repo-wide comment/doc pass, and it was **mostly
-BREAKING** — `CHANGELOG.md`'s `## 0.12.0` is the migration record. ⚠ `src/Directory.Build.props` must now
-stay at `0.12.0`: the release workflow owns the bump, and a hand-bump moves the baseline and skips a
-release (`release-discipline.md`).
+**Status: v0.13.0 is PUBLISHED** — tag `v0.13.0`, release commit `35d065a`. `@shenora/react` and
+`@shenora/cli` answer 0.13.0 on npm; the five NuGet packages were still serving 0.12.0 immediately after,
+which is the validation/CDN lag 0.11.0 also showed — **re-check rather than re-push**. The tag is the
+evidence they went out: the workflow creates it only after every publish succeeds.
+It carried all 14 blockers from the 2026-08-21 full review — two of them critical (a `Set`/`Map`/`Date`
+selector pinned for a component's life in `@shenora/react`; a `302`/`304` response killing the Android
+process) — and it is **not breaking**: 0 removals, 0 new `required`, 0 namespace moves.
+⚠ `src/Directory.Build.props` must now stay at `0.13.0`: the release workflow owns the bump, and a
+hand-bump moves the baseline and skips a release (`release-discipline.md`).
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This is the maintainer's remaining work,
 > and a short list means the kit is in good shape rather than that nothing is happening. Several entries
