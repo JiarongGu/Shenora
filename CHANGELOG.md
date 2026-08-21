@@ -69,6 +69,12 @@ at the first list and missed five more breaking changes.
   ssh round trip is faster than a detached login shell starting. Stale failures were blamed on the current
   build and stale successes reported for artifacts that predated it; two developers on one Mac read each
   other's. Each run now stamps its own paths and sweeps them.
+- **The first track to run out keeps its real frame gap.** More source is indexed when the track about to
+  be consumed is one sample from its end, so the frame being written has a successor to time against — but
+  the condition asked whether EVERY track was near its end. Two tracks rarely run out together (a
+  soundtrack has far more frames than a picture track), so the first to run out was consumed while the
+  other still had plenty, no extension happened, and that frame took the track's DECLARED duration instead
+  of its real gap.
 - **A track that starts LATE is no longer dropped for the whole run.** The init segment declares track
   ids and is written beside the FIRST fragment, so it only ever named the tracks that had produced by
   then — a copied track produces from frame one while an encoder may hold a whole segment, and a

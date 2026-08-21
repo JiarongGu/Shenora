@@ -98,6 +98,120 @@ public class SegmentRunWriterTests : IDisposable
     /// <summary>Sample bytes for every offset any track will ask for.</summary>
     private static Stream Source(int samples) => new MemoryStream(new byte[(samples + 8) * SampleBytes]);
 
+
+    /// <summary>
+    /// Per-sample durations from a fragment's ONE <c>trun</c> — audio-only runs, so there is no ambiguity
+    /// about which track is being read. Records are <c>duration, size, flags</c> (12 bytes) after the
+    /// box's version/flags, sample count and data offset.
+    /// </summary>
+    private static List<uint> SampleDurations(string segmentPath, int occurrence = 0)
+    {
+        var bytes = File.ReadAllBytes(segmentPath);
+        var at = IndexOf(bytes, "trun", occurrence);
+        Assert.True(at > 0, "the fragment carries no trun");
+        var body = at + 4;                                     // past the fourcc, at version/flags
+        var count = (int)U32(bytes, body + 4);
+        var durations = new List<uint>(count);
+        for (var i = 0; i < count; i++) durations.Add(U32(bytes, body + 12 + (i * 12)));
+        return durations;
+    }
+
+    private static uint U32(byte[] b, int at) =>
+        ((uint)b[at] << 24) | ((uint)b[at + 1] << 16) | ((uint)b[at + 2] << 8) | b[at + 3];
+
+    private static int IndexOf(byte[] haystack, string fourcc, int occurrence = 0)
+    {
+        var needle = fourcc.Select(c => (byte)c).ToArray();
+        var seen = 0;
+        for (var i = 0; i + needle.Length <= haystack.Length; i++)
+        {
+            var hit = true;
+            for (var j = 0; j < needle.Length; j++) if (haystack[i + j] != needle[j]) { hit = false; break; }
+            if (hit && seen++ == occurrence) return i;
+        }
+        return -1;
+    }
+
+
+    [Fact]
+    public void The_FIRST_track_to_run_out_still_gets_its_real_gap_not_the_declared_one()
+    {
+        // 🔴 More source is indexed when the track about to be consumed is one sample from its end, so the
+        // frame being written has a successor to be timed against. The condition asked whether EVERY track
+        // was near its end — and two tracks rarely run out together, because a soundtrack has far more
+        // frames than a picture track. So the picture track was consumed while the sound still had plenty,
+        // no extension happened, and its frame took the DECLARED duration instead of its real gap.
+        var (log, engine, request) = Fixture(totalSeconds: 20);
+        using var writer = new SegmentRunWriter(engine, request, Timeline);
+
+        // Picture: 4 frames, declared 200 ms. Sound: 40 frames — nowhere near ITS end.
+        var video = Track(MediaStreamKind.Video, count: 4, stepMs: 200, keyEvery: 1);
+        var audio = Track(MediaStreamKind.Audio, count: 40, stepMs: 100, offsetBase: 100);
+
+        // The frame `extend` reveals sits 500 ms after the last known one — NOT the declared 200 ms, so
+        // "took the fallback" and "took the real gap" are distinguishable.
+        var extended = false;
+        bool Extend(double reach)
+        {
+            if (extended) return false;
+            extended = true;
+            var last = video.Samples[^1];
+            video.Samples.Add(new MatroskaSample(last.Offset + SampleBytes, SampleBytes, last.Ticks + 500, true));
+            return true;
+        }
+
+        writer.Run(
+            Source(200), new SegmentTrack(video, Copy: true), new SegmentTrack(audio, Copy: true),
+            from: 0, startSeconds: 0, conversionOf: null, extend: Extend, CancellationToken.None);
+
+        Assert.True(extended, "the run never asked for more source, so the guard never fired");
+
+        // trun[0] is the picture track — `data` follows the channel order, video first.
+        var segments = Directory.GetFiles(_dir, "seg*" + SegmentRunRequest.SegmentExtension).Order().ToList();
+        var picture = segments.SelectMany(seg => SampleDurations(seg, occurrence: 0)).ToList();
+        Assert.Contains(500u, picture);
+    }
+
+    [Fact]
+    public void LACED_audio_keeps_real_frame_durations_rather_than_zero()
+    {
+        // 🔴 Lacing packs several audio frames into ONE Matroska block, and they arrive sharing that
+        // block's timestamp. Deriving timing straight from tied times gives zero-length `stts` entries —
+        // a soundtrack whose every frame claims to last no time, which plays as a fraction of a second of
+        // noise while every box in the file still validates. `Mp4Remuxer` spreads ties before deriving;
+        // this writer did not, on the same data, two files away.
+        var (log, engine, request) = Fixture(totalSeconds: 4);
+        using var writer = new SegmentRunWriter(engine, request, Timeline);
+
+        // 24 frames in groups of 4 sharing a timestamp: 0,0,0,0, 100,100,100,100, ... — real lacing.
+        var audio = new MatroskaTrack
+        {
+            Number = 2, Kind = MediaStreamKind.Audio, CodecId = "A_AAC",
+            CodecPrivate = Mp4RemuxerTests.AacConfig, SampleRate = 48_000, Channels = 2,
+            DefaultDurationNs = 25 * 1_000_000,                 // 25 ms per frame, four to a 100 ms block
+        };
+        for (var i = 0; i < 24; i++)
+            audio.Samples.Add(new MatroskaSample(i * SampleBytes, SampleBytes, (i / 4) * 100L, KeyFrame: true));
+
+        writer.Run(
+            Source(64), video: null, new SegmentTrack(audio, Copy: true),
+            from: 0, startSeconds: 0, conversionOf: null, extend: _ => false, CancellationToken.None);
+
+        var segments = Directory.GetFiles(_dir, "seg*" + SegmentRunRequest.SegmentExtension);
+        Assert.NotEmpty(segments);
+
+        var durations = SampleDurations(segments.Order().First());
+
+        // ⚠ ASSERT THE REAL GAP, NOT "non-zero". `Flush` writes `Math.Max(duration, 1)`, so an untied
+        // frame's zero duration arrives as 1 and a `d > 0` assertion can NEVER fail — a vacuous test that
+        // passes with the fix removed. The declared frame duration here is 25 ticks; a laced frame that
+        // kept its tie shows up as the clamp instead.
+        var real = durations.Take(durations.Count - 1).ToList();
+        Assert.DoesNotContain(1u, real);
+        Assert.All(real, d =>
+            Assert.True(d == 25, $"a laced frame lost its duration: [{string.Join(", ", durations)}]"));
+    }
+
     [Fact]
     public void A_track_that_starts_LATE_is_still_declared_and_carried()
     {

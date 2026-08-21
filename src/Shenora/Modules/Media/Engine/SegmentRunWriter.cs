@@ -105,9 +105,16 @@ internal sealed class SegmentRunWriter(
                 .OrderBy(c => c.Track.Samples[c.Next].Ticks)
                 .FirstOrDefault();
 
-            // Every channel is within one sample of its known end: index more before taking, so the frame
-            // about to be written still has a successor to be timed against. See `extend`.
-            if (tracks.All(c => c.Next + 1 >= c.Track.Samples.Count))
+            // 🔴 THE CHANNEL ABOUT TO BE TAKEN FROM is within one sample of its known end: index more
+            // before taking, so the frame about to be written still has a successor to be timed against.
+            // See `extend`.
+            // ⚠ This asked `tracks.All(…)`, which is a different question and the wrong one. Two tracks
+            // rarely run out together — a soundtrack has many more frames than a picture track — so the
+            // FIRST to run out was consumed while the other still had plenty, `All` stayed false, no
+            // extension happened, and that frame took the track's DECLARED duration instead of its real
+            // gap. The comment above already described the per-frame rationale; the condition did not
+            // implement it.
+            if (channel is not null && channel.Next + 1 >= channel.Track.Samples.Count)
             {
                 var reach = channel is not null
                     ? channel.Track.Samples[^1].Ticks * timeline.Factor / (double)timeline.Timescale
