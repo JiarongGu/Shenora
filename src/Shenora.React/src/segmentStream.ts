@@ -223,6 +223,45 @@ export function codecsFromInitSegment(init: Uint8Array): string | null {
     }
   };
 
+  /**
+   * An ISO 14496-1 "expandable" descriptor length: 1–4 bytes, each with the high bit meaning "continue".
+   * Returns the value and the offset just past it.
+   */
+  const expandable = (at: number): [value: number, next: number] => {
+    let value = 0;
+    let p = at;
+    for (let i = 0; i < 4; i++) {
+      const b = u8(p++);
+      value = (value << 7) | (b & 0x7f);
+      if ((b & 0x80) === 0) break;
+    }
+    return [value, p];
+  };
+
+  /**
+   * The AAC audio object type declared inside an `esds`, or null when it cannot be read.
+   *
+   * Tolerant by design: it finds the DecoderConfigDescriptor rather than parsing the ES_Descriptor's
+   * optional fields, then steps its FIXED 13 bytes to the nested DecoderSpecificInfo, whose first 5 bits
+   * are the object type (2 = AAC-LC, 5 = HE-AAC, 29 = HE-AACv2, 42 = xHE-AAC).
+   */
+  const audioObjectType = (from: number, to: number): number | null => {
+    for (let p = from; p + 2 < to; p++) {
+      if (u8(p) !== 0x04) continue;                            // DecoderConfigDescriptor
+      const [, afterLength] = expandable(p + 1);
+      if (afterLength >= to || u8(afterLength) !== 0x40) continue;   // MPEG-4 Audio, or not ours
+      // objectTypeIndication(1) streamType(1) bufferSizeDB(3) maxBitrate(4) avgBitrate(4)
+      const nested = afterLength + 13;
+      if (nested + 1 >= to || u8(nested) !== 0x05) continue;    // DecoderSpecificInfo
+      const [, config] = expandable(nested + 1);
+      if (config >= to) continue;
+      const aot = u8(config) >> 3;
+      // 31 is the escape for an extended type; not worth decoding for a codec string, and 0 is invalid.
+      return aot === 0 || aot === 31 ? null : aot;
+    }
+    return null;
+  };
+
   /** The `avcC`/`hvcC`/`esds` inside a sample entry, whose own fields come first. */
   const configuration = (format: string, start: number, end: number): string => {
     // The child boxes start after the sample entry's own fields: the 8-byte SampleEntry base
@@ -249,16 +288,16 @@ export function codecsFromInitSegment(init: Uint8Array): string | null {
         for (let bit = 0; bit < 32; bit++) reversed |= ((compat >>> bit) & 1) << (31 - bit);
         derived = `${format}.${spaces}${idc}.${(reversed >>> 0).toString(16).toUpperCase()}.` +
                   `${tier ? 'H' : 'L'}${level}`;
-      } else if (type === 'esds' && s + 21 <= end) {
-        // The audio object type, from the DecoderSpecificInfo's first 5 bits. Only AAC is ever copied
-        // here, so the walk stays a search rather than a full descriptor parser.
-        for (let p = s; p + 2 < end; p++) {
-          if (u8(p) === 0x04 && u8(p + 2) === 0x40) {
-            derived = `mp4a.40.${u8(p + 3) || 2}`;
-            break;
-          }
-        }
-        if (!derived) derived = 'mp4a.40.2';
+      } else if (type === 'esds' && s + 8 <= end) {
+        // 🔴 THE AUDIO OBJECT TYPE LIVES IN THE DecoderSpecificInfo, not beside objectTypeIndication.
+        // This used to read the byte straight after the `0x40`, which is the STREAM TYPE — for audio
+        // that is `(5 << 2) | 1` = 0x15, so every short-form esds produced `mp4a.40.21`,
+        // `addSourceBuffer` threw, and nothing played. It also assumed a ONE-byte descriptor length; the
+        // length is "expandable" (up to 4 bytes, high bit continues). The kit's own muxer always writes
+        // the 4-byte form, so the old scan never matched OUR files and the fallback hid it — the bug was
+        // reachable only from a foreign muxer, which is exactly what this parser is for.
+        const aot = audioObjectType(s, end);
+        derived = `mp4a.40.${aot ?? 2}`;
       }
     });
 

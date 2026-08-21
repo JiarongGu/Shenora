@@ -141,11 +141,27 @@ const MANIFEST = [
   '#EXT-X-ENDLIST',
 ].join('\n');
 
-function harness(over: { manifest?: string; missing?: string[] } = {}) {
+function harness(over: {
+  manifest?: string;
+  /** Answers 503 — "still producing", which the binder must WAIT for and come back to. */
+  missing?: string[];
+  /** Answers 500 — a real failure, which the binder must REPORT. */
+  broken?: string[];
+  /** Answers 503 this many times, then succeeds — so a retry can be observed recovering. */
+  notReadyFor?: { uri: string; times: number };
+} = {}) {
   const requested: string[] = [];
   const init = Uint8Array.from(atob(INIT_B64), (c) => c.charCodeAt(0));
+  let stalls = 0;
   const doFetch = vi.fn(async (url: string) => {
     requested.push(url);
+    if (over.broken?.some((m) => url.endsWith(m))) {
+      return { ok: false, status: 500, arrayBuffer: async () => new ArrayBuffer(0), text: async () => '' };
+    }
+    if (over.notReadyFor && url.endsWith(over.notReadyFor.uri) && stalls < over.notReadyFor.times) {
+      stalls++;
+      return { ok: false, status: 503, arrayBuffer: async () => new ArrayBuffer(0), text: async () => '' };
+    }
     if (over.missing?.some((m) => url.endsWith(m))) {
       return { ok: false, status: 503, arrayBuffer: async () => new ArrayBuffer(0), text: async () => '' };
     }
@@ -296,7 +312,7 @@ describe('bindSegmentStream', () => {
     // default, and the shape of the public API) a 500 or a QuotaExceededError produced no console
     // output, no rejection and no state change. Playback just stalled with nothing to explain it, while
     // every other error path in this package defaults to console.error.
-    const { doFetch } = harness({ missing: ['seg0.m4s'] });
+    const { doFetch } = harness({ broken: ['seg0.m4s'] });
     const element = new FakeElement();
     const errors: unknown[][] = [];
     const spy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { errors.push(a); });
@@ -317,7 +333,7 @@ describe('bindSegmentStream', () => {
 
   it('stays quiet on the console when the caller DID supply onDiagnostic', async () => {
     // The other half: a caller that took the seam owns its reporting and must not be double-logged.
-    const { doFetch } = harness({ missing: ['seg0.m4s'] });
+    const { doFetch } = harness({ broken: ['seg0.m4s'] });
     const element = new FakeElement();
     const lines: string[] = [];
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -385,7 +401,26 @@ describe('bindSegmentStream', () => {
     binding.dispose();
   });
 
-  it('treats a 503 as "still producing" and stops the round rather than failing', async () => {
+  it('🔴 COMES BACK for a 503 instead of stalling for ever', async () => {
+    // The binder called 503 "a WAIT, not a failure" in a comment and then failed the round and broke the
+    // loop with nothing scheduled to resume it — a permanent spinner on the exact status the segment
+    // route uses to mean "ask again". The producing side waits its own budget before answering 503, so
+    // both halves said "wait" and neither came back.
+    const { doFetch } = harness({ notReadyFor: { uri: 'seg1.m4s', times: 2 } });
+    const element = new FakeElement();
+    const lines: string[] = [];
+    const binding = await bindSegmentStream({
+      manifest: '/hls/index.m3u8', element: element as never,
+      globals: globalsWith(false), fetch: doFetch as never,
+      createObjectURL: () => 'blob:fake', onDiagnostic: (l) => lines.push(l),
+    });
+
+    await vi.waitFor(() => expect(binding.appended.has(1)).toBe(true), { timeout: 5_000 });
+    expect(lines.some((l) => l.includes('503'))).toBe(true);
+    binding.dispose();
+  });
+
+  it('treats a 503 as "still producing" rather than failing the round', async () => {
     const { doFetch } = harness({ missing: ['seg1.m4s'] });
     const element = new FakeElement();
     const lines: string[] = [];

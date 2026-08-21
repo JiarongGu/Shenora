@@ -241,6 +241,54 @@ describe('codecsFromInitSegment', () => {
     'IHRyZXgAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAAA=',
   );
 
+  /** Build an ISO box: 4-byte size + fourcc + payload, sizes computed. */
+  const box = (type: string, ...parts: (Uint8Array | number[])[]): Uint8Array => {
+    const body = parts.flatMap((p) => Array.from(p));
+    const size = 8 + body.length;
+    return Uint8Array.from([
+      (size >>> 24) & 0xff, (size >>> 16) & 0xff, (size >>> 8) & 0xff, size & 0xff,
+      ...Array.from(type, (c) => c.charCodeAt(0)),
+      ...body,
+    ]);
+  };
+
+  /**
+   * An AAC init segment whose `esds` descriptors use the SHORT length form.
+   *
+   * 🔴 The kit's own muxer always writes the EXPANDED 4-byte form (`80 80 80 LL`), which is why the real
+   * fixture above never exercised this path — the scan failed to match and the fallback happened to give
+   * the right answer. MP4Box, Bento4 and Apple emit the short form, which is equally legal, and that is
+   * the whole foreign-source route this parser exists for.
+   */
+  const shortFormEsds = (audioSpecificConfig: number[]) => {
+    const dsi = [0x05, audioSpecificConfig.length, ...audioSpecificConfig];
+    const decoderConfig = [
+      0x04, 13 + dsi.length,
+      0x40,             // objectTypeIndication: MPEG-4 Audio
+      0x15,             // streamType 5 (audio) << 2 | 1 — the byte that was read AS the object type
+      0, 0, 0,          // bufferSizeDB
+      0, 0, 0, 0,       // maxBitrate
+      0, 0, 0, 0,       // avgBitrate
+      ...dsi,
+    ];
+    const es = [0x03, 3 + decoderConfig.length + 3, 0x00, 0x01, 0x00, ...decoderConfig, 0x06, 0x01, 0x02];
+    const esds = box('esds', [0, 0, 0, 0], es);
+    const mp4a = box('mp4a', new Array(28).fill(0), esds);
+    const stsd = box('stsd', [0, 0, 0, 0, 0, 0, 0, 1], mp4a);
+    return box('moov', box('trak', box('mdia', box('minf', box('stbl', stsd)))));
+  };
+
+  it('🔴 reads the AUDIO OBJECT TYPE, not the stream type, from a short-form esds', () => {
+    // 0x12 = 00010_010 -> audio object type 2, AAC-LC. Reading the byte after objectTypeIndication
+    // instead yields 0x15 = 21, and `mp4a.40.21` makes addSourceBuffer throw — nothing plays.
+    expect(codecsFromInitSegment(shortFormEsds([0x12, 0x08]))).toBe('mp4a.40.2');
+  });
+
+  it('reads HE-AAC (object type 5) rather than defaulting everything to LC', () => {
+    // 0x2B = 00101_011 -> object type 5.
+    expect(codecsFromInitSegment(shortFormEsds([0x2b, 0x08, 0x00]))).toBe('mp4a.40.5');
+  });
+
   it('reads both tracks, exactly, from a real two-track init segment', () => {
     // 640015 is High (0x64) profile, no constraints, level 2.1 (0x15) — read from the copied `avcC`,
     // NOT the shipped default's level 4.0 guess.

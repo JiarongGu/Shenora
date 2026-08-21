@@ -52,6 +52,17 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A foreign-muxed AAC track plays again.** `codecsFromInitSegment` read the byte after
+  `objectTypeIndication` as the audio object type — that byte is the STREAM type, so every short-form
+  `esds` produced `mp4a.40.21`, `addSourceBuffer` threw, and nothing played. It also assumed a one-byte
+  descriptor length when the length is expandable to four. The kit's own muxer always writes the
+  four-byte form, so the broken scan never matched OUR files and the fallback hid it — the defect was
+  reachable only from MP4Box/Bento4/Apple output, which is the whole reason the foreign-source route
+  exists. HE-AAC and xHE-AAC are now read correctly too, instead of everything defaulting to LC.
+- **A segment answered `503` is retried instead of stalling for ever.** The binder's own comment called
+  503 "a WAIT, not a failure" and then failed the round and broke the pump with nothing scheduled to
+  resume it — a permanent spinner on the exact status the segment route uses to mean "ask again". It now
+  backs off and comes back, bounded, and says so if it gives up.
 - **A submission deduplicated against a FAILED mission no longer reports success.** `DeduplicateAsync`
   awaited the existing work and then discarded everything but its id, always answering `Deduplicated` —
   which `MissionResult.Succeeded` treats as success, so a caller folded into a mission that threw was told

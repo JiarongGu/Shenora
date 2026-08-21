@@ -259,6 +259,32 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
    * completes, and two concurrent `appendBuffer` calls on one SourceBuffer throw `InvalidStateError`,
    * which surfaces as a stall with no obvious cause.
    */
+  /** Consecutive 503s, so a source that is slow to produce backs off instead of hammering. */
+  let waits = 0;
+  let waitTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Come back for a segment the host has not finished producing.
+   *
+   * ⚠ Bounded, and it says so when it gives up: a wait that retries for ever is the same permanent
+   * spinner by a slower route. The cap is generous because the host's own 503 already means it is
+   * working — this is not a failure budget, it is a politeness one.
+   */
+  const retryLater = (uri: string) => {
+    if (disposed) return;
+    if (++waits > 40) {
+      fail(`segments: ${uri} still answering 503 after ${waits} attempts — giving up`);
+      return;
+    }
+    const delay = Math.min(2_000, 100 * waits);
+    say(`segments: ${uri} not ready (503) — retrying in ${delay}ms`);
+    if (waitTimer !== null) clearTimeout(waitTimer);
+    waitTimer = setTimeout(() => {
+      waitTimer = null;
+      if (!disposed) void pump();
+    }, delay);
+  };
+
   const pump = async () => {
     if (pumping || disposed) return;
     pumping = true;
@@ -274,12 +300,20 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
         const entry = parsed.segments[index]!;
         const response = await doFetch(resolve(manifestUrl, entry.uri));
         if (disposed) return;
+        if (response.status === 503) {
+          // 🔴 503 IS THE HOST SAYING "still producing" — a WAIT, and it must actually be waited FOR.
+          // This used to say exactly that in a comment and then `fail()` and break, with nothing
+          // scheduled to resume: a permanent spinner, on the one path the segment route uses to mean
+          // "ask again". The producing side waits its own budget before answering, so both halves said
+          // "wait" and neither came back.
+          retryLater(entry.uri);
+          break;
+        }
         if (!response.ok) {
-          // 503 is the host saying "still producing" — a WAIT, not a failure. The route answers it
-          // rather than 404ing a source that is merely not ready yet.
           fail(`segments: ${entry.uri} answered ${response.status}`);
           break;
         }
+        waits = 0;   // progress: the next stall starts its backoff from the bottom again
 
         await append(new Uint8Array(await response.arrayBuffer()));
         appended.add(index);
@@ -319,6 +353,8 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
     dispose() {
       if (disposed) return;
       disposed = true;
+      // The 503 retry must not outlive the binding — it would re-enter a pump over a torn-down source.
+      if (waitTimer !== null) { clearTimeout(waitTimer); waitTimer = null; }
       source.removeEventListener('startstreaming', onStart);
       source.removeEventListener('endstreaming', onEnd);
       element.removeEventListener('timeupdate', wake);
