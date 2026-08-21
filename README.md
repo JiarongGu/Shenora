@@ -25,19 +25,18 @@ the browser sessions' hook + event catalogue are the newest arrivals.
 
 > ⚠ **The segment/streaming media tier is EXPERIMENTAL.** It works, and it is the one part of the kit
 > not extracted from an application that had already proven it in production. A defect review in
-> August 2026 found several faults concentrated there, and the reason they concentrated is worth
-> knowing before you rely on it: **it had only ever been tested against media this kit itself
-> produced.** Sources muxed by MP4Box, Bento4, mkvmerge or Apple exercise shapes ours never emits —
-> lacing, a track that starts late, unusual descriptor encodings — and that is where the faults were.
-> Fixed so far: a foreign AAC track that could not play at all, a stream that could wedge permanently,
-> a rotated url that kept its expired opener, and laced audio losing its frame durations. **Still open,
-> and the reason for this label:** a track absent from the first fragment is dropped for the whole run,
-> and a source whose lead track never produces a cut can grow its buffer without bound. Use it, report
-> what breaks — but do not put it under a two-hour film on a phone and walk away yet. The rest of the
-> kit carries no such caveat.
- The application builder, WinForms host, WebView2
-hosting, the full typed IPC stack (envelopes, middleware dispatcher, scoped-container router, event
-bus, postMessage transport, `@shenora/react` client), the native desktop surface (frameless chrome +
+> August 2026 found several faults concentrated there, all of them now fixed — but the reason they
+> concentrated has not changed, and it is worth knowing before you rely on it: **it had only ever been
+> tested against media this kit itself produced.** Sources muxed by MP4Box, Bento4, mkvmerge or Apple
+> exercise shapes ours never emits — lacing, a track that starts late, unusual descriptor encodings — and
+> that is where every fault was. Fixed: a foreign AAC track that could not play at all, a track starting
+> late being dropped for a whole film, an unbounded buffer, a stream that could wedge permanently, a
+> rotated url keeping its expired opener, and laced audio losing its frame durations. The label stays
+> until the tier has coverage against media the kit did NOT produce. The rest of the kit carries no such
+> caveat.
+
+The application builder, WinForms host, WebView2 hosting, the full typed IPC stack (envelopes,
+middleware dispatcher, scoped-container router, event bus, postMessage transport, `@shenora/react` client), the native desktop surface (frameless chrome +
 native caption buttons, STA dialogs, shell/clipboard, drag-drop zones, secondary windows, tray) and
 the auxiliary browser sessions (off-screen render pool, interactive sessions, streaming sessions) are
 extracted from proven in-house applications and verified end-to-end against the sample app. Every

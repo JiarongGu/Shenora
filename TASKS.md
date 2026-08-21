@@ -32,35 +32,23 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 🎬 THE SEGMENT TIER NEEDS A FIXTURE CORPUS — TWO DEFECTS ARE OPEN AND UNFIXABLE WITHOUT ONE
+### 🎬 THE SEGMENT TIER IS FIXED BUT THINLY COVERED — THE CORPUS IS WHAT IS LEFT
 
-The 2026-08-21 full review found 14 blocking defects; 13 are fixed (`git log`). These two are not, and
-they are held open deliberately rather than patched blind: **nothing in the suite constructs a
-`SegmentRunWriter` at all**, so a change to muxer sequencing or buffering would be unverifiable, and a
-wrong guess produces a silently corrupt stream. The tier is labelled EXPERIMENTAL in `README.md` until
-they close.
+All 14 blockers from the 2026-08-21 review are fixed (`git log`). The tier stays labelled EXPERIMENTAL in
+`README.md` until the coverage below exists, because the reason its faults clustered has NOT changed: it
+had only ever been exercised against media THIS KIT produced, and every fault sat on a shape our own muxer
+never emits. `SegmentRunWriterTests` now builds those shapes synthetically — a late-starting track, a
+source with no cut point — which is a floor, not a corpus.
 
-🔴 **The root cause is one thing, and it is why patches will not settle it:** the tier had only ever been
-tested against media THIS KIT produced. Every fault found sits on a shape our own muxer never emits.
-The already-fixed `esds` defect is the proof — our `Mp4Builder` always writes the expanded 4-byte
-descriptor length, so the broken scan never matched our own files and a fallback supplied the right
-answer for months.
-
-- [ ] 🔴 **Build the corpus first: MP4Box, Bento4, mkvmerge and Apple output**, covering laced audio, a
-  track that starts late, and short-form descriptor encodings. Small files, committed as fixtures.
-- [ ] **`SegmentRunWriter.cs:444` — a track absent from the FIRST fragment is dropped for the whole run.**
-  The init segment is written beside the first fragment and declares only the tracks that had produced by
-  then; a copied track produces from frame one while an encoder may hold a whole segment. So the late
-  track is undeclared, its samples are dropped for ever, and `VerifyPicture` only checks for picture —
-  nothing downstream notices. **Silent film, entire length.** The likely fix is declaring the EXPECTED
-  track set rather than the observed one, which is a sequencing change.
-- [ ] **`SegmentRunWriter.cs:372` — `Pending` grows to whole-source size when the lead channel never
-  cuts**, then is doubled by the final flush. ~150–200 MB, i.e. OOM on a phone. `StalledWithoutPicture`
-  explicitly cannot stop it. A bound is easy; choosing one that does not corrupt the segmentation is not.
-  - ⚠ **`SegmentRunWriter.cs:91` rides along** — the index-extend guard uses `All()`, so the first track
-    to run out consumes its last sample with a fallback duration. Same file, same corpus.
-- [ ] ⚠ **`SegmentRunWriter`'s SpreadTies fix (`d59ec84`) is UNPINNED.** It mirrors `Mp4Remuxer`'s proven
-  call site exactly, which is the argument for it — not evidence. The corpus is what would pin it.
+- [ ] **Cover the shapes still untested at unit level**, in `SegmentRunWriterTests`: laced audio (which
+  would pin the `SpreadTies` fix, still unpinned — it mirrors `Mp4Remuxer`'s proven call site, which is an
+  argument rather than evidence), and `SegmentRunWriter.cs:91`'s index-extend guard, which uses `All()` so
+  the first track to run out consumes its last sample with a fallback duration.
+- [ ] **Then an END-TO-END fixture from a foreign muxer** — ffmpeg is on the dev box; MP4Box, Bento4 and
+  mkvmerge are not. Small files, committed. ⚠ This is the backstop the synthetic shapes cannot be: it is
+  the only thing that proves the READER agrees with the writer about a real file.
+- [ ] **Re-measure the forced-cut cost.** The 64 MB bound cuts on a non-keyframe when the lead track never
+  reaches one, so seeking into that segment may not work. Nothing has measured how a player behaves there.
 
 ### 📱 THE MEDIA FIRST-LOAD WIN IS MEASURED ON A SIMULATOR, NEVER ON THE PHONE IT WAS REPORTED ON
 
