@@ -52,6 +52,18 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A submission deduplicated against a FAILED mission no longer reports success.** `DeduplicateAsync`
+  awaited the existing work and then discarded everything but its id, always answering `Deduplicated` —
+  which `MissionResult.Succeeded` treats as success, so a caller folded into a mission that threw was told
+  it had worked and `ThrowIfFailed()` did nothing. The outcome is carried now: a failure stays `Failed`
+  with its error and attempt count, and `Deduplicated` means what its doc says — already done, and it
+  worked. ⚠ **Behaviour change for a shipped case**: code branching on `Outcome == Deduplicated` for
+  failed work will now see `Failed`, which is the point.
+- **Restoring a maximized window no longer destroys the app's `Form.Tag`.** The kit marked the pending
+  restore by writing a sentinel into `Tag` — the app's own property — then nulling it. An app storing
+  anything there met an `NRE` or `InvalidCastException` in its own code that reproduced only when the
+  previous session closed maximized; and an app that used `Tag` silently defeated the restore. The marker
+  now lives in a side table and `Tag` is never read or written.
 - **An `AllOrNothing` delete of a non-empty directory no longer reports success and leaves the tree
   behind.** The staged delete finished with an undo step whose contract is "remove if still EMPTY", so a
   non-empty tree threw, the guard swallowed it, the journal entry was removed anyway, and the caller was

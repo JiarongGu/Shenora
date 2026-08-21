@@ -107,6 +107,43 @@ public class MissionSchedulerBehaviourTests
     }
 
     [Fact]
+    public async Task A_submission_deduplicated_against_a_FAILED_mission_reports_the_failure()
+    {
+        // 🔴 The dedup path used to discard everything but the mission id and always answer
+        // `Deduplicated`, which `Succeeded` treats as success — so a caller folded into work that THREW
+        // was told it had succeeded and `ThrowIfFailed()` did nothing. Nothing anywhere reported the
+        // error. `MissionOutcome.Deduplicated`'s own doc promised this submission "carries THAT work's
+        // outcome", and it did not.
+        await using var scheduler = NewScheduler(new MissionSchedulerOptions { GlobalLaneCapacity = 1 });
+
+        var gate = new TaskCompletionSource();
+        var key = new MissionKey("import:boom");
+        var boom = new InvalidOperationException("the first body threw");
+
+        var first = scheduler.SubmitAsync(new MissionDefinition
+        {
+            Run = async (_, _) => { await gate.Task; throw boom; },
+            Key = key,
+        });
+        while (!scheduler.IsActive(key)) await Task.Delay(5);
+        var second = scheduler.SubmitAsync(new MissionDefinition
+        {
+            Run = (_, _) => Task.CompletedTask,
+            Key = key,
+        });
+
+        gate.SetResult();
+        var results = await Task.WhenAll(first, second);
+
+        Assert.Equal(MissionOutcome.Failed, results[0].Outcome);
+        Assert.Equal(MissionOutcome.Failed, results[1].Outcome);
+        Assert.False(results[1].Succeeded);
+        Assert.Same(boom, results[1].Error);
+        // And the exception route works, which is the whole point of ThrowIfFailed.
+        Assert.Same(boom, Assert.Throws<InvalidOperationException>(results[1].ThrowIfFailed));
+    }
+
+    [Fact]
     public async Task Cancelling_while_queued_never_runs_the_body()
     {
         await using var scheduler = NewScheduler(new MissionSchedulerOptions { GlobalLaneCapacity = 1 });

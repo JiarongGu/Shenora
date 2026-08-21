@@ -318,8 +318,34 @@ public class WindowStateManagerTests
 
         Assert.Equal(FormStartPosition.Manual, form.StartPosition);
         Assert.Equal(new Point(10, 10), form.Location);
-        Assert.Equal(WindowStateManager.RestoreMaximizedTag, form.Tag);
+        // ⚠ Asserted through the side table, and `form.Tag` is asserted UNTOUCHED: the marker used to
+        // live in Tag, which is the app's own property, so the kit destroyed whatever an app had put
+        // there — and an app that used Tag silently defeated the restore.
+        Assert.Null(form.Tag);
         Assert.Equal(FormWindowState.Normal, form.WindowState);
+        Assert.True(WindowStateManager.ConsumeRestoreMaximized(form));
+        Assert.False(WindowStateManager.ConsumeRestoreMaximized(form));   // taken exactly once
+    }
+
+    [Fact]
+    public void Restoring_maximized_leaves_the_app_s_own_Form_Tag_alone_and_still_works()
+    {
+        // 🔴 BOTH DIRECTIONS OF ONE DEFECT, and both were silent. The marker used to BE `form.Tag`:
+        //   · the kit overwrote the app's value and then nulled it, so the app hit an NRE or an
+        //     InvalidCastException in its OWN code — reproducing only when the previous session closed
+        //     maximized, which is a bug report nobody ever solves;
+        //   · and an app that set Tag for itself defeated the ReferenceEquals check, so the restore
+        //     quietly stopped happening.
+        var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, 10, 10, WindowPlacement.Maximized) };
+        using var form = new Form();
+        var appState = new object();
+        form.Tag = appState;
+
+        new WindowStateManager(store).Apply(form, 1.0);
+
+        Assert.Same(appState, form.Tag);                                  // the app's property is untouched
+        Assert.True(WindowStateManager.ConsumeRestoreMaximized(form));    // and the restore still happens
+        Assert.Same(appState, form.Tag);                                  // consuming it does not null Tag either
     }
 
     // ── Deferred DPI resolution + deferred maximize application (adopter, 2026-08-01) ────────────
@@ -443,7 +469,7 @@ public class WindowStateManagerTests
             using var form = new Form();
             new WindowStateManager(store).Apply(form, 1.0);
 
-            Assert.Equal(WindowStateManager.RestoreMaximizedTag, form.Tag);
+            Assert.Null(form.Tag);
             Assert.Equal(FormWindowState.Normal, form.WindowState);
 
             // Actually run the show sequence: OnHandleCreated → OnLoad → OnShown. Our deferred

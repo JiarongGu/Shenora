@@ -540,10 +540,22 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
 
     // ── Plumbing ──────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Answer a submission that was folded into work already in flight — with THAT work's outcome.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 It used to discard everything but the id and always answer <c>Deduplicated</c>, which
+    /// <c>MissionResult.Succeeded</c> treats as success — so a submission folded into a mission that THREW
+    /// was told it had succeeded, and <c>ThrowIfFailed()</c> was a no-op on a real failure. The outcome is
+    /// carried now: a failure stays a failure, with its error and its attempt count, and
+    /// <c>Deduplicated</c> means what its own doc says — the work was already done, and it worked.
+    /// </remarks>
     private static async Task<MissionResult> DeduplicateAsync(Entry existing)
     {
         var result = await existing.Completion.Task.ConfigureAwait(false);
-        return new MissionResult(MissionOutcome.Deduplicated, result.MissionId, 0, null);
+        return result.Outcome is MissionOutcome.Completed or MissionOutcome.Deduplicated
+            ? new MissionResult(MissionOutcome.Deduplicated, result.MissionId, 0, null)
+            : new MissionResult(result.Outcome, result.MissionId, result.Attempts, result.Error);
     }
 
     private Entry CreateEntry(MissionDefinition definition, CancellationToken cancellationToken)

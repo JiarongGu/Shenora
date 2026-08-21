@@ -13,8 +13,13 @@ public enum MissionOutcome
     Cancelled = 2,
 
     /// <summary>
-    /// An identical <see cref="MissionDefinition.Key"/> was already pending or in flight; this submission
-    /// carries THAT work's outcome and its body never ran.
+    /// An identical <see cref="MissionDefinition.Key"/> was already pending or in flight, that work
+    /// SUCCEEDED, and this submission's body never ran.
+    /// <para>
+    /// ⚠ Only ever reported for work that succeeded. A submission folded into a mission that failed or was
+    /// cancelled reports <see cref="Failed"/> or <see cref="Cancelled"/> instead, carrying that error — so
+    /// this outcome can be read as success without checking anything else.
+    /// </para>
     /// </summary>
     Deduplicated = 3,
 }

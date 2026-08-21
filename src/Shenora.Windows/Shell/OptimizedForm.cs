@@ -453,11 +453,8 @@ public class OptimizedForm : Form, IAppMaximizable
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        if (ReferenceEquals(Tag, WindowStateManager.RestoreMaximizedTag))
-        {
-            Tag = null;
-            if (AppPlacement != WindowPlacement.Maximized) Maximize();
-        }
+        if (WindowStateManager.ConsumeRestoreMaximized(this) && AppPlacement != WindowPlacement.Maximized)
+            Maximize();
 
         // A hole can only be cut once the child has a handle, and an app may report its rectangles
         // during construction. Re-apply here, where every child is realized.

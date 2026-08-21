@@ -94,19 +94,36 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
         // either way — set earlier, a plain Form is back to Normal by OnLoad.
         if (placement != WindowPlacement.Normal)
         {
-            form.Tag = RestoreMaximizedTag;
+            MarkRestoreMaximized(form);
             if (form is not IAppMaximizable) DeferMaximizeToShown(form);
         }
     }
 
     /// <summary>
-    /// Marker <see cref="Control.Tag"/> value meaning "the saved state was maximized — apply your own
-    /// maximize once you are shown". A marker rather than a direct call because <c>Apply</c> runs before
-    /// the window is realized, and a manual work-area maximize needs a real handle.
+    /// Forms whose saved state was MAXIMIZED, waiting to apply it once they have a handle. A marker rather
+    /// than a direct call because <c>Apply</c> runs before the window is realized, and a manual work-area
+    /// maximize needs a real one.
     /// </summary>
-    internal const string RestoreMaximizedTag = "shenora:restore-maximized";
+    /// <remarks>
+    /// 🔴 <b>A SIDE TABLE, because <see cref="Control.Tag"/> is the APP's property and this used to take
+    /// it.</b> Both directions were broken and both were silent: the kit overwrote whatever the app had
+    /// stored and then nulled it, so the app met an <c>NRE</c> or an <c>InvalidCastException</c> in its own
+    /// code that reproduced only when the previous session closed maximized; and an app that set
+    /// <c>Tag</c> for its own use defeated the marker, so the restore quietly stopped happening.
+    /// <see cref="System.Runtime.CompilerServices.ConditionalWeakTable{TKey,TValue}"/> holds no strong
+    /// reference, so a form that is never shown is still collectable.
+    /// </remarks>
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Form, object> RestoreMaximized = new();
 
-    /// <summary>Consume <see cref="RestoreMaximizedTag"/> from <see cref="Form.Shown"/> for a plain form —
+    private static readonly object RestoreMarker = new();
+
+    /// <summary>Record that <paramref name="form"/> should maximize once shown.</summary>
+    internal static void MarkRestoreMaximized(Form form) => RestoreMaximized.AddOrUpdate(form, RestoreMarker);
+
+    /// <summary>Take the marker if it is there — true exactly once per <see cref="MarkRestoreMaximized"/>.</summary>
+    internal static bool ConsumeRestoreMaximized(Form form) => RestoreMaximized.Remove(form);
+
+    /// <summary>Consume the marker from <see cref="Form.Shown"/> for a plain form —
     /// <see cref="IAppMaximizable"/> implementors consume it in <c>OnShown</c> themselves, and
     /// <c>WindowState.Maximized</c> set earlier does not survive <c>OnLoad</c>.</summary>
     private static void DeferMaximizeToShown(Form form)
@@ -114,8 +131,7 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
         void OnShown(object? sender, EventArgs e)
         {
             form.Shown -= OnShown;
-            if (!ReferenceEquals(form.Tag, RestoreMaximizedTag)) return;
-            form.Tag = null;
+            if (!ConsumeRestoreMaximized(form)) return;
             form.WindowState = FormWindowState.Maximized;
         }
         form.Shown += OnShown;
