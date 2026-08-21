@@ -204,7 +204,14 @@ export class SshTarget implements Target {
    */
   gui(script: string, options: GuiRunOptions): RunResult {
     const { tag, timeoutMs = GUI_DEFAULT_TIMEOUT_MS } = options;
-    const base = `/tmp/shenora-gui-${tag}`;
+    // 🔴 STAMPED PER RUN. These used to be named for the TAG alone, which is a constant per operation,
+    // so a previous run's `.done` was already on disk when polling began. The script's own `rm -f` cannot
+    // save it: that runs in the detached Terminal session, 1-3 s of login-shell startup away, while the
+    // first poll lands one ~1.8 s ssh round trip in — so the poller won essentially always and returned
+    // YESTERDAY's exit status and log as today's, in BOTH directions (a stale failure blamed on this
+    // build, or a stale success for an artifact that predates it). Two developers on one Mac read each
+    // other's. Every other temp path in this CLI is stamped; this one was not.
+    const base = `/tmp/shenora-gui-${tag}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     const sh = `${base}.sh`;
     const done = `${base}.done`;
     const log = `${base}.log`;
@@ -241,6 +248,9 @@ export class SshTarget implements Target {
 
     const status = Number(this.probe(`cat ${q(done)}`).trim());
     const out = this.probe(`cat ${q(log)} 2>/dev/null`);
+    // Per-run names are never reused, so this run's files are swept here. ⚠ Only on the path that
+    // READ them — a timed-out run deliberately leaves its log behind, which is the one time it is wanted.
+    this.sh(`rm -f ${q(sh)} ${q(done)} ${q(log)}`, { quiet: true, timeoutMs: 30_000 });
     return { status: Number.isFinite(status) ? status : 1, out: out ? `${out}\n` : '' };
   }
 

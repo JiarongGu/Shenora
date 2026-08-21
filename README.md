@@ -21,7 +21,21 @@ depend on each other.
 **v0.12.0 — pre-release, stabilising toward 1.0.** The page-facing clipboard (`useClipboard()` over an
 opt-in `SHENORA.CLIPBOARD` module — reading with no user gesture, and an app's own format carried
 verbatim, neither of which the browser's Clipboard API can do), the segment/streaming media tier, and
-the browser sessions' hook + event catalogue are the newest arrivals. The application builder, WinForms host, WebView2
+the browser sessions' hook + event catalogue are the newest arrivals.
+
+> ⚠ **The segment/streaming media tier is EXPERIMENTAL.** It works, and it is the one part of the kit
+> not extracted from an application that had already proven it in production. A defect review in
+> August 2026 found several faults concentrated there, and the reason they concentrated is worth
+> knowing before you rely on it: **it had only ever been tested against media this kit itself
+> produced.** Sources muxed by MP4Box, Bento4, mkvmerge or Apple exercise shapes ours never emits —
+> lacing, a track that starts late, unusual descriptor encodings — and that is where the faults were.
+> Fixed so far: a foreign AAC track that could not play at all, a stream that could wedge permanently,
+> a rotated url that kept its expired opener, and laced audio losing its frame durations. **Still open,
+> and the reason for this label:** a track absent from the first fragment is dropped for the whole run,
+> and a source whose lead track never produces a cut can grow its buffer without bound. Use it, report
+> what breaks — but do not put it under a two-hour film on a phone and walk away yet. The rest of the
+> kit carries no such caveat.
+ The application builder, WinForms host, WebView2
 hosting, the full typed IPC stack (envelopes, middleware dispatcher, scoped-container router, event
 bus, postMessage transport, `@shenora/react` client), the native desktop surface (frameless chrome +
 native caption buttons, STA dialogs, shell/clipboard, drag-drop zones, secondary windows, tray) and

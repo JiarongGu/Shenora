@@ -30,6 +30,17 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Changed
+
+- 🔴 **The segment/streaming media tier is now labelled EXPERIMENTAL** in `README.md`. Nothing about it
+  was removed and several real faults in it are fixed in this release — but two are knowingly still open
+  (a track absent from the first fragment is dropped for the whole run; a lead track that never cuts
+  grows its buffer without bound), and it is the one subsystem not extracted from an application that had
+  already proven it. The root cause of the cluster is worth stating: **it had only ever been tested
+  against media this kit itself produced**, so the shapes a foreign muxer emits — lacing, a late-starting
+  track, unusual descriptor encodings — were the shapes that broke. Closing that needs a fixture corpus,
+  not more patches.
+
 ### Added
 
 - **`FileUndoKind.DeleteStagedDirectory`** — the recursive counterpart of `RemoveCreatedDirectory`, which
@@ -52,6 +63,12 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **`shenora ios` GUI steps no longer report a PREVIOUS run's result as this one's.** The marker files a
+  signing/build step polls for were named after the operation TAG alone, so a rerun found the last run's
+  `.done` already on disk — and the poller beats the script's own cleanup essentially always, because one
+  ssh round trip is faster than a detached login shell starting. Stale failures were blamed on the current
+  build and stale successes reported for artifacts that predated it; two developers on one Mac read each
+  other's. Each run now stamps its own paths and sweeps them.
 - **A rotated url now replaces the opener it was registered with.** `RemoteMediaSource.Identity` exists
   so the cache key survives a rotation — and the source kept the opener it was FIRST registered with,
   discarding the new one. An app following that property's own instruction held an expired presigned url

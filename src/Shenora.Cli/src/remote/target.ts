@@ -22,7 +22,13 @@ export interface TargetRunOptions {
 }
 
 export interface GuiRunOptions {
-  /** Names the marker files, so two GUI runs cannot collide. Lowercase, no spaces. */
+  /**
+   * Labels the marker files for a human reading `/tmp`. Lowercase, no spaces.
+   *
+   * ⚠ NOT an identity — the implementation stamps each run on top of this. The tag alone is a CONSTANT
+   * per operation, so naming the files after it meant a rerun (or a second developer on the same Mac)
+   * polled a marker the previous run had left and read ITS exit status and log as this run's.
+   */
   tag: string;
   timeoutMs?: number;
 }
