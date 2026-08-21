@@ -383,11 +383,17 @@ A/B'd 2026-08-21 with a 15-iteration `Set-Clipboard` loop sharing none of the ki
 emulator down · 59/60 up · 1/45 down again.** Off → on → off, so the "~30 %, intermittent" reading this
 replaced was sampling an emulator that came and went.
 
-⚠ **Do not re-derive the mechanism — it was measured at the instant of failure.** `Set-Clipboard` itself
-THROWS `Requested Clipboard operation did not succeed`; a write-then-read-back records zero mismatches,
-only throws. `GetOpenClipboardWindow()` is null, and the clipboard OWNER is the calling process — so the
-call took ownership and then failed. That is a clipboard-format listener misbehaving on the update
-notification, which is what a host↔guest clipboard bridge registers.
+⚠ **Do not re-derive the mechanism — it was measured at the instant of failure, twice.** `Set-Clipboard`
+itself THROWS `Requested Clipboard operation did not succeed`; a write-then-read-back records zero
+mismatches, only throws. `GetOpenClipboardWindow()` is null, and the clipboard OWNER is the calling process
+— so the call took ownership and then failed. That is a clipboard-format listener misbehaving on the update
+notification, which is what a host↔guest clipboard bridge registers. **Reproduced independently on the dev
+box with a live MuMu instance: 15/15 throws, that exact message, 0 mismatches, `GetOpenClipboardWindow()`
+null every time.**
+
+⚠ **This is why holding the suite out of `verify` is load-bearing rather than tidy.** Four full `verify`
+runs passed on that same box while the emulator was up, because `Category=RealClipboard` is excluded — had
+it not been, a green gate would have turned red for a reason no diff could explain.
 
 ⚠ **Ruled out, do not re-check:** Cloud Clipboard and clipboard history (`EnableClipboardHistory`,
 `EnableCloudClipboard`, `CloudClipboardAutomaticUpload` all unset under `HKCU\Software\Microsoft\Clipboard`).
