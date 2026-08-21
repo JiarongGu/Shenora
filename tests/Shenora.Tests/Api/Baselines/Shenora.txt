@@ -562,6 +562,7 @@ sealed class Shenora.Engine.Files.FileReplacement : System.IDisposable
   public void Dispose()
 enum Shenora.Engine.Files.FileUndoKind (int)
   public const Shenora.Engine.Files.FileUndoKind DeleteCreatedFile = 0
+  public const Shenora.Engine.Files.FileUndoKind DeleteStagedDirectory = 4
   public const Shenora.Engine.Files.FileUndoKind MoveBack = 2
   public const Shenora.Engine.Files.FileUndoKind RemoveCreatedDirectory = 3
   public const Shenora.Engine.Files.FileUndoKind RestoreBackup = 1

@@ -137,19 +137,38 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         if (_options.Locker is not { } locker) return new LeaseAttempt([], null);
 
         var held = new List<IPathLease>();
-        foreach (var path in PathsOf(update))
+        try
         {
-            var lease = await locker.TryAcquireAsync(path, _options.LeaseTimeout, cancellationToken)
-                .ConfigureAwait(false);
-            if (lease is null)
+            foreach (var path in PathsOf(update))
             {
-                foreach (var acquired in held) await Guarded(acquired.DisposeAsync).ConfigureAwait(false);
-                Log(() => $"file update deferred: could not lease {path}");
-                return new LeaseAttempt(null, path);
+                var lease = await locker.TryAcquireAsync(path, _options.LeaseTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+                if (lease is null)
+                {
+                    await ReleaseAsync(held).ConfigureAwait(false);
+                    Log(() => $"file update deferred: could not lease {path}");
+                    return new LeaseAttempt(null, path);
+                }
+                held.Add(lease);
             }
-            held.Add(lease);
+        }
+        catch
+        {
+            // 🔴 THE RELEASE USED TO RUN ONLY ON A REFUSAL, so a THROW out of TryAcquireAsync — an ordinary
+            // user cancel, or an access error on one path of several — walked past every lease already
+            // taken. Each is a lock held for the life of the process, after which `IFileLockInspector`
+            // names your own pid as the contender and every later update on that path burns the full
+            // LeaseTimeout before failing.
+            await ReleaseAsync(held).ConfigureAwait(false);
+            throw;
         }
         return new LeaseAttempt(held, null);
+    }
+
+    /// <summary>Release leases already taken. Guarded, because a failed release must not mask the reason.</summary>
+    private async ValueTask ReleaseAsync(List<IPathLease> held)
+    {
+        foreach (var acquired in held) await Guarded(acquired.DisposeAsync).ConfigureAwait(false);
     }
 
     /// <summary>Best-effort "who is holding this?". Never throws.</summary>
@@ -207,11 +226,14 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                           + (holders.Count > 0 ? $" — held by {string.Join(", ", holders)}" : string.Empty), ex);
                 if (!atomic) return new FileUpdateResult(index, index, ex, rolledBack: false, holders);
 
-                await RollbackAsync(undo).ConfigureAwait(false);
+                // 🔴 OBSERVED, never asserted. This was the literal `true` while RollbackAsync guarded and
+                // swallowed every step, so a caller branching on RolledBack was told "nothing changed"
+                // over a half-applied tree — the exact outcome AllOrNothing exists to make impossible.
+                var rolledBack = await RollbackAsync(undo).ConfigureAwait(false);
                 if (journal is not null)
                     await Guarded(() => new ValueTask(journal.RemoveAsync(updateId, CancellationToken.None)))
                         .ConfigureAwait(false);
-                return new FileUpdateResult(0, index, ex, rolledBack: true, holders);
+                return new FileUpdateResult(0, index, ex, rolledBack, holders);
             }
         }
 
@@ -222,9 +244,14 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                 new FileUpdateJournalEntry(updateId, FileUpdateStage.Committing, undo, staged, startedUtc),
                 CancellationToken.None).ConfigureAwait(false);
 
-        foreach (var commit in staged) await Guarded(() => RunUndoAsync(commit)).ConfigureAwait(false);
+        var committed = true;
+        foreach (var commit in staged)
+            if (!await Guarded(() => RunUndoAsync(commit)).ConfigureAwait(false)) committed = false;
 
-        if (journal is not null)
+        // 🔴 KEEP THE ENTRY when a staged deletion did not finish. Removing it unconditionally is what made
+        // an orphan permanent: the tree stayed behind under its sidecar name and RecoverAsync could never
+        // see it again, because the only record that it was owed had just been deleted.
+        if (journal is not null && committed)
             await Guarded(() => new ValueTask(journal.RemoveAsync(updateId, CancellationToken.None)))
                 .ConfigureAwait(false);
         return new FileUpdateResult(update.Changes.Count, null, null, rolledBack: false, []);
@@ -391,7 +418,14 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                     [new FileUndoStep(FileUndoKind.MoveBack, delete.Path, aside)],
                     [isFile
                         ? new FileUndoStep(FileUndoKind.DeleteCreatedFile, aside)
-                        : new FileUndoStep(FileUndoKind.RemoveCreatedDirectory, aside)],
+                        // 🔴 The RECURSIVE kind when the caller asked for recursion. It used to always emit
+                        // `RemoveCreatedDirectory`, which deletes only an EMPTY directory — so every
+                        // non-empty tree failed, was swallowed, and stayed behind under its sidecar name
+                        // while the update said it succeeded. A non-recursive request still gets the
+                        // empty-only kind, so it fails exactly as asked instead of deleting more.
+                        : new FileUndoStep(delete.Recursive
+                            ? FileUndoKind.DeleteStagedDirectory
+                            : FileUndoKind.RemoveCreatedDirectory, aside)],
                     () => _operations.MoveFileAsync(delete.Path, aside, overwrite: false));
             }
 
@@ -405,10 +439,13 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     /// Undo applied changes in REVERSE order — the only order that is correct when two changes touch the
     /// same path. Each step is guarded, so one failure is logged and the rest still runs.
     /// </summary>
-    private async ValueTask RollbackAsync(IReadOnlyList<FileUndoStep> undo)
+    /// <returns>True only when EVERY step succeeded — what <c>FileUpdateResult.RolledBack</c> reports.</returns>
+    private async ValueTask<bool> RollbackAsync(IReadOnlyList<FileUndoStep> undo)
     {
+        var complete = true;
         for (var index = undo.Count - 1; index >= 0; index--)
-            await Guarded(() => RunUndoAsync(undo[index])).ConfigureAwait(false);
+            if (!await Guarded(() => RunUndoAsync(undo[index])).ConfigureAwait(false)) complete = false;
+        return complete;
     }
 
     /// <summary>
@@ -438,15 +475,20 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                     await _operations.DeleteDirectoryAsync(step.Target, recursive: false).ConfigureAwait(false);
                 return;
 
+            case FileUndoKind.DeleteStagedDirectory:
+                if (await _operations.DirectoryExistsAsync(step.Target).ConfigureAwait(false))
+                    await _operations.DeleteDirectoryAsync(step.Target, recursive: true).ConfigureAwait(false);
+                return;
+
             default:
                 throw new NotSupportedException($"Unhandled undo kind '{step.Kind}'.");
         }
     }
 
-    private async ValueTask Guarded(Func<ValueTask> step)
+    private async ValueTask<bool> Guarded(Func<ValueTask> step)
     {
-        try { await step().ConfigureAwait(false); }
-        catch (Exception ex) { Log(() => "file update cleanup step failed", ex); }
+        try { await step().ConfigureAwait(false); return true; }
+        catch (Exception ex) { Log(() => "file update cleanup step failed", ex); return false; }
     }
 
     /// <summary>

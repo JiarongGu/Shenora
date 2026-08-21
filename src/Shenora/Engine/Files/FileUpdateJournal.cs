@@ -30,6 +30,19 @@ public enum FileUndoKind
 
     /// <summary>Remove a directory this update created (<c>Target</c>), if still empty.</summary>
     RemoveCreatedDirectory = 3,
+
+    /// <summary>
+    /// Remove a moved-aside directory TREE (<c>Target</c>) that a staged delete is finishing — recursively,
+    /// because the caller asked for the whole thing to go.
+    /// <para>
+    /// 🔴 Distinct from <see cref="RemoveCreatedDirectory"/> on purpose. A staged delete used to reuse that
+    /// kind, whose contract is "if still EMPTY" — so a non-empty tree threw, the guard swallowed it, the
+    /// journal entry was removed anyway and the whole tree stayed behind under its sidecar name while the
+    /// update reported success. A staged delete of a NON-recursive request still emits
+    /// <see cref="RemoveCreatedDirectory"/>, so a non-empty directory fails exactly as the caller asked.
+    /// </para>
+    /// </summary>
+    DeleteStagedDirectory = 4,
 }
 
 /// <summary>

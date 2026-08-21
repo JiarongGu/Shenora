@@ -32,6 +32,9 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`FileUndoKind.DeleteStagedDirectory`** — the recursive counterpart of `RemoveCreatedDirectory`, which
+  removes only an EMPTY directory. Additive; a journal written by an older version still replays, and
+  nothing that consumed the old kind changes meaning.
 - **`ios doctor` checks the .NET AOT cross pack.** It reported `ready` on a Mac where the build was
   structurally impossible: the iOS SDK resolved the cross pack at one version, every pack installed was
   another, and the build died in `AOTCompile` on a missing `mono-aot-cross`. The new `aot cross pack` row
@@ -49,6 +52,21 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **An `AllOrNothing` delete of a non-empty directory no longer reports success and leaves the tree
+  behind.** The staged delete finished with an undo step whose contract is "remove if still EMPTY", so a
+  non-empty tree threw, the guard swallowed it, the journal entry was removed anyway, and the caller was
+  told it succeeded while the whole tree sat under a sidecar name nothing would look at again. A
+  recursive request now emits the new `FileUndoKind.DeleteStagedDirectory`; a non-recursive one still
+  fails, as asked. **A staged deletion that cannot finish now KEEPS its journal entry**, so `RecoverAsync`
+  can complete it instead of the orphan being permanent.
+- **`FileUpdateResult.RolledBack` is observed rather than asserted.** It was the literal `true` while every
+  undo step was guarded and swallowed, so a caller branching on it — an installer deciding whether to
+  retry or warn — was told "nothing changed" over a half-applied tree. It is now false when any undo step
+  failed.
+- **Leases already held are released when acquiring a later one throws.** The release loop ran only on a
+  refusal, so a cancel (or an access error on one path of several) walked past every lease already taken,
+  each held for the life of the process — after which the lock inspector names your own pid as the
+  contender and every later update on that path burns the full lease timeout.
 - **A response the platform refuses no longer kills the Android process.** `MobileWebViewInterceptor`
   guarded middleware *execution* but not the handover to the platform, and `SetResponse` is where the
   Android `WebResourceResponse` is constructed. Android rejects a status in `[300,399]`, an empty reason
