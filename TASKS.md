@@ -105,15 +105,30 @@ the `…Cross.ios*` pattern is inferred from the android ones rather than seen.
   `xcrun`, the `…Cross.ios*` pack name, and a real iOS `packs/` tree. A row that reports `MISSING` on a
   healthy Mac is worse than the silence it replaced, so run it on one that BUILDS before trusting it.
   - The adopter's symlink (`packs/<pack>/10.0.10 -> 10.0.11`) is how to reproduce the failing side.
-- [ ] 🔴 **Prove the interceptor's two warnings on a device or the simulator, in BOTH directions.** They
-  compile for BOTH mobile TFMs here — `verify` builds `net10.0-ios` on this Windows box, so a compile
-  break in the iOS arm is caught — but neither has ever fired. The quiet direction is what matters: a
-  correctly-attached interceptor must produce NEITHER warning, or the kit ships a log line telling every
-  adopter they got it wrong.
-  - The attach warning needs both halves to be true — a realized handler at construction AND a
-    non-document first request — so the test is to attach in `OnLoaded` (fires) and in the page
-    constructor (silent).
-  - The bridge-tag check only reads a `MemoryStream` body, deliberately: `ToArray()` cannot disturb the
-    response, where seeking a `FileStream` could. It stays UNSPENT when it skips one, so a packaged
-    `index.html` served from disk does not consume the check the later in-memory bundle needs. ⚠ **But a
-    document served from disk is never checked at all** — confirm that is the intended limit.
+**✅ THE ATTACH WARNING IS PROVEN ON ANDROID, BOTH DIRECTIONS** (MuMu emulator, x86_64, SDK 32,
+2026-08-21). Late attach FIRES, naming the first request it saw; the constructor attach is SILENT. It ran
+twice on the firing side and named a different first request each time (`_framework/hybridwebview.js`, then
+`shenora/transport.js`), which is the diagnostic reading the world rather than matching a fixed string.
+**Its first catch was this repo's own sample** — fixed in `6c75d3f`, since the sample is what an adopter
+copies.
+
+**✅ And the bridge-tag check's QUIET direction is proven** as a side effect: the fragment repair serves the
+packaged `index.html` as a `MemoryStream`, which is exactly the path the check runs on, and it stayed
+silent because that document HAS the tag.
+
+- [ ] **Prove the bridge-tag check FIRES.** Only its quiet side has run. It needs a document served from
+  the pipeline WITHOUT `hybridwebview.js` in it — `PageProbe.SabotageMainDocument` already exists for
+  something close to this and is currently commented out at `MainPage.cs`.
+  - ⚠ **A document served from disk is never checked at all** — the check reads only a `MemoryStream`,
+    deliberately, and stays UNSPENT when it skips one. Confirm that is the intended limit.
+- [ ] **Run both on iOS.** Everything above is Android. They compile for `net10.0-ios` here — `verify`
+  builds it on this Windows box, so a compile break is caught — but the iOS arm has never executed, and
+  `RangeDelivery` is the one place the two shells deliberately differ.
+
+**⚠ Noticed while doing the above, NOT a regression and NOT yet a defect:** `SEEK-RUN: FAIL — seg1 declares
+no sound (picture=6000)` on that Android emulator. A/B'd with the sample change stashed and it is
+IDENTICAL on both arms, so it is pre-existing rather than caused by the attach move; `REMUX: PASS` and
+`REMUX-SEEK: PASS` throughout. The only recorded `SEEK-RUN: PASS` is from the **iOS simulator**, so there is
+no Android baseline to compare against — this may be an emulator codec quirk (MuMu is a consumer emulator,
+not a standard AVD) rather than the kit. Worth one run on a real Android device before reading anything
+into it.
