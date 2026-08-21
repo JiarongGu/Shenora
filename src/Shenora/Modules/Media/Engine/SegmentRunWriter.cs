@@ -30,6 +30,25 @@ internal sealed class SegmentRunWriter(
     /// <summary>Tracks already reported as arriving late, so one stall is one line rather than one per fragment.</summary>
     private readonly HashSet<int> _reportedLate = [];
 
+    /// <summary>
+    /// How many BYTES the lead track may hold without finding a cut before one is FORCED.
+    /// <para>
+    /// Bytes, not samples: what runs a phone out of memory is the payload, and a 4K frame is twenty times
+    /// a 480p one, so a sample count bounds the wrong quantity. Generous on purpose — an ordinary long GOP
+    /// must never trip it, so this is an out-of-memory guard rather than a segmentation policy.
+    /// </para>
+    /// </summary>
+    /// <remarks>
+    /// ⚠ A FIELD rather than a const so a test can lower it — the same reason <c>IFileOperations</c> is an
+    /// internal seam. Proving this guard at the real 64 MB would mean allocating ~150 MB inside a unit
+    /// test; proving it at 64 KB proves the same branch. Not an app knob: it is internal and undocumented
+    /// outside this file.
+    /// </remarks>
+    internal static long MaxPendingBytes = 64L * 1024 * 1024;
+
+    /// <summary>Said once per run: a forced cut repeats every segment afterwards and reads as a storm.</summary>
+    private bool _reportedUncutCap;
+
     /// <summary>Read, copy or convert, and write until the source ends or the token fires.</summary>
     /// <param name="source">The source file, seekable — sample bytes are read by offset.</param>
     /// <param name="video">The picture track and how it travels, or null for a sound-only run.</param>
@@ -317,6 +336,7 @@ internal sealed class SegmentRunWriter(
             Composition: channel.Composition[index],
             KeyFrame: channel.Track.Samples[index].KeyFrame,
             Data: data));
+        channel.PendingBytes += data.Length;
     }
 
     /// <summary>
@@ -365,7 +385,9 @@ internal sealed class SegmentRunWriter(
 
             channel.LastTime = output.PresentationTimeUs;
             var at = TimeOf(channel);
-            channel.Pending.Add(new Pending(at, at, Duration: 0, Composition: 0, output.IsKeyframe, output.Data.ToArray()));
+            var converted = output.Data.ToArray();
+            channel.Pending.Add(new Pending(at, at, Duration: 0, Composition: 0, output.IsKeyframe, converted));
+            channel.PendingBytes += converted.Length;
             channel.Emitted++;
         }
     }
@@ -388,6 +410,29 @@ internal sealed class SegmentRunWriter(
             segment = request.Plan.IndexOf(seconds);
             i = 0;                                   // the list shifted under us
         }
+
+        // 🔴 A LEAD TRACK THAT NEVER REACHES A KEYFRAME WOULD OTHERWISE BUFFER THE WHOLE SOURCE. The cut
+        // above needs a keyframe PAST the segment end; a long-GOP or damaged stream may not offer one for
+        // minutes, and `Pending` holds every sample's BYTES until it does — whole-source memory, then
+        // doubled by the final flush. Measured shape: one 600-frame run produced a single segment.
+        // ⚠ Cutting here lands on a non-keyframe, so that segment cannot be decoded from cold. That is a
+        // real cost and it is still the better one: the alternative is one segment the size of the film,
+        // which cannot be seeked into either AND runs a phone out of memory. Said out loud, once.
+        if (lead.PendingBytes > MaxPendingBytes)
+        {
+            var at = lead.Pending[^1];
+            var seconds = lead.SecondsOf(at.Presentation);
+            if (!_reportedUncutCap)
+            {
+                _reportedUncutCap = true;
+                owner.Report($"segments: the lead track has held {lead.PendingBytes / (1024 * 1024)} MB without "
+                           + "reaching a keyframe past the segment end, so this segment is being cut on a "
+                           + "non-keyframe to bound memory — seeking INTO it may not work");
+            }
+            Flush(tracks, segment, upTo: seconds);
+            segment = Math.Max(segment, request.Plan.IndexOf(seconds));
+        }
+
         return segment;
     }
 
@@ -438,6 +483,7 @@ internal sealed class SegmentRunWriter(
                 Samples = samples,
                 Data = bytes.ToArray(),
             });
+            channel.PendingBytes -= bytes.Count;
             channel.Pending.RemoveRange(0, take);
         }
 
@@ -447,8 +493,15 @@ internal sealed class SegmentRunWriter(
         // it is written HERE, beside the first fragment — see SegmentRunRequest.Directory.
         if (!_initWritten)
         {
-            WriteInit(data.Select(d => d.Track).ToList());
-            _declared = [.. data.Select(d => d.Track.TrackId)];
+            // 🔴 EVERY OPENED CHANNEL, not just the ones with samples in THIS fragment. The init segment is
+            // the only place a track id is defined, so a track that had produced nothing by the first flush
+            // used to go undeclared — and the loop below then dropped its samples for the WHOLE RUN. A
+            // copied track produces from its first frame while an encoder may hold a whole segment, and a
+            // soundtrack that simply starts a few seconds in does it without any encoder at all. Nothing
+            // downstream notices, because `VerifyPicture` only looks for picture: a film silent end to end.
+            // The channel list is known before any sample is read, so declaring from it is always possible.
+            WriteInit([.. tracks.Select(Declare)]);
+            _declared = [.. tracks.Select(c => c.TrackId)];
             _initWritten = true;
         }
 
@@ -637,6 +690,15 @@ internal sealed class SegmentRunWriter(
         public long LastTime { get; set; }
         public bool WarnedReordering { get; set; }
         public List<Pending> Pending { get; } = [];
+
+        /// <summary>
+        /// Bytes currently held in <see cref="Pending"/>, maintained INCREMENTALLY.
+        /// <para>
+        /// ⚠ Summing the list instead would be O(n) inside a per-sample loop, i.e. O(n²) over a run — a
+        /// memory guard that costs quadratic time is not a fix.
+        /// </para>
+        /// </summary>
+        public long PendingBytes { get; set; }
 
         /// <summary>This channel's own time, in seconds — the only unit two channels may be compared in.</summary>
         public double SecondsOf(long time) => Timescale == 0 ? 0 : time / (double)Timescale;

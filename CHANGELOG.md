@@ -69,6 +69,19 @@ at the first list and missed five more breaking changes.
   ssh round trip is faster than a detached login shell starting. Stale failures were blamed on the current
   build and stale successes reported for artifacts that predated it; two developers on one Mac read each
   other's. Each run now stamps its own paths and sweeps them.
+- **A track that starts LATE is no longer dropped for the whole run.** The init segment declares track
+  ids and is written beside the FIRST fragment, so it only ever named the tracks that had produced by
+  then — a copied track produces from frame one while an encoder may hold a whole segment, and a
+  soundtrack that simply begins a few seconds in does it with no encoder at all. Every later fragment then
+  dropped that track, and `VerifyPicture` only checks for picture, so nothing noticed: **a film silent from
+  beginning to end, with no error anywhere.** The init now declares every opened track, which is known
+  before a single sample is read.
+- **A source whose lead track never reaches a keyframe no longer buffers the whole film.** Segments are cut
+  at a keyframe past the segment end; a long-GOP or damaged stream may not offer one for minutes, and the
+  pending buffer holds every sample's BYTES until it does — whole-source memory, then doubled by the final
+  flush, i.e. out-of-memory on a phone. A 64 MB bound now forces a cut. ⚠ That cut lands on a
+  non-keyframe, so seeking INTO that one segment may not work; it is reported once, and the alternative was
+  a single segment the size of the film, which could not be seeked into either.
 - **A rotated url now replaces the opener it was registered with.** `RemoteMediaSource.Identity` exists
   so the cache key survives a rotation — and the source kept the opener it was FIRST registered with,
   discarding the new one. An app following that property's own instruction held an expired presigned url
