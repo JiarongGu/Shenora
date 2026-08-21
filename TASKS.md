@@ -105,6 +105,7 @@ the `…Cross.ios*` pattern is inferred from the android ones rather than seen.
   `xcrun`, the `…Cross.ios*` pack name, and a real iOS `packs/` tree. A row that reports `MISSING` on a
   healthy Mac is worse than the silence it replaced, so run it on one that BUILDS before trusting it.
   - The adopter's symlink (`packs/<pack>/10.0.10 -> 10.0.11`) is how to reproduce the failing side.
+
 **✅ THE ATTACH WARNING IS PROVEN ON ANDROID, BOTH DIRECTIONS** (MuMu emulator, x86_64, SDK 32,
 2026-08-21). Late attach FIRES, naming the first request it saw; the constructor attach is SILENT. It ran
 twice on the firing side and named a different first request each time (`_framework/hybridwebview.js`, then
@@ -112,15 +113,17 @@ twice on the firing side and named a different first request each time (`_framew
 **Its first catch was this repo's own sample** — fixed in `6c75d3f`, since the sample is what an adopter
 copies.
 
-**✅ And the bridge-tag check's QUIET direction is proven** as a side effect: the fragment repair serves the
-packaged `index.html` as a `MemoryStream`, which is exactly the path the check runs on, and it stayed
-silent because that document HAS the tag.
+**✅ AND THE BRIDGE-TAG CHECK IS PROVEN BOTH WAYS TOO** — sabotage-verified on the same emulator. QUIET on a
+tagged document (the fragment repair serves the packaged `index.html` as a `MemoryStream`, which is exactly
+the path the check runs on); FIRES within a millisecond on an untagged one, naming the URI. The sabotage
+was a throwaway middleware claiming the fragment document request with `<html><body>no bridge here</body>`,
+removed after, and the restored build is silent again.
+⚠ `PageProbe.SabotageMainDocument` is NOT the tool for this — it answers `404`, and the check runs only on
+a `200` that is `text/html`.
 
-- [ ] **Prove the bridge-tag check FIRES.** Only its quiet side has run. It needs a document served from
-  the pipeline WITHOUT `hybridwebview.js` in it — `PageProbe.SabotageMainDocument` already exists for
-  something close to this and is currently commented out at `MainPage.cs`.
-  - ⚠ **A document served from disk is never checked at all** — the check reads only a `MemoryStream`,
-    deliberately, and stays UNSPENT when it skips one. Confirm that is the intended limit.
+⚠ **A document served from DISK is still never checked** — the check reads only a `MemoryStream`,
+deliberately, and stays UNSPENT when it skips one. That limit is unexercised either way; it is a design
+question, not a run.
 - [ ] **Run both on iOS.** Everything above is Android. They compile for `net10.0-ios` here — `verify`
   builds it on this Windows box, so a compile break is caught — but the iOS arm has never executed, and
   `RangeDelivery` is the one place the two shells deliberately differ.
