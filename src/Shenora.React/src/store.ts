@@ -45,11 +45,40 @@ export interface ShenoraStoreSnapshot<TState> {
 function equivalent(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
-  // Arrays and plain objects only — anything exotic (Map, Date, a class) falls back to identity above.
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
+
+  // Two different classes are never the same value, and this also separates an array from a bag.
+  const proto = Object.getPrototypeOf(a as object);
+  if (proto !== Object.getPrototypeOf(b as object)) return false;
+
+  // 🔴 A Date, a Set and a Map keep their contents in INTERNAL SLOTS, so `Object.keys` is `[]` for every
+  // one of them — the key compare below then reports two of different contents EQUAL, which pinned such
+  // a selector to its first value for the component's life. Silent: the early return also skips the cache
+  // refresh, so it never self-corrects. These three answer for themselves.
+  if (a instanceof Date) return Object.is((a as Date).getTime(), (b as Date).getTime());
+  if (a instanceof Set) {
+    const setB = b as Set<unknown>;
+    if ((a as Set<unknown>).size !== setB.size) return false;
+    for (const value of a as Set<unknown>) if (!setB.has(value)) return false;
+    return true;
+  }
+  if (a instanceof Map) {
+    const mapB = b as Map<unknown, unknown>;
+    if ((a as Map<unknown, unknown>).size !== mapB.size) return false;
+    for (const [key, value] of a as Map<unknown, unknown>) {
+      if (!mapB.has(key) || !Object.is(mapB.get(key), value)) return false;
+    }
+    return true;
+  }
+
   const aKeys = Object.keys(a as object);
-  const bKeys = Object.keys(b as object);
-  if (aKeys.length !== bKeys.length) return false;
+  if (aKeys.length !== Object.keys(b as object).length) return false;
+  // ⚠ ZERO own keys on anything else exotic — a RegExp, a Promise, a class whose state is all private —
+  // means this compare learned NOTHING, so it must not answer "equal". A plain bag or an array genuinely
+  // IS empty. Class instances carrying own fields still compare shallowly, which is why the gate is on
+  // emptiness rather than on being a plain object: rejecting those would trade a stale render for
+  // React's "getSnapshot should be cached" loop.
+  if (aKeys.length === 0 && !Array.isArray(a) && proto !== Object.prototype && proto !== null) return false;
+
   return aKeys.every((k) =>
     Object.prototype.hasOwnProperty.call(b, k)
     && Object.is((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));

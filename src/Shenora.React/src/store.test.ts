@@ -75,6 +75,38 @@ describe('createShenoraStore', () => {
     expect(screen.getByTestId('strip').textContent).toBe('done');
   });
 
+  it('🔴 re-renders a Set-valued selector — a shallow compare calls EVERY Set equal', () => {
+    // `Object.keys(new Set([1, 2]))` is `[]`, so two Sets of different contents both present zero own
+    // keys, the lengths match, and `[].every(...)` is vacuously true. The selector is then pinned to its
+    // first value for the component's life, with no warning: React is simply told nothing changed.
+    // Same shape for Map, Date and any class instance whose state lives in private/internal slots.
+    const { useDeploy, emit } = fixture();
+    function Tags(): ReactNode {
+      const unique = useDeploy((s) => new Set(s.lines));
+      return createElement('div', { 'data-testid': 'tags' }, [...unique].join('|'));
+    }
+    render(createElement(Tags));
+
+    emit('PROGRESS', { line: 'one' });
+    expect(screen.getByTestId('tags').textContent).toBe('one');
+
+    emit('PROGRESS', { line: 'two' });
+    expect(screen.getByTestId('tags').textContent).toBe('one|two');
+  });
+
+  it('🔴 re-renders a Date-valued selector, which the same vacuous compare pins', () => {
+    // Dates carry their value in an internal slot, so `Object.keys` is `[]` for every Date ever made.
+    const { useDeploy, emit } = fixture();
+    function Stamp(): ReactNode {
+      const at = useDeploy((s) => new Date(s.lines.length * 1000));
+      return createElement('div', { 'data-testid': 'stamp' }, at.toISOString());
+    }
+    render(createElement(Stamp));
+
+    emit('PROGRESS', { line: 'one' });
+    expect(screen.getByTestId('stamp').textContent).toBe(new Date(1000).toISOString());
+  });
+
   it('opens ONE subscription per event type no matter how many components read it', () => {
     const { useDeploy, bus, emit } = fixture();
     const subscribe = vi.spyOn(bus, 'subscribe');
