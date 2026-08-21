@@ -242,22 +242,22 @@ export function cmdDoctor(cfg: DeployConfig | null, args: readonly string[]): vo
   const sdk = xcodeSdkVersion(target);
   const bands = cfg ? iosBindingBands(target, iosTfmOf(cfg)) : [];
   if (sdk && bands.length > 0) {
-    const newest = [...bands].sort(compareVersions).at(-1)!;
-    const usable = pickBindingBand(bands, sdk);
-    if (compareVersions(newest, sdk) <= 0) {
-      line('ios bindings', `${newest} ≤ Xcode SDK ${sdk}`);
-    } else if (usable) {
-      line('ios bindings',
-        `newest is ${newest} but Xcode SDK is ${sdk} — pin <TargetPlatformVersion>${usable}</…> in the csproj`,
-        false);
-      console.log(`          (a build works pinned to ${usable}; the newest bindings name APIs this Xcode `
-        + 'has never shipped.');
-      console.log('           In the PROJECT, not -p: on the command line — a global property reaches the');
-      console.log('           non-platform projects too, and they cannot take one.)');
-    } else {
-      line('ios bindings',
-        `every installed band (${bands.join(', ')}) is newer than Xcode SDK ${sdk} — no build can succeed`, false);
-    }
+    // ⚠ The PROJECT's pin, not just the machine's bands — a correctly pinned csproj is the FIXED state,
+    // and a row that cannot say so leaves an adopter who complied still reading `not ready`.
+    const bindings = describeBindings({
+      bands, sdk, pinned: cfg ? msbuildProperty(target, cfg, 'TargetPlatformVersion') : null,
+    });
+    line('ios bindings', bindings.text, bindings.good);
+    for (const advice of bindings.advice) console.log(`          ${advice}`);
+  }
+
+  // 🔴 THE PACKS DECIDE WHETHER A BUILD CAN RUN AT ALL, and until this row nothing looked at them: a Mac
+  // reported `ready` and died in `AOTCompile` on a `mono-aot-cross` that was installed at a different
+  // version. Same class as the bindings row above — a PAIRING that only fails at build time.
+  if (cfg) {
+    const expected = msbuildProperty(target, cfg, 'BundledNETCoreAppPackageVersion');
+    const pack = describeAotCrossPack({ expected, ...aotCrossPack(target, expected) });
+    line('aot cross pack', pack.text, pack.good);
   }
 
   // ⚠ A devicectl failure is REPORTED but not `good: false` — doctor answers "can this machine build and
@@ -312,7 +312,9 @@ function compareVersions(a: string, b: string): number {
  *     bindings OLDER than the SDK → fine (everything they name still exists)
  *
  * Verified on Xcode 26.3 with bands 26.0/26.6/27.0 installed: pinning `TargetPlatformVersion` to 26.0
- * builds, links, signs and installs on hardware.
+ * builds, links, signs and installs on hardware — **but only with `-p:ValidateXcodeVersion=false`**, and
+ * that is a SECOND constraint this function does not model. No installed pack was cut for Xcode 26.3, so
+ * the pack's EXACT-Xcode assertion is unsatisfiable whatever band is picked (see {@link describeBindings}).
  *
  * ⚠ The choice must be VISIBLE — silently building against old bindings hides a missing API until runtime.
  */
@@ -320,6 +322,119 @@ export function pickBindingBand(bands: string[], sdkVersion: string): string | n
   const usable = bands.filter((b) => compareVersions(b, sdkVersion) <= 0);
   if (usable.length === 0) return null;
   return usable.sort(compareVersions)[usable.length - 1]!;
+}
+
+/**
+ * What the `ios bindings` row should say, given the installed bands, the Xcode SDK, and what the PROJECT
+ * has actually pinned.
+ *
+ * 🔴 **The row has to reflect the PROJECT, not only the machine.** It used to compare installed bands to
+ * the SDK and never read the csproj, so an adopter who pinned `TargetPlatformVersion` exactly as this row
+ * instructed still saw `MISSING` and `shenora: not ready`. A red row that does not reflect success is the
+ * mirror image of a green one that does not predict failure, and it is just as useless — worse, because
+ * the person seeing it has already done the work.
+ *
+ * ⚠ **TWO CONSTRAINTS ARE IN PLAY AND ONLY THE BAND IS ONE OF THEM, which is why `good` can be true while
+ * `advice` is not empty.** The band answers *do these bindings name APIs this SDK has?* Separately, the
+ * .NET-for-iOS PACK asserts an EXACT Xcode, and no choice of band can satisfy it when no installed pack
+ * was cut for the Mac's Xcode — the ordinary case on a machine that updates Xcode. Measured on Xcode 26.3
+ * with bands 26.0/26.6/27.0 installed, whose packs demanded Xcode 26.0/26.6/27.0: every one was
+ * unsatisfiable, so `-p:ValidateXcodeVersion=false` was MANDATORY for every choice. It is a validation
+ * POLICY, not a capability limit — that Xcode builds the 26.0 bindings perfectly well, and did.
+ */
+export function describeBindings(
+  { bands, sdk, pinned }: { bands: string[]; sdk: string; pinned: string | null },
+): { text: string; good: boolean; advice: string[] } {
+  // The caller only asks when bands exist, but this is exported: without the guard the unpinned path
+  // compares `undefined` and throws inside a DIAGNOSTIC, which is the one place a crash is least affordable.
+  if (bands.length === 0) return { text: '(no binding bands installed for this TFM)', good: false, advice: [] };
+
+  const newest = [...bands].sort(compareVersions).at(-1)!;
+  const usable = pickBindingBand(bands, sdk);
+
+  // Named whenever the bindings in force are not the Xcode's own band, because that is exactly when no
+  // pack can match — and the error it produces reads like a capability limit, so it must be pre-empted.
+  const bypass = (band: string): string[] => band === sdk ? [] : [
+    `⚠ \`-p:ValidateXcodeVersion=false\` is required unless an installed pack was cut for Xcode ${sdk}`,
+    '  exactly. The pack asserts an EXACT Xcode independently of the band, so no pin can satisfy it —',
+    '  and the error ("requires Xcode X, the current version is Y") reads like a capability limit when',
+    '  it is only a policy. Pass it after `--`, not in the csproj.',
+  ];
+  const pinAdvice = (band: string): string[] => [
+    `(a build works pinned to ${band}; the newest bindings name APIs this Xcode has never shipped.`,
+    ' In the PROJECT, not -p: on the command line — a global property reaches the',
+    ' non-platform projects too, and they cannot take one.)',
+    ...bypass(band),
+  ];
+
+  if (pinned) {
+    if (!bands.includes(pinned)) {
+      return {
+        text: `the csproj pins ${pinned}, which is not installed (have: ${bands.join(', ')})`,
+        good: false,
+        advice: usable ? pinAdvice(usable) : [],
+      };
+    }
+    if (compareVersions(pinned, sdk) > 0) {
+      return {
+        text: `the csproj pins ${pinned}, newer than Xcode SDK ${sdk} — no build can succeed`,
+        good: false,
+        advice: usable ? pinAdvice(usable) : [],
+      };
+    }
+    return { text: `csproj pins ${pinned} ≤ Xcode SDK ${sdk}`, good: true, advice: bypass(pinned) };
+  }
+
+  // Unpinned: the SDK takes the NEWEST installed band, so that is the one that has to fit.
+  if (compareVersions(newest, sdk) <= 0) {
+    return { text: `${newest} ≤ Xcode SDK ${sdk}`, good: true, advice: bypass(newest) };
+  }
+  if (usable) {
+    return {
+      text: `newest is ${newest} but Xcode SDK is ${sdk} — pin <TargetPlatformVersion>${usable}</…> in the csproj`,
+      good: false,
+      advice: pinAdvice(usable),
+    };
+  }
+  return {
+    text: `every installed band (${bands.join(', ')}) is newer than Xcode SDK ${sdk} — no build can succeed`,
+    good: false,
+    advice: [],
+  };
+}
+
+/**
+ * What the `aot cross pack` row should say.
+ *
+ * 🔴 **`doctor` reported `ready` on a Mac where the build was structurally impossible**, because nothing
+ * checked the .NET packs at all. The iOS SDK resolved the AOT cross pack at one version while every pack
+ * installed was another, and the build died on `The "AOTCompile" task failed unexpectedly … mono-aot-cross
+ * … No such file or directory` — a stack trace naming an MSBuild task where the problem should have been.
+ *
+ * ⚠ **It bites a Debug SIMULATOR build, which is the loop this CLI tells you to prefer** — the interpreter
+ * still shells out to `mono-aot-cross`, so "Debug does not AOT" is not the escape it sounds like. And
+ * `dotnet workload restore` reports success and installs nothing, so the obvious repair looks like it
+ * worked and changes nothing.
+ *
+ * ⚠ **An unknown expected version answers `ok`, deliberately.** Saying `MISSING` on a guess would send
+ * someone to repair a machine that is fine; `ready` on a guess is the defect this row exists to fix. So
+ * "could not ask" says exactly that, and leaves the other rows meaning what they say.
+ */
+export function describeAotCrossPack(
+  { pack, expected, installed, compilerPresent }:
+  { pack: string | null; expected: string | null; installed: string[]; compilerPresent: boolean },
+): { text: string; good: boolean } {
+  if (!pack) return { text: '(none installed — `dotnet workload install maui-ios`)', good: false };
+  if (!expected) {
+    return { text: `${pack} (could not ask MSBuild which version it wants; installed: `
+      + `${installed.join(', ') || 'none'})`, good: true };
+  }
+  if (compilerPresent) return { text: `${pack} ${expected}`, good: true };
+  return {
+    text: `${pack}: the SDK resolves ${expected}, installed ${installed.join(', ') || 'none'} — `
+      + 'the build dies in the AOTCompile task on a missing `mono-aot-cross`',
+    good: false,
+  };
 }
 
 /**
@@ -365,6 +480,29 @@ export function describeDeviceSigning(
   };
 }
 
+/** The resolved `packs/` directory per target, memoised — see {@link packsDirectory}. */
+const packsDirectories = new Map<string, string>();
+
+/**
+ * The .NET SDK's `packs/` directory on the target, or null when it cannot be found.
+ *
+ * ⚠ Memoised because two doctor rows ask for it and the probe is a full ssh round trip on a remote Mac,
+ * for an answer that cannot change inside one run. 🔴 A FAILURE IS NOT CACHED, for the reason
+ * {@link remoteRoot} gives: caching one makes a single transient probe permanent for the process.
+ */
+function packsDirectory(target: Target): string | null {
+  const cached = packsDirectories.get(target.label);
+  if (cached) return cached;
+
+  const root = target.probe('dirname "$(readlink -f "$(command -v dotnet)")"');
+  if (!root) return null;
+  const packs = target.join(root, 'packs');
+  if (!target.exists(packs)) return null;
+
+  packsDirectories.set(target.label, packs);
+  return packs;
+}
+
 /**
  * The iOS binding bands installed for this TFM's .NET version, from the SDK's own packs directory
  * (`Microsoft.iOS.Sdk.net10.0_26.0` → `26.0`).
@@ -374,10 +512,8 @@ export function describeDeviceSigning(
  */
 function iosBindingBands(target: Target, tfm: string): string[] {
   const net = /^net(\d+\.\d+)/.exec(tfm)?.[1];
-  const root = target.probe('dirname "$(readlink -f "$(command -v dotnet)")"');
-  if (!net || !root) return [];
-  const packs = target.join(root, 'packs');
-  if (!target.exists(packs)) return [];
+  const packs = packsDirectory(target);
+  if (!net || !packs) return [];
   return target.list(packs)
     .map((name) => new RegExp(`^Microsoft\\.iOS\\.Sdk\\.net${net.replace('.', '\\.')}_(\\d+\\.\\d+)$`).exec(name)?.[1])
     .filter((band): band is string => Boolean(band));
@@ -386,6 +522,58 @@ function iosBindingBands(target: Target, tfm: string): string[] {
 /** The installed Xcode's iPhoneOS SDK version, or '' when it cannot be asked. */
 function xcodeSdkVersion(target: Target): string {
   return target.probe('xcrun --sdk iphoneos --show-sdk-version');
+}
+
+/**
+ * One MSBuild property as the PROJECT evaluates it, or null when it cannot be asked.
+ *
+ * 🔴 Evaluated, never grepped. A `TargetPlatformVersion` can be conditioned, imported from a
+ * `Directory.Build.props`, or supplied by the SDK rather than written in the csproj, so reading the file
+ * answers a different question from the one the build asks. ⚠ Null is an ANSWER — an unpushed tree or a
+ * project needing restore both land here, and a caller must say "could not ask" rather than assume.
+ *
+ * ⚠ ONE property per call, deliberately, even though doctor asks for two. `-getProperty:A -getProperty:B`
+ * would halve the evaluations, but MSBuild answers a multi-property request in JSON — a parser this repo
+ * cannot exercise without a Mac, added to the one command whose whole value is not misreporting. A few
+ * seconds against a build that fails twenty minutes in is the right side of that trade.
+ */
+function msbuildProperty(target: Target, cfg: DeployConfig, name: string): string | null {
+  const project = buildProject(cfg, target);
+  if (!project || !target.exists(project)) return null;
+  const r = target.sh(
+    `dotnet msbuild ${q(project)} -getProperty:${name} -p:TargetFramework=${q(iosTfmOf(cfg))} -nologo`,
+    { quiet: true, cwd: buildDir(cfg, target) });
+  if (r.status !== 0) return null;
+  const value = r.out.trim();
+  // A multi-line answer is a diagnostic that slipped past the status check, not a property value.
+  return value.length > 0 && !value.includes('\n') ? value : null;
+}
+
+/**
+ * The iOS AOT cross pack installed on this machine, its versions, and whether the one the SDK resolves
+ * carries its compiler binary.
+ *
+ * ⚠ The host↔target pair is DISCOVERED from the pack name (`…AOT.osx-arm64.Cross.iossimulator-arm64`)
+ * rather than reconstructed: an Intel Mac, an Apple Silicon Mac, a simulator build and a device build each
+ * name a different one, and only the installed set knows which this machine has.
+ */
+function aotCrossPack(target: Target, expected: string | null):
+  { pack: string | null; installed: string[]; compilerPresent: boolean } {
+  const absent = { pack: null, installed: [], compilerPresent: false };
+  const packs = packsDirectory(target);
+  if (!packs) return absent;
+
+  const pack = target.list(packs)
+    .find((name) => /^Microsoft\.NETCore\.App\.Runtime\.AOT\..+\.Cross\.ios/.test(name));
+  if (!pack) return absent;
+
+  return {
+    pack,
+    installed: target.list(target.join(packs, pack)),
+    // The exact path the failing task names, minus its `Sdk/..` detour.
+    compilerPresent: Boolean(expected)
+      && target.exists(target.join(packs, pack, expected!, 'tools', 'mono-aot-cross')),
+  };
 }
 
 /** Xcode's known Apple IDs, or null when the preference cannot be read. */

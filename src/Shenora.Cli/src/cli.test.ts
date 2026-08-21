@@ -17,7 +17,7 @@ import path from 'node:path';
 import { withPipefail, argValue, describeSpawnFailure, run, splitArgs, shellPassthrough } from './exec.js';
 import {
   simulatorLogPredicate, describeConnection, findArtifact, describeLogOutcome, parseDeviceList,
-  isAlreadyBooted, describeDeviceSigning, pickBindingBand,
+  isAlreadyBooted, describeDeviceSigning, pickBindingBand, describeBindings, describeAotCrossPack,
 } from './ios.js';
 import { parseDevices, findPackage, adbCandidates, resolveJdk } from './android.js';
 import {
@@ -665,6 +665,87 @@ describe('pickBindingBand — an Xcode older than the newest bindings can still 
   it('orders versions NUMERICALLY — 26.10 is above 26.5, which a string compare gets backwards', () => {
     expect(pickBindingBand(['26.5', '26.10'], '27.0')).toBe('26.10');
     expect(pickBindingBand(['26.5', '26.10'], '26.9')).toBe('26.5');
+  });
+});
+
+describe('describeBindings — the row has to reflect the PROJECT, not only the machine', () => {
+  // The real Mac an adopter hit on 2026-08-21: Xcode SDK 26.3, bands 26.0/26.6/27.0 installed. They
+  // pinned exactly as the row instructed and the row still said MISSING, because it never read the csproj.
+  const machine = { bands: ['26.0', '26.6', '27.0'], sdk: '26.3' };
+
+  it('🔴 goes GREEN once the csproj pins a band the Xcode can satisfy — the bug that left it red for ever', () => {
+    const r = describeBindings({ ...machine, pinned: '26.0' });
+    expect(r.good).toBe(true);
+    expect(r.text).toContain('26.0');
+  });
+
+  it('still fails an UNPINNED project, because the SDK takes the newest band', () => {
+    const r = describeBindings({ ...machine, pinned: null });
+    expect(r.good).toBe(false);
+    expect(r.text).toContain('<TargetPlatformVersion>26.0');
+  });
+
+  it('names the Xcode-validation bypass whenever the band in force is not the Xcode\'s own', () => {
+    // 🔴 The SECOND constraint, which no choice of band can satisfy: the pack asserts an EXACT Xcode.
+    // Green on the band and still unbuildable without the bypass — so `good` true must not silence it.
+    const r = describeBindings({ ...machine, pinned: '26.0' });
+    expect(r.good).toBe(true);
+    expect(r.advice.join(' ')).toContain('ValidateXcodeVersion=false');
+  });
+
+  it('says NOTHING about the bypass when a pack was cut for this exact Xcode — the case that needs none', () => {
+    const r = describeBindings({ bands: ['26.0', '26.3'], sdk: '26.3', pinned: '26.3' });
+    expect(r.good).toBe(true);
+    expect(r.advice).toEqual([]);
+  });
+
+  it('refuses a pin that is not installed, rather than trusting the csproj', () => {
+    const r = describeBindings({ ...machine, pinned: '26.4' });
+    expect(r.good).toBe(false);
+    expect(r.text).toContain('not installed');
+  });
+
+  it('refuses a pin NEWER than the Xcode SDK — a csproj can be wrong in that direction too', () => {
+    const r = describeBindings({ ...machine, pinned: '27.0' });
+    expect(r.good).toBe(false);
+    expect(r.text).toContain('no build can succeed');
+  });
+});
+
+describe('describeAotCrossPack — the packs `doctor` said `ready` without ever looking at', () => {
+  const pack = 'Microsoft.NETCore.App.Runtime.AOT.osx-x64.Cross.iossimulator-x64';
+
+  it('🔴 catches the SKEW that made a `ready` Mac unbuildable, and names both versions', () => {
+    // Measured: the iOS SDK resolved 10.0.10; every pack installed was 10.0.11. The build died in
+    // AOTCompile naming an MSBuild task rather than the problem.
+    const r = describeAotCrossPack({ pack, expected: '10.0.10', installed: ['10.0.11'], compilerPresent: false });
+    expect(r.good).toBe(false);
+    expect(r.text).toContain('10.0.10');
+    expect(r.text).toContain('10.0.11');
+  });
+
+  it('passes when the resolved version is there WITH its compiler', () => {
+    expect(describeAotCrossPack({ pack, expected: '10.0.11', installed: ['10.0.11'], compilerPresent: true }).good)
+      .toBe(true);
+  });
+
+  it('🔴 fails on a present version whose BINARY is missing — the file the task actually opens', () => {
+    // Version-matching is not the check; `mono-aot-cross` existing is. A pack directory can be there
+    // with nothing usable in it, and that is indistinguishable from the skew at the point of failure.
+    const r = describeAotCrossPack({ pack, expected: '10.0.11', installed: ['10.0.11'], compilerPresent: false });
+    expect(r.good).toBe(false);
+  });
+
+  it('does not GUESS when MSBuild could not be asked — "ready" on a guess is the defect it fixes', () => {
+    const r = describeAotCrossPack({ pack, expected: null, installed: ['10.0.11'], compilerPresent: false });
+    expect(r.good).toBe(true);
+    expect(r.text).toContain('could not ask');
+  });
+
+  it('reports a machine with no cross pack at all as MISSING, with the install command', () => {
+    const r = describeAotCrossPack({ pack: null, expected: '10.0.11', installed: [], compilerPresent: false });
+    expect(r.good).toBe(false);
+    expect(r.text).toContain('workload install');
   });
 });
 
