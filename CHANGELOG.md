@@ -46,10 +46,10 @@ at the first list and missed five more breaking changes.
 ### Changed
 
 - **The segment tier has a foreign-muxer fixture corpus** (`RealSourceShapeTests`), which is what found the
-  fix above. Three committed clips carry the shapes this kit's own muxer never emits: a soundtrack starting
-  seconds after the picture, a picture track with a single keyframe, and laced sound. ⚠ The laced one is
-  muxed by mkvmerge because **ffmpeg writes no lacing at all** — so until now no committed file had ever
-  exercised the reader's lacing parsers or the tie-spreading they feed.
+  fix above. Four committed clips carry the shapes this kit's own muxer never emits: a soundtrack starting
+  seconds after the picture, a picture track with a single keyframe, laced sound, and fixed-laced sound.
+  ⚠ The laced ones are muxed by mkvmerge because **ffmpeg writes no lacing at all** — so until now no
+  committed file had ever exercised the reader's three lacing parsers or the tie-spreading they feed.
 - **`node devtools/dev.mjs media-decode`** hands the tier's own output to ffmpeg and fails on a decoder
   complaint OR on a frame count of zero, a file having decoded "successfully" being no evidence. The suites
   had named this command for months and it had never been written. ⚠ Not in `verify`, which must run on a

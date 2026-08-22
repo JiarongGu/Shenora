@@ -37,8 +37,13 @@ namespace Shenora.Tests.Media;
 /// mkvmerge -o clip-laced-audio.mkv pre.mkv
 /// mkvpropedit clip-laced-audio.mkv --edit track:a1 --delete default-duration
 /// </code>
-/// Measured on the result: 376 sound frames in 48 blocks — 47 EBML-laced and one Xiph-laced, so two of the
-/// reader's three lacing parsers run against bytes it did not write.
+/// Measured on the result: 376 sound frames in 48 blocks — 47 EBML-laced and one Xiph-laced. The third
+/// scheme needs equal-sized frames, so <c>clip-fixed-lacing.mkv</c> is CBR MP3, which mkvmerge fixed-laces.
+/// All three parsers now run against bytes this repo did not write.
+/// <para>
+/// ⚠ <b>A laced PICTURE track is not covered and is not reachable here</b>: lacing is legal on any track,
+/// and mkvmerge laces none of the video it was given. It stays covered by hand-built blocks alone.
+/// </para>
 /// </para>
 /// </summary>
 public class RealSourceShapeTests : IDisposable
@@ -51,6 +56,7 @@ public class RealSourceShapeTests : IDisposable
     private static string LateAudio => Fixture("clip-late-audio.mkv");
     private static string OneKeyFrame => Fixture("clip-one-keyframe.mkv");
     private static string LacedAudio => Fixture("clip-laced-audio.mkv");
+    private static string FixedLacing => Fixture("clip-fixed-lacing.mkv");
 
     private readonly string _dir = Path.Combine(
         Path.GetTempPath(), "shenora-shape-" + Guid.NewGuid().ToString("N")[..8]);
@@ -246,6 +252,49 @@ public class RealSourceShapeTests : IDisposable
             $"the fragments carry {sound.Sum()} of the source's {expected} sound bytes.\n{Accounting(log)}");
 
         Assert.DoesNotContain(log, l => l.Contains("dropping its samples", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 🔴 <b>FIXED lacing, from a real muxer, divides into the frames it packed.</b> The third scheme:
+    /// one frame count, and the remaining bytes split evenly between them. Reached by no fixture before
+    /// this one — <c>MatroskaSampleReader</c>'s <c>ReadFixedLacing</c> had only ever seen hand-built blocks.
+    /// <para>
+    /// ⚠ <b>Read-side only, and deliberately.</b> Only AAC is carriable as sound (<c>Mp4Carriage</c>), so a
+    /// CBR MP3 track — the thing mkvmerge fixed-laces — is never COPIED into a fragment; a writer-side test
+    /// would be testing the converter. The parse is the part that had no real-file coverage.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>The count is the discriminator.</b> This file is 23 blocks holding 168 frames, so a reader that
+    /// ignored lacing would answer 23 and still look like it worked — every other assertion here would pass
+    /// against it. Regenerate with:
+    /// <code>
+    /// ffmpeg -f lavfi -i sine=frequency=440:duration=4:sample_rate=48000 -c:a libmp3lame -b:a 48k \
+    ///        -write_xing 0 cbr.mp3
+    /// mkvmerge -o clip-fixed-lacing.mkv cbr.mp3
+    /// </code>
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void FIXED_laced_sound_from_a_real_muxer_divides_into_its_frames()
+    {
+        var samples = SamplesOf(FixedLacing, MediaStreamKind.Audio);
+
+        Assert.True(samples.Count > 100,
+            $"{samples.Count} sound frames — the file packs 168 into 23 blocks, so this is the block count "
+            + "rather than the frame count: the lacing was not parsed at all");
+
+        // Fixed lacing means EQUAL sizes by definition, so an uneven split is the failure it hides.
+        var size = samples[0].Length;
+        Assert.All(samples, s => Assert.Equal(size, s.Length));
+
+        // ...and the frames tile the payload rather than overlapping it. A division that got the count right
+        // and the offsets wrong reads the same bytes twice and still answers the assertions above.
+        for (var i = 1; i < samples.Count; i++)
+        {
+            Assert.True(samples[i].Offset >= samples[i - 1].Offset + samples[i - 1].Length,
+                $"frame {i} at {samples[i].Offset} overlaps frame {i - 1} "
+                + $"at {samples[i - 1].Offset}+{samples[i - 1].Length}");
+        }
     }
 
     /// <summary>

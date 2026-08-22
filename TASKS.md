@@ -51,10 +51,10 @@ SPILLS rather than republishing the segment it is already filling. Both shapes a
 - [ ] **Decide whether the EXPERIMENTAL label comes off** (`README.md`). ⚠ An owner call, not a mechanical
   one: desktop coverage is real but the tier's faults were found on mobile, so "proven" may reasonably mean
   the row above is green first.
-- [ ] **Two lacing shapes remain unexercised by a real file.** `clip-laced-audio.mkv` covers EBML and Xiph
-  lacing; `ReadFixedLacing` is reached by no fixture, and no committed file laces its PICTURE track.
-  ⚠ Weaker than it sounds — fixed lacing is rare and the parsers are pinned by hand-built blocks — so this
-  is worth one mkvmerge run, not a pass.
+**All three lacing schemes are now covered by real files** — EBML and Xiph by `clip-laced-audio.mkv`, fixed
+by `clip-fixed-lacing.mkv` (CBR MP3, which is what mkvmerge fixed-laces). ⚠ A laced PICTURE track stays
+uncovered and is **not reachable with the tools here**: it is legal, and mkvmerge laces no video. Hand-built
+blocks are the only coverage it will get short of writing a muxer.
 
 ### 📱 THE MEDIA FIRST-LOAD WIN IS MEASURED ON A SIMULATOR, NEVER ON THE PHONE IT WAS REPORTED ON
 
