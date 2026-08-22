@@ -385,11 +385,27 @@ file's pages (see the table below), so ~26 MB of seeking reads would have to com
 first request rather than making the page poll — production now finishes faster than one round trip, which
 is atomic publish and the short first segment together.
 
-🔴 **WHAT THIS DOES NOT SHOW, and both gaps matter.** **(1) There is no BEFORE number** — every reading
-here is of the current code, so the improvement is argued from the flatness and from what the old path
-provably did, not from an A/B on one machine. **(2) It is a SIMULATOR**, reading a Mac's SSD through a
-virtualised filesystem, with a different codec table from any phone; the symptom this work exists for was
-reported on hardware and remains unmeasured there.
+🔴 **WHAT THIS DOES NOT SHOW: there is no BEFORE number.** Every reading here is of the current code, so the
+improvement is argued from the flatness and from what the old path provably did, not from an A/B on one
+machine. That gap is unchanged by the hardware run below.
+
+### On a real iPhone — measured 2026-08-22
+
+iPhone 17 Pro, iOS 26.6, installed and launched over `mac device`. Same probe, same terms.
+
+| fixture | duration | segments | tManifest | tInit | tSeg0 | tFirstFrame | tries |
+|---|---|---|---|---|---|---|---|
+| `clip-video-ac3.mkv` | 6.5 s | 3 | 23 ms | 6 ms | 3 ms | 70 ms | 1 |
+| `clip-h264-aac.mkv` | 60 s · 488 KB | 12 | 14 ms | 5 ms | 2 ms | **82 ms** | 1 |
+
+**The phone is FASTER than the simulator, and by an order of magnitude on the term that dominated it:**
+`tInit` is 5 ms here against 57 ms there — that fetch is the one that starts production and waits for
+segment 0 to be whole, so it was measuring a virtualised filesystem plus an x86 decode more than anything
+the kit does. Every segment appended (`12/12`, `buffered=0.22-60.02`), `tries=1` throughout, first frame at
+82 ms.
+
+⚠ **THE FLATNESS CLAIM IS NOT RE-MEASURED HERE.** `clip-big-h264-aac.mkv` reported `SKIPPED — not staged`,
+so the 160× row above remains a simulator reading and the hardware evidence covers 6.5 s and 60 s only.
 
 ## What IS proven, and how
 

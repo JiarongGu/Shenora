@@ -66,46 +66,43 @@ by `clip-fixed-lacing.mkv` (CBR MP3, which is what mkvmerge fixed-laces). ⚠ A 
 uncovered and is **not reachable with the tools here**: it is legal, and mkvmerge laces no video. Hand-built
 blocks are the only coverage it will get short of writing a muxer.
 
-### 📱 THE MEDIA FIRST-LOAD WIN IS MEASURED ON A SIMULATOR, NEVER ON THE PHONE IT WAS REPORTED ON
+### 📱 THE MEDIA FIRST-LOAD WIN IS MEASURED ON A PHONE NOW — WHAT IS LEFT IS THE BIG FILE AND ANDROID
 
-Shipped in v0.12.0 and timed: **first load is FLAT across a 160× range** in duration and size — 18 ms
-manifest, 55 ms init, 19 ms seg0 on a 78 MB / 1000 s file, `tries=1` throughout
-(`docs/design/media.md` § "First load does not scale with the file"). ⚠ Correctness is covered too, so do
-not re-run the seek probe. **What is missing is hardware**: the symptom was reported on a real iPhone, the
-readings are a simulator's, and there is no BEFORE number on any machine — the case rests on the flatness.
+Measured on an **iPhone 17 Pro / iOS 26.6, 2026-08-22**, split per term as this entry demanded:
+14 ms manifest · 5 ms init · 2 ms seg0 · **82 ms to first frame**, `12/12` segments appended, `tries=1`
+throughout (`docs/design/media.md` § "On a real iPhone"). **The phone beat the simulator by 10× on `tInit`**,
+the term that dominated it — so that reading was measuring virtualised storage more than the kit. ⚠ There is
+still no BEFORE number on any machine, and hardware does not change that.
 
-- [ ] 🔴 **MEASURE FIRST PAINT, AND SPLIT THE TERMS** — manifest response · `init.mp4` response · seg0
-  response. A total cannot say which change earned it, and the four changes are separable. ⚠ On a **real
-  iPhone**: the symptom was reported on hardware, and the simulator has a different codec table and
-  different storage.
-- [ ] **The re-encode picture path is still unmeasured** — `REORDER: SKIPPED — this shell does not convert
-  h263`. The simulator converts no video at all, so only a device reaches an encoder (`mobile-shells.md`).
+⚠ **The re-encode picture path RAN, and the encoder does not reorder** — `REORDER: ran a re-encode over
+clip-h263-aac.mkv — 6 segment(s), 179659 picture bytes`, with `picture (converted) read=60 emitted=60`.
+The simulator could only report `SKIPPED — this shell does not convert h263`; the device decodes h263 and
+encodes h264, so this is the first time that path has executed at all. Do not re-run it on a simulator.
+
+- [ ] **Re-measure the FLATNESS claim on the phone.** `clip-big-h264-aac.mkv` reported `SKIPPED — not
+  staged`, so the 160×-range row stays a simulator reading — and it is the row the whole first-load case
+  rests on. Staging that fixture on a device is the one thing between it and hardware evidence.
 - [ ] **Confirm the Android encoder change on a device.** The bitrate was ~1/30th of intent (no frame-rate
   factor); the fix is arithmetic and changes output size and encode cost on a phone. ⚠ It also became
   reachable for ORDINARY 1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be
   copied — so this path is newly hot, not newly correct.
 
-### 🍎 THE BUILD MAC'S AOT PACK GAP IS CLOSED — THE DEVICE BLOCKER IS NOW PROVISIONING AND A CABLE
+### 🍎 THE BUILD MAC BUILDS FOR A DEVICE — PROVEN BY AN APP RUNNING ON THE PHONE
 
-Re-measured 2026-08-22, and the 2026-08-21 reading no longer holds. The SDK resolves the AOT cross pack at
-**10.0.10**, and the DEVICE pack now has it:
+**Settled 2026-08-22 by doing it**, which retires the 2026-08-21 entry claiming the Mac could not: the
+sample built, AOT-compiled, signed, installed and launched on `Feedfinger-iPhone` (iPhone 17 Pro, iOS 26.6).
+The AOT cross-pack gap that entry described was repaired on the Mac at 2026-08-21 20:40
+(`…Cross.ios-arm64/10.0.10` → symlink to 10.0.11), hours after it was written.
 
-| pack | 10.0.10? | matters for |
-|---|---|---|
-| `…Cross.ios-arm64` (device) | **yes** — symlink → 10.0.11, made 2026-08-21 20:40 | every device build |
-| `…Cross.iossimulator-x64` | yes — symlink → 10.0.11 | the simulator loop on this Intel Mac |
-| `…Cross.iossimulator-arm64` | no | nothing here — an Apple-Silicon Mac only |
+**What it took, and both are re-payable rather than one-offs:**
 
-So the repair the old entry proposed was applied, and "the Mac cannot build for a device" is retired.
-
-⚠ **What replaced it, and it is NOT the same thing.** A device build now stops EARLIER, at
-`Could not find any available provisioning profiles for Shenora.Sample.Maui on iOS` — so `AOTCompile` is
-untested rather than proven: the run never reaches it. And `mac devices` reports the iPhone
-**paired but NOT CONNECTED**, which `mac device` refuses on.
-
-- [ ] **Plug in and unlock the iPhone, then `mac provision`** — that is the whole remaining gate on every
-  device item below. ⚠ Only then is the AOT pack claim actually settled; today's evidence is the pack
-  listing, not a build that reached the compiler.
+- `mac provision` — the Mac had a profile for one unrelated app only. It mints one per bundle id, the Live
+  Activity extension included. ⚠ **A personal-team profile expires after 7 DAYS**; these expire
+  **2026-08-29**, so a device run after that re-runs it first.
+- 🔴 **`mac device` PUSHES by default, and the push wipes the `TargetPlatformVersion` pin** — so the first
+  attempt failed 27× `MT4162 … not available in iOS 26.2 (introduced in 26.4)`, which reads as a code
+  defect and is not one. **Re-pin, then `mac device --no-push`.** Unpinned, the SDK takes a band newer than
+  Xcode 26.3's iOS SDK 26.2 and the LINKER rejects its own generated bindings.
 ⚠ **The bridge-tag check is proven BOTH ways on iOS now** (simulator, `PageProbe.ServeDocumentFromDisk`), so
 do not re-run it there: a tagged document served from a `FileStream` still reaches the page
 (`client READY (handshake id=c1)`, i.e. the check read the body and put its position back), and an untagged
