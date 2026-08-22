@@ -7,6 +7,7 @@ using Shenora.Windows;
 using Shenora.Modules.Clipboard;
 using Shenora.Modules.FileDialog;
 using Shenora.Modules.Media;
+using Shenora.Modules.Platform;
 using Shenora.Modules.Requests;
 using Shenora.Core.Shell;
 using Shenora.Core.Ipc;
@@ -460,6 +461,57 @@ public class WireMirrorTests
         Assert.True(offenders.Count == 0,
             "These call sites name the response type argument, which disables the payload check. Declare "
             + "the method's return type instead:\n  " + string.Join("\n  ", offenders));
+    }
+
+    /// <summary>
+    /// The back-gesture MODULE, ROUTES and the EVENT type — same shape as the pins above, plus the event
+    /// name, which the others do not have to carry.
+    /// <para>
+    /// 🔴 <b>The event is the half that fails silently and the half only this test watches.</b> A route
+    /// that drifts produces a rejected request the page can see; a drifted EVENT name produces a
+    /// subscription that simply never fires, which is indistinguishable from a user who never pressed
+    /// back — and the consequence is the app quitting under them, on a device, with nothing logged.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Back_navigation_module_routes_and_event_match_the_host()
+    {
+        var source = ClientSource("backNavigation.ts");
+
+        var module = Regex.Match(source, @"BACK_MODULE\s*=\s*'(?<module>[A-Z_.]+)'");
+        Assert.True(module.Success, "could not find the client's `BACK_MODULE = '…'` declaration");
+        Assert.Equal(BackNavigation.Module, module.Groups["module"].Value);
+
+        // The facade answers on the same name a press is published under; the client has ONE constant for
+        // both, so a host that ever split them would go unnoticed here.
+        Assert.Equal(BackNavigationModule.Module, BackNavigation.Module);
+
+        var pressed = Regex.Match(source, @"BACK_PRESSED\s*=\s*'(?<type>[A-Z_]+)'");
+        Assert.True(pressed.Success, "could not find the client's `BACK_PRESSED = '…'` declaration");
+        Assert.Equal(BackNavigation.PressedType, pressed.Groups["type"].Value);
+
+        var routes = Regex.Matches(source, @"\.send(?:<[^>]*>)?\('(?<route>[A-Z_]+)'")
+            .Select(m => m.Groups["route"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(routes);    // parser self-check
+
+        var hostRoutes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            BackNavigation.InterceptType,
+            BackNavigation.ResolveType,
+        };
+        Assert.Equal(hostRoutes, routes);
+    }
+
+    /// <summary>
+    /// The back press PAYLOAD, which is one field and entirely load-bearing: the token is what stops an
+    /// answer to a timed-out press being applied to the press after it.
+    /// </summary>
+    [Fact]
+    public void Back_navigation_payloads_mirror_the_client()
+    {
+        AssertMirroredFields(typeof(BackNavigationEvent), "backNavigation.ts", "BackNavigationEvent");
+        AssertMirroredFields(typeof(BackNavigationResult), "backNavigation.ts", "BackNavigationResult");
     }
 
     /// <summary>

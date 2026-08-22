@@ -62,24 +62,19 @@ each of which is a WINDOW/SHELL concern rather than an app one. Measured against
 `grep -rl "BackPressed\|BackButton" src/` finds nothing, and `MobileWindowLifecycle` answers only
 `IsRecreating`.
 
+**The BACK BUTTON is BUILT** (D79, owner picked it as the one to do first — the other two are enhancements,
+back is the one whose absence quits the app). Still owed to hardware, below.
+
+- [ ] **Run the back gesture on a device.** The ordering is covered by 15 tests with no device, but the
+  PLATFORM leg is compile-proven only: the `OnBackPressedDispatcher` callback firing, the disable-and-reissue
+  when the page declines, and the re-attach after a configuration change. ⚠ **The re-issue is the one to
+  watch** — if `OnBackPressed()` re-enters our own callback instead of falling through, back becomes a loop
+  rather than an exit, and nothing on Windows can show that.
 - [ ] **Screen orientation.** Lock to portrait, and unlock/relock around a full-screen media viewer where
   rotation is genuinely wanted. Two calls, both platforms, no policy — the app decides WHEN.
-- [ ] **The Android hardware back button.** 🔴 The one whose absence is not a missing feature but a BROKEN
-  APP: unhandled, back finishes the activity from any screen, so a user two levels deep is dumped to the home
-  screen. Capacitor's plugin exists mainly to override exactly that default. The shell cannot decide what
-  back MEANS (their page closes an expanded player first, then walks its own SPA history, and only exits at
-  the root) — so the ask is an EVENT the page can answer, plus a way to say "handled".
 - [ ] **Foreground/resume, surfaced to the page.** After a background the websocket may be dead and the
   paired server may have come or gone; their client reconnects and re-probes on resume. `MobileWindowLifecycle`
   cannot answer this — it is about teardown, not activation.
-
-⚠ **D15 says two consumers and this is one**, so a decline is a fair answer — but note the shape before
-deciding: all three are things the kit ALREADY plays in (it owns `MobileSafeArea`, the window teardown wiring
-and the IPC that would carry the event), they are per-platform in exactly the way the kit exists to absorb,
-and the back button in particular is not an enhancement — **a MAUI shell without it ships an app whose back
-button quits it.** If declined, the honest fallback is a line in `docs/guides/mobile.md` telling the next
-adopter that these three are theirs to write, because the natural reading of "the kit is the shell" is that
-they are not.
 
 ### 📱 THE STAMP FIX IS BUILT — one leg of it still needs the Mac
 

@@ -107,6 +107,11 @@ public static class MauiProgram
 		// assembly, with no Windows anywhere in the graph. If D20's portability were only a claim,
 		// this line would not compile.
 		shenora.Services.AddIpcModule<PortableSampleModule>();
+		// The system back gesture. 🔴 The PAIR: this registers the coordinator and its routes, and
+		// MainPage constructs the MobileBackNavigation that actually raises a press — registered alone,
+		// the page's INTERCEPT would be accepted while no press ever arrived, which is the D63 shape
+		// where absent is indistinguishable from working.
+		shenora.Services.AddShenoraBackNavigation();
 		// Mobile-only, and the reason is measured: `mac safari-eval` cannot be installed on this build Mac
 		// and WebKit does not forward a page's console.log to the unified log, so this is the only way page
 		// state arrives as TEXT rather than as pixels. See PageDiagModule.

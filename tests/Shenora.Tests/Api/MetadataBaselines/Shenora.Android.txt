@@ -45,6 +45,11 @@ Shenora.Android.AndroidPlaybackSession
   property SessionToken
   property SkipInterval
   property Supported
+Shenora.Mobile.MobileBackNavigation
+  method .ctor
+  method Attach
+  method Dispose
+  property IsSupported
 Shenora.Mobile.MobileClipboardService
   method .ctor
   method ClearAsync

@@ -134,6 +134,7 @@ docs cite them — so the number is the column to scan.
 | **D76** | THE SEGMENT ENGINE COPIES WHAT MP4 CAN CARRY AND RE-ENCODES ONLY WHAT IT CANNOT; A COPIED TRACK IS CUT ON THE SOURCE'S OWN KEYFRAMES, SO THE BOUNDARIES TRAVEL AS A PLAN. |
 | **D77** | THREE HOMES, and this file holds only the first: a DECISION here, a subsystem's DESIGN under `docs/design/`, an invariant in `.claude/knowledge/`. |
 | **D78** | FOR A REMOTE MEDIA SOURCE THE KIT SHIPS THE ADAPTER, NEVER THE TRANSPORT: |
+| **D79** | THE SHELL RAISES THE BACK GESTURE AND THE PAGE DECIDES WHAT IT MEANS, PER PRESS: |
 
 <!-- decisions-index:end -->
 
@@ -1092,6 +1093,20 @@ docs cite them — so the number is the column to scan.
     passes every length check while feeding the demuxer the file's START. The kit sees a `Stream`, not a
     status, so it checks a range past zero opening with the container's magic. `docs/design/media.md`.
 
+- **D79 — THE SHELL RAISES THE BACK GESTURE AND THE PAGE DECIDES WHAT IT MEANS, PER PRESS:**
+  `BackNavigation` correlates one press with one answer over a token, bounds the wait, and falls through to
+  the platform whenever it is unsure. The shell cannot know that back should close an expanded player before
+  it walks the page's history, so it does not guess.
+  - **Why the kit owns it at all**, against D15's two-consumer bar: unhandled, Android's back FINISHES THE
+    ACTIVITY from any screen, so a MAUI shell without this ships an app whose back button quits it — and
+    the web platform has no answer, since `popstate` sees only history the page pushed itself.
+  - 🔴 **Opt-in, because the failure is asymmetric.** A press the kit SWALLOWS is a dead back button nobody
+    can diagnose from outside; a press that reaches the platform is at worst the old behaviour. So an app
+    that never asked pays no round trip, an unanswered press falls through on a timeout, and a throwing
+    page handler answers "not handled".
+  - ⚠ **It is a NOTIFICATION plus a REQUEST, not one call, because the kit has no host→page request.** That
+    is what the token is for: an answer to a press that already timed out must not be applied to the next
+    one.
 
 ## Anti-goals — deliberately NOT built
 

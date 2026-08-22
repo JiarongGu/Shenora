@@ -43,6 +43,10 @@ const SECTIONS = [
   ['MediaConversionEvents', 'Media conversion', 'A conversion outlives its request, so the page learns from these rather than from a response.'],
   ['MediaConversionErrorCodes', 'Media conversion failures', 'The `reason` on a conversion FAILED event. Anything else is an exception TYPE name.'],
   ['ShellCapability', 'Shell capabilities', 'What a host advertises in its handshake, and what a page branches on instead of sniffing the platform.'],
+  // The module name, the two routes and the EVENT are all named by hand on the page side — and the
+  // event is the one whose drift is silent: a subscription to the wrong type simply never fires, which
+  // is indistinguishable from a user who never pressed back.
+  ['BackNavigation', 'Back gesture', 'Android\'s system back, offered to the page before the platform finishes the activity under it.'],
   // ⚠ ADDED 2026-08-18, all long shipped and none of them published here — found by a docs audit, not
   // by this gate, which is the point of NOT_WIRE below. A page names every one of these by hand.
   ['ClipboardModule', 'Clipboard routes', 'The page\'s access to the native clipboard — the capability D53 added for what React cannot reach.'],

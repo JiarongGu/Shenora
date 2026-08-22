@@ -106,6 +106,17 @@ export {
   type ClipboardContent,
   type ClipboardHandle,
 } from './clipboard.js';
+// Android's system back gesture. Unhandled it FINISHES THE ACTIVITY from any screen, so a page with
+// its own navigation must answer it — the client half of the host's SHENORA.BACK module.
+export {
+  BackNavigationAccess,
+  useBackNavigation,
+  BACK_MODULE,
+  BACK_PRESSED,
+  type BackNavigationEvent,
+  type BackNavigationResult,
+  type BackNavigationHandle,
+} from './backNavigation.js';
 export {
   installDevInterceptor,
   type DevInterceptorOptions,

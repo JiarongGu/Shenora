@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import * as barrel from './index.js';
 import { isShenoraAvailable } from './index.js';
 import type {
+  BackNavigationResult,
+  BackNavigationHandle,
+  BackNavigationEvent,
   EventMessage,
   IpcError,
   IpcNotification,
@@ -69,6 +72,9 @@ import type {
  * shows up in the diff next to the CHANGELOG entry it needs.
  */
 const EXPECTED_EXPORTS = [
+  'BACK_MODULE',
+  'BACK_PRESSED',
+  'BackNavigationAccess',
   'BaseModuleService',
   'ClipboardAccess',
   'DROP_ZONE_MODULE',
@@ -120,6 +126,7 @@ const EXPECTED_EXPORTS = [
   'pickMediaSource',
   'remoteSegmentUrl',
   'segmentMimeType',
+  'useBackNavigation',
   'useClipboard',
   'useDropZone',
   'useFileDialogs',
@@ -150,6 +157,7 @@ type ExportedTypeSurface = [
   EventMessage, IpcError, IpcNotification, IpcNotificationBatch, IpcRequest, IpcResponse,
   CaptionButtonKind, CaptionButtonRect, DropZoneFileDrop, InvokeOptions,
   ClipboardContent, ClipboardHandle,
+  BackNavigationEvent, BackNavigationResult, BackNavigationHandle,
   FileDialogFilter, FileDialogOptions, FileDialogResult, FileDialogsHandle,
   OpenFileOptions, OpenFolderOptions, SaveFileOptions,
   IpcRequestStatus, IpcLabel, IpcProgress, IpcRequestState,

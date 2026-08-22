@@ -43,6 +43,18 @@ public static class ShellCapability
     public const string Tray = "tray";
 
     /// <summary>
+    /// The shell has a SYSTEM BACK gesture the page can take responsibility for — Android's hardware or
+    /// gesture back. Absent on iOS and on the desktop, which have no such gesture at all.
+    /// <para>
+    /// 🔴 <b>Branch on it rather than intercepting unconditionally.</b> A page that asks to handle back
+    /// where there is none is not refused — there is nothing to refuse — it simply never hears a press,
+    /// which looks identical to a page whose handler is broken. See
+    /// <see cref="Shenora.Modules.Platform.BackNavigation"/>.
+    /// </para>
+    /// </summary>
+    public const string BackNavigation = "backNavigation";
+
+    /// <summary>
     /// The host can put a FILE LIST on the clipboard, for the user to paste into a file manager — the one
     /// clipboard capability that genuinely differs by shell, since a phone's pasteboard has no file list.
     /// Branch on it rather than calling and catching the refusal.

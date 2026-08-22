@@ -118,6 +118,14 @@ export const ShellCapabilities = {
   secondaryWindows: 'secondaryWindows',
   tray: 'tray',
   /**
+   * The shell has a system BACK gesture this page can take responsibility for — Android only. Absent
+   * on iOS and the desktop, which have none.
+   *
+   * ⚠ Branch on it. Asking to intercept where there is no gesture is accepted and no press ever
+   * arrives, which looks exactly like a handler that is broken.
+   */
+  backNavigation: 'backNavigation',
+  /**
    * The host can put a FILE LIST on the clipboard, so the user can paste into Explorer, Finder or a
    * file manager. No web API expresses this, so it is the one part of the clipboard worth branching on.
    *

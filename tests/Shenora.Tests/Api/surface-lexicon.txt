@@ -87,6 +87,12 @@ Paths
 # only now needs a TYPE, so the word is admitted rather than paraphrased: "load" and "page change" are
 # both vaguer and neither is what the platform calls it.
 Navigation
+# `BackNavigation` — the system BACK gesture, which is what every platform that has one calls it
+# (`OnBackPressed`, `OnBackPressedDispatcher`, `OnBackInvokedCallback`). Shell vocabulary, not domain:
+# it names a hardware/system affordance the shell owns, in the same family as Tray and WindowChrome.
+# Admitted rather than paraphrased because every paraphrase is worse — "Previous" and "Up" are both
+# DIFFERENT Android concepts, and a page reading either would wire the wrong one.
+Back
 # `SessionPermissionRequest` — the platform's own word (`PermissionRequested`,
 # `CoreWebView2PermissionKind`), for the capability gate a page passes through to reach a camera,
 # microphone, geolocation or the clipboard. Same reasoning as Auth and Certificate above: the mechanism

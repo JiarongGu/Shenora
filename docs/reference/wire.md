@@ -102,8 +102,20 @@ What a host advertises in its handshake, and what a page branches on instead of 
 | `ShellCapability.SavePicker` | `savePicker` | Choosing a save destination. |
 | `ShellCapability.SecondaryWindows` | `secondaryWindows` | Additional windows the app can open. |
 | `ShellCapability.Tray` | `tray` | A tray icon. |
+| `ShellCapability.BackNavigation` | `backNavigation` | The shell has a SYSTEM BACK gesture the page can take responsibility for — Android's hardware or gesture back. |
 | `ShellCapability.ClipboardFiles` | `clipboardFiles` | The host can put a FILE LIST on the clipboard, for the user to paste into a file manager — the one clipboard capability that genuinely differs by shell, since a phone's pasteboard has no file list. |
 | `ShellCapability.LocalFiles` | `localFiles` | The host can serve LOCAL FILES to the page through an IWebViewInterceptor — media, images, documents, generated exports. |
+
+## Back gesture
+
+Android's system back, offered to the page before the platform finishes the activity under it.
+
+| Constant | Value | |
+|---|---|---|
+| `BackNavigation.Module` | `SHENORA.BACK` | The module a back press is published under, and the one the page answers on. |
+| `BackNavigation.PressedType` | `PRESSED` | Event: the user pressed back and the page is being asked. |
+| `BackNavigation.InterceptType` | `INTERCEPT` | Route: the page takes or releases responsibility for back. |
+| `BackNavigation.ResolveType` | `RESOLVE` | Route: the page answers one press. |
 
 ## Clipboard routes
 

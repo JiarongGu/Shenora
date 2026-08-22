@@ -45,6 +45,24 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **The Android system BACK gesture, offered to the page** — `BackNavigation` + `BackNavigationModule`
+  (`SHENORA.BACK`), `AddShenoraBackNavigation()`, the shell-side `MobileBackNavigation`, and
+  `useBackNavigation` in `@shenora/react`. 🔴 **The one shell primitive whose absence is a broken app
+  rather than a missing feature:** unhandled, back finishes the activity from any screen, so a user two
+  levels into a MAUI app is dumped to the home screen. The web platform has no answer — `popstate` sees
+  only history the page itself pushed and cannot report that the press would otherwise exit.
+  - **The page decides what back MEANS, per press** (D79). The shell cannot know that it should close an
+    expanded player before walking the page's own history, so it does not guess: a press is published
+    with a token, the page answers that token, and the answer says handled or not.
+  - 🔴 **Opt-in, and every uncertain case falls through to the platform** — nobody intercepting, nobody
+    answering within the timeout, a throwing page handler, a disposed coordinator. A press the kit
+    SWALLOWED would be a dead back button nobody can diagnose from outside; a press that reaches the
+    platform is at worst the behaviour you had before.
+  - ⚠ **Android only.** `MobileBackNavigation.IsSupported` is false on iOS, which has no such gesture —
+    advertise `ShellCapability.BackNavigation` from it so a page branches rather than waiting for a press
+    that never comes. ⚠ **Not yet run on a device**; the ordering is covered by tests, but the platform
+    leg (the dispatcher callback, the re-issue on decline, re-attach after recreation) is compile-proven
+    only.
 - **`ResourcePackJournal.PackagedVersionIn(Stream)`** — the same answer as the directory overload, for a
   packaged bundle that is not a directory. 🔴 **On Android it never is**: the bundle is a set of app-package
   assets read through the platform's asset manager, so the path overload cannot be called there and an app

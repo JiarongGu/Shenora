@@ -29,6 +29,13 @@ public sealed class MainPage : ContentPage
 	private readonly MobileSafeArea _safeArea;
 
 	/// <summary>
+	/// The raiser for the system back gesture, or null on a shell that has none. 🔴 Held in a field and
+	/// disposed on unload: it registers a callback on the ACTIVITY, which outlives this page, so a
+	/// forgotten one keeps answering presses for a page that is gone.
+	/// </summary>
+	private MobileBackNavigation? _back;
+
+	/// <summary>
 	/// The background-transfer hooks, held so <see cref="OnUnloaded"/> can take them off again. MAUI's
 	/// Window outlives this page, so an anonymous subscription would survive it — see the call site.
 	/// </summary>
@@ -145,13 +152,25 @@ public sealed class MainPage : ContentPage
 				//
 				// DeviceInfo rather than an #if: MAUI already knows, and this file is shared source.
 				Name = DeviceInfo.Current.Platform.ToString().ToLowerInvariant(),
-				Capabilities = [ShellCapability.FilePicker, ShellCapability.LocalFiles],
+				// ⚠ Back is declared only where it EXISTS. Advertising it on iOS would have the page
+				// intercept a gesture that is never raised there, which looks exactly like a broken
+				// handler — the honest answer is the one the page can branch on (D36).
+				Capabilities = MobileBackNavigation.IsSupported
+					? [ShellCapability.FilePicker, ShellCapability.LocalFiles, ShellCapability.BackNavigation]
+					: [ShellCapability.FilePicker, ShellCapability.LocalFiles],
 			},
 			OnClientReady = request => MauiProgram.Log($"client READY (handshake id={request.Id})"),
 			Log = AppCallback.Logger(MauiProgram.Log),
 		});
 		_bridge.Attach();
 		MauiProgram.Log("bridge attached — waiting for the page handshake");
+
+		// The other half of `AddShenoraBackNavigation` in MauiProgram: the coordinator DECIDES, this
+		// RAISES. Constructed here rather than in the page constructor because it needs a live activity,
+		// which does not exist that early — and Attach() is idempotent, so a recreation re-attaches by
+		// running this again.
+		_back = new MobileBackNavigation(
+			services.GetRequiredService<BackNavigation>(), AppCallback.Logger(MauiProgram.Log));
 
 		// 🔴 THE BACKGROUND TRANSFER, AND IT IS THE KIT'S NOW — this sample no longer carries its own copy.
 		// Until 2026-08-12 the logic lived here as `BackgroundHandoffProbe`, which is how it was proven on
@@ -664,6 +683,8 @@ public sealed class MainPage : ContentPage
 		_documentFromDisk = null;
 
 		_media.Dispose();
+		_back?.Dispose();
+		_back = null;
 		_safeArea.Dispose();
 		_bridge?.Dispose();
 		_bridge = null;

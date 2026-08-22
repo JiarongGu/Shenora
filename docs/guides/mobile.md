@@ -183,6 +183,45 @@ you can ask in advance. `IUiInteraction`'s
 block/unblock is the opposite case — a documented no-op, because mobile pickers are already modal, so
 the capability is satisfied BY the platform rather than absent.
 
+### 🔴 The Android back button — handle it, or your app quits from every screen
+
+Unhandled, back **finishes the activity** from wherever the user is, so someone two levels into your UI
+lands on the home screen instead of going back one step. There is no web answer: `popstate` fires only for
+history your own page pushed, and it cannot tell you the press would otherwise EXIT.
+
+The shell raises it; **your page decides what it means**, per press (D79):
+
+```csharp
+// MauiProgram: the coordinator and its routes.
+shenora.Services.AddShenoraBackNavigation();
+
+// The page, once an activity exists — this is what actually RAISES a press.
+_back = new MobileBackNavigation(services.GetRequiredService<BackNavigation>());
+```
+
+🔴 **Those two are a PAIR.** Register without constructing and your page's `INTERCEPT` is accepted while
+no press ever arrives — the failure where absent is indistinguishable from working. Advertise
+`ShellCapability.BackNavigation` only where `MobileBackNavigation.IsSupported`, so a page on iOS branches
+instead of waiting for a gesture that does not exist there.
+
+```tsx
+const { supported } = useBackNavigation(() => {
+  if (playerExpanded) { collapsePlayer(); return true; }   // consumed
+  if (history.length > 1) { history.back(); return true; } // consumed
+  return false;                                            // at the root — let them leave
+});
+```
+
+⚠ **Answer every press, including the ones you decline.** An unanswered press is held for two seconds and
+then goes to the platform, so a page that stops answering does not freeze back — it silently reverts to
+quitting the app. `useBackNavigation` does the answering, the subscription and the release on unmount for
+you, which matters because each of those is its own way back to that.
+
+⚠ **Re-attach after a recreation.** A configuration change builds a new activity with a new dispatcher, and
+the callback is registered at runtime rather than restored from saved state — so it stays on the dead one
+and back quietly reverts to the default. `Attach()` is idempotent; calling it wherever you build the page
+is the simplest correct thing.
+
 ### ⚠ A server-backed app on a MAUI shell: the page's ORIGIN is not what you expect, and it costs a day
 
 Filed by the first adopter (2026-08-04) after losing a day to it. Not a kit defect and it needs no kit API —

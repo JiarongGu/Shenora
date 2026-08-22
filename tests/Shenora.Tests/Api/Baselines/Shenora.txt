@@ -7,6 +7,8 @@ static class Shenora.AppCallback
 static class Shenora.AppRootArgument
   public const string Flag = "--app-root"
   public static string Resolve(string[]? args, string fallback)
+static class Shenora.BackNavigationServiceCollectionExtensions
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraBackNavigation(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Shenora.Modules.Platform.BackNavigationOptions? options = null)
 static class Shenora.ClipboardServiceCollectionExtensions
   public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraClipboard(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
 sealed class Shenora.Core.Events.EventBus : Shenora.Core.Events.IEventBus
@@ -335,6 +337,7 @@ interface Shenora.Core.Shell.IUiInteraction
 interface Shenora.Core.Shell.IUrlLauncher
   public abstract void OpenUrl(string url)
 static class Shenora.Core.Shell.ShellCapability
+  public const string BackNavigation = "backNavigation"
   public const string ClipboardFiles = "clipboardFiles"
   public const string DropZones = "dropZones"
   public const string FilePicker = "filePicker"
@@ -1718,6 +1721,47 @@ sealed class Shenora.Modules.Platform.Activities.Text : Shenora.Modules.Platform
   public const Shenora.Modules.Platform.Activities.TextRole Headline = 0
   public const Shenora.Modules.Platform.Activities.TextRole Value = 3
   public int value__
+sealed class Shenora.Modules.Platform.BackNavigation : System.IDisposable
+  public .ctor(Shenora.Core.Events.IEventBus events, Shenora.Modules.Platform.BackNavigationOptions? options = null, Microsoft.Extensions.Logging.ILogger? log = null)
+  public System.Threading.Tasks.Task<bool> PressAsync(System.Threading.CancellationToken cancellationToken = default)
+  public bool Intercepting { get; }
+  public bool Resolve(string token, bool handled)
+  public const string InterceptType = "INTERCEPT"
+  public const string Module = "SHENORA.BACK"
+  public const string PressedType = "PRESSED"
+  public const string ResolveType = "RESOLVE"
+  public void Dispose()
+  public void SetIntercepting(bool enabled)
+sealed class Shenora.Modules.Platform.BackNavigationEvent : System.IEquatable<Shenora.Modules.Platform.BackNavigationEvent>
+  public .ctor(string Token)
+  public Shenora.Modules.Platform.BackNavigationEvent <Clone>$()
+  public bool Equals(Shenora.Modules.Platform.BackNavigationEvent? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Modules.Platform.BackNavigationEvent? left, Shenora.Modules.Platform.BackNavigationEvent? right)
+  public static bool op_Inequality(Shenora.Modules.Platform.BackNavigationEvent? left, Shenora.Modules.Platform.BackNavigationEvent? right)
+  public string Token { get; init; }
+  public void Deconstruct(out string Token)
+sealed class Shenora.Modules.Platform.BackNavigationModule : Shenora.Core.Ipc.ModuleBase
+  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
+  public .ctor(Shenora.Modules.Platform.BackNavigation back, Microsoft.Extensions.Logging.ILogger<Shenora.Modules.Platform.BackNavigationModule>? logger = null)
+  public const string Module = "SHENORA.BACK"
+  public override string ModuleName { get; }
+sealed class Shenora.Modules.Platform.BackNavigationOptions
+  public .ctor()
+  public System.TimeSpan Timeout { get; init; }
+sealed class Shenora.Modules.Platform.BackNavigationResult : System.IEquatable<Shenora.Modules.Platform.BackNavigationResult>
+  public .ctor(bool Accepted)
+  public Shenora.Modules.Platform.BackNavigationResult <Clone>$()
+  public bool Accepted { get; init; }
+  public bool Equals(Shenora.Modules.Platform.BackNavigationResult? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Modules.Platform.BackNavigationResult? left, Shenora.Modules.Platform.BackNavigationResult? right)
+  public static bool op_Inequality(Shenora.Modules.Platform.BackNavigationResult? left, Shenora.Modules.Platform.BackNavigationResult? right)
+  public void Deconstruct(out bool Accepted)
 interface Shenora.Modules.Platform.ILiveActivities
   public abstract string? PushToken(string handle)
   public abstract string? Start(Shenora.Modules.Platform.LiveActivityState state, Shenora.Modules.Platform.LiveActivityAppearance? appearance = null, Shenora.Modules.Platform.Activities.Presentation? presentation = null)
