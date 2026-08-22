@@ -47,6 +47,16 @@ the alternative was believed and turned out wrong.
   - **An unfiltered log tail is ~99 % platform chatter**, so "no output" and "the line scrolled past" look
     identical.
 
+- 🔴 **`mac device` PUSHES BY DEFAULT, AND THE PUSH WIPES THE `TargetPlatformVersion` PIN** — so a device
+  build fails 27× `MT4162 … not available in iOS 26.2 (introduced in 26.4)`, which reads as a code defect
+  and is not one. Unpinned, the SDK takes an API band newer than the Xcode in use and the LINKER rejects
+  its OWN generated bindings (CarPlay, AVKit, CoreNFC). **Re-pin, then `mac device --no-push`.**
+  - ⚠ **A personal-team provisioning profile expires after 7 DAYS.** `mac device` checks before building
+    and points at `mac provision`, which mints one per bundle id — the Live Activity extension included,
+    and forgetting that one fails at the very end of an install with an error naming the app.
+  - ⚠ **A locked phone refuses the launch** with `Unable to launch … because the device was not, or could
+    not be, unlocked`, AFTER a successful build and install. Only a human can clear it.
+
 - 🔴 **A CACHED ARTEFACT MAKES A RUN LOOK LIKE IT PROVED SOMETHING IT DID NOT.** The segment cache lives in
   the app container and SURVIVES a relaunch, so a probe that reports a perfect verdict may be serving what
   an earlier run produced — including a run whose log you never captured. Hit 2026-08-23 verifying the
