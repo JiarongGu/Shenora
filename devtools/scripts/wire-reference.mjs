@@ -80,6 +80,10 @@ const NOT_WIRE = new Map([
   ['ShenoraEnvironment', 'a dev-marker FILE name on disk'],
   ['MauiShellNames', 'the shell name used in capability-refusal messages, not a route'],
   ['WebViewScripts', 'the injected script SOURCES themselves'],
+  // ⚠ A CROSS-LANGUAGE contract, but not a WIRE one: `shenora copy` writes this file at BUILD time and the
+  // host reads it at BOOT. No page ever types it, so publishing it in the page's reference would be the
+  // wrong kind of documentation — its pair is pinned by `ResourcePackStampTests` against copy.ts instead.
+  ['ResourcePackJournal', 'the version-stamp FILE the CLI drops in a bundle, read host-side at boot'],
 ]);
 
 /** Every `public const string` with its summary's first sentence, keyed by declaring type. */

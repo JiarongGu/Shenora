@@ -469,6 +469,8 @@ sealed class Shenora.Engine.Compression.ResourcePack
 sealed class Shenora.Engine.Compression.ResourcePackJournal
   public .ctor(Shenora.Engine.Compression.ResourcePackJournalOptions options, Microsoft.Extensions.Logging.ILogger? log = null)
   public Shenora.Engine.Compression.ResourcePackResult Open(string packagedVersion)
+  public const string StampFileName = ".shenora-pack.json"
+  public static string? PackagedVersionIn(string bundleDirectory)
   public void Confirm()
   public void Reset()
   public void Stage(string version)

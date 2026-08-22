@@ -109,6 +109,50 @@ public sealed partial class ResourcePackJournal
     private readonly ResourcePackJournalOptions _options;
     private readonly ILogger? _log;
 
+    /// <summary>
+    /// The file <c>shenora copy</c> drops in a bundle it stages, carrying that bundle's version.
+    /// <para>
+    /// 🔴 <b>THE NAME AND THE SHAPE ARE AN AGREEMENT WITH THE CLI, not an implementation detail</b> —
+    /// written in TypeScript at build time, read here in C# at boot, and a drift on either side is SILENT:
+    /// the reader finds no stamp, the shell falls back to a hand-maintained constant, and the comparison
+    /// <see cref="Open"/> forces becomes wrong while looking right. Pinned against the CLI's own source by
+    /// <c>ResourcePackStampTests</c>, the same way the IPC wire is mirrored.
+    /// </para>
+    /// </summary>
+    public const string StampFileName = ".shenora-pack.json";
+
+    /// <summary>
+    /// The version of the packaged bundle in <paramref name="bundleDirectory"/>, ready to hand to
+    /// <see cref="Open"/> — or null when it carries no stamp, which an unstamped build, an older CLI and a
+    /// hand-assembled bundle all look like.
+    /// <para>
+    /// ⚠ <b>Null is a real answer, not an error.</b> <c>shenora copy</c> deliberately writes NO stamp when
+    /// the web app declares no version, because an invented one compares as a real one. And null must stay
+    /// distinguishable from <c>""</c>: <see cref="Open"/> REFUSES a blank, so collapsing the two would turn
+    /// "no version yet" into an exception at boot instead of a decision the app can still make.
+    /// </para>
+    /// </summary>
+    public static string? PackagedVersionIn(string bundleDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bundleDirectory);
+        try
+        {
+            var path = System.IO.Path.Combine(bundleDirectory, StampFileName);
+            if (!File.Exists(path)) return null;
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            return document.RootElement.TryGetProperty("version", out var version)
+                   && version.ValueKind is JsonValueKind.String
+                   && !string.IsNullOrWhiteSpace(version.GetString())
+                ? version.GetString()
+                : null;
+        }
+        catch (Exception)
+        {
+            // A stamp that cannot be read is the same as none: the app still starts, on the packaged bundle.
+            return null;
+        }
+    }
+
     /// <param name="options">Where the record lives and how versions order.</param>
     /// <param name="log">Where a rollback is reported. Null keeps it silent.</param>
     public ResourcePackJournal(ResourcePackJournalOptions options, ILogger? log = null)

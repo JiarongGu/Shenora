@@ -46,6 +46,11 @@ at the first list and missed five more breaking changes.
   - **It decides; it does not deliver.** Where packs come from, what a version string means and how two of
     them order stay the app's (D42) — `ResourcePack.StageAsync` already takes bytes the app fetched. It
     owns no bytes, downloads nothing, and deletes no directory (`PruneOthers` still collects).
+- **`ResourcePackJournal.PackagedVersionIn(bundleDirectory)`** reads that stamp back, so an app hands
+  `Open()` a version that came from the same source as the bytes rather than a second constant.
+  `StampFileName` names the file. ⚠ Null is a real answer — an unstamped build, an older CLI and a
+  hand-assembled bundle all look alike, and it stays distinguishable from `""` because `Open()` refuses a
+  blank.
 - **`shenora copy` stamps the bundle it stages** with `.shenora-pack.json` (`{"version":"…"}`), carrying the
   web app's own declared version. 🔴 This is the *enabling cause* of the defect above: the adopter who
   reported it "had nothing comparable to compare", because the packaged client's version was baked from one
