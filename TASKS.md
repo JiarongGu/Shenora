@@ -15,14 +15,15 @@ is where it lives.
 ⚠ **Length is now measured too** — `doc-shape` WARNS past 120 lines, which every one of those six cleared by
 60+. A crude proxy for a judgement no script can make, and the only signal the marker check cannot miss.
 
-**Status: v0.13.0 is PUBLISHED and VERIFIED LIVE** — all 5 NuGet packages plus `@shenora/react` and
-`@shenora/cli` answer 0.13.0, checked against the registries rather than the tree. Tag `v0.13.0`, release
-commit `35d065a`. ⚠ They did not land together: npm was immediate, NuGet took ~1 minute and
-`Shenora.iOS` a further minute — **a partial read is validation lag, not a half-landed release**.
-It carried all 14 blockers from the 2026-08-21 full review — two of them critical (a `Set`/`Map`/`Date`
-selector pinned for a component's life in `@shenora/react`; a `302`/`304` response killing the Android
-process) — and it is **not breaking**: 0 removals, 0 new `required`, 0 namespace moves.
-⚠ `src/Directory.Build.props` must now stay at `0.13.0`: the release workflow owns the bump, and a
+**Status: v0.14.0 is PUBLISHED and VERIFIED LIVE** — all 5 NuGet packages plus `@shenora/react` and
+`@shenora/cli` answer 0.14.0, checked against the registries rather than the tree. Tag `v0.14.0`, release
+commit `8864990`. ⚠ **A partial read is validation lag, not a half-landed release** — npm is usually
+immediate and NuGet takes a minute or two; re-check, never re-push.
+It carried the segment tier's foreign-muxer corpus and the data-loss fix that corpus found (a source with
+no cut point kept only its last few seconds), the bundle-update answer (`ResourcePackJournal` + `shenora
+copy`'s version stamp), and the bridge-tag check reading disk-served documents. **Not breaking**: 0
+removals, 0 new `required` on a shipped type, 0 namespace moves.
+⚠ `src/Directory.Build.props` must now stay at `0.14.0`: the release workflow owns the bump, and a
 hand-bump moves the baseline and skips a release (`release-discipline.md`).
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This is the maintainer's remaining work,
