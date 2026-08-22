@@ -46,8 +46,24 @@ internal sealed class SegmentRunWriter(
     /// </remarks>
     internal static long MaxPendingBytes = 64L * 1024 * 1024;
 
-    /// <summary>Said once per run: a forced cut repeats every segment afterwards and reads as a storm.</summary>
+    /// <summary>Said once per run: a spill repeats every segment afterwards and reads as a storm.</summary>
     private bool _reportedUncutCap;
+
+    /// <summary>
+    /// The segment currently being written, and its part-file — held open across a memory spill so the
+    /// segment is published once, whole. -1 and null between segments.
+    /// </summary>
+    private FileStream? _open;
+
+    /// <inheritdoc cref="_open" />
+    private int _openSegment = -1;
+
+    /// <inheritdoc cref="_open" />
+    private string _openPath = string.Empty;
+
+    /// <summary><c>mfhd</c>'s sequence number: 1-based and per FRAGMENT, which a spilling segment consumes
+    /// more than one of. Starts from the first segment this run produces.</summary>
+    private int _sequence = request.FirstSegment + 1;
 
     /// <summary>Read, copy or convert, and write until the source ends or the token fires.</summary>
     /// <param name="source">The source file, seekable — sample bytes are read by offset.</param>
@@ -163,6 +179,11 @@ internal sealed class SegmentRunWriter(
             }
             segment = CutIfDue(tracks, segment, cancellationToken);
             Flush(tracks, segment);                 // whatever is left is the final segment
+
+            // 🔴 A segment that SPILLED is only published when a flush closes it, and the final flush
+            // returns early when it has nothing to write — leaving a part-file holding everything already
+            // spilled. Closing here rather than relying on that flush having work to do.
+            CloseSegment();
         }
 
         // 🔴 What each track actually CONTRIBUTED. A short track is silent by construction — the fragments
@@ -422,9 +443,15 @@ internal sealed class SegmentRunWriter(
         // above needs a keyframe PAST the segment end; a long-GOP or damaged stream may not offer one for
         // minutes, and `Pending` holds every sample's BYTES until it does — whole-source memory, then
         // doubled by the final flush. Measured shape: one 600-frame run produced a single segment.
-        // ⚠ Cutting here lands on a non-keyframe, so that segment cannot be decoded from cold. That is a
-        // real cost and it is still the better one: the alternative is one segment the size of the film,
-        // which cannot be seeked into either AND runs a phone out of memory. Said out loud, once.
+        //
+        // 🔴 SO IT SPILLS TO DISK — it does NOT start a new segment, because it CANNOT. The manifest lists
+        // exactly `Plan.Count` segments, so there is no number a forced cut could use that a player would
+        // ever ask for; writing under the CURRENT number republished the segment and the rename overwrote
+        // everything already flushed under it. Measured on a real single-keyframe source: 240 of 240 samples
+        // read and emitted, 5,253 of 67,672 bytes surviving on disk, in a file that still parsed.
+        // ⚠ Appending another `moof`/`mdat` to the part-file bounds the memory — which is all this guard was
+        // ever for — while the segment stays one segment, still opening on its keyframe. It is finished and
+        // renamed by whoever closes it: the next real cut, or the end of the run.
         if (lead.PendingBytes > MaxPendingBytes)
         {
             var at = lead.Pending[^1];
@@ -432,12 +459,11 @@ internal sealed class SegmentRunWriter(
             if (!_reportedUncutCap)
             {
                 _reportedUncutCap = true;
-                owner.Report($"segments: the lead track has held {lead.PendingBytes / (1024 * 1024)} MB without "
-                           + "reaching a keyframe past the segment end, so this segment is being cut on a "
-                           + "non-keyframe to bound memory — seeking INTO it may not work");
+                owner.Report($"segments: the lead track has held {lead.PendingBytes} bytes without reaching a "
+                           + "keyframe past the segment end, so this segment is being written out in parts to "
+                           + "bound memory — it stays one segment and nothing is lost");
             }
-            Flush(tracks, segment, upTo: seconds);
-            segment = Math.Max(segment, request.Plan.IndexOf(seconds));
+            Flush(tracks, segment, upTo: seconds, closes: false);
         }
 
         return segment;
@@ -448,8 +474,13 @@ internal sealed class SegmentRunWriter(
     /// all of them when it is null (the final segment). ⚠ The boundary arrives in seconds and each channel
     /// converts it into its OWN timescale — comparing one channel's times against another's is how an audio
     /// cut lands nowhere near the video cut it is supposed to match.
+    /// <para>
+    /// <c>closes</c> is whether this fragment ENDS its segment. False only for a memory spill (see
+    /// <see cref="CutIfDue"/>), which appends to the same part-file and leaves it open for the fragment that
+    /// does close it.
+    /// </para>
     /// </summary>
-    private void Flush(List<Channel> tracks, int segment, double? upTo = null)
+    private void Flush(List<Channel> tracks, int segment, double? upTo = null, bool closes = true)
     {
         var data = new List<Mp4FragmentTrackData>();
 
@@ -532,9 +563,11 @@ internal sealed class SegmentRunWriter(
 
         if (data.Count == 0) return;
 
-        var path = Path.Combine(request.Directory, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"seg{segment}{SegmentRunRequest.SegmentExtension}"));
-        // Sequence numbers are 1-based and strictly increasing; the segment index is 0-based.
-        Publish(path, file => Mp4FragmentWriter.WriteFragment(file, segment + 1, data));
+        // Sequence numbers are 1-based and strictly increasing across the RUN, which is not the segment index
+        // once a segment spills into more than one fragment.
+        var opens = _openSegment != segment;
+        var sequence = _sequence++;
+        Append(segment, closes, file => Mp4FragmentWriter.WriteFragment(file, sequence, data, startsSegment: opens));
     }
 
     private void WriteInit(IReadOnlyList<Mp4FragmentTrack> tracks)
@@ -553,6 +586,38 @@ internal sealed class SegmentRunWriter(
         var partial = path + SegmentRunRequest.PartialExtension;
         using (var file = File.Create(partial)) write(file);
         File.Move(partial, path, overwrite: true);
+    }
+
+    /// <summary>
+    /// The same contract for a SEGMENT, which may take more than one fragment to fill: append to its
+    /// part-file, and publish only when <paramref name="closes"/>. ⚠ The file stays OPEN in between, so a
+    /// segment that never closes — a cancelled run — leaves a <c>.part</c> exactly as a failed write does.
+    /// </summary>
+    private void Append(int segment, bool closes, Action<Stream> write)
+    {
+        var path = Path.Combine(request.Directory, string.Create(
+            System.Globalization.CultureInfo.InvariantCulture, $"seg{segment}{SegmentRunRequest.SegmentExtension}"));
+
+        // A different segment while one is open cannot happen — the pump closes a segment before moving on —
+        // but publishing the old one beats silently appending this fragment to the wrong file.
+        if (_open is not null && _openSegment != segment) CloseSegment();
+
+        _open ??= File.Create(path + SegmentRunRequest.PartialExtension);
+        _openSegment = segment;
+        _openPath = path;
+
+        write(_open);
+        if (closes) CloseSegment();
+    }
+
+    /// <summary>Finish the open segment: close the part-file and rename it into place.</summary>
+    private void CloseSegment()
+    {
+        if (_open is null) return;
+        _open.Dispose();
+        _open = null;
+        File.Move(_openPath + SegmentRunRequest.PartialExtension, _openPath, overwrite: true);
+        _openSegment = -1;
     }
 
     /// <summary>
@@ -607,6 +672,13 @@ internal sealed class SegmentRunWriter(
 
     public void Dispose()
     {
+        // 🔴 RELEASED, NOT PUBLISHED. A run disposed mid-segment was cancelled, so its part-file is
+        // incomplete — renaming it here would publish a half-segment under a name the manifest promises is
+        // whole. Left as a `.part` for the route to sweep, which is what a failed write leaves too.
+        _open?.Dispose();
+        _open = null;
+        _openSegment = -1;
+
         // 🔴 A device has a handful of hardware codecs and a video run holds TWO. Leaking one makes the NEXT
         // conversion fail with a resource error that names nothing.
         foreach (var run in _runs)

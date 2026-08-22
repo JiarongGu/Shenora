@@ -35,23 +35,23 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 🎬 THE SEGMENT TIER IS FIXED BUT THINLY COVERED — THE CORPUS IS WHAT IS LEFT
+### 🎬 THE SEGMENT TIER'S CORPUS IS BUILT — WHAT IS LEFT IS A REAL PLAYER
 
-All 14 blockers from the 2026-08-21 review are fixed (`git log`). The tier stays labelled EXPERIMENTAL in
-`README.md` until the coverage below exists, because the reason its faults clustered has NOT changed: it
-had only ever been exercised against media THIS KIT produced, and every fault sat on a shape our own muxer
-never emits. `SegmentRunWriterTests` now builds those shapes synthetically — a late-starting track, a
-source with no cut point — which is a floor, not a corpus.
+The foreign-muxer corpus exists (`RealSourceShapeTests` + three committed fixtures) and it found what it was
+built to find: a source with no cut point lost 92 % of its picture, silently. That is fixed — the memory
+guard SPILLS to disk instead of republishing the segment it is already filling — and `dev.mjs media-decode`
+now hands both shapes to ffmpeg, which was a verb the suite had named for months without it existing.
 
-- [ ] **Cover the shapes still untested at unit level**, in `SegmentRunWriterTests`: laced audio (which
-  would pin the `SpreadTies` fix, still unpinned — it mirrors `Mp4Remuxer`'s proven call site, which is an
-  argument rather than evidence), and `SegmentRunWriter.cs:91`'s index-extend guard, which uses `All()` so
-  the first track to run out consumes its last sample with a fallback duration.
-- [ ] **Then an END-TO-END fixture from a foreign muxer** — ffmpeg is on the dev box; MP4Box, Bento4 and
-  mkvmerge are not. Small files, committed. ⚠ This is the backstop the synthetic shapes cannot be: it is
-  the only thing that proves the READER agrees with the writer about a real file.
-- [ ] **Re-measure the forced-cut cost.** The 64 MB bound cuts on a non-keyframe when the lead track never
-  reaches one, so seeking into that segment may not work. Nothing has measured how a player behaves there.
+The tier stays labelled EXPERIMENTAL in `README.md` until the one gap below closes.
+
+- [ ] **Play a produced stream in a real `MediaSource`.** ffmpeg accepts streams a webview rejects — it
+  repairs what it can — so a green `media-decode` is a floor, not proof. ⚠ The **multi-fragment segment** is
+  the shape that needs it most: it is new, only a source with no cut point produces one, and no webview has
+  ever been handed one. The sample can do this; nothing automated does.
+- [ ] **Two lacing shapes remain unexercised by a real file.** `clip-laced-audio.mkv` covers EBML and Xiph
+  lacing; `ReadFixedLacing` is reached by no fixture, and no committed file laces its PICTURE track.
+  ⚠ Weaker than it sounds — fixed lacing is rare and the parsers are pinned by hand-built blocks — so this
+  is worth one mkvmerge run, not a pass.
 
 ### 📱 THE MEDIA FIRST-LOAD WIN IS MEASURED ON A SIMULATOR, NEVER ON THE PHONE IT WAS REPORTED ON
 

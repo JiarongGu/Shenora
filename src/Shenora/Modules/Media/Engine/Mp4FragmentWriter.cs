@@ -146,7 +146,13 @@ internal static class Mp4FragmentWriter
     /// <param name="sequenceNumber">1-based and strictly increasing across a run — <c>mfhd</c>'s only field.</param>
     /// <param name="tracks">The tracks contributing samples, in the SAME order as the init segment declared
     /// them. A track with no samples in this segment is omitted rather than written empty.</param>
-    public static void WriteFragment(Stream target, int sequenceNumber, IReadOnlyList<Mp4FragmentTrackData> tracks)
+    /// <param name="startsSegment">
+    /// Whether this fragment OPENS its segment, and so carries the <c>styp</c>. False for a second or later
+    /// fragment appended to the same segment: <c>styp</c> declares what the segment is, and repeating it
+    /// mid-segment states that a new one began where none did.
+    /// </param>
+    public static void WriteFragment(Stream target, int sequenceNumber, IReadOnlyList<Mp4FragmentTrackData> tracks,
+                                     bool startsSegment = true)
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(tracks);
@@ -161,12 +167,15 @@ internal static class Mp4FragmentWriter
         using var buffer = new MemoryStream();
         var w = new BoxWriter(buffer);
 
-        using (w.Box("styp"))
+        if (startsSegment)
         {
-            w.Ascii("msdh");
-            w.U32(0);
-            w.Ascii("msdh");
-            w.Ascii("msix");
+            using (w.Box("styp"))
+            {
+                w.Ascii("msdh");
+                w.U32(0);
+                w.Ascii("msdh");
+                w.Ascii("msix");
+            }
         }
 
         var stypLength = buffer.Length;

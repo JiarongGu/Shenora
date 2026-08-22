@@ -17,9 +17,14 @@ namespace Shenora.Tests.Media;
 /// <para>
 /// ⚠ <b>What it still cannot say is whether the result DECODES</b> — that needs a decoder, and this suite
 /// must run with no external tool. So the run leaves its artifacts in <c>devtools/_media-real/</c> and
-/// <c>node devtools/dev.mjs media-decode</c> hands them to ffmpeg and to a real WebView2
-/// <c>MediaSource</c>. The division is deliberate: everything checkable without a decoder is checked
-/// HERE, where it runs on every build, and only the decode itself needs the probe.
+/// <c>node devtools/dev.mjs media-decode</c> hands them to ffmpeg. The division is deliberate: everything
+/// checkable without a decoder is checked HERE, where it runs on every build, and only the decode itself
+/// needs a tool this repo refuses to depend on.
+/// </para>
+/// <para>
+/// ⚠ <b>A real <c>MediaSource</c> is still not covered.</b> ffmpeg accepts streams a webview rejects — it
+/// repairs what it can — so a green decode is a floor, and the sample remains the only thing that proves
+/// the page can play what this writes.
 /// </para>
 /// </summary>
 public class RealSourceSegmentTests

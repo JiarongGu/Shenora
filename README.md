@@ -26,14 +26,18 @@ the browser sessions' hook + event catalogue are the newest arrivals.
 > ⚠ **The segment/streaming media tier is EXPERIMENTAL.** It works, and it is the one part of the kit
 > not extracted from an application that had already proven it in production. A defect review in
 > August 2026 found several faults concentrated there, all of them now fixed — but the reason they
-> concentrated has not changed, and it is worth knowing before you rely on it: **it had only ever been
-> tested against media this kit itself produced.** Sources muxed by MP4Box, Bento4, mkvmerge or Apple
-> exercise shapes ours never emits — lacing, a track that starts late, unusual descriptor encodings — and
-> that is where every fault was. Fixed: a foreign AAC track that could not play at all, a track starting
-> late being dropped for a whole film, an unbounded buffer, a stream that could wedge permanently, a
-> rotated url keeping its expired opener, and laced audio losing its frame durations. The label stays
-> until the tier has coverage against media the kit did NOT produce. The rest of the kit carries no such
-> caveat.
+> concentrated is worth knowing before you rely on it: **it had only ever been tested against media this
+> kit itself produced.** Sources muxed by MP4Box, Bento4, mkvmerge or Apple exercise shapes ours never
+> emits — lacing, a track that starts late, unusual descriptor encodings — and that is where every fault
+> was. Fixed: a foreign AAC track that could not play at all, a track starting late being dropped for a
+> whole film, an unbounded buffer, a stream that could wedge permanently, a rotated url keeping its
+> expired opener, laced audio losing its frame durations, and a source with no cut point keeping only its
+> last few seconds.
+>
+> There is a foreign-muxer fixture corpus now — a late-starting soundtrack, a single-keyframe picture and
+> laced sound, none of them written by this kit — and it is what found that last one. **The label stays
+> until a produced stream has played in a real `MediaSource`**: the corpus reads boxes and a decode check
+> runs ffmpeg, and neither is a webview. The rest of the kit carries no such caveat.
 
 The application builder, WinForms host, WebView2 hosting, the full typed IPC stack (envelopes,
 middleware dispatcher, scoped-container router, event bus, postMessage transport, `@shenora/react` client), the native desktop surface (frameless chrome +

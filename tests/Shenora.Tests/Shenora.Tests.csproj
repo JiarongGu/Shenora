@@ -33,8 +33,10 @@
   <ItemGroup>
     <!-- A miniature frontend bundle for the EmbeddedResourceProvider tests (manifest prefix
          Shenora.Tests.TestAssets.wwwroot). vendor.min.js exists to prove dotted FILE names
-         resolve — the mis-map fixed relative to the source app. -->
-    <EmbeddedResource Include="TestAssets\**" />
+         resolve — the mis-map fixed relative to the source app.
+         ⚠ media\ is EXCLUDED: those fixtures are handed to a demuxer that opens FILES, so they must
+         reach the output directory rather than the manifest. -->
+    <EmbeddedResource Include="TestAssets\**" Exclude="TestAssets\media\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,6 +47,10 @@
     <Content Include="..\..\samples\Shenora.Sample.Maui\Resources\Raw\wwwroot\media\clip-h264-aac.mkv"
              Link="TestAssets\media\clip-h264-aac.mkv"
              CopyToOutputDirectory="PreserveNewest" />
+    <!-- The SHAPE fixtures, which live here rather than in the sample because no shell plays them:
+         they exist to be a shape the kit's own muxer never emits. RealSourceShapeTests states how
+         each was produced. -->
+    <Content Include="TestAssets\media\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

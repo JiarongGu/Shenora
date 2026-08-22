@@ -23,16 +23,23 @@ public class SegmentRunWriterTests : IDisposable
     private readonly string _dir = Path.Combine(
         Path.GetTempPath(), "shenora-runwriter-" + Guid.NewGuid().ToString("N")[..8]);
 
+    /// <inheritdoc cref="RealSourceShapeTests"/>
+    /// <remarks>
+    /// 🔴 Captured per TEST rather than into a <c>static readonly</c>, which is <c>beforefieldinit</c> and so
+    /// may not initialize until the first <c>Dispose</c> READS it — capturing the bound that test just
+    /// lowered, and leaving every later test under it. Caught by the shape suite, whose fixtures are large
+    /// enough to notice; these synthetic ones all fit under the lowered bound and passed either way.
+    /// </remarks>
+    private readonly long _maxPendingBytes = SegmentRunWriter.MaxPendingBytes;
+
     public SegmentRunWriterTests() => Directory.CreateDirectory(_dir);
 
     public void Dispose()
     {
-        SegmentRunWriter.MaxPendingBytes = DefaultMaxPendingBytes;
+        SegmentRunWriter.MaxPendingBytes = _maxPendingBytes;
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
         GC.SuppressFinalize(this);
     }
-
-    private static readonly long DefaultMaxPendingBytes = SegmentRunWriter.MaxPendingBytes;
 
     /// <summary>Captures what the engine reported, which is where a dropped track announces itself.</summary>
     private sealed class Recorder : ILogger
@@ -254,9 +261,21 @@ public class SegmentRunWriterTests : IDisposable
             Source(700), new SegmentTrack(video, Copy: true), audio: null,
             from: 0, startSeconds: 0, conversionOf: null, extend: _ => false, CancellationToken.None);
 
-        // It must still have produced segments rather than one enormous one at the end.
+        // 🔴 THE EVIDENCE IS FRAGMENTS, NOT FILES. The bytes must have reached disk in several goes — that is
+        // what says memory was bounded — and they must all be in ONE segment, because no keyframe ever
+        // offered a boundary and the manifest lists no other number to write under. This asserted `> 1
+        // segment FILE` until a real single-keyframe source showed what that meant: each spill republished
+        // the segment and the rename overwrote it, losing 92 % of the run.
         var written = Directory.GetFiles(_dir, "seg*" + SegmentRunRequest.SegmentExtension);
-        Assert.True(written.Length > 1,
-            $"a source with no cut point produced {written.Length} segment(s) — it buffered the whole run");
+        Assert.Single(written);
+
+        var bytes = File.ReadAllBytes(written[0]);
+        var fragments = 0;
+        while (IndexOf(bytes, "moof", fragments) >= 0) fragments++;
+        Assert.True(fragments > 1, $"the segment holds {fragments} fragment(s) — it buffered the whole run");
+
+        // Nothing was dropped on the way: every sample's bytes are in that one segment.
+        Assert.Equal(600 * SampleBytes,
+                     Mp4FragmentReader.SampleBytes(written[0], DefaultSegmentEngine.VideoTrackId));
     }
 }

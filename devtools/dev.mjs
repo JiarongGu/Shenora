@@ -1197,6 +1197,83 @@ switch (cmd) {
     break;
   }
 
+  // Hand the segment tier's OWN output to a foreign decoder. NOT part of `verify`, which must run on a
+  // clone with no external tool — ffmpeg is not a build dependency and never becomes one.
+  //
+  // 🔴 THE TEST SUITE CANNOT ASK THIS QUESTION. RealSourceSegmentTests checks everything a fragment can be
+  // checked for without decoding it — box structure, sample counts, where each fragment opens — and a
+  // stream that satisfies every one of those can still be undecodable. This is the only step that puts a
+  // decoder behind the assertion, which is why the suite writes its artifacts to a fixed path instead of
+  // a temp one.
+  //
+  // ⚠ AND A CLEAN EXIT IS NOT THE ANSWER. ffmpeg exits 0 on a file it read no frames from, which is the
+  // same trap Mp4FragmentReader's remarks describe for a picture-less segment: the answer has to be a
+  // COUNT, not the absence of an error. Both are checked below.
+  case 'media-decode': {
+    const dir = path.join(repo, 'devtools', '_media-real');
+    const merged = path.join(dir, 'merged.mp4');
+
+    if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore', shell: false }).status !== 0) {
+      console.error('ffmpeg not found on PATH — it is what decodes the artifacts. Install it, or skip this '
+        + 'verb: nothing in `verify` depends on it.');
+      process.exitCode = 1;
+      break;
+    }
+
+    if (!fs.existsSync(merged) || args.includes('--run')) {
+      console.log('producing artifacts (the media suites write them to devtools/_media-real)…');
+      // The same env `test` needs: `dotnet test <solution>` BUILDS it, Android TFM included.
+      const testEnv = androidBuildEnv();
+      if (testEnv === null) { process.exitCode = 1; break; }
+      const t = run('dotnet', ['test', config.solution, '--nologo', '-v', 'q',
+        '--filter', 'FullyQualifiedName~RealSourceSegmentTests|FullyQualifiedName~RealSourceShapeTests'],
+        { env: testEnv });
+      if (!t) { process.exitCode = 1; break; }
+    }
+    if (!fs.existsSync(merged)) {
+      console.error(`no artifacts at ${merged} — run with --run, or run the suite first.`);
+      process.exitCode = 1;
+      break;
+    }
+
+    // 🔴 BOTH SHAPES. `merged.mp4` is the ordinary one-fragment-per-segment run; `spill/spill.mp4` carries a
+    // segment written as SEVERAL fragments, which is what a source with no cut point produces and the only
+    // thing here a decoder could plausibly refuse.
+    const spill = path.join(repo, 'devtools', '_media-spill', 'spill.mp4');
+    const subjects = [merged, spill].filter((f) => fs.existsSync(f));
+    let bad = false;
+
+    for (const file of subjects) {
+      const name = path.relative(path.join(repo, 'devtools'), file);
+      // Every byte decoded, with errors demoted to nothing: any line here is a real complaint.
+      const decode = spawnSync('ffmpeg', ['-hide_banner', '-v', 'error', '-i', file, '-f', 'null', '-'],
+        { encoding: 'utf8', shell: false });
+      const complaints = (decode.stderr ?? '').trim();
+
+      const probe = spawnSync('ffprobe', ['-hide_banner', '-loglevel', 'error', '-select_streams', 'v',
+        '-count_frames', '-show_entries', 'stream=nb_read_frames,codec_name', '-of', 'csv=p=0', file],
+        { encoding: 'utf8', shell: false });
+      const [codec, frames] = (probe.stdout ?? '').trim().split(',');
+      const decoded = Number.parseInt(frames ?? '', 10);
+
+      console.log(`${name}: ${codec || 'no video stream'}, ${Number.isNaN(decoded) ? '?' : decoded} frames decoded`);
+      if (complaints) console.error(complaints);
+      if (decode.status !== 0 || complaints || !(decoded > 0)) bad = true;
+    }
+
+    // 🔴 Say what was NOT looked at. The spill artifact only exists once its test has run, and a verb that
+    // silently checks one file reads as having checked both.
+    if (subjects.length < 2) console.log('  (no _media-spill/spill.mp4 — the multi-fragment shape was NOT checked)');
+
+    if (bad) {
+      console.error('media-decode FAILED — the segment tier produced a stream a decoder will not take.');
+      process.exitCode = 1;
+      break;
+    }
+    console.log('media-decode ok');
+    break;
+  }
+
   // Drive Shenora.IO's staged updater over a REAL directory tree. NOT part of `verify`: it publishes
   // the sample (slow) and the point is a tree with real build shape, which `verify` has no reason to
   // produce on every run. Run it before trusting an update-stage change, and hand the command to an
@@ -1443,7 +1520,7 @@ switch (cmd) {
     console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|reserved-paths|install-hooks>');
     console.log('  release        : retired-audit <prev-tag>   (account for every public REMOVAL)');
     console.log('                   namespace-moves <prev-tag> (old FQN -> new FQN, for the migration notes)');
-    console.log('  probes         : update-probe [dir] | android-jdk');
+    console.log('  probes         : update-probe [dir] | android-jdk | media-decode [--run] (needs ffmpeg)');
     console.log('  prose review (never gates, triage by hand): stale-scan | cite-scan | self-rename-scan | decision-audit | name-scope');
     console.log('  doc shape      : doc-shape [--check]        (verify runs --check: self-narration FAILS, the D-entry line cap WARNS)');
   console.log('  decisions      : decisions-index [--check]  (regenerate DECISIONS.md\'s opening list from its own entries)');

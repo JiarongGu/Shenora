@@ -28,6 +28,33 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Fixed
+
+- 🔴 **A media source with no cut point no longer loses most of itself.** When the lead picture track never
+  reaches a keyframe past the segment end — a long GOP, a damaged stream, a short high-bitrate clip — the
+  64 MB memory guard used to flush under the segment number it was already filling, and the atomic rename
+  then overwrote the fragment published under that name. The manifest lists exactly `Plan.Count` segments,
+  so there was no other number it could have used. Measured on a real single-keyframe file: every sample
+  read and emitted, **5,253 of 67,672 sample bytes surviving on disk**, in a file that still parsed and
+  still declared its streams. It now SPILLS — a second `moof`/`mdat` appended to the same part-file, which
+  is published once, whole. Memory stays bounded, the segment stays one segment opening on its keyframe,
+  and the old warning about seeking into it no longer applies. ⚠ A segment may now carry several fragments;
+  it still carries exactly one `styp`.
+
+### Changed
+
+- **The segment tier has a foreign-muxer fixture corpus** (`RealSourceShapeTests`), which is what found the
+  fix above. Three committed clips carry the shapes this kit's own muxer never emits: a soundtrack starting
+  seconds after the picture, a picture track with a single keyframe, and laced sound. ⚠ The laced one is
+  muxed by mkvmerge because **ffmpeg writes no lacing at all** — so until now no committed file had ever
+  exercised the reader's lacing parsers or the tie-spreading they feed.
+- **`node devtools/dev.mjs media-decode`** hands the tier's own output to ffmpeg and fails on a decoder
+  complaint OR on a frame count of zero, a file having decoded "successfully" being no evidence. The suites
+  had named this command for months and it had never been written. ⚠ Not in `verify`, which must run on a
+  clone with no external tool.
+
 ## 0.13.0 — 2026-08-21
 
 ### Changed
