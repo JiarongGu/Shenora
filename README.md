@@ -23,22 +23,17 @@ opt-in `SHENORA.CLIPBOARD` module — reading with no user gesture, and an app's
 verbatim, neither of which the browser's Clipboard API can do), the segment/streaming media tier, and
 the browser sessions' hook + event catalogue are the newest arrivals.
 
-> ⚠ **The segment/streaming media tier is EXPERIMENTAL.** It works, and it is the one part of the kit
-> not extracted from an application that had already proven it in production. A defect review in
-> August 2026 found several faults concentrated there, all of them now fixed — but the reason they
-> concentrated is worth knowing before you rely on it: **it had only ever been tested against media this
-> kit itself produced.** Sources muxed by MP4Box, Bento4, mkvmerge or Apple exercise shapes ours never
-> emits — lacing, a track that starts late, unusual descriptor encodings — and that is where every fault
-> was. Fixed: a foreign AAC track that could not play at all, a track starting late being dropped for a
-> whole film, an unbounded buffer, a stream that could wedge permanently, a rotated url keeping its
-> expired opener, laced audio losing its frame durations, and a source with no cut point keeping only its
-> last few seconds.
+> **The segment/streaming media tier is the newest part of the kit, and the only one not extracted from an
+> application that had already proven it in production.** An August 2026 review found several faults
+> concentrated there, and the reason they concentrated is worth knowing: **it had only ever been tested
+> against media this kit itself produced.** Sources muxed by MP4Box, Bento4, mkvmerge or Apple exercise
+> shapes ours never emits — lacing, a track that starts late, a source with no cut point at all.
 >
-> There is a foreign-muxer fixture corpus now — a late-starting soundtrack, a single-keyframe picture and
-> laced sound, none of them written by this kit — and it is what found that last one. Its output is checked
-> by a decoder (ffmpeg) and appended into a real browser `MediaSource`, which buffers it. **The label stays
-> until that second check has run on iOS and Android too**: those are the shells the faults were found on,
-> and iOS uses a `ManagedMediaSource` with rules of its own. The rest of the kit carries no such caveat.
+> That is what changed. There is a foreign-muxer fixture corpus now, none of it written by this kit, and
+> its output is checked three ways: by a decoder (ffmpeg), by a real browser `MediaSource`, and on a real
+> iPhone — where a 78 MB film's first load costs the same as a 488 KB one's, and a segment carrying several
+> fragments buffers and renders. ⚠ **What has NOT run on Android is that last check**, so the shell the
+> `302`/`304` process-killer was found on has desktop-and-iOS evidence behind it rather than its own.
 
 The application builder, WinForms host, WebView2 hosting, the full typed IPC stack (envelopes,
 middleware dispatcher, scoped-container router, event bus, postMessage transport, `@shenora/react` client), the native desktop surface (frameless chrome +

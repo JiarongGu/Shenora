@@ -88,6 +88,13 @@ at the first list and missed five more breaking changes.
 
 ### Changed
 
+- 🔴 **The segment/streaming media tier is no longer labelled EXPERIMENTAL.** 0.13.0 added that label
+  because the tier "had only ever been tested against media this kit itself produced" and said it would
+  stay "until the coverage exists". It exists: a foreign-muxer fixture corpus (a late-starting soundtrack,
+  a single-keyframe picture, laced sound in all three schemes), its output checked by ffmpeg, by WebView2's
+  `MediaSource`, and on a real iPhone — where first load is flat from 488 KB to 78 MB and a multi-fragment
+  segment buffers and renders 1080p. ⚠ `README.md` still states what has NOT run: the Android arm of that
+  last check.
 - **The segment tier has a foreign-muxer fixture corpus** (`RealSourceShapeTests`), which is what found the
   fix above. Four committed clips carry the shapes this kit's own muxer never emits: a soundtrack starting
   seconds after the picture, a picture track with a single keyframe, laced sound, and fixed-laced sound.

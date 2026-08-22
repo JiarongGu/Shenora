@@ -58,9 +58,10 @@ iPhone 17 Pro / iOS 26.6, both halves in ONE run:
 `appendedSegments=1/1 | buffered=0.00-25.00 | frame=1920x1080 | tries=1`.
 - [ ] **Android has had none of this.** `dev.mjs android devices` lists nothing — the MuMu instance is not
   running, so even the ordinary re-check needs the emulator started.
-- [ ] **Decide whether the EXPERIMENTAL label comes off** (`README.md`). ⚠ An owner call, not a mechanical
-  one: desktop coverage is real but the tier's faults were found on mobile, so "proven" may reasonably mean
-  the row above is green first.
+**The EXPERIMENTAL label is OFF** (owner, 2026-08-23). `README.md` now states what the tier is and what has
+actually been run against it — corpus, ffmpeg decode, WebView2 `MediaSource`, and a real iPhone for both the
+flat-first-load and multi-fragment shapes — rather than carrying a warning label. ⚠ It still says plainly
+that the Android arm of that last check has not run.
 
 **All three lacing schemes are now covered by real files** — EBML and Xiph by `clip-laced-audio.mkv`, fixed
 by `clip-fixed-lacing.mkv` (CBR MP3, which is what mkvmerge fixed-laces). ⚠ A laced PICTURE track stays
