@@ -69,7 +69,12 @@ the file itself. They are prose now, and they never "complete":
 - **Re-measure the COMMENT RATIO in `src/` when a pass has been adding prose**, because it ships to
   adopters' IDEs and it has drifted upward before while a rule against it was already written: 45 %
   (2026-08-14) → 47.3 % (2026-08-15) → **40.9 % (2026-08-17: 17,186 comment / 42,035 total, 0.84 per
-  code line)**. ⚠ There is no target, deliberately — a `///` on every public member is CORRECT for a
+  code line)** → **39.1 % (2026-08-22: 13,642 comment / 34,860 NON-BLANK, 0.64 per code line)**.
+  🔴 **STATE THE COUNTER WITH THE NUMBER, or the series stops being one.** The last two were not measured
+  the same way — the 08-17 total implies blank lines were counted and the 08-22 one excludes them — so the
+  drop between them is not a trend and must not be read as one. The 08-22 method: every `.cs` under `src/`
+  outside `bin`/`obj`, blank lines dropped, a line counted as comment when it STARTS with `//` or `/*` or
+  lies inside a block comment (so a trailing comment counts as code). ⚠ There is no target, deliberately — a `///` on every public member is CORRECT for a
   library, so a low number is not the goal and a ratio alone cannot tell a doc from a narration. The
   number's job is to catch a REVERSAL. `doc-shape` sweeps `src/` for session-log prose, which is the
   floor under it.
