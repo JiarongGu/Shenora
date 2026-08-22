@@ -35,30 +35,20 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 📱 EVERY REMAINING ITEM NEEDS AN ANDROID DEVICE, AND NONE IS ATTACHED
+### 📱 WHAT IS LEFT ON ANDROID NEEDS CODECS THE MuMu EMULATOR DOES NOT HAVE
 
-`dev.mjs android devices` lists nothing — the MuMu instance is not running — so all three below are one
-session's work once an emulator or phone is up. iOS and desktop are done for each; Android is the shell the
-`302`/`304` process-killer was found on, so it is the one with the weakest evidence behind it.
+The segment tier is answered on all three shells (`docs/design/media.md`). Both items below ran on MuMu and
+came back SKIPPED for the same underlying reason — **that emulator converts almost nothing**
+(`convert ac3/eac3/alac/dts: accepted=False`, `convert video h263/h264/hevc: accepted=False`), so no picture
+or sound ever reaches an encoder there. A real phone, or an AVD with a fuller codec set, answers both.
 
-The segment tier's `MediaSource` check is DONE on Android (`docs/design/media.md`) — ordinary shapes
-`12/12` and `3/3`, and the multi-fragment spill `1/1 | buffered=0.00-25.00 | frame=1920x1080`, holding the
-same 67,115,613 bytes before spilling as iOS does. What is left needs a REAL phone or a different emulator:
-
-**`SEEK-RUN: FAIL — seg1 declares no sound` was the PROBE, not the kit.** Its fixture is AC3, which no MP4
-fragment carries verbatim, so the engine must convert it — and this emulator reports
-`convert ac3: accepted=False`. `Pick(Audio)` correctly returns null, no audio channel opens, the run
-correctly writes picture-only segments, and the probe called that a fault. It now SKIPS naming the codec.
-⚠ **It had been filed here as an unattributed kit defect for two days**, and the evidence against it was in
-the `[CODEC]` lines of the same log the whole time.
 - [ ] **Confirm the Android encoder change.** The bitrate was ~1/30th of intent (no frame-rate factor); the fix
   is arithmetic and changes output size and encode cost on a phone. ⚠ It also became reachable for ORDINARY
   1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be copied — so this path is
-  newly hot, not newly correct. ⚠ **MuMu cannot answer it**: `REORDER: SKIPPED — this shell does not convert
-  h263`, so no picture reaches an encoder there at all.
-- [ ] **Both arms of the bridge-tag check.** Proven on iOS via `PageProbe.ServeDocumentFromDisk`; the probe is
-  shared source, so Android is low risk rather than none. ⚠ Its switch is an ENV VAR, which `simctl` passes
-  and `adb` does not — an Android arm needs a different trigger (a build flag, or a file the probe looks for).
+  newly hot, not newly correct.
+The bridge-tag check is proven BOTH ways on BOTH shells now — `ServeDocumentFromDisk` takes a file switch as
+well as an env var, since `adb` cannot pass one. Android: tagged → `client READY`, untagged → the warning
+with zero handshakes.
 
 ### 🔄 THE BUNDLE-UPDATE ANSWER IS BUILT BUT HAS NEVER RUN IN AN APP
 

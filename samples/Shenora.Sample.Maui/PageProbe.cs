@@ -916,8 +916,15 @@ internal static class PageProbe
 	/// <para>
 	/// ⚠ <b>The untagged arm takes the app down with it, deliberately</b> — with no bridge there is no
 	/// handshake, so no page-side probe can report and the only evidence is the HOST log. That is why this is
-	/// opt-in per launch rather than part of the suite:
-	/// <c>SIMCTL_CHILD_SHENORA_SAMPLE_DOC_FROM_DISK=tagged|untagged xcrun simctl launch booted …</c>
+	/// opt-in per launch rather than part of the suite. Either trigger works:
+	/// <code>
+	/// # iOS simulator — simctl passes the environment through
+	/// SIMCTL_CHILD_SHENORA_SAMPLE_DOC_FROM_DISK=untagged xcrun simctl launch booted &lt;bundle&gt;
+	///
+	/// # ANY shell — a file in the app's cache, which is all adb can reach
+	/// adb shell "run-as &lt;bundle&gt; sh -c 'echo untagged &gt; /data/user/0/&lt;bundle&gt;/cache/doc-from-disk'"
+	/// </code>
+	/// ⚠ Delete the file afterwards, or every later launch keeps serving the document from disk.
 	/// </para>
 	/// <para>
 	/// ⚠ <b>It reads the packaged document rather than inventing one</b>, so the tagged arm is the real
@@ -930,15 +937,27 @@ internal static class PageProbe
 		ArgumentNullException.ThrowIfNull(interceptor);
 		ArgumentNullException.ThrowIfNull(log);
 
-		// 🔴 SAY WHAT IT SAW, ALWAYS. Returning silently when the variable is unset makes "the probe was not
-		// asked" indistinguishable from "it was asked and the value never arrived" — and the second is the
-		// likely one here, because the value has to survive a launcher that is not this process's shell.
-		// Cost the first run of this probe: the app started, the page loaded, everything passed, and none of
-		// it was evidence about the document at all.
+		// 🔴 TWO TRIGGERS, BECAUSE ONE OF THEM ONLY WORKS ON ONE SHELL. `simctl` passes an environment
+		// variable to the app it launches; `adb` has no equivalent, so an env-var-only switch made this
+		// probe iOS-only — which is exactly the half that needed proving least. A FILE the probe looks for
+		// works on both, and on Android is one `run-as` away.
 		var mode = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_DOC_FROM_DISK");
+		var switchFile = Path.Combine(FileSystem.CacheDirectory, "doc-from-disk");
 		if (string.IsNullOrWhiteSpace(mode))
 		{
-			log("DOC-DISK: off — SHENORA_SAMPLE_DOC_FROM_DISK is unset, so the document is served as usual");
+			try { if (File.Exists(switchFile)) mode = File.ReadAllText(switchFile).Trim(); }
+			catch (Exception ex) { log($"DOC-DISK: could not read {switchFile} ({ex.GetType().Name})"); }
+		}
+
+		// 🔴 SAY WHAT IT SAW, ALWAYS. Returning silently makes "the probe was not asked" indistinguishable
+		// from "it was asked and the value never arrived" — and the second is the likely one, because the
+		// value has to survive a launcher that is not this process's shell. Cost the first run of this
+		// probe: the app started, the page loaded, everything passed, and none of it was evidence about the
+		// document at all.
+		if (string.IsNullOrWhiteSpace(mode))
+		{
+			log($"DOC-DISK: off — no SHENORA_SAMPLE_DOC_FROM_DISK and no {switchFile}, so the document is "
+			  + "served as usual");
 			return null;
 		}
 
