@@ -45,11 +45,19 @@ The segment tier's `MediaSource` check is DONE on Android (`docs/design/media.md
 `12/12` and `3/3`, and the multi-fragment spill `1/1 | buffered=0.00-25.00 | frame=1920x1080`, holding the
 same 67,115,613 bytes before spilling as iOS does. What is left needs a REAL phone or a different emulator:
 
-- [ ] **`SEEK-RUN: FAIL — seg1 declares no sound (picture=6000)` still reproduces**, unattributed and
-  deliberately not a defect claim. ⚠ It is pre-existing (A/B'd identical with the change stashed) and there
-  is still **no Android baseline** — the only recorded `SEEK-RUN: PASS` is a simulator's, and MuMu is a
-  consumer product rather than a standard AVD. Worth one run on a real Android device or a clean AVD before
-  reading anything into it.
+- [ ] 🔴 **`SEEK-RUN: FAIL — seg1 declares no sound (picture=6000)` deserves a real look, and "the emulator
+  is odd" is probably the wrong frame.** It reproduces on MuMu against the current tree.
+  - ⚠ **It is NOT about audio output.** The check parses the WRITTEN fragment for the audio track's `tfdt`
+    (`Mp4FragmentReader.BaseDecodeTime(segment, AudioTrackId)`) and nothing is played, so volume, mute and
+    audio focus cannot reach it. It says seg1 was written with a picture and **no audio `traf` at all**.
+  - **The hypothesis to test first** — unverified: on a SEEK the sound channel seeks independently, and a
+    CONVERTED soundtrack's encoder buffers before emitting, so the first flush after a seek can find nothing
+    pending and `Flush` skips that channel. That writes a picture-only fragment. ⚠ If so it matters more
+    than "a quirk": `SourceBuffer.buffered` is the INTERSECTION of the tracks, so the page stalls on that
+    segment — and it would be a KIT defect on the converted-audio seek path, not an emulator one.
+  - **How to tell them apart:** the iOS simulator's only recorded `SEEK-RUN: PASS` was on a fixture whose
+    sound is COPIED. Run the seek over a copied-audio source and a converted-audio one on the same shell; if
+    only the converted arm fails, the platform is not the variable.
 - [ ] **Confirm the Android encoder change.** The bitrate was ~1/30th of intent (no frame-rate factor); the fix
   is arithmetic and changes output size and encode cost on a phone. ⚠ It also became reachable for ORDINARY
   1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be copied — so this path is
