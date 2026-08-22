@@ -111,6 +111,28 @@ and every asset from `Resources/Raw/wwwroot`, and only late requests like the fa
 routes. Nothing throws and `Use(…)` returns a live registration either way. Construct it in the page
 CONSTRUCTOR, before `Content = webView`; the interceptor says so in the log when it detects the shape.
 
+### 🔴 Fix all three together — the first one MASKS the other two
+
+They read as three independent hazards and they are not. **While the interceptor is attached too late, the
+document never reaches your pipeline, so a fetched bundle is never SERVED** — it cannot be missing its
+bridge tag and it cannot outrank the packaged one, because neither code path runs. Your update mechanism
+looks correct because it is not executing.
+
+⚠ **It reports success while doing nothing, which is the worst part.** Measured in an adopter's app: a
+client-update watchdog *confirmed a deliberately broken bundle*, because the previously packaged client was
+what was really running. Months of green evidence, all of it false.
+
+⚠ **So the day it starts working reads as the day it broke, because the symptoms are exact opposites:**
+
+| | interceptor attached late | after you fix the attach |
+|---|---|---|
+| what actually runs | the **packaged** client, always | the **fetched** bundle, always |
+| your updater | silently does nothing, reports success | works — and nothing can supersede it |
+
+Fix the attach, inject the bridge tag at serve time, and put `ResourcePackJournal` behind the boot decision
+**in one change**. Doing them one release apart means meeting each defect on its own, in production, with
+the previous fix as the trigger.
+
 ### What transfers, and what does not
 
 | | |

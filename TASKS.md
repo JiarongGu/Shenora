@@ -152,11 +152,18 @@ developer must implement logic to restrict updates to compatible native versions
 either way hits it. `ResourcePackJournal` is the answer: `Open(packagedVersion)` **requires** the comparison,
 the attempt is persisted before serving, and nothing is promoted without a page-side `Confirm()`.
 
-- [ ] **Name the hazard where the other two are already named** — the interceptor's remarks and
-  `docs/ADOPTION.md`. Still worth doing WITH the mechanism, not instead of it: an adopter who reads the
-  bridge-tag warning is precisely the one about to hit this, and they need the pointer at the place they are
-  already reading. ⚠ **The two compound** — a pack with no bridge tag can never `Confirm()`, so it is served,
-  discarded, and the app silently returns to the packaged one for ever.
+🔴 **THE THREE TRAPS ARE A MASKING SEQUENCE, NOT THREE HAZARDS — recorded in `docs/guides/mobile.md` and the
+interceptor's remarks.** While the interceptor is attached too late the document never reaches the pipeline,
+so a fetched bundle is never SERVED: it cannot be untagged and it cannot outrank the packaged one, because
+neither path runs. **Fixing the attach ARMS both others at once**, which is why an app can work for months
+and then break the day someone fixes it correctly — the symptoms are opposites (before: the packaged client
+always runs and the updater silently does nothing; after: the fetched one always runs and nothing can
+supersede it). ⚠ And while masked it reports SUCCESS: the adopter's watchdog confirmed a deliberately broken
+bundle, because the packaged client was what was really running.
+⚠ **This is inference from a timeline, not the adopter's account** — 0.13.0 shipped the attach warning on
+2026-08-21 and this was filed 2026-08-22. **What would confirm it:** their logs carrying
+`attached after its webview was already realized`, and the break dating from their attach fix rather than
+from a store release. Worth asking before treating the ordering as established.
 ⚠ **The enabling cause is closed too:** `shenora copy` now writes `.shenora-pack.json`
 (`{"version":"…"}`) into the bundle it stages, carrying the web app's OWN declared version — so a shell can
 read what version its packaged client is instead of keeping a second constant that drifts. The number is

@@ -168,6 +168,16 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     /// then reports a WRONG answer rather than none (a client-update watchdog confirmed a deliberately
     /// broken bundle, because the previously packaged client was what was really running).
     /// <para>
+    /// 🔴 <b>FIXING THIS ARMS THE OTHER TWO, so expect them in the same release rather than one apiece.</b>
+    /// While the document never reaches the pipeline, a fetched bundle is never SERVED — so it cannot be
+    /// missing its bridge tag (<see cref="WarnIfDocumentHasNoBridge"/>) and it cannot outrank the packaged
+    /// one (<c>ResourcePackJournal</c>), because neither code path runs. The three are not independent
+    /// hazards; this one MASKS the others, and the masking is what makes the update mechanism look correct.
+    /// ⚠ <b>The symptoms are exact opposites, which is why the day it starts working reads as the day it
+    /// broke:</b> before, the PACKAGED client always runs and the updater silently does nothing; after, the
+    /// FETCHED one always runs and nothing can supersede it.
+    /// </para>
+    /// <para>
     /// ⚠ <b>BOTH halves are required, so this cannot cry wolf.</b> A realized handler alone is not proof of
     /// anything, and a non-document first request alone is normal for a webview that serves nothing. A
     /// correctly attached interceptor sees the document FIRST and never reaches this log.
