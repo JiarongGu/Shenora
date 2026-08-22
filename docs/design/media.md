@@ -434,6 +434,22 @@ guard produces whenever a source offers no cut point.
 `MaxCopiedSegmentSeconds` (~30 s) the plan is refused as uncopyable and the run RE-ENCODES instead — a
 different path; under `MaxPendingBytes` (64 MB) nothing spills at all.
 
+**On Android too — measured 2026-08-23**, same fixture, MuMu Player 12 (Android 12, x64):
+
+| | iOS 26.6 (iPhone 17 Pro) | Android 12 (emulator) |
+|---|---|---|
+| held before spilling | 67,115,613 bytes | **67,115,613 bytes** |
+| appended | 1/1 | 1/1 |
+| buffered | 0.00–25.00 | 0.00–25.00 |
+| frame | 1920x1080 | 1920x1080 |
+| attached by | `srcObject` | `objectURL` |
+| first frame | 418 ms | 40,084 ms |
+
+🔴 **The byte count is identical to the digit**, which is what a deterministic guard should look like — the
+spill point is decided by the writer, not by the platform. Both shells accept the multi-fragment segment.
+⚠ **The 40 s first frame is the EMULATOR**, software-decoding 1080p at ~26 Mbps; it is not a claim about
+Android hardware, and `tSeg0=33 s` there against 66 ms on the phone says the same thing about production.
+
 ## What IS proven, and how
 
 The pump, the cutting and the fragment bytes are unit-tested against a FAKE `IMediaStreamConversion`, which

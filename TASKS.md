@@ -41,17 +41,23 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 session's work once an emulator or phone is up. iOS and desktop are done for each; Android is the shell the
 `302`/`304` process-killer was found on, so it is the one with the weakest evidence behind it.
 
-- [ ] **The segment tier's `MediaSource` check.** `dev.mjs media-decode` and `media-mse` cover desktop, and a
-  real iPhone covers both the flat-first-load and the multi-fragment shapes (`docs/design/media.md`). Android
-  has had none of it. ⚠ Fold in the **unattributed** `SEEK-RUN: FAIL — seg1 declares no sound (picture=6000)`
-  from the MuMu emulator while you are there: A/B'd identical on both arms so it is pre-existing, and the only
-  recorded `SEEK-RUN: PASS` is a simulator's, so there is no Android baseline to read it against.
+The segment tier's `MediaSource` check is DONE on Android (`docs/design/media.md`) — ordinary shapes
+`12/12` and `3/3`, and the multi-fragment spill `1/1 | buffered=0.00-25.00 | frame=1920x1080`, holding the
+same 67,115,613 bytes before spilling as iOS does. What is left needs a REAL phone or a different emulator:
+
+- [ ] **`SEEK-RUN: FAIL — seg1 declares no sound (picture=6000)` still reproduces**, unattributed and
+  deliberately not a defect claim. ⚠ It is pre-existing (A/B'd identical with the change stashed) and there
+  is still **no Android baseline** — the only recorded `SEEK-RUN: PASS` is a simulator's, and MuMu is a
+  consumer product rather than a standard AVD. Worth one run on a real Android device or a clean AVD before
+  reading anything into it.
 - [ ] **Confirm the Android encoder change.** The bitrate was ~1/30th of intent (no frame-rate factor); the fix
   is arithmetic and changes output size and encode cost on a phone. ⚠ It also became reachable for ORDINARY
   1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be copied — so this path is
-  newly hot, not newly correct.
+  newly hot, not newly correct. ⚠ **MuMu cannot answer it**: `REORDER: SKIPPED — this shell does not convert
+  h263`, so no picture reaches an encoder there at all.
 - [ ] **Both arms of the bridge-tag check.** Proven on iOS via `PageProbe.ServeDocumentFromDisk`; the probe is
-  shared source, so Android is low risk rather than none.
+  shared source, so Android is low risk rather than none. ⚠ Its switch is an ENV VAR, which `simctl` passes
+  and `adb` does not — an Android arm needs a different trigger (a build flag, or a file the probe looks for).
 
 ### 🔄 THE BUNDLE-UPDATE ANSWER IS BUILT BUT HAS NEVER RUN IN AN APP
 
