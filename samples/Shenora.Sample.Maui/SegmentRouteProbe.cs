@@ -294,6 +294,24 @@ internal static class SegmentRouteProbe
         var engine = SegmentEngine.Default(conversion, AppCallback.Logger(log));
         if (!engine.IsAvailable) return "SEEK-RUN: SKIPPED — this shell registered no conversion";
 
+        // 🔴 CAN THIS SHELL PUT SOUND IN THE SEGMENT AT ALL? Ask BEFORE running, because the check below
+        // reads the absence of an audio `traf` and cannot tell two very different causes apart: the writer
+        // DROPPING the soundtrack (the defect this probe exists for) and the engine never opening an audio
+        // channel because the shell can neither carry nor convert that codec (correct behaviour).
+        // ⚠ Measured 2026-08-23 on an Android emulator that reports `convert ac3: accepted=False`: the run
+        // produced picture-only segments exactly as it should, and this probe called it FAIL. It sat in
+        // TASKS.md as a suspected kit defect until someone asked why playback sounded fine.
+        var audio = MatroskaProbe.Read(source)?.Streams.FirstOrDefault(s => s.Kind is MediaStreamKind.Audio);
+        if (audio is null) return $"SEEK-RUN: SKIPPED — {Fixture} carries no sound track";
+        // AAC is the one audio codec an MP4 fragment can carry verbatim; anything else needs the device.
+        var carried = audio.Codec.Equals("aac", StringComparison.OrdinalIgnoreCase);
+        if (!carried && conversion?.CanConvert(MediaStreamKind.Audio, audio.Codec) is not true)
+        {
+            return $"SEEK-RUN: SKIPPED — this shell can neither carry nor convert {audio.Codec}, so a run "
+                 + "over this fixture has no sound to place and the check below would report its absence "
+                 + "as a fault";
+        }
+
         var plan = engine.PlanSegments(MediaByteSource.ForFile(source), SegmentLengths.Of(6.0));
         if (plan is null || plan.Count < 2) return $"SEEK-RUN: SKIPPED — {Fixture} plans {plan?.Count ?? 0} segment(s)";
 
