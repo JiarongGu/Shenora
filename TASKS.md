@@ -102,3 +102,54 @@ is IDENTICAL on both arms, so it is pre-existing; `REMUX: PASS` and `REMUX-SEEK:
 recorded `SEEK-RUN: PASS` is from the **iOS simulator**, so there is no Android baseline to compare
 against, and that emulator is a consumer product rather than a standard AVD. Worth one run on a real
 Android device before reading anything into it.
+
+### 🔄 A RUNTIME-FETCHED WEB BUNDLE OUTRANKS THE PACKAGED ONE FOR EVER — THE KIT WARNS ABOUT TWO NEIGHBOURING TRAPS AND NOT THIS ONE
+
+Filed from an adopter, 2026-08-22, who found it by asking the right question: how is a STORE update
+supposed to reach a device that has already updated its web client at runtime? It is not, in their
+implementation, and the shape of the mistake is general enough to be worth a decision here.
+
+The kit already owns the substrate — `Core/WebView/WebViewInterception`, `WebViewFiles`,
+`WebViewResourcePipeline` — and since **0.13.0 it WARNS about two of the traps in this exact slice**: an
+interceptor attached after the first navigation, and a served document with no bridge tag. Both were filed
+from the same adopter. **This is the third of that family, and unlike those two it is silent AND permanent.**
+
+**The shape.** A shell serving a web client can serve either the bundle PACKAGED in the app or one fetched
+at runtime into app data. A boot decision picks: pending → active-on-disk → packaged. If the
+active-on-disk arm is taken **without comparing versions**, then once a device has fetched any bundle, the
+client shipped inside every later app build is never served again — a store release cannot reach the UI.
+
+**Why it looks fine in testing.** It self-heals while the app and its server ship together: an updated
+server advertises something newer, the fetch replaces the stale bundle, and all anyone notices is a
+redundant download plus a window where a new native binary drives an old page. It dead-ends as soon as the
+two can diverge, which is the normal case for a SELF-HOSTED server — app 2.0 from a store, a 1.5 server, an
+active 1.9 bundle, and "is 1.5 newer than 1.9?" is no, for ever, with a 2.0 native shell under a 1.9 page.
+A renamed or dropped capability is what breaks in that gap.
+
+⚠ **The enabling cause is upstream of the missing comparison, and it is the part a kit-side answer has to
+address.** The adopter had nothing comparable to compare: the packaged client's version was baked from one
+source at build time while the app manifest's version was an unrelated constant, so the shell could not
+know what version its own packaged client was. **Adding an `if` is not the fix — making the packaged
+bundle's identity available to the decision is.**
+
+- [ ] **Decide whether the bundle store + boot decision is a harvest (D15).** ⚠ ONE consumer so far, so the
+  two-consumer bar is not met — this is offered as evidence, not a request. What argues for it anyway is
+  that the state machine has exactly one correct ordering and **every mis-ordering fails silently**:
+  increment-and-persist the attempt count BEFORE serving a pending bundle (written the other way, a failure
+  that runs none of your code leaves the count at zero and the app retries the same broken bundle for
+  ever); serve a pending bundle exactly once; promote only on a page-side confirm — **which travels over the
+  bridge, so a bundle missing the injected tag can never confirm and is discarded for ever, i.e. trap #2 and
+  this one compound**; roll back and delete otherwise; and prefer the packaged bundle when it is newer,
+  deleting the superseded one rather than leaving it to be re-chosen.
+- [ ] **If the harvest is declined, name the hazard where the other two are already named** — the
+  interceptor's remarks and the adoption docs. An adopter who reads the bridge-tag warning is precisely the
+  one who is about to hit this, and the fix is a sentence: compare the fetched bundle against the packaged
+  one and prefer the newer. Cheap, no API surface, and it stops the silent case being discovered by a store
+  release.
+
+**What should stay with the app either way** (so the boundary is not the open question): the version SCHEME
+and its comparator — semver, a build counter, whatever — since a kit dictating one is a product decision;
+where the packaged version comes from; and the download source with its authentication.
+
+⚠ **A reload cannot verify any of this.** The bundle is chosen once per process, so the unit of test is a
+force-stop and relaunch — which is also why an adopter can carry the defect for months without seeing it.
