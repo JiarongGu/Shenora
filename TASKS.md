@@ -107,18 +107,3 @@ having nothing to compare. It fails in the safe direction and says nothing.
 - [ ] **iOS is unmeasured.** BundleResource, not `assets/` — a different packaging path, so the table above
   says nothing about it in either direction.
 
-✅ **The other two open items here are ANSWERED — by the adopter, 2026-08-23. Deleted rather than ticked
-(per the rule at the top); what they leave behind is this:**
-- **It has now run in a real shell**, across force-stop + relaunch cycles on Android: no pack · a staged
-  pack DROPPED for a newer packaged one (their emulator produced that case by accident, carrying a real
-  stale bundle from a previous session) · a newer staged pack still served · a pending pack served once
-  with the attempt persisted first, then rolled back when it never confirmed, its predecessor intact ·
-  a pending pack confirmed and promoted. Their hand-written record migrated into the journal untouched —
-  it happened to have the same `Active`/`Pending`/`Attempts` shape.
-- **The masking order is CONFIRMED, not merely inferred.** Their late-attach bug was real and did exactly
-  what the guide claims: a deliberately broken bundle "confirmed" while the packaged client was what was
-  really running. They hit traps 1 and 2 live on 2026-08-21 and fixed both in one slice; trap 3 was never
-  hit in production, because they have not shipped through a store yet — it was found by their owner asking
-  how a store update would ever arrive. So the guide's sequence is right, with one refinement worth making:
-  **trap 3 is the one an adopter meets LAST and cannot meet at all before their first store release**, which
-  is precisely why it needs to be a mechanism rather than a warning.
