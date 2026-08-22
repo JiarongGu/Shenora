@@ -393,19 +393,26 @@ machine. That gap is unchanged by the hardware run below.
 
 iPhone 17 Pro, iOS 26.6, installed and launched over `mac device`. Same probe, same terms.
 
-| fixture | duration | segments | tManifest | tInit | tSeg0 | tFirstFrame | tries |
+| fixture | duration / size | segments | tManifest | tInit | tSeg0 | appended | tries |
 |---|---|---|---|---|---|---|---|
-| `clip-video-ac3.mkv` | 6.5 s | 3 | 23 ms | 6 ms | 3 ms | 70 ms | 1 |
-| `clip-h264-aac.mkv` | 60 s · 488 KB | 12 | 14 ms | 5 ms | 2 ms | **82 ms** | 1 |
+| `clip-video-ac3.mkv` | 6.5 s | 3 | 21 ms | 5 ms | 2 ms | 3/3 | 1 |
+| `clip-h264-aac.mkv` | 60 s · 488 KB | 12 | 13 ms | 3 ms | 2 ms | 12/12 | 1 |
+| **`clip-big-h264-aac.mkv`** | **~1000 s · 78 MB** | **120** | **22 ms** | **4 ms** | **3 ms** | **120/120** | 1 |
 
-**The phone is FASTER than the simulator, and by an order of magnitude on the term that dominated it:**
-`tInit` is 5 ms here against 57 ms there — that fetch is the one that starts production and waits for
-segment 0 to be whole, so it was measuring a virtualised filesystem plus an x86 decode more than anything
-the kit does. Every segment appended (`12/12`, `buffered=0.22-60.02`), `tries=1` throughout, first frame at
-82 ms.
+🔴 **THE FLATNESS HOLDS ON HARDWARE.** A file 160× longer and 160× larger costs 22 ms against 13 ms to
+plan, and its `init.mp4` and first segment are the same 3–4 ms as the small one's. `buffered=0.09-861.44`,
+`tries=1` on all 120 — nothing ever answered `503`.
 
-⚠ **THE FLATNESS CLAIM IS NOT RE-MEASURED HERE.** `clip-big-h264-aac.mkv` reported `SKIPPED — not staged`,
-so the 160× row above remains a simulator reading and the hardware evidence covers 6.5 s and 60 s only.
+**The phone is also FASTER than the simulator, by an order of magnitude on the term that dominated there:**
+`tInit` is 3–5 ms here against 55–57 ms. That fetch starts production and waits for segment 0 to be whole,
+so the simulator figure was measuring a virtualised filesystem and an x86 decode more than anything the kit
+does — worth remembering before another simulator number is read as a proxy for a phone.
+
+⚠ **`tFirstFrame` is deliberately NOT in this table** — 81 ms for the small file against 954 ms for the big
+one, which is not a first-paint result. The probe appends EVERY segment before waiting for a frame, so it
+scales with segment COUNT (12 against 120) and measures the probe's own loop.
+
+⚠ Still no BEFORE number, on any machine.
 
 ## What IS proven, and how
 

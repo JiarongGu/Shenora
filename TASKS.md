@@ -68,20 +68,20 @@ blocks are the only coverage it will get short of writing a muxer.
 
 ### 📱 THE MEDIA FIRST-LOAD WIN IS MEASURED ON A PHONE NOW — WHAT IS LEFT IS THE BIG FILE AND ANDROID
 
-Measured on an **iPhone 17 Pro / iOS 26.6, 2026-08-22**, split per term as this entry demanded:
-14 ms manifest · 5 ms init · 2 ms seg0 · **82 ms to first frame**, `12/12` segments appended, `tries=1`
-throughout (`docs/design/media.md` § "On a real iPhone"). **The phone beat the simulator by 10× on `tInit`**,
-the term that dominated it — so that reading was measuring virtualised storage more than the kit. ⚠ There is
-still no BEFORE number on any machine, and hardware does not change that.
+**Measured on an iPhone 17 Pro / iOS 26.6, 2026-08-22 — INCLUDING the 78 MB file, so the flatness claim is
+hardware evidence now** (`docs/design/media.md` § "On a real iPhone"). 160× the duration and size costs
+22 ms against 13 ms to plan, with `init.mp4` and seg0 unchanged at 3–4 ms; `120/120` appended,
+`buffered=0.09-861.44`, `tries=1` on every one. **The phone beat the simulator 10× on `tInit`**, the term
+that dominated there — that reading was measuring virtualised storage more than the kit.
+⚠ There is still **no BEFORE number** on any machine, and hardware does not change that.
+⚠ `tFirstFrame` is not a first-paint figure — the probe appends every segment before waiting for a frame,
+so it scales with segment count (81 ms at 12 segments, 954 ms at 120).
 
 ⚠ **The re-encode picture path RAN, and the encoder does not reorder** — `REORDER: ran a re-encode over
 clip-h263-aac.mkv — 6 segment(s), 179659 picture bytes`, with `picture (converted) read=60 emitted=60`.
 The simulator could only report `SKIPPED — this shell does not convert h263`; the device decodes h263 and
 encodes h264, so this is the first time that path has executed at all. Do not re-run it on a simulator.
 
-- [ ] **Re-measure the FLATNESS claim on the phone.** `clip-big-h264-aac.mkv` reported `SKIPPED — not
-  staged`, so the 160×-range row stays a simulator reading — and it is the row the whole first-load case
-  rests on. Staging that fixture on a device is the one thing between it and hardware evidence.
 - [ ] **Confirm the Android encoder change on a device.** The bitrate was ~1/30th of intent (no frame-rate
   factor); the fix is arithmetic and changes output size and encode cost on a phone. ⚠ It also became
   reachable for ORDINARY 1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be
