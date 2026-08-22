@@ -50,6 +50,14 @@ at the first list and missed five more breaking changes.
   `IOException`, leaving the consumer with only "seg0 did not arrive". ⚠ No contract change: the sweep globs
   `*.part`, and a segment is complete when its FINAL name exists and is non-empty.
 
+- **The mobile bridge-tag check now reads a document served from DISK**, which it never did — and that was
+  the wrong half. The check exists for a document that did not pass through the build step injecting the
+  tag, and the clearest example, a web bundle fetched at RUNTIME, is written to app data and served from a
+  `FileStream`. It now reads any SEEKABLE body and restores its position in a `finally`, which is safe
+  because the check runs before the body reaches the platform; a body that cannot seek is still left alone.
+  ⚠ A passing scan now consumes one of four, so a tagged packaged `index.html` served first cannot spend the
+  check before an untagged bundle arrives; a warning still latches permanently.
+
 ### Changed
 
 - **The segment tier has a foreign-muxer fixture corpus** (`RealSourceShapeTests`), which is what found the
