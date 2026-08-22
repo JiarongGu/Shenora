@@ -198,6 +198,13 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     /// handshake, so anything gated on the page confirming itself (exactly what a safe client update is)
     /// can never confirm and rolls back for ever.
     /// <para>
+    /// ⚠ <b>THE NEIGHBOURING TRAP THIS CANNOT SEE, because nothing in a single request can:</b> a fetched
+    /// bundle that outranks the PACKAGED one for ever. A boot decision preferring whatever is on disk
+    /// without comparing versions means a store release can never reach the page again — and the two
+    /// compound, since a bundle with no tag can never confirm itself and is discarded on every start.
+    /// <c>Shenora.Engine.Compression.ResourcePackJournal</c> is the decision that makes both survivable.
+    /// </para>
+    /// <para>
     /// ⚠ <b>It must never cost a response, so it reads only what it can put back.</b> An in-memory body is
     /// read with <see cref="MemoryStream.ToArray"/>, which does not move <c>Position</c>; any other SEEKABLE
     /// body is read and its position restored (<see cref="ReadDocument"/>), which is safe only because this

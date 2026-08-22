@@ -90,7 +90,19 @@ build step that injects the tag, so it arrives untagged and the same silent fail
 build step cannot fix. It is worse there: with no bridge there is no handshake, so anything gated on the
 page confirming itself (exactly what a safe client update is) can never confirm and rolls back for ever.
 `MobileWebViewInterceptor` logs a warning the first time it serves a document with no tag in it — **inject
-the tag at serve time.**
+the tag at serve time.** ⚠ It reads a document served from DISK too, which is what a fetched bundle really
+is; only a body it cannot rewind is skipped.
+
+🔴 **AND THE THIRD TRAP IN THIS FAMILY IS THE ONE THAT NEVER WARNS: a fetched bundle outranking the
+PACKAGED one for ever.** If your boot decision prefers whatever is on disk without comparing versions, then
+once a device has fetched any bundle, the client inside every later app build is never served again — a
+store release cannot reach your UI, silently and permanently. It even self-heals in testing, while your app
+and server still ship together, so it only dead-ends once the two can diverge.
+**`ResourcePackJournal` is the decision**: `Open(packagedVersion)` requires the comparison, counts the
+attempt *before* serving, and promotes only on a `Confirm()` from the running page. Note how it compounds
+with the tag above — a bundle with no bridge cannot confirm, so it is served once and discarded for ever.
+⚠ A reload cannot test any of this: the bundle is chosen once per process, so the unit of test is a
+force-stop and relaunch.
 
 🔴 **And the interceptor must exist before the webview navigates.** Its constructor is where
 `WebResourceRequested` is subscribed, so constructing it in `Loaded`/`OnAppearing` — the natural place,
