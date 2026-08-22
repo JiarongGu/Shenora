@@ -651,6 +651,66 @@ function checkDevVerbsAreDiscoverable() {
   }
 }
 
+/**
+ * 🔴 THE OTHER DIRECTION: a verb PROSE NAMES that `dev.mjs` does not implement.
+ *
+ * The check above asks "is every implemented verb discoverable?" and that is only half of it. The half it
+ * misses shipped for months: `RealSourceSegmentTests` told every reader to run `node devtools/dev.mjs
+ * media-decode`, describing what it would hand to ffmpeg and to a WebView2 MediaSource — and the verb had
+ * never been written. Nothing noticed, because a doc naming a tool that does not exist breaks no build,
+ * resolves no link, and renames nothing.
+ *
+ * ⚠ IT IS WORSE THAN A DEAD LINK. A reader who cannot find the command assumes the gap is theirs; a
+ * reviewer reads the sentence as evidence the check exists and stops asking for one. The claim was written
+ * from the design, which is exactly the failure `doc-claims.md` names — and it survived every gate in this
+ * repo until someone tried to run it.
+ *
+ * ⚠ Only the FIRST token after `dev.mjs` is a verb — `test clipboard`, `android probes` and
+ * `knowledge new <name>` all pass their remainder to the verb. A placeholder (`<cmd>`, `<build|test|…>`)
+ * is not a claim about anything and is skipped.
+ */
+function checkNamedDevVerbsExist() {
+  const dev = path.join(repo, 'devtools/dev.mjs');
+  if (!fs.existsSync(dev)) return;
+  // ⚠ NOT line-anchored: `case 'wgc': case 'click': … case 'input': {` puts six verbs on ONE line, and a
+  // `^\s*case` pattern sees only the first. The check above gets away with that anchor because it only
+  // asks whether implemented verbs are advertised; here it would report real verbs as fictional.
+  const implemented = new Set(
+    [...fs.readFileSync(dev, 'utf8').matchAll(/case '([a-z0-9-]+)':/g)].map((m) => m[1]));
+
+  const named = new Map();     // verb -> first "file:line" that names it
+  for (const file of walk(repo)) {
+    if (!/\.(md|cs|ts|tsx|mjs)$/.test(file)) continue;
+    const rel = path.relative(repo, file).replace(/\\/g, '/');
+    // dev.mjs itself declares them; CHANGELOG and retired-names are history by definition.
+    if (rel === 'devtools/dev.mjs' || rel === 'CHANGELOG.md' || rel.includes('retired-names')) continue;
+    if (outOfScope(rel)) continue;
+
+    const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      for (const m of lines[i].matchAll(/dev\.mjs\s+([A-Za-z][A-Za-z0-9-]*)/g)) {
+        const verb = m[1];
+        if (implemented.has(verb) || named.has(verb)) continue;
+
+        // ⚠ IS THIS A COMMAND OR A SENTENCE? `dev.mjs` is also an ordinary subject — "(dev.mjs sets it
+        // from project.config.mjs)" and "set by dev.mjs from …" both parse as `dev.mjs <verb>` and name
+        // no command at all. A real invocation is either fenced in backticks or spelled `node …/dev.mjs`.
+        const before = lines[i].slice(Math.max(0, m.index - 24), m.index);
+        if (!before.endsWith('`') && !/node\s+\S*$/.test(before)) continue;
+
+        named.set(verb, `${rel}:${i + 1}`);
+      }
+    }
+  }
+
+  if (named.size > 0) {
+    const said = [...named].map(([v, at]) => `${v} (${at})`).join(', ');
+    problems.push(`prose names dev.mjs verb(s) that do not exist: ${said}. Either write the verb or stop `
+      + 'promising it — a reader who cannot find the command assumes the gap is theirs, and a reviewer '
+      + 'reads the sentence as evidence the check already exists.');
+  }
+}
+
 // ── 9. A doc comment carrying TWO <summary> elements ──────────────────────────────────────────────
 //
 // 🔴 THE DEFECT IS AN INSERTION, NOT A TYPO, WHICH IS WHY READING NEVER FINDS IT. A declaration added
@@ -708,12 +768,14 @@ checkPackageCountClaim();
 checkDecisionNumbers();
 checkThrowawayCitations();
 checkDevVerbsAreDiscoverable();
+checkNamedDevVerbsExist();
 checkDoubledSummaries();
 
 if (problems.length === 0) {
   console.log('  ok  doc-drift: dependency graph matches the csproj files; no retired name stated as ' +
               'current; every docs/ pointer resolves; every packable project is documented and counted; ' +
-              'no duplicate DECISIONS number; every dev.mjs verb is discoverable; '
+              'no duplicate DECISIONS number; every dev.mjs verb is discoverable and every verb prose '
+              + 'names exists; '
               + 'no path git calls ignored is cited as if a reader could open it; '
               + 'no doc comment carries two <summary> elements');
   process.exit(0);
