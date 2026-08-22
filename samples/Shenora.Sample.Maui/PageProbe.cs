@@ -930,8 +930,17 @@ internal static class PageProbe
 		ArgumentNullException.ThrowIfNull(interceptor);
 		ArgumentNullException.ThrowIfNull(log);
 
+		// 🔴 SAY WHAT IT SAW, ALWAYS. Returning silently when the variable is unset makes "the probe was not
+		// asked" indistinguishable from "it was asked and the value never arrived" — and the second is the
+		// likely one here, because the value has to survive a launcher that is not this process's shell.
+		// Cost the first run of this probe: the app started, the page loaded, everything passed, and none of
+		// it was evidence about the document at all.
 		var mode = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_DOC_FROM_DISK");
-		if (string.IsNullOrWhiteSpace(mode)) return null;
+		if (string.IsNullOrWhiteSpace(mode))
+		{
+			log("DOC-DISK: off — SHENORA_SAMPLE_DOC_FROM_DISK is unset, so the document is served as usual");
+			return null;
+		}
 
 		var untagged = mode.Equals("untagged", StringComparison.OrdinalIgnoreCase);
 		if (!untagged && !mode.Equals("tagged", StringComparison.OrdinalIgnoreCase))
