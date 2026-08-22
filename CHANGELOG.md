@@ -46,6 +46,12 @@ at the first list and missed five more breaking changes.
   - **It decides; it does not deliver.** Where packs come from, what a version string means and how two of
     them order stay the app's (D42) — `ResourcePack.StageAsync` already takes bytes the app fetched. It
     owns no bytes, downloads nothing, and deletes no directory (`PruneOthers` still collects).
+- **`shenora copy` stamps the bundle it stages** with `.shenora-pack.json` (`{"version":"…"}`), carrying the
+  web app's own declared version. 🔴 This is the *enabling cause* of the defect above: the adopter who
+  reported it "had nothing comparable to compare", because the packaged client's version was baked from one
+  source while the app's constant was another. ⚠ The number is COPIED, never invented — with no `version` in
+  `package.json` it writes no stamp and says so, since a made-up version compares as a real one and is wrong
+  in whichever direction it sorts.
 
 ### Fixed
 

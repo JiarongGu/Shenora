@@ -157,11 +157,11 @@ the attempt is persisted before serving, and nothing is promoted without a page-
   bridge-tag warning is precisely the one about to hit this, and they need the pointer at the place they are
   already reading. ⚠ **The two compound** — a pack with no bridge tag can never `Confirm()`, so it is served,
   discarded, and the app silently returns to the packaged one for ever.
-- [ ] **Decide whether the kit should supply the PACKAGED version rather than take it as an argument.** The
-  entry's own diagnosis was that the adopter "had nothing comparable to compare" — the packaged client's
-  version was baked from one source while the app manifest's was an unrelated constant. `Open()` makes the
-  comparison mandatory, which is the half a library can enforce; making the number itself trustworthy is a
-  BUILD concern (`@shenora/cli` stamping the bundle it packs) and has not been designed.
+⚠ **The enabling cause is closed too:** `shenora copy` now writes `.shenora-pack.json`
+(`{"version":"…"}`) into the bundle it stages, carrying the web app's OWN declared version — so a shell can
+read what version its packaged client is instead of keeping a second constant that drifts. The number is
+COPIED, never invented: with no `version` in `package.json` it writes no stamp and says so, because a made-up
+version compares as a real one and is wrong in whichever direction it happens to sort.
 
 **What stays with the app, and is now enforced by the shape rather than described:** the version SCHEME and
 its comparator (`ResourcePackJournalOptions.Order` is `required`), where the packaged version comes from

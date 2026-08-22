@@ -146,6 +146,11 @@ public sealed partial class ResourcePackJournal
     /// The version of the pack built INTO this app build. 🔴 Required, and the app must bake it from the
     /// same source the pack itself was built from — a constant that drifts from the packaged bytes makes
     /// every comparison below wrong while looking right.
+    /// <para>
+    /// ⚠ For a web client staged by <c>shenora copy</c>, that number is already in the bundle: the CLI
+    /// writes <c>.shenora-pack.json</c> (<c>{"version":"…"}</c>) carrying the web app's own declared
+    /// version. Reading it beats a second constant, which is the drift this parameter warns about.
+    /// </para>
     /// </param>
     public ResourcePackResult Open(string packagedVersion)
     {

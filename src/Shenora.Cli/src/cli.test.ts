@@ -1035,6 +1035,58 @@ describe('cmdCopy — refuses to delete what it did not create', () => {
 
     expect(fs.existsSync(path.resolve(root, '..', 'sibling'))).toBe(false);
   });
+
+  // 🔴 The stamp is what lets a shell know which version its OWN packaged client is — the enabling cause
+  // of a defect that is otherwise silent and permanent (a fetched bundle outranking the packaged one for
+  // ever, because the comparison could not be written). See `ResourcePackJournal`.
+  describe('the packaged-version stamp', () => {
+    const bundleOf = (root: string) =>
+      path.join(root, 'src', 'MyApp', 'Resources', 'Raw', 'wwwroot', '.shenora-pack.json');
+
+    it('carries the web app\'s OWN declared version, copied rather than invented', () => {
+      const { root, cfg } = stage('Resources/Raw/wwwroot');
+      fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '2.4.1' }));
+
+      quietly(() => cmdCopy(cfg));
+
+      expect(JSON.parse(fs.readFileSync(bundleOf(root), 'utf8'))).toEqual({ version: '2.4.1' });
+    });
+
+    it('writes NO stamp when the app declares no version, rather than inventing one', () => {
+      // ⚠ A stamp the tool made up is worse than none: it would compare as a real version and be wrong
+      // in whichever direction it happened to sort.
+      const { root, cfg } = stage('Resources/Raw/wwwroot');
+      fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'no-version-here' }));
+
+      quietly(() => cmdCopy(cfg));
+
+      expect(fs.existsSync(bundleOf(root))).toBe(false);
+    });
+
+    it('survives a malformed package.json instead of failing the copy', () => {
+      // The copy is the valuable half; a stamp is an addition to it. Taking the whole command down over
+      // unparseable JSON would break a build that was working before this feature existed.
+      const { root, cfg } = stage('Resources/Raw/wwwroot');
+      fs.writeFileSync(path.join(root, 'package.json'), '{ not json');
+
+      quietly(() => cmdCopy(cfg));
+
+      const bundle = path.join(root, 'src', 'MyApp', 'Resources', 'Raw', 'wwwroot');
+      expect(fs.existsSync(path.join(bundle, 'index.html'))).toBe(true);
+      expect(fs.existsSync(bundleOf(root))).toBe(false);
+    });
+
+    it('is REPLACED on the next copy, so a downgrade cannot leave the old number behind', () => {
+      const { root, cfg } = stage('Resources/Raw/wwwroot');
+      fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '2.0.0' }));
+      quietly(() => cmdCopy(cfg));
+
+      fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '1.9.0' }));
+      quietly(() => cmdCopy(cfg));
+
+      expect(JSON.parse(fs.readFileSync(bundleOf(root), 'utf8'))).toEqual({ version: '1.9.0' });
+    });
+  });
 });
 
 // 🔴 THE ROUTING HAD NO TEST AT ALL — every command in this CLI goes through it, and it could not be

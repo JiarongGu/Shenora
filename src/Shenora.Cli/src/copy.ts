@@ -38,6 +38,21 @@ function copyTree(from: string, to: string): number {
 const MARKER = '.shenora-bundle';
 
 /**
+ * The name of the version stamp dropped beside {@link MARKER}, as `{"version":"…"}`.
+ *
+ * 🔴 **It exists so a shell can know what version its OWN packaged client is** — the enabling cause of a
+ * defect that is otherwise silent and permanent. An app that serves a fetched bundle in preference to its
+ * packaged one has to compare the two, and the adopter who reported this had nothing comparable: the
+ * packaged client's version was baked from one source while the app's own constant was another, so the
+ * comparison could not be written at all. `ResourcePackJournal.Open` requires it.
+ *
+ * ⚠ **The number is COPIED, never invented.** It is the web app's own declared version, so a build that
+ * changes the bytes without changing that version stamps the old one — which is the app's bug to fix and
+ * not one this tool can paper over by hashing, because a hash does not ORDER and ordering is the question.
+ */
+const STAMP = '.shenora-pack.json';
+
+/**
  * Where the bundle goes — or null, having explained why not.
  *
  * 🔴 <b>THIS COMMAND DELETES ITS DESTINATION</b>, and `webTarget` and `project` both come from a JSON file
@@ -116,6 +131,44 @@ export function cmdCopy(cfg: DeployConfig): void {
   fs.writeFileSync(path.join(to, MARKER),
     'Written by `shenora copy`. Its presence is what allows this directory to be replaced.\n');
   console.log(`shenora: copied ${files} file(s) ${cfg.webDir} -> ${path.relative(cfg.root, to)}`);
+  stampVersion(cfg, from, to);
+}
+
+/**
+ * Write {@link STAMP} into the copied bundle, carrying the web app's own declared version.
+ *
+ * 🔴 **It SAYS what it did, every run, including when it found nothing.** A stamp that is silently absent
+ * is the same shape as the defect it exists to prevent: the shell falls back to a hand-maintained constant,
+ * which is exactly the drift that made the comparison unwritable in the first place.
+ *
+ * ⚠ **`webDir` is the BUILD OUTPUT, so the manifest is looked for beside its PARENT** (`web/dist` →
+ * `web/package.json`) and then in the config root. A layout that keeps neither is reported rather than
+ * guessed at any further — inventing a version here would be worse than having none.
+ */
+function stampVersion(cfg: DeployConfig, from: string, to: string): void {
+  const candidates = [path.join(path.dirname(from), 'package.json'), path.join(cfg.root, 'package.json')];
+
+  for (const manifest of candidates) {
+    let version: unknown;
+    try {
+      if (!fs.existsSync(manifest)) continue;
+      version = JSON.parse(fs.readFileSync(manifest, 'utf8')).version;
+    } catch {
+      // A malformed package.json is the app's problem and not this command's to report twice — the next
+      // candidate may still answer, and the "no version" line below covers it if none does.
+      continue;
+    }
+
+    if (typeof version !== 'string' || version.trim() === '') continue;
+
+    fs.writeFileSync(path.join(to, STAMP), `${JSON.stringify({ version })}\n`);
+    console.log(`shenora: stamped packaged version ${version} (from ${path.relative(cfg.root, manifest)})`);
+    return;
+  }
+
+  console.log('shenora: no "version" in package.json beside the web build — the bundle carries no version '
+    + 'stamp.\n  A shell that serves fetched bundles needs one to know which is newer; see '
+    + 'ResourcePackJournal.');
 }
 
 /**
