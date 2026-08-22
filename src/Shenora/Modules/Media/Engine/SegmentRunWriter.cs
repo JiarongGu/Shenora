@@ -61,6 +61,22 @@ internal sealed class SegmentRunWriter(
     /// <inheritdoc cref="_open" />
     private string _openPath = string.Empty;
 
+    /// <summary>
+    /// Makes this run's part-files its OWN, so two runs over one source cannot collide on them.
+    /// <para>
+    /// 🔴 <b>It matters because a segment's part-file is now held OPEN for as long as the segment takes.</b>
+    /// It used to exist only for the length of a single write, so a second run creating the same path was a
+    /// race measured in microseconds; a spilling segment widens that to the whole segment. And the runs DO
+    /// overlap: <c>Run.Dispose</c> waits a bounded five seconds, so a pump stuck in a platform codec outlives
+    /// its own cancellation while the next run is already starting.
+    /// </para>
+    /// <para>
+    /// ⚠ The sweep is unaffected — it globs <c>*.part</c> — and nothing reads a part-file's NAME: a segment
+    /// is complete when its FINAL name exists and is non-empty (<c>SegmentStream.IsComplete</c>).
+    /// </para>
+    /// </summary>
+    private readonly string _token = Guid.NewGuid().ToString("N")[..8];
+
     /// <summary><c>mfhd</c>'s sequence number: 1-based and per FRAGMENT, which a spilling segment consumes
     /// more than one of. Starts from the first segment this run produces.</summary>
     private int _sequence = request.FirstSegment + 1;
@@ -581,12 +597,15 @@ internal sealed class SegmentRunWriter(
     /// whole (<see cref="SegmentRunRequest.Directory"/> states the contract). ⚠ A failed write leaves the
     /// <c>.part</c> rather than a corrupt final name; the route sweeps those when it next opens the source.
     /// </summary>
-    private static void Publish(string path, Action<Stream> write)
+    private void Publish(string path, Action<Stream> write)
     {
-        var partial = path + SegmentRunRequest.PartialExtension;
+        var partial = Partial(path);
         using (var file = File.Create(partial)) write(file);
         File.Move(partial, path, overwrite: true);
     }
+
+    /// <summary>Where this run writes <paramref name="path"/> before publishing it. See <see cref="_token"/>.</summary>
+    private string Partial(string path) => $"{path}.{_token}{SegmentRunRequest.PartialExtension}";
 
     /// <summary>
     /// The same contract for a SEGMENT, which may take more than one fragment to fill: append to its
@@ -602,7 +621,7 @@ internal sealed class SegmentRunWriter(
         // but publishing the old one beats silently appending this fragment to the wrong file.
         if (_open is not null && _openSegment != segment) CloseSegment();
 
-        _open ??= File.Create(path + SegmentRunRequest.PartialExtension);
+        _open ??= File.Create(Partial(path));
         _openSegment = segment;
         _openPath = path;
 
@@ -616,7 +635,7 @@ internal sealed class SegmentRunWriter(
         if (_open is null) return;
         _open.Dispose();
         _open = null;
-        File.Move(_openPath + SegmentRunRequest.PartialExtension, _openPath, overwrite: true);
+        File.Move(Partial(_openPath), _openPath, overwrite: true);
         _openSegment = -1;
     }
 

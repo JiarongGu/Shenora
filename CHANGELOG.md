@@ -42,6 +42,13 @@ at the first list and missed five more breaking changes.
   is published once, whole. Memory stays bounded, the segment stays one segment opening on its keyframe,
   and the old warning about seeking into it no longer applies. ⚠ A segment may now carry several fragments;
   it still carries exactly one `styp`.
+- **A part-file now belongs to the RUN that is writing it** (`seg3.m4s.<run>.part`). Holding one open for a
+  whole segment — which the spill above does — turned a microsecond-wide collision between two runs over one
+  source into a segment-wide one, and the runs genuinely overlap: `Run.Dispose` waits a bounded five
+  seconds, so a pump stuck in a platform codec outlives its own cancellation while the next run is starting.
+  The newcomer's `File.Create` then hit a handle the old run still owned and failed the whole run with an
+  `IOException`, leaving the consumer with only "seg0 did not arrive". ⚠ No contract change: the sweep globs
+  `*.part`, and a segment is complete when its FINAL name exists and is non-empty.
 
 ### Changed
 

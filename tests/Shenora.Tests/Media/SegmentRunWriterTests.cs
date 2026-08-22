@@ -278,4 +278,49 @@ public class SegmentRunWriterTests : IDisposable
         Assert.Equal(600 * SampleBytes,
                      Mp4FragmentReader.SampleBytes(written[0], DefaultSegmentEngine.VideoTrackId));
     }
+
+    [Fact]
+    public void A_SECOND_run_can_write_a_segment_the_first_one_is_still_holding_open()
+    {
+        // 🔴 A spilling segment holds its part-file OPEN for as long as the segment takes, where it used to
+        // exist only for the length of one write. Two runs over one source DO overlap — `Run.Dispose` waits
+        // a bounded five seconds, so a pump stuck in a platform codec outlives its own cancellation while
+        // the next run is already starting — and on a shared part path the newcomer's `File.Create` hits a
+        // handle the old run still owns. It fails the whole run with an IOException, and the consumer sees
+        // only "seg0 did not arrive".
+        var (log, engine, request) = Fixture(totalSeconds: 120);
+        SegmentRunWriter.MaxPendingBytes = 4 * 1024;
+
+        var stalled = new SegmentRunWriter(engine, request, Timeline);
+        using var cancel = new CancellationTokenSource();
+
+        // Cancelled mid-run, which is what leaves a part-file open: `Run` skips its final flush, and only
+        // Dispose closes the handle — and this writer is deliberately NOT disposed until the end.
+        var video = Track(MediaStreamKind.Video, count: 600, stepMs: 200, keyEvery: 10_000);
+        stalled.Run(
+            Source(700), new SegmentTrack(video, Copy: true), audio: null,
+            from: 0, startSeconds: 0, conversionOf: null,
+            extend: _ => { cancel.Cancel(); return false; }, cancel.Token);
+
+        Assert.NotEmpty(Directory.GetFiles(_dir, "*" + SegmentRunRequest.PartialExtension));
+
+        // The second run must be able to produce the same segment regardless.
+        using (var second = new SegmentRunWriter(engine, request, Timeline))
+        {
+            var again = Track(MediaStreamKind.Video, count: 600, stepMs: 200, keyEvery: 10_000);
+            second.Run(
+                Source(700), new SegmentTrack(again, Copy: true), audio: null,
+                from: 0, startSeconds: 0, conversionOf: null, extend: _ => false, CancellationToken.None);
+        }
+
+        var written = Directory.GetFiles(_dir, "seg*" + SegmentRunRequest.SegmentExtension);
+        Assert.Single(written);
+        Assert.Equal(600 * SampleBytes,
+                     Mp4FragmentReader.SampleBytes(written[0], DefaultSegmentEngine.VideoTrackId));
+
+        // The abandoned run's part-file is still there for the route's sweep, which globs `*.part` and so
+        // still finds it despite the per-run name.
+        stalled.Dispose();
+        Assert.NotEmpty(Directory.GetFiles(_dir, "*" + SegmentRunRequest.PartialExtension));
+    }
 }

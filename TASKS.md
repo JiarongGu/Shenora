@@ -60,6 +60,7 @@ did NOT answer.
 - [ ] **Decide whether the EXPERIMENTAL label comes off** (`README.md`). ⚠ An owner call, not a mechanical
   one: desktop coverage is real but the tier's faults were found on mobile, so "proven" may reasonably mean
   the row above is green first.
+
 **All three lacing schemes are now covered by real files** — EBML and Xiph by `clip-laced-audio.mkv`, fixed
 by `clip-fixed-lacing.mkv` (CBR MP3, which is what mkvmerge fixed-laces). ⚠ A laced PICTURE track stays
 uncovered and is **not reachable with the tools here**: it is legal, and mkvmerge laces no video. Hand-built
