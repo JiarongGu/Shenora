@@ -19,7 +19,7 @@ Reference the **leaf** you need; the rest arrive transitively. The full table wi
 in the [root README](../README.md#packages).
 
 ```xml
-<PackageReference Include="Shenora.Windows" Version="0.13.0" />   <!-- desktop: pulls in Shenora -->
+<PackageReference Include="Shenora.Windows" Version="0.14.0" />   <!-- desktop: pulls in Shenora -->
 ```
 
 ```bash

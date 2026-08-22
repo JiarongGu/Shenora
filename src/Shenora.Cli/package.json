@@ -1,6 +1,6 @@
 {
   "name": "@shenora/cli",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Build-time CLI for Shenora — a devDependency that runs on your machine and ships inside nothing. Takes an app onto a device: build, sign, install, launch, tail the log. iOS simulators and real iPhones with no Xcode project of your own; Android emulators and handsets with APK or AAB output.",
   "license": "MIT",
   "author": "Jiarong Gu",
