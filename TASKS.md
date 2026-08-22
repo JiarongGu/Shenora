@@ -43,11 +43,20 @@ SPILLS rather than republishing the segment it is already filling. Both shapes a
 `dev.mjs media-decode` (ffmpeg) and `dev.mjs media-mse`, which appends them into WebView2's real
 `MediaSource` and reads back the buffered range.
 
-- [ ] **Run `media-mse`'s question on iOS and Android.** Desktop says PASS for both shapes
-  (`ordinary=0.000-4.040`, `spill=0.167-20.167`), and Chromium-on-Windows is the most forgiving of the
-  three. ⚠ **iOS is the one that matters**: it uses `ManagedMediaSource`, whose streaming window has its own
-  rules, and the multi-fragment segment has never been near it. The MAUI sample already has the probe
-  machinery (`SegmentRouteProbe`); this is a port, not a design.
+⚠ **Do not re-run the ORDINARY shape on the iOS simulator** — it was measured there on the spill fix itself
+(`appendedSegments=12/12`, `buffered=0.22-60.02`, on a real `ManagedMediaSource`), which is the regression
+that mattered, since `Flush`/`Publish` sit in the writer every shell shares. What is below is what that run
+did NOT answer.
+
+- [ ] 🔴 **The MULTI-FRAGMENT shape is still desktop-only, and getting it onto a device needs a DECISION
+  first.** Desktop appends it from artifacts the suite produced (`spill=0.167-20.167`); a device cannot, and
+  the three ways in are all unattractive: ship a DERIVED artifact as a sample resource (goes stale silently
+  when the writer changes), include a gitignored directory conditionally at build time (the sample then
+  behaves differently depending on what is on disk), or make `MaxPendingBytes` reachable (product surface
+  bought for a test — the thing the desktop probe's own remarks argue against). ⚠ Worth deciding before
+  writing any of it.
+- [ ] **Android has had none of this.** `dev.mjs android devices` lists nothing — the MuMu instance is not
+  running, so even the ordinary re-check needs the emulator started.
 - [ ] **Decide whether the EXPERIMENTAL label comes off** (`README.md`). ⚠ An owner call, not a mechanical
   one: desktop coverage is real but the tier's faults were found on mobile, so "proven" may reasonably mean
   the row above is green first.
