@@ -81,29 +81,14 @@ button quits it.** If declined, the honest fallback is a line in `docs/guides/mo
 adopter that these three are theirs to write, because the natural reading of "the kit is the shell" is that
 they are not.
 
-### 🔴 `shenora copy`'s VERSION STAMP CANNOT BE READ ON ANDROID — the name has a leading dot
+### 📱 THE STAMP FIX IS BUILT — one leg of it still needs the Mac
 
-Filed by the adopter on 2026-08-23, having adopted 0.14.0 the day it shipped. **A dot-prefixed `MauiAsset`
-never reaches an Android app.** Measured in ONE build, both spellings written side by side into
-`Resources/Raw/wwwroot` — which is the layout `docs/guides/mobile.md` and `cli.test.ts:1044` both use:
+The name lost its dot and `PackagedVersionIn` gained a `Stream` overload (`CHANGELOG.md`'s `## Unreleased`
+carries both, with the measurement). The cause is pinned: `AndroidComputeResPaths` discards a hidden asset
+between `AndroidAsset` and the staged assets directory, and no MSBuild property turns it off.
 
-| file | listed by `dotnet msbuild -getItem:MauiAsset` | in `obj/…/android/assets/wwwroot/` | in the signed APK |
-|---|---|---|---|
-| `probe-pack.json` | yes | **yes** | **yes** |
-| `.shenora-pack.json` (ours), `.dot-probe.json` | yes (`LogicalName wwwroot\.shenora-pack.json`) | **no** | **no** |
-
-So the drop is in the Android asset staging, downstream of the project, and **MSBuild listing the item is
-not evidence that it ships**. The consequence is the whole point of 0.14.0 going quiet on the platform that
-has app stores: `PackagedVersionIn` answers null, `Open()` REFUSES a blank, and the adopter is back to
-having nothing to compare. It fails in the safe direction and says nothing.
-
-- [ ] **Decide the fix.** Renaming `StampFileName` is a break for anyone already stamped (nobody yet, most
-  likely — 0.14.0 is a day old); writing BOTH names is ugly but non-breaking; documenting it in the guide is
-  the floor. ⚠ Whatever is chosen, `ResourcePackStampTests` pins the CLI↔C# agreement and would need to move
-  with it. The adopter shipped `shenora-pack.json` (no dot, same bytes) and reads it themselves — they
-  cannot use `PackagedVersionIn` anyway, since a MAUI packaged bundle is a set of app-package assets rather
-  than a directory. **That is arguably a second gap**: the helper only serves apps whose packaged bundle is
-  on the filesystem.
-- [ ] **iOS is unmeasured.** BundleResource, not `assets/` — a different packaging path, so the table above
-  says nothing about it in either direction.
-
+- [ ] **Confirm the stamp reaches an iOS app bundle**, and that `PackagedVersionIn(directory)` finds it
+  there. iOS packages assets as `BundleResource` — a different path from Android's `assets/`, and nothing
+  on Windows compiles the iOS TFM (`Shenora.Sample.Maui.csproj` selects it only `IsOSPlatform('osx')`).
+  ⚠ **A strong prior is not a measurement**: the dot was never the only way an asset can go missing, and
+  this is the same "MSBuild listed the item" trap one platform over.

@@ -1040,8 +1040,11 @@ describe('cmdCopy — refuses to delete what it did not create', () => {
   // of a defect that is otherwise silent and permanent (a fetched bundle outranking the packaged one for
   // ever, because the comparison could not be written). See `ResourcePackJournal`.
   describe('the packaged-version stamp', () => {
+    // ⚠ No leading dot, and this literal is the point of the assertion rather than incidental to it: a
+    // dot-prefixed MauiAsset is discarded on its way into an Android app, silently, so a hidden stamp
+    // ships everywhere except the platform with the app stores.
     const bundleOf = (root: string) =>
-      path.join(root, 'src', 'MyApp', 'Resources', 'Raw', 'wwwroot', '.shenora-pack.json');
+      path.join(root, 'src', 'MyApp', 'Resources', 'Raw', 'wwwroot', 'shenora-pack.json');
 
     it('carries the web app\'s OWN declared version, copied rather than invented', () => {
       const { root, cfg } = stage('Resources/Raw/wwwroot');

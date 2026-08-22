@@ -48,6 +48,19 @@ public class ResourcePackStampTests : IDisposable
     }
 
     [Fact]
+    public void The_stamp_name_is_NOT_HIDDEN_because_Android_discards_a_dot_prefixed_asset()
+    {
+        // 🔴 Measured, not assumed: two probe assets written side by side into a MAUI head, and
+        // `AndroidComputeResPaths` passed the plain name through to the staged assets directory and
+        // dropped the dot-prefixed one — with no message, a green build, and the item still listed by
+        // `-getItem:MauiAsset`. So the stamp would be readable on iOS and desktop and absent on the
+        // platform that has app stores, which is worse than being absent everywhere: the comparison
+        // `Open` forces would simply stop happening there.
+        Assert.False(ResourcePackJournal.StampFileName.StartsWith('.'),
+            "the stamp must not be a hidden file — a dot-prefixed MauiAsset never reaches an Android app.");
+    }
+
+    [Fact]
     public void The_stamp_KEY_matches_the_one_the_CLI_writes()
     {
         // ⚠ The NAME agreeing is not enough: a stamp written as {"packVersion":…} and read as "version"
@@ -91,5 +104,88 @@ public class ResourcePackStampTests : IDisposable
     public void A_directory_that_does_not_exist_reads_as_absent_rather_than_throwing()
     {
         Assert.Null(ResourcePackJournal.PackagedVersionIn(Path.Combine(_dir, "no-such-bundle")));
+    }
+
+    [Fact]
+    public void A_stamp_written_with_a_UTF8_BOM_still_reads()
+    {
+        // ⚠ Not hypothetical on Windows: PowerShell's `-Encoding utf8` writes a BOM, so a stamp an adopter
+        // hand-writes or repairs there carries one. The stamp is parsed from BYTES now rather than from a
+        // decoded string, and the two treat a leading BOM differently — a version that silently read as
+        // absent would send the app back to the packaged pack while looking like an unstamped build.
+        File.WriteAllText(Path.Combine(_dir, ResourcePackJournal.StampFileName),
+            """{"version":"2.4.1"}""", new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        Assert.Equal("2.4.1", ResourcePackJournal.PackagedVersionIn(_dir));
+    }
+
+    /// <summary>
+    /// The STREAM overload — the one an Android app can actually call, because its packaged bundle is a
+    /// set of app-package assets rather than a directory.
+    /// </summary>
+    public class FromAStream
+    {
+        private static Stream Bytes(string content) =>
+            new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+
+        [Fact]
+        public void Reads_the_version_the_path_overload_would_have_read()
+        {
+            using var stamp = Bytes("""{"version":"2.4.1"}""");
+
+            Assert.Equal("2.4.1", ResourcePackJournal.PackagedVersionIn(stamp));
+        }
+
+        [Theory]
+        [InlineData("""{"version":""}""")]
+        [InlineData("""{"version":"   "}""")]
+        [InlineData("""{"version":123}""")]
+        [InlineData("""{"other":"2.4.1"}""")]
+        [InlineData("{ not json")]
+        [InlineData("")]
+        [InlineData("\"just a string\"")]
+        public void Answers_ABSENT_for_the_same_content_the_path_overload_rejects(string content)
+        {
+            // 🔴 The two overloads must not disagree: an app that switches from one to the other because
+            // its bundle stopped being a directory would otherwise see its version appear or vanish.
+            using var stamp = Bytes(content);
+
+            Assert.Null(ResourcePackJournal.PackagedVersionIn(stamp));
+        }
+
+        [Fact]
+        public void Leaves_the_stream_OPEN_because_the_caller_opened_it()
+        {
+            // The caller got it from a platform asset manager and may still be holding it; disposing
+            // someone else's stream is the kind of theft that only shows up in their next read.
+            using var stamp = Bytes("""{"version":"2.4.1"}""");
+
+            ResourcePackJournal.PackagedVersionIn(stamp);
+
+            Assert.True(stamp.CanRead);
+        }
+
+        [Fact]
+        public void A_stream_that_THROWS_reads_as_absent_rather_than_taking_the_app_down()
+        {
+            // Same failure direction as an unreadable file: the app still starts, on its packaged bundle.
+            using var stamp = new ThrowingStream();
+
+            Assert.Null(ResourcePackJournal.PackagedVersionIn(stamp));
+        }
+
+        private sealed class ThrowingStream : Stream
+        {
+            public override bool CanRead => true;
+            public override bool CanSeek => false;
+            public override bool CanWrite => false;
+            public override long Length => throw new NotSupportedException();
+            public override long Position { get => 0; set => throw new NotSupportedException(); }
+            public override int Read(byte[] buffer, int offset, int count) => throw new IOException("gone");
+            public override void Flush() { }
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        }
     }
 }

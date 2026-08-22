@@ -104,6 +104,33 @@ with the tag above — a bundle with no bridge cannot confirm, so it is served o
 ⚠ A reload cannot test any of this: the bundle is chosen once per process, so the unit of test is a
 force-stop and relaunch.
 
+**`Open` needs the PACKAGED version, and `shenora copy` already put it in the bundle** —
+`shenora-pack.json`, holding `{"version":"…"}` copied from your web app's own `package.json`. Read it
+rather than keeping a second constant in C#, which is the drift `Open`'s own remarks warn about.
+
+⚠ **Which overload you call depends on whether your packaged bundle is a DIRECTORY, and on Android it is
+not.** iOS and desktop serve it from the filesystem; an Android app's assets live inside the APK and are
+reachable only through the platform's asset manager. So:
+
+```csharp
+// iOS, Windows — the bundle is a real directory.
+var packaged = ResourcePackJournal.PackagedVersionIn(bundleDirectory);
+
+// Android (and anywhere else the bundle is not on disk) — hand it the open stamp.
+using var stamp = await FileSystem.OpenAppPackageFileAsync(
+    "wwwroot/" + ResourcePackJournal.StampFileName);
+var packaged = ResourcePackJournal.PackagedVersionIn(stamp);
+```
+
+Both answer `null` for the same inputs — an unstamped build, an older CLI, a hand-assembled bundle. Null
+is a real answer, but `Open` REFUSES a blank, so decide what an unstamped app should do rather than
+passing it straight through.
+
+⚠ **The stamp's name has no leading dot and must not gain one.** A dot-prefixed `MauiAsset` never reaches
+an Android app: the SDK discards it between `AndroidAsset` and the staged assets directory, with no
+message and a green build, so the file is simply absent from the APK. If you add asset files of your own
+that the app has to READ at runtime, the same applies to them.
+
 🔴 **And the interceptor must exist before the webview navigates.** Its constructor is where
 `WebResourceRequested` is subscribed, so constructing it in `Loaded`/`OnAppearing` — the natural place,
 because that is where DI services are reachable — is already too late: the platform serves the document

@@ -529,3 +529,11 @@ SessionEndReason         # -> StreamingSessionEndReason
 # deletion needs a line here, a demotion needs the `### Breaking` note it already has.
 IShenoraModule           # 0.11.0 -> deleted; a module is an IIpcModule registered with AddIpcModule
 SessionApiCall           # 0.11.0 -> deleted with the observation taps; SessionEvents.ResponseReceived
+
+# --- 2026-08-23: the version stamp lost its leading dot, because Android discards hidden assets -----
+# Not a symbol rename — `ResourcePackJournal.StampFileName` still exists and the JSON shape is
+# unchanged. Only the VALUE moved, and a doc naming the old spelling is telling an adopter to look for
+# a file no build writes any more. Measured: `AndroidComputeResPaths` drops a dot-prefixed `MauiAsset`
+# between `AndroidAsset` and the staged assets directory, silently, so the stamp shipped everywhere
+# except the platform with the app stores.
+.shenora-pack.json       # -> shenora-pack.json

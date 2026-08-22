@@ -28,6 +28,32 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Breaking
+
+- **The packaged-version stamp is `shenora-pack.json`, no leading dot** (`ResourcePackJournal.StampFileName`,
+  and the file `shenora copy` writes). 🔴 **The old spelling could not ship on Android at all**: a
+  dot-prefixed `MauiAsset` is discarded by `AndroidComputeResPaths` between `AndroidAsset` and the staged
+  assets directory — silently, with the item still listed by `-getItem:MauiAsset` and the build green — so
+  the file was simply absent from the APK. Measured with both spellings written side by side into one MAUI
+  head: 17 assets in, 16 out. There is no MSBuild property to turn it off, so the name had to move.
+  **Migration:** re-run `shenora copy` and the new stamp is written; an app that reads it through
+  `PackagedVersionIn` needs no change. An app that hardcoded the dotted name should use `StampFileName`.
+  A bundle staged by an older CLI carries only the dotted file and reads as unstamped — which is what it
+  already was on Android.
+
+### Added
+
+- **`ResourcePackJournal.PackagedVersionIn(Stream)`** — the same answer as the directory overload, for a
+  packaged bundle that is not a directory. 🔴 **On Android it never is**: the bundle is a set of app-package
+  assets read through the platform's asset manager, so the path overload cannot be called there and an app
+  had to reimplement the parse — including the part that matters, that null stays distinguishable from `""`
+  because `Open()` refuses a blank. MAUI reaches the bytes with
+  `FileSystem.OpenAppPackageFileAsync("wwwroot/" + ResourcePackJournal.StampFileName)`. The stream is read
+  to its end and not disposed; the caller opened it and still owns it. `docs/guides/mobile.md` carries the
+  recipe for both shapes.
+
 ## 0.14.0 — 2026-08-22
 
 ### Added

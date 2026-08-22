@@ -49,8 +49,13 @@ const MARKER = '.shenora-bundle';
  * ⚠ **The number is COPIED, never invented.** It is the web app's own declared version, so a build that
  * changes the bytes without changing that version stamps the old one — which is the app's bug to fix and
  * not one this tool can paper over by hashing, because a hash does not ORDER and ordering is the question.
+ *
+ * 🔴 **NO LEADING DOT — unlike {@link MARKER}, this one has to survive into the shipped app.** A
+ * dot-prefixed `MauiAsset` never reaches an Android app: `AndroidComputeResPaths` discards it between
+ * `AndroidAsset` and the staged assets directory, silently, so the build stays green and the file is
+ * simply absent from the APK. `MARKER` may keep its dot because it is only ever read HERE, at build time.
  */
-const STAMP = '.shenora-pack.json';
+const STAMP = 'shenora-pack.json';
 
 /**
  * Where the bundle goes — or null, having explained why not.

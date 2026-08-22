@@ -118,8 +118,16 @@ public sealed partial class ResourcePackJournal
     /// <see cref="Open"/> forces becomes wrong while looking right. Pinned against the CLI's own source by
     /// <c>ResourcePackStampTests</c>, the same way the IPC wire is mirrored.
     /// </para>
+    /// <para>
+    /// ⚠ <b>NO LEADING DOT, and that is a platform constraint rather than a style choice.</b> A
+    /// dot-prefixed <c>MauiAsset</c> never reaches an Android app: <c>AndroidComputeResPaths</c> discards
+    /// it between <c>AndroidAsset</c> and the staged assets directory, silently — MSBuild still lists the
+    /// item, the build is green, and the file is simply absent from the APK. Measured both spellings in
+    /// one build. A hidden name would work on iOS and desktop and be dead on the platform with the app
+    /// stores, which is the worst of the three outcomes.
+    /// </para>
     /// </summary>
-    public const string StampFileName = ".shenora-pack.json";
+    public const string StampFileName = "shenora-pack.json";
 
     /// <summary>
     /// The version of the packaged bundle in <paramref name="bundleDirectory"/>, ready to hand to
@@ -139,18 +147,55 @@ public sealed partial class ResourcePackJournal
         {
             var path = System.IO.Path.Combine(bundleDirectory, StampFileName);
             if (!File.Exists(path)) return null;
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
-            return document.RootElement.TryGetProperty("version", out var version)
-                   && version.ValueKind is JsonValueKind.String
-                   && !string.IsNullOrWhiteSpace(version.GetString())
-                ? version.GetString()
-                : null;
+            using var stamp = File.OpenRead(path);
+            return VersionInStamp(stamp);
         }
         catch (Exception)
         {
             // A stamp that cannot be read is the same as none: the app still starts, on the packaged bundle.
             return null;
         }
+    }
+
+    /// <summary>
+    /// The same answer as <see cref="PackagedVersionIn(string)"/>, for a packaged bundle that is not a
+    /// DIRECTORY — hand it an open <see cref="StampFileName"/>.
+    /// <para>
+    /// 🔴 <b>On Android the packaged bundle is not on the filesystem at all</b>: it is a set of app-package
+    /// assets read through the platform's asset manager, so the path overload cannot be called there and an
+    /// app that only had that one had to reimplement this parse. MAUI reaches the bytes with
+    /// <c>FileSystem.OpenAppPackageFileAsync("wwwroot/" + ResourcePackJournal.StampFileName)</c>.
+    /// </para>
+    /// <para>
+    /// ⚠ Same contract as the path overload, including the part that matters: null is a real answer and
+    /// must stay distinguishable from <c>""</c>, because <see cref="Open"/> REFUSES a blank. The stream is
+    /// read to its end and NOT disposed — the caller opened it and still owns it.
+    /// </para>
+    /// </summary>
+    /// <param name="stamp">The stamp file's bytes, positioned at its start.</param>
+    public static string? PackagedVersionIn(Stream stamp)
+    {
+        ArgumentNullException.ThrowIfNull(stamp);
+        try
+        {
+            return VersionInStamp(stamp);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The one parse both overloads answer from, so neither can drift from the other.</summary>
+    private static string? VersionInStamp(Stream stamp)
+    {
+        using var document = JsonDocument.Parse(stamp);
+        return document.RootElement.ValueKind is JsonValueKind.Object
+               && document.RootElement.TryGetProperty("version", out var version)
+               && version.ValueKind is JsonValueKind.String
+               && !string.IsNullOrWhiteSpace(version.GetString())
+            ? version.GetString()
+            : null;
     }
 
     /// <param name="options">Where the record lives and how versions order.</param>
@@ -192,7 +237,7 @@ public sealed partial class ResourcePackJournal
     /// every comparison below wrong while looking right.
     /// <para>
     /// ⚠ For a web client staged by <c>shenora copy</c>, that number is already in the bundle: the CLI
-    /// writes <c>.shenora-pack.json</c> (<c>{"version":"…"}</c>) carrying the web app's own declared
+    /// writes <see cref="StampFileName"/> (<c>{"version":"…"}</c>) carrying the web app's own declared
     /// version. Reading it beats a second constant, which is the drift this parameter warns about.
     /// </para>
     /// </param>
