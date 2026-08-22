@@ -63,6 +63,22 @@ the file itself. They are prose now, and they never "complete":
   named types that no longer compile, and the release's clearest showcase feature (the page-facing
   clipboard) appeared in no document anywhere. ⚠ **Read the changelog section as the checklist** —
   each `### Added` entry should be findable by someone who does not already know it exists.
+- 🔴 **SWEEP `src/` FOR THE "CONFIDENTLY WRONG COMMENT", and know what the sweep can and cannot reach.**
+  The 2026-08-21 review found that signal predicted a real defect **six times out of six**, so it is worth
+  re-running — but a run is a SAMPLE, and saying which one is the difference between a result and a vibe.
+  **Measured 2026-08-23:** ~780 claim-word occurrences in `src/` (`never` 484, `cannot` 245, `always` 39,
+  `never throws` 5, `guaranteed`/`impossible` 8). The strongest were verified against the code path they
+  name and **all held** — the dispatch boundary's never-throws promise (every tracking call guarded, so
+  "a faulty tracker costs its own bookkeeping and nothing else" is true), the clipboard's
+  "reading never throws for a format that is not there", and `PruneOthers`' "never throws".
+  - ⚠ **A `<see cref=…>` is already gated by the COMPILER** (CS1574), so the broken-name class is covered
+    inside `src/`. What is not: a name in `<c>…</c>`, and a claim about a TOOL.
+  - 🔴 **THE DRIFT THAT ACTUALLY COST A SESSION WAS NOT A WRONG CLAIM.** It was prose asserting something
+    that did not EXIST (`dev.mjs media-decode`, named for months, never written) and prose defending an
+    untested gap as a decision (the bridge-tag check reading only in-memory bodies, "left alone rather than
+    risked", which read as caution and was a hole). **Both are now gates** — `doc-drift` fails on a verb
+    prose names that is not implemented. The second has no gate and probably cannot: ask instead *"is this
+    sentence explaining a choice, or excusing something nobody tested?"*
 - **Add a `.claude/knowledge/` rule the moment an invariant is EARNED**, via
   `node devtools/dev.mjs knowledge new <name>` — don't let it live only in a code comment. UI-thread
   marshalling, WebView2 gotchas, IPC batching numbers and the mobile header table all got here that way.
