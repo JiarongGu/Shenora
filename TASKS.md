@@ -145,24 +145,28 @@ source at build time while the app manifest's version was an unrelated constant,
 know what version its own packaged client was. **Adding an `if` is not the fix — making the packaged
 bundle's identity available to the decision is.**
 
-- [ ] **Decide whether the bundle store + boot decision is a harvest (D15).** ⚠ ONE consumer so far, so the
-  two-consumer bar is not met — this is offered as evidence, not a request. What argues for it anyway is
-  that the state machine has exactly one correct ordering and **every mis-ordering fails silently**:
-  increment-and-persist the attempt count BEFORE serving a pending bundle (written the other way, a failure
-  that runs none of your code leaves the count at zero and the app retries the same broken bundle for
-  ever); serve a pending bundle exactly once; promote only on a page-side confirm — **which travels over the
-  bridge, so a bundle missing the injected tag can never confirm and is discarded for ever, i.e. trap #2 and
-  this one compound**; roll back and delete otherwise; and prefer the packaged bundle when it is newer,
-  deleting the superseded one rather than leaving it to be re-chosen.
-- [ ] **If the harvest is declined, name the hazard where the other two are already named** — the
-  interceptor's remarks and the adoption docs. An adopter who reads the bridge-tag warning is precisely the
-  one who is about to hit this, and the fix is a sentence: compare the fetched bundle against the packaged
-  one and prefer the newer. Cheap, no API surface, and it stops the silent case being discovered by a store
-  release.
+**The harvest was TAKEN, and the adopter's prior stack is why the two-consumer bar did not decide it:** they
+did this on Capacitor before, so the kit is answering for parity rather than for one app's request. ⚠ And
+**Capacitor's own live-update plugin does not solve the actual defect** — "no automatic version comparison …
+developer must implement logic to restrict updates to compatible native versions" — so an adopter migrating
+either way hits it. `ResourcePackJournal` is the answer: `Open(packagedVersion)` **requires** the comparison,
+the attempt is persisted before serving, and nothing is promoted without a page-side `Confirm()`.
 
-**What should stay with the app either way** (so the boundary is not the open question): the version SCHEME
-and its comparator — semver, a build counter, whatever — since a kit dictating one is a product decision;
-where the packaged version comes from; and the download source with its authentication.
+- [ ] **Name the hazard where the other two are already named** — the interceptor's remarks and
+  `docs/ADOPTION.md`. Still worth doing WITH the mechanism, not instead of it: an adopter who reads the
+  bridge-tag warning is precisely the one about to hit this, and they need the pointer at the place they are
+  already reading. ⚠ **The two compound** — a pack with no bridge tag can never `Confirm()`, so it is served,
+  discarded, and the app silently returns to the packaged one for ever.
+- [ ] **Decide whether the kit should supply the PACKAGED version rather than take it as an argument.** The
+  entry's own diagnosis was that the adopter "had nothing comparable to compare" — the packaged client's
+  version was baked from one source while the app manifest's was an unrelated constant. `Open()` makes the
+  comparison mandatory, which is the half a library can enforce; making the number itself trustworthy is a
+  BUILD concern (`@shenora/cli` stamping the bundle it packs) and has not been designed.
 
-⚠ **A reload cannot verify any of this.** The bundle is chosen once per process, so the unit of test is a
+**What stays with the app, and is now enforced by the shape rather than described:** the version SCHEME and
+its comparator (`ResourcePackJournalOptions.Order` is `required`), where the packaged version comes from
+(an argument), and the download source with its authentication (`ResourcePack.StageAsync` takes a `Stream`).
+
+⚠ **A reload cannot verify any of this.** The pack is chosen once per process, so the unit of test is a
 force-stop and relaunch — which is also why an adopter can carry the defect for months without seeing it.
+The suite covers the ordering with a fresh journal per simulated start; nothing has run it on a device.

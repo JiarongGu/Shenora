@@ -30,6 +30,23 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Added
+
+- **`ResourcePackJournal`** — which version of a `ResourcePack` to serve, and whether the last one worked.
+  🔴 **It exists to make one silent, permanent defect unrepresentable:** an app that serves a fetched pack
+  in preference to its packaged one *without comparing versions* can never ship a fix through the app store
+  again — once any pack is on disk it outranks the client inside every later build, for ever. `Open()`
+  therefore **requires** the packaged version as an argument; there is no overload that skips the
+  comparison. ⚠ Capacitor's live-update plugin does not solve this one ("no automatic version comparison …
+  developer must implement logic"), and it is what an adopter migrating from it hit.
+  - The attempt is counted and **persisted before** a pending pack is served, so a pack that faults before
+    running any app code is still counted — written the other way, the count stays at zero and the app
+    retries the same broken pack for ever. Nothing is promoted without a `Confirm()` from the running page,
+    so a pack that cannot talk to the host cannot confirm itself.
+  - **It decides; it does not deliver.** Where packs come from, what a version string means and how two of
+    them order stay the app's (D42) — `ResourcePack.StageAsync` already takes bytes the app fetched. It
+    owns no bytes, downloads nothing, and deletes no directory (`PruneOthers` still collects).
+
 ### Fixed
 
 - 🔴 **A media source with no cut point no longer loses most of itself.** When the lead picture track never

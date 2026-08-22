@@ -466,8 +466,37 @@ sealed class Shenora.Engine.Compression.ResourcePack
   public string Name { get; }
   public string Version { get; }
   public string? PathOf(string relativePath)
+sealed class Shenora.Engine.Compression.ResourcePackJournal
+  public .ctor(Shenora.Engine.Compression.ResourcePackJournalOptions options, Microsoft.Extensions.Logging.ILogger? log = null)
+  public Shenora.Engine.Compression.ResourcePackResult Open(string packagedVersion)
+  public void Confirm()
+  public void Reset()
+  public void Stage(string version)
+sealed class Shenora.Engine.Compression.ResourcePackJournalOptions
+  public int MaxAttempts { get; init; }
+  public required System.Comparison<string> Order { get; init; }
+  public required string Path { get; init; }
+enum Shenora.Engine.Compression.ResourcePackKind (int)
+  public const Shenora.Engine.Compression.ResourcePackKind Active = 1
+  public const Shenora.Engine.Compression.ResourcePackKind Packaged = 0
+  public const Shenora.Engine.Compression.ResourcePackKind Pending = 2
+  public int value__
 sealed class Shenora.Engine.Compression.ResourcePackOptions
   public required string Root { get; init; }
+sealed class Shenora.Engine.Compression.ResourcePackResult : System.IEquatable<Shenora.Engine.Compression.ResourcePackResult>
+  public .ctor(string Version, Shenora.Engine.Compression.ResourcePackKind Kind, int Attempt, string? RolledBackFrom = null)
+  public Shenora.Engine.Compression.ResourcePackKind Kind { get; init; }
+  public Shenora.Engine.Compression.ResourcePackResult <Clone>$()
+  public bool Equals(Shenora.Engine.Compression.ResourcePackResult? other)
+  public int Attempt { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Engine.Compression.ResourcePackResult? left, Shenora.Engine.Compression.ResourcePackResult? right)
+  public static bool op_Inequality(Shenora.Engine.Compression.ResourcePackResult? left, Shenora.Engine.Compression.ResourcePackResult? right)
+  public string Version { get; init; }
+  public string? RolledBackFrom { get; init; }
+  public void Deconstruct(out string Version, out Shenora.Engine.Compression.ResourcePackKind Kind, out int Attempt, out string? RolledBackFrom)
 static class Shenora.Engine.Compression.ZipExtraction
   public static Shenora.Engine.Compression.ExtractionResult ExtractTo(System.IO.Compression.ZipArchive archive, string destinationDirectory, Shenora.Engine.Compression.ExtractionLimits? limits = null, bool overwrite = false, System.Threading.CancellationToken cancellationToken = default)
   public static Shenora.Engine.Compression.ExtractionResult ExtractTo(string archivePath, string destinationDirectory, Shenora.Engine.Compression.ExtractionLimits? limits = null, bool overwrite = false, System.Threading.CancellationToken cancellationToken = default)
