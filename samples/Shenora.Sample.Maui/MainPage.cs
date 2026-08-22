@@ -23,6 +23,9 @@ public sealed class MainPage : ContentPage
 	private readonly HybridWebView _webView;
 	private readonly MediaRangeProbe _media = new(MauiProgram.Log);
 	private MobileIpcBridge? _bridge;
+
+	/// <summary>The opt-in document-from-disk route, or null when this launch did not ask for one.</summary>
+	private IDisposable? _documentFromDisk;
 	private readonly MobileSafeArea _safeArea;
 
 	/// <summary>
@@ -99,6 +102,14 @@ public sealed class MainPage : ContentPage
 		// kit's own new warning is what caught it — see `MediaRangeProbe.Attach`. Staging the clips is
 		// still async work and still belongs in `OnLoaded`; SUBSCRIBING does not.
 		_media.Attach(_webView, MauiProgram.Shenora!.Pipeline);
+
+		// 🔴 HERE FOR THE SAME REASON, and more sharply: this one claims the DOCUMENT, so a registration in
+		// `OnLoaded` would arrive after the navigation it exists to answer. Off unless the launch asks for
+		// it — see PageProbe.ServeDocumentFromDisk.
+		if (_media.Interceptor is { } documentInterceptor)
+		{
+			_documentFromDisk = PageProbe.ServeDocumentFromDisk(documentInterceptor, MauiProgram.Log);
+		}
 
 		Loaded += OnLoaded;
 		Unloaded += OnUnloaded;
@@ -632,6 +643,9 @@ public sealed class MainPage : ContentPage
 		}
 		_onWindowStopped = null;
 		_onWindowResumed = null;
+
+		_documentFromDisk?.Dispose();
+		_documentFromDisk = null;
 
 		_media.Dispose();
 		_safeArea.Dispose();

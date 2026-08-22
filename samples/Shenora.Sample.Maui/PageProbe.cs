@@ -904,6 +904,84 @@ internal static class PageProbe
 	}
 
 	/// <summary>
+	/// Serve the app's MAIN DOCUMENT from a <b>file on disk</b>, which is the one shape the kit's bridge-tag
+	/// check could not see until 0.14 and still the shape a runtime-fetched bundle really has.
+	///
+	/// <para>
+	/// 🔴 <b>Two arms, and each proves a different half.</b> Tagged: the document still reaches the page, so
+	/// the check READ a <c>FileStream</c> and put its position back — a consumed body is a blank page and no
+	/// handshake, which cannot be mistaken for a pass. Untagged: the check must WARN, which is the direction
+	/// nothing had ever exercised on either shell.
+	/// </para>
+	/// <para>
+	/// ⚠ <b>The untagged arm takes the app down with it, deliberately</b> — with no bridge there is no
+	/// handshake, so no page-side probe can report and the only evidence is the HOST log. That is why this is
+	/// opt-in per launch rather than part of the suite:
+	/// <c>SIMCTL_CHILD_SHENORA_SAMPLE_DOC_FROM_DISK=tagged|untagged xcrun simctl launch booted …</c>
+	/// </para>
+	/// <para>
+	/// ⚠ <b>It reads the packaged document rather than inventing one</b>, so the tagged arm is the real
+	/// document and its tag is the real tag. Stripping is a plain string removal of the script reference —
+	/// enough to make the check's own test fail, which is all the untagged arm needs.
+	/// </para>
+	/// </summary>
+	public static IDisposable? ServeDocumentFromDisk(IWebViewInterceptor interceptor, Action<string> log)
+	{
+		ArgumentNullException.ThrowIfNull(interceptor);
+		ArgumentNullException.ThrowIfNull(log);
+
+		var mode = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_DOC_FROM_DISK");
+		if (string.IsNullOrWhiteSpace(mode)) return null;
+
+		var untagged = mode.Equals("untagged", StringComparison.OrdinalIgnoreCase);
+		if (!untagged && !mode.Equals("tagged", StringComparison.OrdinalIgnoreCase))
+		{
+			log($"DOC-DISK: SKIPPED — SHENORA_SAMPLE_DOC_FROM_DISK='{mode}', expected tagged|untagged");
+			return null;
+		}
+
+		string path;
+		try
+		{
+			// The packaged document, copied to a real FILE — on iOS the bundle resource is already one, but
+			// copying keeps both arms identical and gives the untagged arm something it may rewrite.
+			using var packaged = FileSystem.OpenAppPackageFileAsync("wwwroot/index.html").GetAwaiter().GetResult();
+			using var reader = new StreamReader(packaged, Encoding.UTF8);
+			var html = reader.ReadToEnd();
+
+			var tagged = html.Contains("hybridwebview.js", StringComparison.OrdinalIgnoreCase);
+			if (!tagged)
+			{
+				// Says so rather than proceeding: without the tag the tagged arm proves nothing, and the
+				// untagged arm would "pass" for the wrong reason.
+				log("DOC-DISK: FAIL — the packaged index.html carries no bridge tag, so neither arm is valid");
+				return null;
+			}
+
+			if (untagged) html = html.Replace("hybridwebview.js", "no-bridge-here.js", StringComparison.OrdinalIgnoreCase);
+
+			path = Path.Combine(FileSystem.CacheDirectory, untagged ? "doc-untagged.html" : "doc-tagged.html");
+			File.WriteAllText(path, html, Encoding.UTF8);
+			log($"DOC-DISK: serving the main document from {path} ({(untagged ? "UNTAGGED — expect the kit to warn" : "tagged")})");
+		}
+		catch (Exception ex)
+		{
+			log($"DOC-DISK: FAIL — could not stage the document ({ex.GetType().Name}: {ex.Message})");
+			return null;
+		}
+
+		return interceptor.Use((request, next, ct) =>
+		{
+			if (request.Uri.AbsolutePath is not ("/" or "" or "/index.html")) return next(request, ct);
+
+			// 🔴 A REAL FileStream, which is the whole point — a MemoryStream here would exercise the path
+			// that already worked. Not disposed by this probe: the kit owns a body once it answers with it.
+			var body = File.OpenRead(path);
+			return Task.FromResult<WebViewResourceResponse?>(WebViewResourceResponse.Ok(body, "text/html"));
+		});
+	}
+
+	/// <summary>
 	/// The sabotage harness for <see cref="CheckReloadAsync"/>: claim the MAIN DOCUMENT and answer it with a
 	/// 404, which is what a broken top-level navigation looks like from the page's side.
 	/// <para>
@@ -913,6 +991,10 @@ internal static class PageProbe
 	/// null response, which Android reads as "not intercepted" and serves normally. A sabotage that does not
 	/// break the thing under test proves nothing about the gate — read what the harness actually DID, not
 	/// just the verdict it produced.
+	/// </para>
+	/// <para>
+	/// ⚠ <b>It cannot exercise the kit's bridge-tag check</b>, which runs only on a <c>200</c> that is
+	/// <c>text/html</c> — <see cref="ServeDocumentFromDisk"/> is the probe for that.
 	/// </para>
 	/// </summary>
 	public static IDisposable SabotageMainDocument(IWebViewInterceptor interceptor, Action<string> log)
