@@ -106,14 +106,11 @@ untested rather than proven: the run never reaches it. And `mac devices` reports
 - [ ] **Plug in and unlock the iPhone, then `mac provision`** — that is the whole remaining gate on every
   device item below. ⚠ Only then is the AOT pack claim actually settled; today's evidence is the pack
   listing, not a build that reached the compiler.
-- [ ] **Prove the bridge-tag check's FIRING direction, and its new disk branch, on a device.** The check now
-  reads any SEEKABLE body and restores its position, so a runtime-fetched bundle served from a `FileStream`
-  is covered — decided and built, not merely filed. ⚠ **The quiet direction is re-proven on the iOS
-  simulator** (page loaded, `client READY (handshake id=c1)`, no warning and no skipped-check line, which is
-  right because the sample's own document IS tagged) — so the refactor does not consume a body. **What no
-  run has done is make it FIRE**, on either shell, and the disk branch has never executed at all.
-  - ⚠ `PageProbe.SabotageMainDocument` cannot do it: it answers `404`, and the check runs only on a `200`
-    that is `text/html`. A probe for this has to serve an untagged document from a file.
+⚠ **The bridge-tag check is proven BOTH ways on iOS now** (simulator, `PageProbe.ServeDocumentFromDisk`), so
+do not re-run it there: a tagged document served from a `FileStream` still reaches the page
+(`client READY (handshake id=c1)`, i.e. the check read the body and put its position back), and an untagged
+one makes it warn with no handshake at all. **Android has had neither arm** — the probe is shared source, so
+that is low risk rather than none.
 
 **⚠ Unattributed, and deliberately NOT a defect claim:** `SEEK-RUN: FAIL — seg1 declares no sound
 (picture=6000)` on the Android emulator. A/B'd against the same tree with the sample change stashed and it
