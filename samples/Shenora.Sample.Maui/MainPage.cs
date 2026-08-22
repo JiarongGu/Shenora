@@ -376,6 +376,22 @@ public sealed class MainPage : ContentPage
 								MauiProgram.Log($"SEGMENTS[{RemuxRouteProbe.BigFixture}]: SKIPPED — not staged");
 							}
 
+							// 🔴 AND THE SPILL SHAPE, which no other fixture can produce: a source with ONE
+							// keyframe and more bytes than the writer may hold, so the segment it emits
+							// carries SEVERAL fragments. That shape is new, only an uncuttable source makes
+							// it, and until now only Chromium had ever been handed one. ⚠ The device
+							// produces it ITSELF — the bound is internal and a pre-produced artifact copied
+							// onto the phone would go stale the moment the writer changed.
+							if (RemuxRouteProbe.IsStaged(sourceRoot, SegmentRouteProbe.SpillFixture))
+							{
+								MauiProgram.Log(await SegmentRouteProbe.CheckAsync(
+									_webView, sourceRoot, MauiProgram.Log, SegmentRouteProbe.SpillFixture));
+							}
+							else
+							{
+								MauiProgram.Log($"SEGMENTS[{SegmentRouteProbe.SpillFixture}]: SKIPPED — not staged");
+							}
+
 							// The SAME stream through the shipped `bindSegmentStream`, so the module an
 							// adopter gets is the one a device actually runs (D63). The hand-written check
 							// above stays as the control.

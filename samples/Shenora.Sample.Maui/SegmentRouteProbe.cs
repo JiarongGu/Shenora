@@ -88,6 +88,33 @@ internal static class SegmentRouteProbe
     public const string LongFixture = "clip-h264-aac.mkv";
 
     /// <summary>
+    /// A source with ONE keyframe and more bytes than the writer may hold — so the run SPILLS, and the
+    /// segment it produces carries several fragments instead of one.
+    ///
+    /// <para>
+    /// 🔴 <b>The device produces that shape ITSELF; nothing is shipped to it.</b> The memory bound is
+    /// internal and must stay so, and a pre-produced artifact copied onto the phone would go stale the
+    /// moment the writer changed. A source that simply cannot be cut makes the real engine spill through
+    /// the real code path — which is the only version of this worth running on hardware.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Both bounds matter and the window between them is narrow.</b> Over ~30 s the plan is refused
+    /// as uncopyable and the run re-encodes instead (a different path); under 64 MB nothing spills at all.
+    /// 25 s at ~26 Mbps sits inside both. Regenerate with:
+    /// <code>
+    /// ffmpeg -f lavfi -i testsrc2=size=1920x1080:rate=30:duration=25 -c:v libx264 -preset ultrafast \
+    ///        -b:v 26M -minrate 26M -maxrate 26M -bufsize 52M -nal-hrd cbr \
+    ///        -g 100000 -keyint_min 100000 -sc_threshold 0 -pix_fmt yuv420p clip-spill.mkv
+    /// </code>
+    /// ⚠ <c>-nal-hrd cbr</c> is what makes the size land: x264 CAPS a bitrate and will happily undershoot
+    /// a compressible source, so asking for one without padding to fill it gives a file well under the
+    /// bound and a run that proves nothing.
+    /// </para>
+    /// ⚠ Staged by hand like <see cref="RemuxRouteProbe.BigFixture"/>, so its absence SKIPS loudly.
+    /// </summary>
+    public const string SpillFixture = "clip-spill.mkv";
+
+    /// <summary>
     /// What the page opens its <c>SourceBuffer</c> with: a copied H.264 picture plus a converted AAC
     /// soundtrack.
     /// <para>
@@ -136,6 +163,7 @@ internal static class SegmentRouteProbe
                     // produces a 404 that reads as an engine fault — which has cost this sample three
                     // debugging rounds in one day, per ConversionRouteProbe's own warning.
                     return name == Fixture || name == LongFixture || name == RemuxRouteProbe.BigFixture
+                        || name == SpillFixture
                         ? Path.Combine(sourceRoot, name)
                         : null;
                 },
