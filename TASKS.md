@@ -84,24 +84,27 @@ readings are a simulator's, and there is no BEFORE number on any machine — the
   reachable for ORDINARY 1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be
   copied — so this path is newly hot, not newly correct.
 
-### 🍎 THE BUILD MAC CANNOT BUILD FOR A DEVICE — TWO OF ITS THREE AOT PACKS LACK THE RESOLVED VERSION
+### 🍎 THE BUILD MAC'S AOT PACK GAP IS CLOSED — THE DEVICE BLOCKER IS NOW PROVISIONING AND A CABLE
 
-Found by the new `aot cross pack` row on its first real run, 2026-08-21. The SDK resolves the AOT cross
-pack at **10.0.10** and only ONE of the Mac's three ios cross packs has it:
+Re-measured 2026-08-22, and the 2026-08-21 reading no longer holds. The SDK resolves the AOT cross pack at
+**10.0.10**, and the DEVICE pack now has it:
 
-| pack | versions | a build for that target |
+| pack | 10.0.10? | matters for |
 |---|---|---|
-| `…Cross.ios-arm64` (device) | 10.0.11, 9.0.19 | **dies in `AOTCompile`** |
-| `…Cross.iossimulator-arm64` | 10.0.11, 9.0.19 | **dies in `AOTCompile`** |
-| `…Cross.iossimulator-x64` | **10.0.10**, 10.0.11, 9.0.19 | works — this is the adopter's symlink |
+| `…Cross.ios-arm64` (device) | **yes** — symlink → 10.0.11, made 2026-08-21 20:40 | every device build |
+| `…Cross.iossimulator-x64` | yes — symlink → 10.0.11 | the simulator loop on this Intel Mac |
+| `…Cross.iossimulator-arm64` | no | nothing here — an Apple-Silicon Mac only |
 
-So the simulator loop works on that Intel Mac purely because someone patched the one pack it uses, and a
-DEVICE build is still broken. This is a machine condition, not a kit defect, and the row now names it
-instead of letting a build die in an MSBuild task.
+So the repair the old entry proposed was applied, and "the Mac cannot build for a device" is retired.
 
-- [ ] **Decide whether to repair that Mac or leave it simulator-only.** The adopter's repair is a symlink
-  (`packs/<pack>/10.0.10 -> 10.0.11`), offered as evidence rather than a recommendation — the packs are
-  compatible, the skew is only in the version the SDK asks for. ⚠ It blocks every device item below.
+⚠ **What replaced it, and it is NOT the same thing.** A device build now stops EARLIER, at
+`Could not find any available provisioning profiles for Shenora.Sample.Maui on iOS` — so `AOTCompile` is
+untested rather than proven: the run never reaches it. And `mac devices` reports the iPhone
+**paired but NOT CONNECTED**, which `mac device` refuses on.
+
+- [ ] **Plug in and unlock the iPhone, then `mac provision`** — that is the whole remaining gate on every
+  device item below. ⚠ Only then is the AOT pack claim actually settled; today's evidence is the pack
+  listing, not a build that reached the compiler.
 - [ ] **Decide the disk-served document limit.** The bridge-tag check reads only a `MemoryStream`, so
   `ToArray()` cannot disturb a response where seeking a `FileStream` could; it stays UNSPENT when it skips
   one. So a document served from disk is never checked at all. That is a design question, not a run.
