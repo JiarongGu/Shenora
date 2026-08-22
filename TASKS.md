@@ -53,6 +53,34 @@ The bridge-tag check is proven BOTH ways on BOTH shells now — `ServeDocumentFr
 well as an env var, since `adb` cannot pass one. Android: tagged → `client READY`, untagged → the warning
 with zero handshakes.
 
+### 📱 THREE SHELL PRIMITIVES AN ADOPTER CANNOT LEAVE CAPACITOR WITHOUT
+
+Filed 2026-08-23 by the adopter now retiring Capacitor in favour of this kit's mobile shell. Their audit of
+what still keeps that dependency alive found **one app-level gap (an SMB client — theirs, not the kit's)** and
+**three shell primitives the kit does not offer at all**, each of which Capacitor gives away in a plugin and
+each of which is a WINDOW/SHELL concern rather than an app one. Measured against 0.14.0's source, not assumed:
+`grep -rl "BackPressed\|BackButton" src/` finds nothing, and `MobileWindowLifecycle` answers only
+`IsRecreating`.
+
+- [ ] **Screen orientation.** Lock to portrait, and unlock/relock around a full-screen media viewer where
+  rotation is genuinely wanted. Two calls, both platforms, no policy — the app decides WHEN.
+- [ ] **The Android hardware back button.** 🔴 The one whose absence is not a missing feature but a BROKEN
+  APP: unhandled, back finishes the activity from any screen, so a user two levels deep is dumped to the home
+  screen. Capacitor's plugin exists mainly to override exactly that default. The shell cannot decide what
+  back MEANS (their page closes an expanded player first, then walks its own SPA history, and only exits at
+  the root) — so the ask is an EVENT the page can answer, plus a way to say "handled".
+- [ ] **Foreground/resume, surfaced to the page.** After a background the websocket may be dead and the
+  paired server may have come or gone; their client reconnects and re-probes on resume. `MobileWindowLifecycle`
+  cannot answer this — it is about teardown, not activation.
+
+⚠ **D15 says two consumers and this is one**, so a decline is a fair answer — but note the shape before
+deciding: all three are things the kit ALREADY plays in (it owns `MobileSafeArea`, the window teardown wiring
+and the IPC that would carry the event), they are per-platform in exactly the way the kit exists to absorb,
+and the back button in particular is not an enhancement — **a MAUI shell without it ships an app whose back
+button quits it.** If declined, the honest fallback is a line in `docs/guides/mobile.md` telling the next
+adopter that these three are theirs to write, because the natural reading of "the kit is the shell" is that
+they are not.
+
 ### 🔴 `shenora copy`'s VERSION STAMP CANNOT BE READ ON ANDROID — the name has a leading dot
 
 Filed by the adopter on 2026-08-23, having adopted 0.14.0 the day it shipped. **A dot-prefixed `MauiAsset`
