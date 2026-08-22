@@ -18,6 +18,19 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     /// <summary>Largest document the bridge-tag check will read. A document is small; anything bigger is not one.</summary>
     private const int BridgeTagScanLimit = 2 * 1024 * 1024;
 
+    /// <summary>
+    /// How many PASSING documents the bridge-tag check will read before it stops looking. A warning latches
+    /// it permanently; this bounds only the quiet case.
+    /// <para>
+    /// 🔴 <b>More than one, because the first document served is not always the one the page ends up
+    /// running.</b> An app that serves its PACKAGED <c>index.html</c> — tagged by the build step, so it
+    /// passes — and later serves a runtime-fetched bundle would otherwise spend the check on the document
+    /// that was never in doubt. ⚠ Small, because each pass costs a read of up to
+    /// <see cref="BridgeTagScanLimit"/>.
+    /// </para>
+    /// </summary>
+    private const int BridgeTagScanBudget = 4;
+
     private readonly HybridWebView _webView;
     private readonly ILogger? _log;
     private readonly Task<BundleDocument?> _document;
@@ -26,6 +39,7 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     private readonly bool _attachedAfterRealize;
     private bool _firstRequestSeen;
     private bool _bridgeTagChecked;
+    private int _bridgeTagScans;
     private bool _disposed;
 
     /// <param name="webView">
@@ -184,11 +198,12 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     /// handshake, so anything gated on the page confirming itself (exactly what a safe client update is)
     /// can never confirm and rolls back for ever.
     /// <para>
-    /// ⚠ <b>It must never cost a response, so it reads only what it cannot disturb.</b>
-    /// <see cref="MemoryStream.ToArray"/> does not move <c>Position</c>, so the platform still receives the
-    /// whole body; a body the kit would have to seek to read (a <c>FileStream</c>) is left alone rather
-    /// than risked, and leaves the check unspent for the next document. Synchronous by construction — an
-    /// <c>await</c> on this thread deadlocks iOS's main thread (<see cref="RepairDocumentRequest"/>).
+    /// ⚠ <b>It must never cost a response, so it reads only what it can put back.</b> An in-memory body is
+    /// read with <see cref="MemoryStream.ToArray"/>, which does not move <c>Position</c>; any other SEEKABLE
+    /// body is read and its position restored (<see cref="ReadDocument"/>), which is safe only because this
+    /// runs before the body reaches the platform. A body that cannot seek is left alone and leaves the check
+    /// unspent. Synchronous by construction — an <c>await</c> on this thread deadlocks iOS's main thread
+    /// (<see cref="RepairDocumentRequest"/>).
     /// </para>
     /// </remarks>
     private void WarnIfDocumentHasNoBridge(Uri uri, WebViewResourceResponse? response)
@@ -200,15 +215,17 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
 
         try
         {
-            // 🔴 The latch is set only once a body has actually been SCANNED, and that ordering is the
-            // whole feature. Latching on the first document REQUEST would spend it on the packaged
-            // index.html — commonly a FileStream, which is not read — and then skip the in-memory bundle
-            // served later, which is precisely the document this check exists for.
-            if (response.Content is not MemoryStream body || body.Length is 0 or > BridgeTagScanLimit) return;
-            _bridgeTagChecked = true;
+            // 🔴 The budget is spent only once a body has actually been SCANNED, and that ordering is the
+            // whole feature. Counting the first document REQUEST would spend it on a document that was
+            // never read, and then skip the bundle served later — precisely what this check exists for.
+            if (ReadDocument(response.Content) is not { } text) return;
+            if (++_bridgeTagScans >= BridgeTagScanBudget) _bridgeTagChecked = true;
 
-            if (System.Text.Encoding.UTF8.GetString(body.ToArray())
-                    .Contains(BridgeScript, StringComparison.OrdinalIgnoreCase)) return;
+            if (text.Contains(BridgeScript, StringComparison.OrdinalIgnoreCase)) return;
+
+            // 🔴 Latched here regardless of the budget: this warning is said once per interceptor, and a
+            // document that has already failed cannot fail more informatively on the next navigation.
+            _bridgeTagChecked = true;
 
             Log(() => $"[Shenora.Mobile] The document served for '{uri}' does not reference "
                     + $"'{BridgeScript}', so `window.HybridWebView` will not exist and every bridge call "
@@ -220,6 +237,47 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
         {
             // A diagnostic that breaks serving is worse than no diagnostic.
             Log(() => "[Shenora.Mobile] Bridge-tag check skipped", ex);
+        }
+    }
+
+    /// <summary>
+    /// The document's text, or null when it cannot be read WITHOUT disturbing the response — which is the
+    /// only condition this check is allowed to impose on a body it does not own.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 <b>A document served from DISK is the case this check exists for, so it cannot be the case it
+    /// skips.</b> A bundle fetched at runtime is written to app data and served from a
+    /// <see cref="FileStream"/> — and it is the one that never passed through the build step that injects
+    /// the tag, so reading only a <see cref="MemoryStream"/> looked cautious while covering the wrong half.
+    /// <para>
+    /// ⚠ <b>Safe because of WHEN it runs.</b> The caller has not yet handed the body to the platform, so
+    /// nothing else can be reading it, and the platform then reads sequentially from <c>Position</c> — which
+    /// is restored in a <c>finally</c>, including when the read throws. A stream that cannot seek is still
+    /// left alone: rewinding it is not possible, and a consumed body is a blank page.
+    /// </para>
+    /// </remarks>
+    private static string? ReadDocument(Stream content)
+    {
+        // `ToArray` does not move Position, so an in-memory body needs no restoring at all.
+        if (content is MemoryStream memory)
+        {
+            return memory.Length is 0 or > BridgeTagScanLimit
+                ? null
+                : System.Text.Encoding.UTF8.GetString(memory.ToArray());
+        }
+
+        if (!content.CanSeek || content.Length is 0 or > BridgeTagScanLimit) return null;
+
+        var resume = content.Position;
+        try
+        {
+            var bytes = new byte[content.Length - resume];
+            var read = content.ReadAtLeast(bytes, bytes.Length, throwOnEndOfStream: false);
+            return read <= 0 ? null : System.Text.Encoding.UTF8.GetString(bytes, 0, read);
+        }
+        finally
+        {
+            content.Position = resume;
         }
     }
 
