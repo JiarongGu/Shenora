@@ -34,7 +34,13 @@ function retiredNames() {
 }
 
 // History BY DEFINITION — an old name in these is accurate, not stale. Mirrors doc-drift's own exemption.
-const SKIP_FILE = /(CHANGELOG\.md|retired-names\.txt)$/;
+//
+// 🔴 `namespace-moves.md` IS THE OLD→NEW TABLE ITSELF, so every row names a retired thing ON PURPOSE and
+// not one of them can ever be a finding. It contributed 103 of 183 hits on 2026-08-23 — 56 % of the output
+// of a report whose whole value is that a human reads all of it. ⚠ A triage list padded with rows that
+// cannot be wrong is how the two REAL hits in that same run (a csproj naming a namespace that never
+// existed, and ARCHITECTURE.md claiming `Shenora.Ipc`'s namespace "stayed") went unread for weeks.
+const SKIP_FILE = /(CHANGELOG\.md|retired-names\.txt|namespace-moves\.md)$/;
 const EXT = /\.(cs|md|ts|tsx|csproj|props|targets)$/;
 
 // 🔴 WHAT IS OUT OF SCOPE IS GIT'S ANSWER, NOT A NAME LIST — `git-scope.mjs` carries the query, the

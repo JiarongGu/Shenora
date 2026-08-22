@@ -392,7 +392,8 @@ and the dependency rules a reviewer checks.
 - **Execution and reporting compose; they do not merge.** The `Engine/` layer must never learn what a
   long-running request is — a mission body reports through `IMissionObserver`, and that seam is the only
   thing pointing at the IPC side. ⚠ **This is now an INTERNAL direction, not a package edge** (D65 folded
-  `Shenora.Ipc` into `Shenora`; the namespace stayed). It survived the fold because the compiler was never
+  `Shenora.Ipc` into `Shenora` and relayered the namespace to `Shenora.Core.Ipc` — it is retired as BOTH,
+  which is what `CLAUDE.md` says). It survived the fold because the compiler was never
   what enforced it: the rule is *feature → logic → wire*, discovered by reading the edges rather than
   imposed, and a reviewer checks it by asking which namespace names which. It is also why the scheduler
   ships no storage dependency: `IMissionQueueStore` is a seam, not an implementation.
