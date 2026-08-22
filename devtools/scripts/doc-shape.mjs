@@ -224,12 +224,32 @@ if (fs.existsSync(decPath)) {
 // `verify` on 2026-08-21. Leading markup is now skipped as a GROUP rather than a single character.
 const tasksPath = path.join(repo, 'TASKS.md');
 if (fs.existsSync(tasksPath)) {
-  fs.readFileSync(tasksPath, 'utf8').split(/\r?\n/).forEach((line, i) => {
+  const tasksLines = fs.readFileSync(tasksPath, 'utf8').split(/\r?\n/);
+  tasksLines.forEach((line, i) => {
     if (/^[\s>*_-]*(✅|\[x\]|\*\*DONE\*\*|\bDONE\b:)/.test(line)) {
       flag('TASKS.md', i + 1, line.trim().slice(0, 100),
         'an entry is OPEN or GONE — a done marker is an entry that failed to leave, and the file stops tracking remaining work');
     }
   });
+
+  // 🔴 THE MARKER CHECK ABOVE CANNOT SEE THE LAST TWO RECURRENCES, AND THE FILE'S OWN HEADER SAYS SO:
+  // "no marker at all, just finished work narrated at length". A closed item rewritten as a paragraph of
+  // measurements reads as context, carries no ✅, and is exactly what the header counts — 502 lines
+  // holding six open tasks, 570 holding three, 458 holding seven, 197 holding six, 123 holding five, and
+  // 182 holding two on 2026-08-23. Six occurrences, every one visible as LENGTH.
+  //
+  // ⚠ A crude proxy on purpose. The real test is the header's ("would deleting this paragraph lose
+  // anything a future session must ACT on?") and no script can answer it — but every recurrence cleared
+  // this line by 60+, and the file has never legitimately needed it. WARNS: the size of a backlog is a
+  // judgement, and a style budget must not block a release (`phase-workflow`).
+  const cap = 120;
+  if (tasksLines.length > cap) {
+    const open = tasksLines.filter((l) => /^\s*[-*]\s*\[ \]/.test(l)).length;
+    flag('TASKS.md', 1, `${tasksLines.length} lines holding ${open} open item(s)`,
+      `over ${cap} lines. Finished work is DELETED, not narrated — its measurements belong in docs/, its `
+      + 'reasoning in the commit. Ask of each paragraph: would deleting it lose anything a future session '
+      + 'must ACT on?', 'warn');
+  }
 }
 
 // ── 4. PROJECT_NOTES.md is CURRENT state, not a session log ───────────────────────────────────────

@@ -5,13 +5,15 @@ this file is the size of the remaining work, which is the whole point of looking
 archive; `CHANGELOG.md` is the release-facing log. `> DIRECTION (owner):` blockquotes capture steering
 verbatim and stay as long as they still steer.
 
-🔴 **A `✅` is the same defect as `DONE`: an entry that failed to leave.** This drift has recurred five
-times — 502 lines holding six open tasks, then 570 holding three, then 458 holding seven, then 197
-holding six, then 123 holding five. `node devtools/dev.mjs doc-shape` fails on a done MARKER here, and the
-last two recurrences are the ones it could not see: **no marker at all, just finished work narrated at
-length**, and then a marker written as `**✅ …**`, which its regex read straight past. ⚠ **The test is not
-"is there a ✅", it is "would deleting this paragraph lose anything a future session must ACT on?"** If
-the answer is no, the commit that landed it is where it lives.
+🔴 **A `✅` is the same defect as `DONE`: an entry that failed to leave.** This drift has recurred SIX
+times — 502 lines holding six open tasks, then 570 holding three, 458 holding seven, 197 holding six, 123
+holding five, and 182 holding two. `doc-shape` fails on a done MARKER, and the recurrences it could not see
+are the ones without one: **no marker at all, just finished work narrated at length**, plus a marker written
+as `**✅ …**` that its regex read straight past. ⚠ **The test is not "is there a ✅", it is "would deleting
+this paragraph lose anything a future session must ACT on?"** If the answer is no, the commit that landed it
+is where it lives.
+⚠ **Length is now measured too** — `doc-shape` WARNS past 120 lines, which every one of those six cleared by
+60+. A crude proxy for a judgement no script can make, and the only signal the marker check cannot miss.
 
 **Status: v0.13.0 is PUBLISHED and VERIFIED LIVE** — all 5 NuGet packages plus `@shenora/react` and
 `@shenora/cli` answer 0.13.0, checked against the registries rather than the tree. Tag `v0.13.0`, release
