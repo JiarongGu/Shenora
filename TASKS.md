@@ -35,19 +35,22 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 🎬 THE SEGMENT TIER'S CORPUS IS BUILT — WHAT IS LEFT IS A REAL PLAYER
+### 🎬 THE SEGMENT TIER IS COVERED ON DESKTOP — WHAT IS LEFT IS THE OTHER TWO SHELLS
 
 The foreign-muxer corpus exists (`RealSourceShapeTests` + three committed fixtures) and it found what it was
-built to find: a source with no cut point lost 92 % of its picture, silently. That is fixed — the memory
-guard SPILLS to disk instead of republishing the segment it is already filling — and `dev.mjs media-decode`
-now hands both shapes to ffmpeg, which was a verb the suite had named for months without it existing.
+built to find: a source with no cut point lost 92 % of its picture, silently. Fixed — the memory guard
+SPILLS rather than republishing the segment it is already filling. Both shapes are now proven twice over:
+`dev.mjs media-decode` (ffmpeg) and `dev.mjs media-mse`, which appends them into WebView2's real
+`MediaSource` and reads back the buffered range.
 
-The tier stays labelled EXPERIMENTAL in `README.md` until the one gap below closes.
-
-- [ ] **Play a produced stream in a real `MediaSource`.** ffmpeg accepts streams a webview rejects — it
-  repairs what it can — so a green `media-decode` is a floor, not proof. ⚠ The **multi-fragment segment** is
-  the shape that needs it most: it is new, only a source with no cut point produces one, and no webview has
-  ever been handed one. The sample can do this; nothing automated does.
+- [ ] **Run `media-mse`'s question on iOS and Android.** Desktop says PASS for both shapes
+  (`ordinary=0.000-4.040`, `spill=0.167-20.167`), and Chromium-on-Windows is the most forgiving of the
+  three. ⚠ **iOS is the one that matters**: it uses `ManagedMediaSource`, whose streaming window has its own
+  rules, and the multi-fragment segment has never been near it. The MAUI sample already has the probe
+  machinery (`SegmentRouteProbe`); this is a port, not a design.
+- [ ] **Decide whether the EXPERIMENTAL label comes off** (`README.md`). ⚠ An owner call, not a mechanical
+  one: desktop coverage is real but the tier's faults were found on mobile, so "proven" may reasonably mean
+  the row above is green first.
 - [ ] **Two lacing shapes remain unexercised by a real file.** `clip-laced-audio.mkv` covers EBML and Xiph
   lacing; `ReadFixedLacing` is reached by no fixture, and no committed file laces its PICTURE track.
   ⚠ Weaker than it sounds — fixed lacing is rare and the parsers are pinned by hand-built blocks — so this

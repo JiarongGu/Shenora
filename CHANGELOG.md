@@ -54,6 +54,12 @@ at the first list and missed five more breaking changes.
   complaint OR on a frame count of zero, a file having decoded "successfully" being no evidence. The suites
   had named this command for months and it had never been written. ⚠ Not in `verify`, which must run on a
   clone with no external tool.
+- **`node devtools/dev.mjs media-mse`** appends the same output into WebView2's real `MediaSource` — via a
+  new startup probe in the desktop sample — and reports the buffered range per shape. 🔴 **This is the
+  judge that counts**, because ffmpeg repairs what it can and accepts streams a browser refuses. Measured:
+  an ordinary segment buffers `0.000-4.040`, a spilled multi-fragment one `0.167-20.167`. ⚠ The probe reads
+  the codecs string OUT of the init segment rather than assuming one — a guessed string is refused in a way
+  that reads exactly like a malformed segment, which cost this probe its own first run.
 
 ## 0.13.0 — 2026-08-21
 

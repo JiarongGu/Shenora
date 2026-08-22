@@ -35,9 +35,10 @@ the browser sessions' hook + event catalogue are the newest arrivals.
 > last few seconds.
 >
 > There is a foreign-muxer fixture corpus now — a late-starting soundtrack, a single-keyframe picture and
-> laced sound, none of them written by this kit — and it is what found that last one. **The label stays
-> until a produced stream has played in a real `MediaSource`**: the corpus reads boxes and a decode check
-> runs ffmpeg, and neither is a webview. The rest of the kit carries no such caveat.
+> laced sound, none of them written by this kit — and it is what found that last one. Its output is checked
+> by a decoder (ffmpeg) and appended into a real browser `MediaSource`, which buffers it. **The label stays
+> until that second check has run on iOS and Android too**: those are the shells the faults were found on,
+> and iOS uses a `ManagedMediaSource` with rules of its own. The rest of the kit carries no such caveat.
 
 The application builder, WinForms host, WebView2 hosting, the full typed IPC stack (envelopes,
 middleware dispatcher, scoped-container router, event bus, postMessage transport, `@shenora/react` client), the native desktop surface (frameless chrome +

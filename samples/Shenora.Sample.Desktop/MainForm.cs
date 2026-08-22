@@ -415,6 +415,9 @@ public sealed class MainForm : OptimizedForm
         {
             Console.WriteLine("RANGE SEAM: SKIPPED");
             Console.WriteLine("INTERCEPTOR SEAM: SKIPPED");
+            // Said here too, because `dev.mjs media-mse` WAITS for this line: without it a webview that
+            // never came up reads as a probe that hung, and costs the caller its whole timeout.
+            Console.WriteLine("SEGMENT MSE: SKIPPED - the webview never came up");
             return;
         }
 
@@ -431,6 +434,12 @@ public sealed class MainForm : OptimizedForm
         // because all four of its requests are drained. After it, so a 32 MiB body cannot skew its timings.
         try { Console.WriteLine(await BodyDisposalProbe.RunAsync(core).ConfigureAwait(true)); }
         catch (Exception ex) { Console.WriteLine($"BODY DISPOSAL: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
+
+        // Whether a real MediaSource ACCEPTS the fragments the segment tier writes. Everything else that
+        // asks about them reads boxes, and ffmpeg — which `dev.mjs media-decode` uses — repairs what it can,
+        // so it accepts streams a browser refuses. SKIPPED unless the dev loop named its artifacts.
+        try { Console.WriteLine(await SegmentMediaSourceProbe.RunAsync(core).ConfigureAwait(true)); }
+        catch (Exception ex) { Console.WriteLine($"SEGMENT MSE: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
 
         // The system media transport surface. Unrelated to the webview, but it belongs on the same
         // startup self-check for the same reason: it is only provable against the real OS.

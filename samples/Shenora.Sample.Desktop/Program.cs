@@ -49,6 +49,11 @@ internal static class Program
                         Name = BodyDisposalProbe.Scheme,
                         AllowedOrigins = ["https://sample.local", "http://localhost:3900"],
                     },
+                    new WebViewCustomScheme
+                    {
+                        Name = SegmentMediaSourceProbe.Scheme,
+                        AllowedOrigins = ["https://sample.local", "http://localhost:3900"],
+                    },
                 ],
             };
         });
@@ -77,7 +82,12 @@ internal static class Program
             DevUrl = "http://localhost:3900",
             VirtualHost = "sample.local",
             ResourceProvider = sp.GetRequiredService<IWebViewResourceProvider>(),
-            DeferredSchemes = [RangeSchemeProbe.CreateScheme(), BodyDisposalProbe.CreateScheme()],
+            DeferredSchemes =
+            [
+                RangeSchemeProbe.CreateScheme(),
+                BodyDisposalProbe.CreateScheme(),
+                SegmentMediaSourceProbe.CreateScheme(),
+            ],
             BackgroundColor = MainForm.Background, // the no-white-flash contract: form = webview = splash
             InjectedGlobals = new Dictionary<string, object?>
             {

@@ -1274,6 +1274,75 @@ switch (cmd) {
     break;
   }
 
+  // Append the segment tier's own fragments into a real browser MediaSource, by running the desktop
+  // sample and reading the verdict its startup probe prints.
+  //
+  // 🔴 WHY THIS EXISTS BESIDE media-decode. ffmpeg REPAIRS what it can, so a green decode is a floor and
+  // not proof — the judge that matters is the media pipeline a page actually has. The shape most worth
+  // asking about is a segment carrying SEVERAL fragments, which appears only when the memory guard spills,
+  // and the bound that triggers a spill is internal: the SUITE produces those bytes and this hands them
+  // over, rather than the sample being given a way to reach into the kit.
+  case 'media-mse': {
+    const real = path.join(repo, 'devtools', '_media-real');
+    const spill = path.join(repo, 'devtools', '_media-spill');
+
+    if (!fs.existsSync(path.join(real, 'init.mp4')) || !fs.existsSync(path.join(spill, 'init.mp4'))
+        || args.includes('--run')) {
+      console.log('producing artifacts (the media suites write them under devtools/)…');
+      const testEnv = androidBuildEnv();
+      if (testEnv === null) { process.exitCode = 1; break; }
+      if (!run('dotnet', ['test', config.solution, '--nologo', '-v', 'q', '--filter',
+        'FullyQualifiedName~RealSourceSegmentTests|FullyQualifiedName~RealSourceShapeTests'],
+        { env: testEnv })) { process.exitCode = 1; break; }
+    }
+
+    // BOTH halves, because the probe drops a directory missing either and the count it checks itself
+    // against shrinks with it.
+    const usable = (dir) => fs.existsSync(path.join(dir, 'init.mp4'))
+      && fs.readdirSync(dir).some((f) => f.startsWith('seg') && f.endsWith('.m4s'));
+    const cases = [['ordinary', real], ['spill', spill]].filter(([, dir]) => fs.existsSync(dir) && usable(dir));
+    if (cases.length === 0) { console.error('no artifacts to append — run with --run.'); process.exitCode = 1; break; }
+    // 🔴 Say which shapes are going in, and name the missing one. A verdict listing a single case reads as
+    // "the tier passed" unless the absence is stated beside it.
+    console.log(`appending: ${cases.map(([label]) => label).join(', ')}`);
+    if (cases.length < 2) {
+      console.log('  (the multi-fragment SPILL shape was NOT checked — re-run with --run to produce it)');
+    }
+
+    const env = { ...process.env, SHENORA_SAMPLE_MSE_DIRS: cases.map(([l, d]) => `${l}=${d}`).join(';') };
+    const app = spawn('dotnet', ['run', '--project', config.sampleProject], {
+      cwd: repo, env, shell: false, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    // ⚠ KILL THE TREE, BY PID. `dotnet run` launches the sample as a CHILD, so killing the parent alone
+    // leaves a window open; and killing by NAME is what once took out 38 unrelated processes.
+    const stop = () => { try { spawnSync('taskkill', ['/PID', String(app.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* already gone */ } };
+
+    const verdict = await new Promise((resolve) => {
+      let buffer = '';
+      const timer = setTimeout(() => resolve(null), 180_000);   // a cold `dotnet run` builds first
+      const read = (chunk) => {
+        buffer += chunk.toString();
+        const hit = buffer.split('\n').find((line) => line.startsWith('SEGMENT MSE:'));
+        if (hit) { clearTimeout(timer); resolve(hit.trim()); }
+      };
+      app.stdout.on('data', read);
+      app.stderr.on('data', read);
+      app.on('exit', () => { clearTimeout(timer); resolve(buffer.split('\n').find((l) => l.startsWith('SEGMENT MSE:'))?.trim() ?? null); });
+    });
+    stop();
+
+    if (verdict === null) {
+      console.error('media-mse FAILED — the sample never printed a verdict (it may not have reached the page).');
+      process.exitCode = 1;
+      break;
+    }
+    console.log(verdict);
+    if (!verdict.includes('PASS')) { process.exitCode = 1; break; }
+    process.exitCode = 0;
+    break;
+  }
+
   // Drive Shenora.IO's staged updater over a REAL directory tree. NOT part of `verify`: it publishes
   // the sample (slow) and the point is a tree with real build shape, which `verify` has no reason to
   // produce on every run. Run it before trusting an update-stage change, and hand the command to an
@@ -1520,7 +1589,8 @@ switch (cmd) {
     console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|reserved-paths|install-hooks>');
     console.log('  release        : retired-audit <prev-tag>   (account for every public REMOVAL)');
     console.log('                   namespace-moves <prev-tag> (old FQN -> new FQN, for the migration notes)');
-    console.log('  probes         : update-probe [dir] | android-jdk | media-decode [--run] (needs ffmpeg)');
+    console.log('  probes         : update-probe [dir] | android-jdk');
+    console.log('  media          : media-decode [--run] (ffmpeg) | media-mse [--run] (runs the desktop sample)');
     console.log('  prose review (never gates, triage by hand): stale-scan | cite-scan | self-rename-scan | decision-audit | name-scope');
     console.log('  doc shape      : doc-shape [--check]        (verify runs --check: self-narration FAILS, the D-entry line cap WARNS)');
   console.log('  decisions      : decisions-index [--check]  (regenerate DECISIONS.md\'s opening list from its own entries)');
