@@ -47,6 +47,19 @@ the alternative was believed and turned out wrong.
   - **An unfiltered log tail is ~99 % platform chatter**, so "no output" and "the line scrolled past" look
     identical.
 
+- 🔴 **A CACHED ARTEFACT MAKES A RUN LOOK LIKE IT PROVED SOMETHING IT DID NOT.** The segment cache lives in
+  the app container and SURVIVES a relaunch, so a probe that reports a perfect verdict may be serving what
+  an earlier run produced — including a run whose log you never captured. Hit 2026-08-23 verifying the
+  multi-fragment segment: `appendedSegments=1/1`, `buffered=0.00-25.00`, a 1080p frame — and the engine
+  had not run at all.
+  - **The tell is a TIME that is too good.** `tSeg0=66` ms for an 80 MB segment is not production, it is a
+    file read. A verdict with no matching engine lines beside it is the same signal.
+  - **Invalidate rather than delete**: `DerivedCacheKey` is identity+length+**mtime**, so `touch` the source
+    and re-copy it — no need to reach into the container. The run then genuinely produces, and the log line
+    you came for appears.
+  - ⚠ **Ask what the run should have PRINTED, not only what it returned.** Both halves belong in the same
+    run; a verdict from one launch and a log line from another is two runs wearing one conclusion.
+
 - 🔴 **An iOS link error naming the SDK's OWN symbols usually means STALE `obj/`, not a broken SDK — and
   `dotnet workload repair` is not the fix.** Measured 2026-08-08. The simulator build failed with
   `Undefined symbols for architecture x86_64: "_xamarin_gc_pump", referenced from xamarin_setup_impl() in

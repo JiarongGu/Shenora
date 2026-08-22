@@ -48,13 +48,14 @@ SPILLS rather than republishing the segment it is already filling. Both shapes a
 that mattered, since `Flush`/`Publish` sit in the writer every shell shares. What is below is what that run
 did NOT answer.
 
-- [ ] 🔴 **The MULTI-FRAGMENT shape is still desktop-only, and getting it onto a device needs a DECISION
-  first.** Desktop appends it from artifacts the suite produced (`spill=0.167-20.167`); a device cannot, and
-  the three ways in are all unattractive: ship a DERIVED artifact as a sample resource (goes stale silently
-  when the writer changes), include a gitignored directory conditionally at build time (the sample then
-  behaves differently depending on what is on disk), or make `MaxPendingBytes` reachable (product surface
-  bought for a test — the thing the desktop probe's own remarks argue against). ⚠ Worth deciding before
-  writing any of it.
+⚠ **The MULTI-FRAGMENT shape is PROVEN on a real iPhone — do not re-run it.** The decision this entry held
+(ship an artifact / conditional include / expose `MaxPendingBytes`) dissolved: give the device a source it
+CANNOT CUT and the real engine spills through the real path, with nothing shipped and no knob touched.
+`clip-spill.mkv` (25 s, 1 keyframe, 80,839,033 bytes) sits inside both bounds — over ~30 s the plan is
+refused as uncopyable and the run re-encodes instead; under 64 MB nothing spills. Measured on
+iPhone 17 Pro / iOS 26.6, both halves in ONE run:
+`the lead track has held 67115613 bytes … written out in parts` **and**
+`appendedSegments=1/1 | buffered=0.00-25.00 | frame=1920x1080 | tries=1`.
 - [ ] **Android has had none of this.** `dev.mjs android devices` lists nothing — the MuMu instance is not
   running, so even the ordinary re-check needs the emulator started.
 - [ ] **Decide whether the EXPERIMENTAL label comes off** (`README.md`). ⚠ An owner call, not a mechanical

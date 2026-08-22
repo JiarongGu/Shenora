@@ -414,6 +414,26 @@ scales with segment COUNT (12 against 120) and measures the probe's own loop.
 
 ⚠ Still no BEFORE number, on any machine.
 
+### The spill shape, on a real iPhone — measured 2026-08-23
+
+A source the writer cannot cut — one keyframe, 25 s, 80,839,033 bytes — makes the run exceed its memory
+bound and write the segment out in several fragments. Both halves in one run on iPhone 17 Pro / iOS 26.6:
+
+```
+segments: the lead track has held 67115613 bytes without reaching a keyframe past the
+          segment end, so this segment is being written out in parts to bound memory
+SEGMENTS[clip-spill.mkv]: segments=1 | seg0Bytes=80841341 | appendInit=ok | appendSeg0=ok
+                          appendedSegments=1/1 | buffered=0.00-25.00 | frame=1920x1080 | tries=1
+```
+
+🔴 **A `ManagedMediaSource` accepts a multi-fragment segment** — it buffers the whole 25 s and renders a
+1080p frame from it. That is the shape nothing but Chromium had ever been handed, and the one the memory
+guard produces whenever a source offers no cut point.
+
+⚠ **The bounds are what make this fixture work, and the window between them is narrow.** Over
+`MaxCopiedSegmentSeconds` (~30 s) the plan is refused as uncopyable and the run RE-ENCODES instead — a
+different path; under `MaxPendingBytes` (64 MB) nothing spills at all.
+
 ## What IS proven, and how
 
 The pump, the cutting and the fragment bytes are unit-tested against a FAKE `IMediaStreamConversion`, which
