@@ -53,16 +53,44 @@ The bridge-tag check is proven BOTH ways on BOTH shells now — `ServeDocumentFr
 well as an env var, since `adb` cannot pass one. Android: tagged → `client READY`, untagged → the warning
 with zero handshakes.
 
-### 🔄 THE BUNDLE-UPDATE ANSWER IS BUILT BUT HAS NEVER RUN IN AN APP
+### 🔴 `shenora copy`'s VERSION STAMP CANNOT BE READ ON ANDROID — the name has a leading dot
 
-`ResourcePackJournal` + `shenora copy`'s version stamp answer the adopter's report; `docs/guides/mobile.md`
-carries the three-trap masking order. Unit tests cover the ordering with a fresh journal per simulated start.
+Filed by the adopter on 2026-08-23, having adopted 0.14.0 the day it shipped. **A dot-prefixed `MauiAsset`
+never reaches an Android app.** Measured in ONE build, both spellings written side by side into
+`Resources/Raw/wwwroot` — which is the layout `docs/guides/mobile.md` and `cli.test.ts:1044` both use:
 
-- [ ] **Run it in a real shell, once.** ⚠ A reload cannot test any of it — the pack is chosen once per
-  process, so the unit of test is a force-stop and relaunch, which is also why an adopter can carry the
-  defect for months without seeing it.
-- [ ] **Ask the adopter which trap actually broke them.** The masking order is INFERENCE from a timeline
-  (0.13.0 shipped the attach warning 2026-08-21; this was filed 2026-08-22), not their account. Their logs
-  carrying `attached after its webview was already realized`, and a break dating from their attach fix rather
-  than a store release, would confirm it — otherwise it is the version comparison alone and
-  `docs/guides/mobile.md` is telling the next adopter a sequence that did not happen.
+| file | listed by `dotnet msbuild -getItem:MauiAsset` | in `obj/…/android/assets/wwwroot/` | in the signed APK |
+|---|---|---|---|
+| `probe-pack.json` | yes | **yes** | **yes** |
+| `.shenora-pack.json` (ours), `.dot-probe.json` | yes (`LogicalName wwwroot\.shenora-pack.json`) | **no** | **no** |
+
+So the drop is in the Android asset staging, downstream of the project, and **MSBuild listing the item is
+not evidence that it ships**. The consequence is the whole point of 0.14.0 going quiet on the platform that
+has app stores: `PackagedVersionIn` answers null, `Open()` REFUSES a blank, and the adopter is back to
+having nothing to compare. It fails in the safe direction and says nothing.
+
+- [ ] **Decide the fix.** Renaming `StampFileName` is a break for anyone already stamped (nobody yet, most
+  likely — 0.14.0 is a day old); writing BOTH names is ugly but non-breaking; documenting it in the guide is
+  the floor. ⚠ Whatever is chosen, `ResourcePackStampTests` pins the CLI↔C# agreement and would need to move
+  with it. The adopter shipped `shenora-pack.json` (no dot, same bytes) and reads it themselves — they
+  cannot use `PackagedVersionIn` anyway, since a MAUI packaged bundle is a set of app-package assets rather
+  than a directory. **That is arguably a second gap**: the helper only serves apps whose packaged bundle is
+  on the filesystem.
+- [ ] **iOS is unmeasured.** BundleResource, not `assets/` — a different packaging path, so the table above
+  says nothing about it in either direction.
+
+✅ **The other two open items here are ANSWERED — by the adopter, 2026-08-23. Deleted rather than ticked
+(per the rule at the top); what they leave behind is this:**
+- **It has now run in a real shell**, across force-stop + relaunch cycles on Android: no pack · a staged
+  pack DROPPED for a newer packaged one (their emulator produced that case by accident, carrying a real
+  stale bundle from a previous session) · a newer staged pack still served · a pending pack served once
+  with the attempt persisted first, then rolled back when it never confirmed, its predecessor intact ·
+  a pending pack confirmed and promoted. Their hand-written record migrated into the journal untouched —
+  it happened to have the same `Active`/`Pending`/`Attempts` shape.
+- **The masking order is CONFIRMED, not merely inferred.** Their late-attach bug was real and did exactly
+  what the guide claims: a deliberately broken bundle "confirmed" while the packaged client was what was
+  really running. They hit traps 1 and 2 live on 2026-08-21 and fixed both in one slice; trap 3 was never
+  hit in production, because they have not shipped through a store yet — it was found by their owner asking
+  how a store update would ever arrive. So the guide's sequence is right, with one refinement worth making:
+  **trap 3 is the one an adopter meets LAST and cannot meet at all before their first store release**, which
+  is precisely why it needs to be a mechanism rather than a warning.
