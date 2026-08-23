@@ -82,6 +82,30 @@ works after one. Two defects the run found are fixed and re-measured.
   rotation is genuinely wanted. Two calls, both platforms, no policy — the app decides WHEN. **The last of
   the three, and the only one that is purely an enhancement.**
 
+### 🔴 `MobileAppLifecycle` RAISES NOTHING ON ANDROID — measured by the adopter on 0.15.0
+
+The reporter, the module and the events all work; the MAUI wiring does not. `MobileAppLifecycle` subscribes
+`Window.Stopped`/`Window.Resumed`, and on Android those **do not fire** — so an app that follows
+`docs/guides/mobile.md` exactly (`AddShenoraAppLifecycle()` in `MauiProgram`, `new MobileAppLifecycle(Window,
+…)` in the page) gets a service that resolves, a module that answers, and **no event, ever**. Silent in the
+worst way, and it is the case your own backlog lists as unproven.
+
+**Ruled out first, in this order, because each would have been the likelier bug:**
+- the page never constructed it — it logs on both branches now, and logged the success one;
+- the app never actually backgrounded — `topResumedActivity` became the launcher and came back;
+- the page missed the frame — a page-side probe counted `SHENORA.LIFECYCLE` frames directly: **zero**;
+- the emulator swallows the transition — the SAME emulator, an hour earlier, ran an `Activity.OnResume`
+  override of the adopter's reliably.
+
+Driving `AppLifecycle.ReportStopped()`/`ReportResumed()` from `MainActivity.OnPause`/`OnResume` instead
+produces **exactly one** frame per background-and-return, which is the pairing your own note asks for.
+
+- [ ] **Wire it from the activity on Android** (`ActivityLifecycleCallbacks`, or the same two overrides in
+  a `MauiAppCompatActivity` base). ⚠ Whatever lands, say in the guide which one an adopter is expected to
+  own — the current pair reads as complete and is not.
+  ⚠ **iOS is unmeasured**: `Window.Stopped`/`Resumed` may well fire there, so this may be Android-only —
+  which would make it worse rather than better, since the guide would then be right on one face.
+
 ### 📱 THE STAMP FIX IS BUILT — one leg of it still needs the Mac
 
 The name lost its dot and `PackagedVersionIn` gained a `Stream` overload (`CHANGELOG.md`'s `## Unreleased`
