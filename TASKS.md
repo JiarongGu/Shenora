@@ -15,15 +15,16 @@ is where it lives.
 ⚠ **Length is now measured too** — `doc-shape` WARNS past 120 lines, which every one of those six cleared by
 60+. A crude proxy for a judgement no script can make, and the only signal the marker check cannot miss.
 
-**Status: v0.14.0 is PUBLISHED and VERIFIED LIVE** — all 5 NuGet packages plus `@shenora/react` and
-`@shenora/cli` answer 0.14.0, checked against the registries rather than the tree. Tag `v0.14.0`, release
-commit `8864990`. ⚠ **A partial read is validation lag, not a half-landed release** — npm is usually
-immediate and NuGet takes a minute or two; re-check, never re-push.
-It carried the segment tier's foreign-muxer corpus and the data-loss fix that corpus found (a source with
-no cut point kept only its last few seconds), the bundle-update answer (`ResourcePackJournal` + `shenora
-copy`'s version stamp), and the bridge-tag check reading disk-served documents. **Not breaking**: 0
-removals, 0 new `required` on a shipped type, 0 namespace moves.
-⚠ `src/Directory.Build.props` must now stay at `0.14.0`: the release workflow owns the bump, and a
+**Status: v0.15.0 is PUBLISHED and VERIFIED LIVE** — all 5 NuGet packages plus `@shenora/react` and
+`@shenora/cli` answer 0.15.0, checked against the registries rather than the tree, all seven on the first
+read. Tag `v0.15.0`, release commit `e87119e`. ⚠ **A partial read is validation lag, not a half-landed
+release** — npm is usually immediate and NuGet takes a minute or two; re-check, never re-push.
+It carried the Android **system back gesture** (D79) and the **foreground report** carrying how long the
+app was away, the version stamp that could never ship on Android (a leading dot is discarded by
+`AndroidComputeResPaths`), `PackagedVersionIn(Stream)` for a bundle that is not a directory, and
+`WebViewFiles.ServeRange` made public. **A MINOR, not a patch**: one `### Breaking` (the stamp rename,
+whose old side shipped in 0.14.0) plus four `### Added`, and 349 → 358 public types.
+⚠ `src/Directory.Build.props` must now stay at `0.15.0`: the release workflow owns the bump, and a
 hand-bump moves the baseline and skips a release (`release-discipline.md`).
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This is the maintainer's remaining work,
