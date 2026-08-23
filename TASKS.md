@@ -15,12 +15,13 @@ is where it lives.
 ⚠ **Length is now measured too** — `doc-shape` WARNS past 120 lines, which every one of those six cleared by
 60+. A crude proxy for a judgement no script can make, and the only signal the marker check cannot miss.
 
-**Status: v0.16.0 is PUBLISHED** — tag `v0.16.0`, release commit `f61d410`, `origin == local`.
-`@shenora/react` and `@shenora/cli` answer 0.16.0 against npm; **the five NuGet packages were still
-serving 0.15.0 minutes later**, which is the validation lag every release since 0.11.0 has shown, not a
-half-landed publish: the workflow creates the tag only after every publish succeeds, and it publishes
-NuGet BEFORE npm. **Re-check, never re-push** — nuget.org never deletes a version and a re-push cannot
-fix a CDN.
+**Status: v0.16.0 is PUBLISHED and VERIFIED LIVE** — all 5 NuGet packages plus `@shenora/react` and
+`@shenora/cli` answer 0.16.0, checked against the registries rather than the tree. Tag `v0.16.0`, release
+commit `f61d410`, `origin == local`.
+⚠ **It took three reads over ~3 minutes, and that is normal**: npm was immediate, four NuGet packages
+flipped after a minute and `Shenora.iOS` a minute behind them — exactly 0.13.0's pattern. **A partial read
+is validation lag, not a half-landed release** (the workflow tags only after every publish succeeds, and
+publishes NuGet BEFORE npm). Re-check, never re-push.
 It carried **window orientation** (the last Capacitor-parity primitive), the notification path's own
 report of what it accepted/filtered/dropped/delivered, and the Android recreation crash — a font-scale
 change killed the app 8 times in 10 before, 0 in 10 after, and it needs no adopter action. **A MINOR, not
