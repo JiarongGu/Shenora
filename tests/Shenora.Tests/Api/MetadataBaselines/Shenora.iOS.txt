@@ -1,3 +1,6 @@
+Shenora.Mobile.MobileAppLifecycle
+  method .ctor
+  method Dispose
 Shenora.Mobile.MobileBackNavigation
   method .ctor
   method Attach

@@ -117,6 +117,16 @@ Android's system back, offered to the page before the platform finishes the acti
 | `BackNavigation.InterceptType` | `INTERCEPT` | Route: the page takes or releases responsibility for back. |
 | `BackNavigation.ResolveType` | `RESOLVE` | Route: the page answers one press. |
 
+## App lifecycle
+
+The app leaving and re-entering the foreground, with how long it was away — the one thing a throttled page cannot time itself.
+
+| Constant | Value | |
+|---|---|---|
+| `AppLifecycle.Module` | `SHENORA.LIFECYCLE` | The module these events are published under. |
+| `AppLifecycle.StoppedType` | `STOPPED` | Event: the app left the foreground. |
+| `AppLifecycle.ResumedType` | `RESUMED` | Event: the app came back, carrying an AppLifecycleReport. |
+
 ## Clipboard routes
 
 The page's access to the native clipboard — the capability D53 added for what React cannot reach.

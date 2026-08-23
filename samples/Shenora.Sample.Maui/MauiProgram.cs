@@ -112,6 +112,9 @@ public static class MauiProgram
 		// the page's INTERCEPT would be accepted while no press ever arrived, which is the D63 shape
 		// where absent is indistinguishable from working.
 		shenora.Services.AddShenoraBackNavigation();
+		// Foreground transitions, and how long the app was away. Same PAIR shape: MainPage constructs the
+		// MobileAppLifecycle that reports them, or this publishes nothing and a page waits for ever.
+		shenora.Services.AddShenoraAppLifecycle();
 		// Mobile-only, and the reason is measured: `mac safari-eval` cannot be installed on this build Mac
 		// and WebKit does not forward a page's console.log to the unified log, so this is the only way page
 		// state arrives as TEXT rather than as pixels. See PageDiagModule.

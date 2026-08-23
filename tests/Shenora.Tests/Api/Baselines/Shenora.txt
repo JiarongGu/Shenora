@@ -4,6 +4,8 @@ static class Shenora.AppCallback
   public static T RunOrDefault<T>(System.Func<T> work, T fallback, System.Action<System.Exception>? onError = null)
   public static bool Run(System.Action work, System.Action<System.Exception>? onError = null)
   public static void Log(Microsoft.Extensions.Logging.ILogger? sink, System.Func<string> message, Microsoft.Extensions.Logging.LogLevel? level = null, System.Exception? exception = null)
+static class Shenora.AppLifecycleServiceCollectionExtensions
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraAppLifecycle(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
 static class Shenora.AppRootArgument
   public const string Flag = "--app-root"
   public static string Resolve(string[]? args, string fallback)
@@ -1721,6 +1723,24 @@ sealed class Shenora.Modules.Platform.Activities.Text : Shenora.Modules.Platform
   public const Shenora.Modules.Platform.Activities.TextRole Headline = 0
   public const Shenora.Modules.Platform.Activities.TextRole Value = 3
   public int value__
+sealed class Shenora.Modules.Platform.AppLifecycle
+  public .ctor(Shenora.Core.Events.IEventBus events, Microsoft.Extensions.Logging.ILogger? log = null)
+  public const string Module = "SHENORA.LIFECYCLE"
+  public const string ResumedType = "RESUMED"
+  public const string StoppedType = "STOPPED"
+  public void ReportResumed()
+  public void ReportStopped()
+sealed class Shenora.Modules.Platform.AppLifecycleReport : System.IEquatable<Shenora.Modules.Platform.AppLifecycleReport>
+  public .ctor(double? BackgroundMilliseconds)
+  public Shenora.Modules.Platform.AppLifecycleReport <Clone>$()
+  public bool Equals(Shenora.Modules.Platform.AppLifecycleReport? other)
+  public double? BackgroundMilliseconds { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Modules.Platform.AppLifecycleReport? left, Shenora.Modules.Platform.AppLifecycleReport? right)
+  public static bool op_Inequality(Shenora.Modules.Platform.AppLifecycleReport? left, Shenora.Modules.Platform.AppLifecycleReport? right)
+  public void Deconstruct(out double? BackgroundMilliseconds)
 sealed class Shenora.Modules.Platform.BackNavigation : System.IDisposable
   public .ctor(Shenora.Core.Events.IEventBus events, Shenora.Modules.Platform.BackNavigationOptions? options = null, Microsoft.Extensions.Logging.ILogger? log = null)
   public System.Threading.Tasks.Task<bool> PressAsync(System.Threading.CancellationToken cancellationToken = default)
@@ -1730,6 +1750,7 @@ sealed class Shenora.Modules.Platform.BackNavigation : System.IDisposable
   public const string Module = "SHENORA.BACK"
   public const string PressedType = "PRESSED"
   public const string ResolveType = "RESOLVE"
+  public event System.EventHandler InterceptingChanged
   public void Dispose()
   public void SetIntercepting(bool enabled)
 sealed class Shenora.Modules.Platform.BackNavigationEvent : System.IEquatable<Shenora.Modules.Platform.BackNavigationEvent>

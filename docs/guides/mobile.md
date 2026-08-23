@@ -217,10 +217,52 @@ then goes to the platform, so a page that stops answering does not freeze back �
 quitting the app. `useBackNavigation` does the answering, the subscription and the release on unmount for
 you, which matters because each of those is its own way back to that.
 
-⚠ **Re-attach after a recreation.** A configuration change builds a new activity with a new dispatcher, and
-the callback is registered at runtime rather than restored from saved state — so it stays on the dead one
-and back quietly reverts to the default. `Attach()` is idempotent; calling it wherever you build the page
-is the simplest correct thing.
+⚠ **Recreation is handled for you.** A configuration change builds a new activity with a new dispatcher,
+and the callback is registered at runtime rather than restored from saved state — so it would otherwise
+stay on the dead one and back would quietly revert to the default. `MobileBackNavigation` watches the
+platform's own activity-state signal and re-attaches itself, the way `MobileSafeArea` re-attaches off
+`HandlerChanged`. `Attach()` stays public and idempotent for the case the kit cannot see.
+
+⚠ **Several components may intercept at once** — `useBackNavigation` asks the most recently mounted
+handler first, so a modal gets the press before the player behind it, and tells the host once however
+many are listening. **But a NAVIGATION that replaces the document does not reset anything**: the host
+gets no document-lifecycle signal, so a new page that does not re-register leaves the old interception
+standing and every press waits the full timeout before reaching the platform.
+
+### Coming back from the background — ask HOW LONG, not whether
+
+🔴 **For "am I on screen", use `document.visibilitychange`.** It fires on both shells and it is the web
+platform's own answer; anything the kit published would arrive later and over IPC, for no gain. Reach for
+`useAppLifecycle` only for the two things a hidden document genuinely cannot know:
+
+1. **How long it was away, on a clock that was not throttled.** A backgrounded page's timers are throttled
+   and its process may be frozen outright, so a `Date.now()` delta taken across the gap is unreliable —
+   and the duration is what the decision actually turns on.
+2. **That this was the user leaving the APP**, rather than anything else that can hide a document.
+
+```csharp
+shenora.Services.AddShenoraAppLifecycle();                       // MauiProgram
+_lifecycle = new MobileAppLifecycle(Window, services.GetRequiredService<AppLifecycle>());  // the page
+```
+
+```tsx
+useAppLifecycle({
+  onResumed: ({ backgroundMilliseconds }) => {
+    // Three seconds in the notification shade costs nothing; forty minutes means the socket is dead.
+    if (backgroundMilliseconds === null || backgroundMilliseconds > 30_000) reconnect();
+  },
+});
+```
+
+🔴 **`null` is not `0`.** Null means there was nothing to measure — a first launch, or a shell that
+reported only the resume. A page that treats it as "away for no time" skips its reconnect exactly once, at
+startup, which is the one moment its socket certainly does not exist yet.
+
+⚠ **`Stopped`/`Resumed`, not `Deactivated`/`Activated`** — the same choice `docs/guides/media.md` makes for
+the background transfer, for the same reason: the latter pair also fires for a dialog or the notification
+shade, so an app would reconnect every time a permission prompt appeared. And **MAUI's `Window` is
+process-scoped**, so dispose the reporter on unload or the next page attaches a second one and every
+transition is reported twice.
 
 ### ⚠ A server-backed app on a MAUI shell: the page's ORIGIN is not what you expect, and it costs a day
 

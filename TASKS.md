@@ -53,28 +53,35 @@ The bridge-tag check is proven BOTH ways on BOTH shells now — `ServeDocumentFr
 well as an env var, since `adb` cannot pass one. Android: tagged → `client READY`, untagged → the warning
 with zero handshakes.
 
-### 📱 THREE SHELL PRIMITIVES AN ADOPTER CANNOT LEAVE CAPACITOR WITHOUT
+### 📱 THE CAPACITOR-PARITY PRIMITIVES — two of three built, both owed a device run
 
-Filed 2026-08-23 by the adopter now retiring Capacitor in favour of this kit's mobile shell. Their audit of
-what still keeps that dependency alive found **one app-level gap (an SMB client — theirs, not the kit's)** and
-**three shell primitives the kit does not offer at all**, each of which Capacitor gives away in a plugin and
-each of which is a WINDOW/SHELL concern rather than an app one. Measured against 0.14.0's source, not assumed:
-`grep -rl "BackPressed\|BackButton" src/` finds nothing, and `MobileWindowLifecycle` answers only
-`IsRecreating`.
+Filed 2026-08-23 by the adopter retiring Capacitor in favour of this kit's mobile shell. Their audit found
+**one app-level gap (an SMB client — theirs, not the kit's)** and three shell primitives, each a WINDOW/SHELL
+concern rather than an app one.
 
-**The BACK BUTTON is BUILT** (D79, owner picked it as the one to do first — the other two are enhancements,
-back is the one whose absence quits the app). Still owed to hardware, below.
+**BUILT: the back gesture (D79) and the foreground/resume report.** Orientation is the only one left, and it
+is the only one that was ever merely an enhancement.
+⚠ **Resume deliberately does NOT duplicate `document.visibilitychange`**, which already fires on both shells
+— it reports the one thing a throttled, possibly frozen page cannot measure: **how long it was away**. If a
+future session is tempted to add a visibility event, that is the reason not to.
 
-- [ ] **Run the back gesture on a device.** The ordering is covered by 15 tests with no device, but the
-  PLATFORM leg is compile-proven only: the `OnBackPressedDispatcher` callback firing, the disable-and-reissue
-  when the page declines, and the re-attach after a configuration change. ⚠ **The re-issue is the one to
-  watch** — if `OnBackPressed()` re-enters our own callback instead of falling through, back becomes a loop
-  rather than an exit, and nothing on Windows can show that.
+- [ ] **Run the back gesture on a device.** The ordering has tests with no device; the PLATFORM leg is
+  compile-proven only. The sample page now intercepts and answers (a budget of 2 HANDLED presses, then it
+  declines), which is what makes the run mean anything — without a page that intercepts, `Intercepting`
+  stays false and only the fast path is reachable. **What to check, in order:** two presses stay in the app
+  and log `BACK: press … handled=true`; the third leaves it. Then a configuration change (rotate, or change
+  font scale) and repeat — that exercises the self-driven re-attach onto the new activity.
+  ⚠ **NOT the re-issue loop** — that was reasoned through and is not a risk: `OnBackPressedDispatcher`
+  picks the first ENABLED callback, and ours is disabled while it re-issues. **The unmeasured claim is the
+  predictive-back one**: the callback is now enabled only while a page intercepts, specifically so an app
+  that never intercepts keeps Android 16's predictive back gesture. Worth confirming on the glass.
+- [ ] **Run the foreground/resume report on a device too.** Same gap as the back gesture: the arithmetic
+  has tests, the MAUI `Window.Stopped`/`Resumed` wiring has none. ⚠ **What to actually check is the PAIRING**
+  — an Android background that stops and resumes once should produce ONE duration, and the process-scoped
+  `Window` makes a doubled subscription the easy mistake.
 - [ ] **Screen orientation.** Lock to portrait, and unlock/relock around a full-screen media viewer where
-  rotation is genuinely wanted. Two calls, both platforms, no policy — the app decides WHEN.
-- [ ] **Foreground/resume, surfaced to the page.** After a background the websocket may be dead and the
-  paired server may have come or gone; their client reconnects and re-probes on resume. `MobileWindowLifecycle`
-  cannot answer this — it is about teardown, not activation.
+  rotation is genuinely wanted. Two calls, both platforms, no policy — the app decides WHEN. **The last of
+  the three, and the only one that is purely an enhancement.**
 
 ### 📱 THE STAMP FIX IS BUILT — one leg of it still needs the Mac
 

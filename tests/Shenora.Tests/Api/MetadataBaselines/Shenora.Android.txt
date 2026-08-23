@@ -45,6 +45,9 @@ Shenora.Android.AndroidPlaybackSession
   property SessionToken
   property SkipInterval
   property Supported
+Shenora.Mobile.MobileAppLifecycle
+  method .ctor
+  method Dispose
 Shenora.Mobile.MobileBackNavigation
   method .ctor
   method Attach

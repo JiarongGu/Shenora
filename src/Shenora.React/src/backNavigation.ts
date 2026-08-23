@@ -55,8 +55,8 @@ interface BackRequests {
  * Typed client for the host's `SHENORA.BACK` module (`BackNavigationModule`).
  *
  * ⚠ On a shell with no system back gesture — iOS, desktop — {@link intercept} is accepted and no press
- * ever arrives, because there is nothing to intercept. That is indistinguishable from a broken handler,
- * so branch on {@link useBackNavigation}'s `supported` rather than calling blind.
+ * ever arrives, because there is nothing to intercept. Harmless, but indistinguishable from a broken
+ * handler, so use {@link useBackNavigation}'s `supported` to decide what to RENDER.
  */
 export class BackNavigationAccess extends BaseModuleService<BackRequests> {
   constructor(bridge?: ShenoraBridge) {
@@ -114,6 +114,14 @@ export interface BackNavigationHandle {
  *
  * ⚠ A THROWING handler answers `false`, so a bug in your own code leaves the user able to leave rather
  * than trapping them in an app whose back button does nothing.
+ *
+ * ⚠ **Several components may use this at once**, which is the layered case above: the most recently
+ * mounted handler is asked FIRST — a modal before the player behind it — and the first to return `true`
+ * claims the press. The host is told once, however many components are listening.
+ *
+ * ⚠ **Ask again after a navigation that replaces the document.** The host has no document-lifecycle
+ * signal to reset on, so a new page that does not re-register leaves the old interception standing and
+ * every press waits the full timeout before reaching the platform.
  */
 export function useBackNavigation(
   onBack: () => boolean | Promise<boolean>,
@@ -131,39 +139,106 @@ export function useBackNavigation(
   const handler = useRef(onBack);
   handler.current = onBack;
 
-  useEffect(() => {
-    if (!supported) return;
-    let live = true;
+  // 🔴 INTERCEPT UNLESS THE SHELL IS KNOWN NOT TO HAVE IT — never "only when known to have it".
+  // `useShellInfo` is a synchronous cache read that does NOT re-render when the handshake lands later,
+  // and child effects run before parent effects — so a page that calls `notifyReady()` from a root
+  // effect mounts every child while `shell` is still undefined. Gating on `supported` there would
+  // silently never intercept, for the whole session, and back would quit the app from every screen:
+  // the exact defect this hook exists to prevent, arriving from the most ordinary bootstrap. Asking to
+  // intercept on a shell that turns out to have no back gesture costs nothing — no press ever arrives.
+  const declined = shell !== undefined && !supported;
 
-    // ⚠ `.catch`, not `void`. These are fire-and-forget housekeeping, and there is one moment when
-    // they reliably reject: a host that has gone away — which is exactly when a page unmounts. A
-    // floating rejection there surfaces as an unhandled promise rejection in the adopter's console,
-    // blaming the kit for a teardown that went fine.
-    back.intercept(true).catch(() => {});
-    const unsubscribe = eventBus.subscribe<BackNavigationEvent>(BACK_MODULE, BACK_PRESSED, async (message) => {
-      const token = message.payload?.token;
-      if (!live || typeof token !== 'string') return;
-      let handled = false;
+  useEffect(() => {
+    if (declined) return;
+    return register(back, eventBus, handler);
+  }, [back, eventBus, declined, handler]);
+
+  return { back, supported };
+}
+
+/**
+ * The live handlers, newest LAST — module scope on purpose.
+ *
+ * 🔴 **Two components may use the hook at once, and that is the shape D79 describes** ("close the
+ * expanded player, then walk the history"). Per-component `intercept(true)/(false)` calls would make
+ * the *first* unmount switch interception off for everyone still mounted, and back would quit the app
+ * with every remaining handler still subscribed and looking healthy. So the host is told once, on
+ * 0→1, and told again only on 1→0.
+ */
+const handlers: Array<{ current: () => boolean | Promise<boolean> }> = [];
+let release: (() => void) | undefined;
+
+function register(
+  back: BackNavigationAccess,
+  eventBus: ShenoraEventBus,
+  handler: { current: () => boolean | Promise<boolean> },
+): () => void {
+  handlers.push(handler);
+  if (handlers.length === 1) release = subscribe(back, eventBus);
+
+  return () => {
+    const at = handlers.indexOf(handler);
+    if (at >= 0) handlers.splice(at, 1);
+    if (handlers.length === 0) {
+      release?.();
+      release = undefined;
+    }
+  };
+}
+
+function subscribe(back: BackNavigationAccess, eventBus: ShenoraEventBus): () => void {
+  // ⚠ A rejection HERE means interception was never established — the adopter did half the host-side
+  // pair, or a payload key drifted. Silence would leave `supported` true, the handlers subscribed and
+  // back quitting the app, which is the failure the kit's own registration doc lectures about. The
+  // teardown call below is the opposite case and is correctly silent.
+  back.intercept(true).catch((error: unknown) => {
+    console.warn(
+      '[shenora] the host refused to hand over the back gesture, so back will quit the app. Check that '
+        + 'the host called AddShenoraBackNavigation() AND constructed MobileBackNavigation.',
+      error,
+    );
+  });
+
+  const unsubscribe = eventBus.subscribe<BackNavigationEvent>(BACK_MODULE, BACK_PRESSED, async (message) => {
+    const token = message.payload?.token;
+    if (typeof token !== 'string') return;
+
+    // Innermost first: the most recently mounted component is the one on top of the user's screen, so
+    // a modal gets the press before the player behind it. The first to claim it wins.
+    // Snapshot: a handler may unmount another while deciding, and splicing the live array mid-walk
+    // would skip its neighbour.
+    let handled = false;
+    for (const entry of [...handlers].reverse()) {
+      if (handled) break;
       try {
-        handled = await handler.current();
+        handled = await entry.current();
       } catch {
         // Answering false is the safe direction: the user can still leave. Swallowing the press here
         // would be a back button that does nothing, which is not recoverable from the outside.
         handled = false;
       }
-      await back.resolve(token, handled).catch(() => {});
-    });
+    }
 
-    return () => {
-      live = false;
-      unsubscribe();
-      // Releasing is what stops a page that has unmounted its handler from holding every press for the
-      // host's whole timeout before the platform gets it.
-      back.intercept(false).catch(() => {});
-    };
-  }, [back, eventBus, supported]);
+    try {
+      const answer = await back.resolve(token, handled);
+      if (answer && answer.accepted === false) {
+        // The host had already given the press to the platform. Not an error — but a page seeing this
+        // is a page whose back handling is not running, and this is the only place that is visible
+        // without a device attached.
+        console.warn('[shenora] a back press was answered too late — the platform already took it.');
+      }
+    } catch {
+      // The host went away mid-answer; the press is the platform's now, which is the safe direction.
+    }
+  });
 
-  return { back, supported };
+  return () => {
+    unsubscribe();
+    // Releasing is what stops a page whose handlers have all unmounted from holding every press for
+    // the host's whole timeout before the platform gets it. Silent: the one moment this reliably
+    // rejects is a host that has already gone, which is exactly when a page unmounts.
+    back.intercept(false).catch(() => {});
+  };
 }
 
 let shared: BackNavigationAccess | undefined;

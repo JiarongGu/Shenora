@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configureBridge } from './bridge.js';
 import { ShenoraEventBus } from './eventBus.js';
 import { FakeTransport } from './testing/fakeTransport.js';
@@ -126,6 +126,64 @@ describe('useBackNavigation', () => {
       const resolve = transport.posted.find((r) => r.type === 'RESOLVE');
       expect(resolve?.payload).toEqual({ token: 'b3', handled: true });
     });
+  });
+
+  it('INTERCEPTS EVEN IF IT MOUNTS BEFORE THE HANDSHAKE', async () => {
+    // 🔴 The defect this replaced. `useShellInfo` is a synchronous cache read that never re-renders
+    // when the handshake lands later, and child effects run before parent effects — so a page calling
+    // notifyReady() from a root effect mounts every child while the shell is still unknown. Gating on
+    // "known to support it" meant never intercepting, for the whole session, and back quitting the app
+    // from every screen. Unknown must behave like supported; only a KNOWN "no" declines.
+    const transport = new FakeTransport();
+    transport.autoAck = true;
+    const bus = new ShenoraEventBus();
+    configureBridge({ transport, eventBus: bus });   // no handshake at all
+
+    const view = renderHook(() => useBackNavigation(() => true, { eventBus: bus }));
+
+    await waitFor(() => expect(transport.routes()).toContain('INTERCEPT'));
+    // The page still learns the honest answer for RENDERING — it just does not gate the handover on it.
+    expect(view.result.current.supported).toBe(false);
+    view.unmount();
+  });
+
+  it('tells the host ONCE for two components, and keeps intercepting until BOTH are gone', async () => {
+    // 🔴 Per-component intercept calls made the FIRST unmount switch interception off for everyone
+    // still mounted — so back quit the app with a healthy-looking handler still subscribed. That is the
+    // layered case D79's own rationale describes (a modal over an expanded player).
+    const { transport, bus } = await fixture();
+    const outer = renderHook(() => useBackNavigation(() => false, { eventBus: bus }));
+    const inner = renderHook(() => useBackNavigation(() => true, { eventBus: bus }));
+    await waitFor(() => expect(transport.routes()).toContain('INTERCEPT'));
+
+    expect(transport.posted.filter((r) => r.type === 'INTERCEPT')).toHaveLength(1);
+
+    inner.unmount();
+    await press(bus, 'b1');
+    // Still intercepting: the outer handler answers, and nothing was released.
+    await waitFor(() => {
+      const resolve = transport.posted.find((r) => r.type === 'RESOLVE');
+      expect(resolve?.payload).toEqual({ token: 'b1', handled: false });
+    });
+    expect(transport.posted.filter((r) => r.type === 'INTERCEPT')).toHaveLength(1);
+
+    outer.unmount();
+    await waitFor(() => expect(transport.posted.at(-1)?.payload).toEqual({ enabled: false }));
+  });
+
+  it('asks the INNERMOST handler first and stops at the one that claims the press', async () => {
+    const { transport, bus } = await fixture();
+    const outerSeen = vi.fn(() => false);
+    const innerSeen = vi.fn(() => true);
+    renderHook(() => useBackNavigation(outerSeen, { eventBus: bus }));
+    renderHook(() => useBackNavigation(innerSeen, { eventBus: bus }));
+    await waitFor(() => expect(transport.routes()).toContain('INTERCEPT'));
+
+    await press(bus, 'b1');
+
+    await waitFor(() => expect(innerSeen).toHaveBeenCalled());
+    // The modal claimed it, so the player behind it is never asked.
+    expect(outerSeen).not.toHaveBeenCalled();
   });
 
   it('does NOTHING on a shell with no back gesture', async () => {

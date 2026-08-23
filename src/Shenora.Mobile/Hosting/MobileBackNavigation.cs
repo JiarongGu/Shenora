@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.ApplicationModel;
 using Shenora.Modules.Platform;
 
 namespace Shenora.Mobile;
@@ -15,11 +16,21 @@ namespace Shenora.Mobile;
 /// </para>
 /// </summary>
 /// <remarks>
-/// ⚠ <b>The press is SYNCHRONOUS and the page's answer is not</b>, which is the whole difficulty and the
-/// reason this is not three lines. Android calls the callback on the UI thread and takes its return as
-/// the decision, so there is nowhere to await a round trip to the page. The escape is to consume the
-/// press with an ENABLED callback, ask, and — if the page declines — disable the callback and re-issue
-/// <c>OnBackPressed()</c>, which now falls through to whatever would have happened.
+/// 🔴 <b>THE CALLBACK IS ENABLED ONLY WHILE A PAGE IS ACTUALLY INTERCEPTING</b>, tracked off
+/// <see cref="BackNavigation.InterceptingChanged"/>. An always-enabled callback would be simpler and is
+/// wrong twice: every press would enter managed code and re-enter the dispatcher to fall through, and —
+/// worse — an enabled <c>OnBackPressedCallback</c> that is not an animation callback tells Android the
+/// app handles back, which SUPPRESSES the predictive-back gesture app-wide on an API 33+ target. Off,
+/// the platform never calls us at all, which is what makes "an app that never intercepts pays nothing"
+/// literally true instead of nearly true.
+/// <para>
+/// ⚠ <b>The press is SYNCHRONOUS and the page's answer is not.</b> Android calls
+/// <c>HandleOnBackPressed</c> on the UI thread and takes no return value — the decision is
+/// <c>isEnabled()</c>, which is exactly why this toggles it. So there is nowhere to await a round trip:
+/// the enabled callback CONSUMES the press, asks the page, and on a decline disables itself and
+/// re-issues <c>OnBackPressed()</c>, which then falls through to the next enabled callback or to the
+/// activity's own behaviour. It cannot re-enter this one, because this one is disabled while it runs.
+/// </para>
 /// </remarks>
 public sealed class MobileBackNavigation : IDisposable
 {
@@ -33,6 +44,16 @@ public sealed class MobileBackNavigation : IDisposable
     {
         _back = back ?? throw new ArgumentNullException(nameof(back));
         _log = log;
+
+        _back.InterceptingChanged += OnInterceptingChanged;
+#if ANDROID
+        // 🔴 SELF-DRIVEN, because a configuration change builds a NEW activity with a new dispatcher and
+        // the callback is registered at runtime rather than restored from saved state — so it would stay
+        // on the dead one and back would silently revert to the platform default. Asking the adopter to
+        // re-attach is a rule where a mechanism exists; `MobileSafeArea` re-attaches itself off
+        // `HandlerChanged` for the same reason.
+        Platform.ActivityStateChanged += OnActivityStateChanged;
+#endif
         Attach();
     }
 
@@ -49,57 +70,89 @@ public sealed class MobileBackNavigation : IDisposable
 #endif
 
     /// <summary>
-    /// Re-attach to the CURRENT activity. Call after a recreation.
+    /// Attach to the CURRENT activity, replacing any previous attachment. Idempotent.
     /// <para>
-    /// 🔴 An Android configuration change destroys the activity and builds a new one, with a new
-    /// dispatcher — and unlike an activity RESULT, a back callback is not restored from saved state
-    /// (there is none to restore; it is registered at runtime). So the callback lives on the dead
-    /// activity and back silently reverts to the platform default. This is idempotent, so calling it on
-    /// every start is the simplest correct thing.
+    /// ⚠ Called for you — on construction and again whenever the platform reports a new activity — so an
+    /// app normally never needs this. It stays public for the case the kit cannot see: an activity this
+    /// object was built before.
     /// </para>
     /// </summary>
     public void Attach()
     {
         if (_disposed) return;
 #if ANDROID
-        var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
+        var activity = Platform.CurrentActivity;
         if (activity is not AndroidX.Activity.ComponentActivity component)
         {
-            // MauiAppCompatActivity IS a ComponentActivity, so this means the activity is not up yet.
-            Log("back: no current activity to attach to yet — call Attach() again once one exists.");
+            // MauiAppCompatActivity IS a ComponentActivity, so this means no activity is up yet — which
+            // is normal during startup, and the state hook above will bring us back.
+            Log("back: no current activity yet — will attach when one appears.");
             return;
         }
+        if (ReferenceEquals(component, _attachedTo)) return;
 
-        // Replacing rather than stacking: two live callbacks would both consume the same press and the
-        // second would never see it.
+        // Replacing rather than stacking: two live callbacks would both claim the same press.
         Detach();
-        _callback = new BackCallback(this);
+        _attachedTo = component;
+        _callback = new BackCallback(this) { Enabled = _back.Intercepting };
         component.OnBackPressedDispatcher.AddCallback(component, _callback);
-        Log("back: attached to the activity's back dispatcher");
+        Log($"back: attached to the activity's back dispatcher (enabled={_back.Intercepting})");
 #else
         Log("back: this shell has no system back gesture — nothing to attach.");
 #endif
     }
 
+    private void OnInterceptingChanged(object? sender, EventArgs e)
+    {
+#if ANDROID
+        // The coordinator is driven from the IPC dispatch thread; `Enabled` belongs to the UI thread.
+        var enabled = _back.Intercepting;
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (_disposed || _callback is null) return;
+            _callback.Enabled = enabled;
+        });
+#endif
+    }
+
 #if ANDROID
     private BackCallback? _callback;
+    private object? _attachedTo;
+
+    private void OnActivityStateChanged(object? sender, ActivityStateChangedEventArgs e)
+    {
+        // Created is too early for the dispatcher to be useful and Resumed is the first point the new
+        // activity is certainly the current one; Attach() no-ops when it is the same instance.
+        if (e.State is ActivityState.Resumed) Attach();
+    }
 
     private void Detach()
     {
         if (_callback is null) return;
-        // The activity may already be gone, and a teardown path must not throw.
-        try { _callback.Remove(); } catch (Exception) { /* already gone */ }
-        _callback.Dispose();
+        try
+        {
+            _callback.Remove();
+            // ⚠ DISPOSE ONLY AFTER A SUCCESSFUL REMOVE. If Remove throws for any reason other than
+            // "already gone", the Java dispatcher still holds this callback — and a disposed peer whose
+            // HandleOnBackPressed is then invoked throws out of a JNI-invoked override with nothing
+            // managed above it, which is the process death this file exists to avoid. Leaking a callback
+            // the platform still owns is strictly better than that.
+            _callback.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log($"back: could not remove the previous callback ({ex.GetType().Name}); leaving it undisposed.");
+        }
         _callback = null;
+        _attachedTo = null;
     }
 
     /// <summary>
-    /// The dispatcher callback. Enabled always — the coordinator's own fast path is what makes a press
-    /// cheap when no page is intercepting, and keeping this enabled means there is exactly one place
-    /// that decides.
+    /// The dispatcher callback. Enabled only while a page is intercepting — see the class remarks for
+    /// why that is not merely an optimisation.
     /// </summary>
     private sealed class BackCallback(MobileBackNavigation owner)
-        : AndroidX.Activity.OnBackPressedCallback(true)
+        : AndroidX.Activity.OnBackPressedCallback(false)
     {
         public override void HandleOnBackPressed() => owner.OnPressed(this);
     }
@@ -110,15 +163,22 @@ public sealed class MobileBackNavigation : IDisposable
         {
             if (await _back.PressAsync().ConfigureAwait(true)) return;
 
+            // 🔴 RE-CHECK AFTER THE AWAIT. The page can unload while a press is waiting — the coordinator
+            // is a DI singleton and is NOT disposed with this object, so the wait runs to its timeout and
+            // resumes here against a callback that Detach has already disposed. Touching it then throws,
+            // the catch below swallows it, and the press is never re-issued — i.e. back does NOTHING,
+            // which is the one outcome this design refuses.
+            if (_disposed || !ReferenceEquals(callback, _callback)) return;
+
             // The page declined (or nobody answered). Step out of the way and re-issue, so whatever
             // WOULD have happened still happens — another callback, the fragment stack, or finishing.
-            // ⚠ Re-enable afterwards or back is handled once and then never again.
-            var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
-            if (activity is not AndroidX.Activity.ComponentActivity component) return;
+            if (Platform.CurrentActivity is not AndroidX.Activity.ComponentActivity component) return;
 
             callback.Enabled = false;
             try { component.OnBackPressedDispatcher.OnBackPressed(); }
-            finally { callback.Enabled = true; }
+            // ⚠ Restore to what the coordinator says NOW, not unconditionally to true: the page may have
+            // released interception while this press was in flight.
+            finally { if (!_disposed) callback.Enabled = _back.Intercepting; }
         }
         catch (Exception ex)
         {
@@ -137,7 +197,9 @@ public sealed class MobileBackNavigation : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _back.InterceptingChanged -= OnInterceptingChanged;
 #if ANDROID
+        Platform.ActivityStateChanged -= OnActivityStateChanged;
         Detach();
 #endif
     }

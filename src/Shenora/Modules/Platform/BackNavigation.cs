@@ -31,18 +31,16 @@ public sealed class BackNavigationOptions
 /// </para>
 /// <para>
 /// ⚠ <b>Interception is OPT-IN, and that is load-bearing rather than tidy.</b> Until a page asks for it
-/// (<see cref="InterceptType"/>) every press takes <see cref="PressAsync"/>'s fast path and reaches the
-/// platform with no round trip and no added latency, so an app that never wanted this cannot be made
-/// worse by it being present. See <see cref="Core.Shell.ShellCapability.BackNavigation"/> for how a page
-/// learns whether the shell it is on has a back gesture at all — on iOS there is none, and asking to
-/// intercept one is answered honestly rather than accepted and silently never fired.
+/// (<see cref="InterceptType"/>) <see cref="Intercepting"/> stays false, and a shell that watches
+/// <see cref="InterceptingChanged"/> keeps its platform hook switched OFF — so the press never enters
+/// managed code at all. That is what makes "an app that never asked pays nothing" true rather than
+/// nearly true, and on Android it also leaves the platform's predictive-back gesture alone.
 /// </para>
 /// </summary>
 /// <remarks>
 /// Portable on purpose: nothing here touches a platform, so the ordering — which is the part that breaks
 /// — is testable with no device and no webview. The platform half is <c>MobileBackNavigation</c>, which
-/// is thin because everything hard lives here. Same split as
-/// <see cref="SafeAreaScript"/>/<c>MobileSafeArea</c>.
+/// is thin because everything hard lives here.
 /// </remarks>
 public sealed class BackNavigation : IDisposable
 {
@@ -87,11 +85,24 @@ public sealed class BackNavigation : IDisposable
     /// <summary>
     /// True once a page has asked to handle back, false again when it releases it or the page goes away.
     /// <para>
-    /// ⚠ A page that navigates away does NOT reset this — the shell has no way to know a new document did
-    /// not want it. A page that intercepts should ask again on load; asking twice is harmless.
+    /// 🔴 <b>A NEW DOCUMENT DOES NOT RESET THIS, and that is a real hazard rather than a note.</b> The
+    /// shell gets no document-lifecycle signal it could reset on, so after a navigation — or a reload
+    /// that lands on the platform's error page — this stays true while nothing is subscribed. Every press
+    /// then waits the full timeout before reaching the platform, so back becomes "nothing happens, then
+    /// the app quits". A page that intercepts must ask again on load; asking twice is harmless.
     /// </para>
     /// </summary>
     public bool Intercepting { get; private set; }
+
+    /// <summary>
+    /// Raised when <see cref="Intercepting"/> changes, so a shell can switch its platform hook off while
+    /// nobody is listening.
+    /// <para>
+    /// ⚠ Raised on whichever thread called <see cref="SetIntercepting"/> — the IPC dispatch thread, not
+    /// the UI thread. A handler touching platform state must marshal.
+    /// </para>
+    /// </summary>
+    public event EventHandler? InterceptingChanged;
 
     /// <summary>Take or release responsibility for back, from the page's <see cref="InterceptType"/> route.</summary>
     /// <param name="enabled">True to intercept.</param>
@@ -106,6 +117,10 @@ public sealed class BackNavigation : IDisposable
         // Releasing while a press is in flight must not strand it: the presses already asked are answered
         // NOT HANDLED, which is the same thing the page would now say.
         if (!enabled) CompleteAll(handled: false);
+
+        // ⚠ Guarded: this reaches a SHELL, and a throwing subscriber must not fault the page's route.
+        try { InterceptingChanged?.Invoke(this, EventArgs.Empty); }
+        catch (Exception ex) { Log($"back: an InterceptingChanged handler threw ({ex.GetType().Name})"); }
     }
 
     /// <summary>

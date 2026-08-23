@@ -117,6 +117,16 @@ export {
   type BackNavigationResult,
   type BackNavigationHandle,
 } from './backNavigation.js';
+// When the APP went away and came back, and how long it was gone — the part a throttled, possibly
+// frozen page cannot measure. For "am I on screen", use document.visibilitychange instead.
+export {
+  useAppLifecycle,
+  LIFECYCLE_MODULE,
+  LIFECYCLE_STOPPED,
+  LIFECYCLE_RESUMED,
+  type AppLifecycleReport,
+  type AppLifecycleHandlers,
+} from './appLifecycle.js';
 export {
   installDevInterceptor,
   type DevInterceptorOptions,

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as barrel from './index.js';
 import { isShenoraAvailable } from './index.js';
 import type {
+  AppLifecycleHandlers,
+  AppLifecycleReport,
   BackNavigationResult,
   BackNavigationHandle,
   BackNavigationEvent,
@@ -88,6 +90,9 @@ const EXPECTED_EXPORTS = [
   'IpcRequestRoutes',
   'IpcRequestStates',
   'IpcRequestsModuleName',
+  'LIFECYCLE_MODULE',
+  'LIFECYCLE_RESUMED',
+  'LIFECYCLE_STOPPED',
   // The host-owned player (D58). A WIRE contract duplicated in C# as MediaPlayerEvents — exported so an
   // adopter asserts against them rather than retyping the strings. ⚠ The conversion pair joined
   // 2026-08-18: the host published them and the docs told pages to branch on them while the client
@@ -126,6 +131,7 @@ const EXPECTED_EXPORTS = [
   'pickMediaSource',
   'remoteSegmentUrl',
   'segmentMimeType',
+  'useAppLifecycle',
   'useBackNavigation',
   'useClipboard',
   'useDropZone',
@@ -158,6 +164,7 @@ type ExportedTypeSurface = [
   CaptionButtonKind, CaptionButtonRect, DropZoneFileDrop, InvokeOptions,
   ClipboardContent, ClipboardHandle,
   BackNavigationEvent, BackNavigationResult, BackNavigationHandle,
+  AppLifecycleReport, AppLifecycleHandlers,
   FileDialogFilter, FileDialogOptions, FileDialogResult, FileDialogsHandle,
   OpenFileOptions, OpenFolderOptions, SaveFileOptions,
   IpcRequestStatus, IpcLabel, IpcProgress, IpcRequestState,

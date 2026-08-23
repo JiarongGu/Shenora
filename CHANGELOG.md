@@ -63,6 +63,30 @@ at the first list and missed five more breaking changes.
     that never comes. ⚠ **Not yet run on a device**; the ordering is covered by tests, but the platform
     leg (the dispatcher callback, the re-issue on decline, re-attach after recreation) is compile-proven
     only.
+  - **The platform hook is armed only while a page is intercepting**, off `InterceptingChanged`. An
+    always-armed callback would tell Android the app handles back, which suppresses the predictive-back
+    gesture app-wide on an API 33+ target — so an app that never intercepts would have paid for a
+    feature it did not use. Recreation is handled by the kit: it watches the activity-state signal and
+    re-attaches itself rather than asking the adopter to remember.
+  - ⚠ **`useBackNavigation` intercepts unless the shell is KNOWN to lack the gesture** — not "only when
+    known to have it". The handshake may not have landed when a child component mounts, and gating on it
+    there would silently never intercept, leaving back to quit the app. Several components may intercept
+    at once; the most recently mounted is asked first and the host is told once.
+- **Foreground transitions, with how long the app was away** — `AppLifecycle`,
+  `AddShenoraAppLifecycle()`, the shell-side `MobileAppLifecycle`, and `useAppLifecycle` in
+  `@shenora/react`. Events only; the page never calls anything.
+  - 🔴 **Deliberately NOT a visibility signal.** `document.visibilitychange` already fires on both
+    shells, so a kit event duplicating it would arrive later and over IPC for no gain. What a hidden page
+    genuinely cannot do is TIME its own absence — its timers are throttled and its process may be frozen,
+    so a `Date.now()` delta across the gap is unreliable, and the duration is what an app's decision
+    turns on. Three seconds in the notification shade needs no reconnect; forty minutes means the socket
+    is dead and whatever it was paired with may have come or gone.
+  - ⚠ **`BackgroundMilliseconds` is null, never 0, when there was nothing to measure** — a first launch,
+    or a shell that reported only the resume. Zero would be a measurement; a page treating them alike
+    skips its reconnect exactly at startup, the one moment its socket certainly does not exist.
+  - ⚠ `Stopped`/`Resumed`, not `Deactivated`/`Activated`, so a dialog or the notification shade does not
+    read as the user leaving. Dispose the reporter on unload — MAUI's `Window` is process-scoped, so a
+    second page otherwise reports every transition twice.
 - **`ResourcePackJournal.PackagedVersionIn(Stream)`** — the same answer as the directory overload, for a
   packaged bundle that is not a directory. 🔴 **On Android it never is**: the bundle is a set of app-package
   assets read through the platform's asset manager, so the path overload cannot be called there and an app

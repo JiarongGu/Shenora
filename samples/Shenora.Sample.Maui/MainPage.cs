@@ -36,6 +36,13 @@ public sealed class MainPage : ContentPage
 	private MobileBackNavigation? _back;
 
 	/// <summary>
+	/// Reports foreground transitions to the page. ⚠ Held and disposed for the same reason as the
+	/// background-transfer hooks below: MAUI's Window is PROCESS-scoped, so a subscription left attached
+	/// is joined by a second one on the next page and every transition is reported twice.
+	/// </summary>
+	private MobileAppLifecycle? _lifecycle;
+
+	/// <summary>
 	/// The background-transfer hooks, held so <see cref="OnUnloaded"/> can take them off again. MAUI's
 	/// Window outlives this page, so an anonymous subscription would survive it — see the call site.
 	/// </summary>
@@ -171,6 +178,14 @@ public sealed class MainPage : ContentPage
 		// running this again.
 		_back = new MobileBackNavigation(
 			services.GetRequiredService<BackNavigation>(), AppCallback.Logger(MauiProgram.Log));
+
+		// The lifecycle reporter's other half. ⚠ Needs the WINDOW, which exists by Loaded but not in the
+		// constructor — and the window is what the transitions come from, not this page.
+		if (Window is { } lifecycleWindow)
+		{
+			_lifecycle = new MobileAppLifecycle(
+				lifecycleWindow, services.GetRequiredService<AppLifecycle>());
+		}
 
 		// 🔴 THE BACKGROUND TRANSFER, AND IT IS THE KIT'S NOW — this sample no longer carries its own copy.
 		// Until 2026-08-12 the logic lived here as `BackgroundHandoffProbe`, which is how it was proven on
@@ -685,6 +700,8 @@ public sealed class MainPage : ContentPage
 		_media.Dispose();
 		_back?.Dispose();
 		_back = null;
+		_lifecycle?.Dispose();
+		_lifecycle = null;
 		_safeArea.Dispose();
 		_bridge?.Dispose();
 		_bridge = null;

@@ -26,13 +26,18 @@ namespace Shenora.Tests.Ipc;
 /// </summary>
 public class WireMirrorTests
 {
-    private static string ClientSource(string fileName)
+    private static string RepoRoot()
     {
         var dir = AppContext.BaseDirectory;
         while (dir is not null && !File.Exists(Path.Combine(dir, "Shenora.slnx")))
             dir = Path.GetDirectoryName(dir);
         Assert.False(dir is null, "repo root (Shenora.slnx) not found above the test output dir");
-        var path = Path.Combine(dir!, "src", "Shenora.React", "src", fileName);
+        return dir!;
+    }
+
+    private static string ClientSource(string fileName)
+    {
+        var path = Path.Combine(RepoRoot(), "src", "Shenora.React", "src", fileName);
         Assert.True(File.Exists(path), $"client source not found: {path}");
         return StripBlockComments(File.ReadAllText(path));
     }
@@ -501,6 +506,74 @@ public class WireMirrorTests
             BackNavigation.ResolveType,
         };
         Assert.Equal(hostRoutes, routes);
+    }
+
+    /// <summary>
+    /// The lifecycle MODULE and its two EVENT types. No routes at all here — the page only listens —
+    /// so the events are the entire contract, and a drifted one is a subscription that never fires.
+    /// </summary>
+    [Fact]
+    public void App_lifecycle_module_and_events_match_the_host()
+    {
+        var source = ClientSource("appLifecycle.ts");
+
+        var module = Regex.Match(source, @"LIFECYCLE_MODULE\s*=\s*'(?<module>[A-Z_.]+)'");
+        Assert.True(module.Success, "could not find the client's `LIFECYCLE_MODULE = '…'` declaration");
+        Assert.Equal(AppLifecycle.Module, module.Groups["module"].Value);
+
+        var stopped = Regex.Match(source, @"LIFECYCLE_STOPPED\s*=\s*'(?<type>[A-Z_]+)'");
+        Assert.True(stopped.Success, "could not find the client's `LIFECYCLE_STOPPED = '…'` declaration");
+        Assert.Equal(AppLifecycle.StoppedType, stopped.Groups["type"].Value);
+
+        var resumed = Regex.Match(source, @"LIFECYCLE_RESUMED\s*=\s*'(?<type>[A-Z_]+)'");
+        Assert.True(resumed.Success, "could not find the client's `LIFECYCLE_RESUMED = '…'` declaration");
+        Assert.Equal(AppLifecycle.ResumedType, resumed.Groups["type"].Value);
+    }
+
+    /// <summary>
+    /// The resume payload — one field, and the one the whole type exists to carry. A drifted NAME here
+    /// reads as "no duration reported", which the client maps to null, which a page reads as a first
+    /// launch: a silent, plausible wrong answer on every resume.
+    /// </summary>
+    [Fact]
+    public void App_lifecycle_report_mirrors_the_client()
+    {
+        AssertMirroredFields(typeof(AppLifecycleReport), "appLifecycle.ts", "AppLifecycleReport");
+    }
+
+    /// <summary>
+    /// The REQUEST payload keys — <c>enabled</c>, <c>token</c>, <c>handled</c> — which are hand-typed
+    /// literals on both sides and were the one half of this wire nothing watched.
+    /// <para>
+    /// 🔴 A drift here does not fail loudly: the host answers <c>MISSING_PAYLOAD_VALUE</c> and the
+    /// client's own housekeeping catch turns it into a warning, so interception is never established
+    /// while the page still believes it holds the back gesture — i.e. the app quits from every screen.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Back_navigation_REQUEST_payload_keys_match_the_host()
+    {
+        var source = ClientSource("backNavigation.ts");
+
+        // The client declares them once, in its request map. Read them from there rather than from the
+        // call sites, which is where they would drift.
+        var requests = Regex.Match(source, @"interface\s+BackRequests\s*\{(?<body>.*?)\}\s*\n",
+            RegexOptions.Singleline);
+        Assert.True(requests.Success, "could not find `interface BackRequests { … }`");
+
+        var keys = Regex.Matches(requests.Groups["body"].Value, @"\{(?<fields>[^}]*)\}")
+            .SelectMany(m => Regex.Matches(m.Groups["fields"].Value, @"(?<key>\w+)\s*:")
+                .Select(f => f.Groups["key"].Value))
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(keys);   // parser self-check
+
+        // The host reads exactly these three through PayloadHelper, and there is no third spelling.
+        Assert.Equal(new HashSet<string>(StringComparer.Ordinal) { "enabled", "token", "handled" }, keys);
+
+        var module = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Shenora", "Modules", "Platform",
+            "BackNavigationModule.cs"));
+        foreach (var key in keys)
+            Assert.Contains($"\"{key}\"", module, StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -47,6 +47,9 @@ const SECTIONS = [
   // event is the one whose drift is silent: a subscription to the wrong type simply never fires, which
   // is indistinguishable from a user who never pressed back.
   ['BackNavigation', 'Back gesture', 'Android\'s system back, offered to the page before the platform finishes the activity under it.'],
+  // Events only — the page never calls anything here, so the two type strings ARE the whole contract
+  // and a drifted one is a subscription that silently never fires.
+  ['AppLifecycle', 'App lifecycle', 'The app leaving and re-entering the foreground, with how long it was away — the one thing a throttled page cannot time itself.'],
   // ⚠ ADDED 2026-08-18, all long shipped and none of them published here — found by a docs audit, not
   // by this gate, which is the point of NOT_WIRE below. A page names every one of these by hand.
   ['ClipboardModule', 'Clipboard routes', 'The page\'s access to the native clipboard — the capability D53 added for what React cannot reach.'],

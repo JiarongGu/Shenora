@@ -279,6 +279,33 @@ function post(module, type, payload) {
 }
 
 /**
+ * THE BACK-GESTURE PROBE — the only thing that makes the Android back path observable on a device.
+ *
+ * 🔴 Without a page that actually intercepts, `BackNavigation.Intercepting` stays false and a device run
+ * can only ever exercise the fast path: the token round trip, the timeout fall-through and the "page
+ * handled it" branch are all unreachable, so a green run would prove nothing. That is the kit's own
+ * "absent is indistinguishable from working" failure, one level up.
+ *
+ * It answers a fixed budget of presses with HANDLED and then declines, so the sequence a human performs
+ * is: press back twice and stay in the app, press a third time and leave. Each outcome is logged with its
+ * token, so `dev.mjs android probes` can read what happened without anyone watching the glass.
+ */
+let backBudget = 2;
+
+function onBackPressed(payload) {
+  const token = payload && payload.token;
+  if (typeof token !== 'string') {
+    log('err', 'BACK: a press arrived with no token — the wire contract drifted');
+    return;
+  }
+  const handled = backBudget > 0;
+  if (handled) backBudget -= 1;
+  // ⚠ Logged BEFORE the answer, so a press that is never answered is still visible as one that arrived.
+  log('evt', `BACK: press ${token} handled=${handled} (budget left ${backBudget})`);
+  post('SHENORA.BACK', 'RESOLVE', { token, handled });
+}
+
+/**
  * The host driving this page's media element, installed further down where `vid` exists.
  *
  * ⚠ A HOLDER rather than a direct call, and the reason is this module's evaluation order: `vid` is
@@ -303,6 +330,7 @@ channel.subscribe((raw) => {
     for (const n of (msg.payload ?? [])) {
       log('evt', `<= EVENT ${n.module}/${n.type} ${n.payload ? JSON.stringify(n.payload) : ''}`);
       if (n.module === 'SHENORA.MEDIA' && playerCommand) playerCommand(n);
+      if (n.module === 'SHENORA.BACK' && n.type === 'PRESSED') onBackPressed(n.payload);
     }
     return;
   }
@@ -1057,6 +1085,12 @@ setTimeout(recheck, 250);
 
 log('t', 'page loaded — sending handshake');
 post('SHENORA', 'READY', { client: 'maui-sample' });
+
+// Take the back gesture. ⚠ Sent unconditionally rather than after reading the handshake's capability
+// list: on a shell with no back gesture nothing is ever raised, so the cost of asking is zero, while
+// waiting for the reply first is a window in which a press would quit the app. The kit's own
+// `useBackNavigation` makes the same choice for the same reason.
+post('SHENORA.BACK', 'INTERCEPT', { enabled: true });
 
 // The handshake's reply carries what the shell can do, so a real page renders its title bar and
 // drop zones from DATA rather than from a platform check. This log line stands in for that; the
