@@ -169,9 +169,15 @@ public sealed class MainPage : ContentPage
 				// ⚠ Back is declared only where it EXISTS. Advertising it on iOS would have the page
 				// intercept a gesture that is never raised there, which looks exactly like a broken
 				// handler — the honest answer is the one the page can branch on (D36).
-				Capabilities = MobileBackNavigation.IsSupported
-					? [ShellCapability.FilePicker, ShellCapability.LocalFiles, ShellCapability.BackNavigation]
-					: [ShellCapability.FilePicker, ShellCapability.LocalFiles],
+				// ⚠ Two of these are per-SHELL, from the kit's own `IsSupported`, not from an #if here:
+				// advertising a capability a shell does not have makes the page call a route that will be
+				// refused, which looks exactly like a broken handler (D36).
+				Capabilities = [
+					ShellCapability.FilePicker,
+					ShellCapability.LocalFiles,
+					.. MobileBackNavigation.IsSupported ? new[] { ShellCapability.BackNavigation } : [],
+					.. MobileWindowOrientation.IsSupported ? new[] { ShellCapability.WindowOrientation } : [],
+				],
 			},
 			// ⚠ The report is logged HERE because this is the moment the gate opens: everything emitted
 			// during host startup was buffered until now, and if any of it was dropped on the way this

@@ -65,6 +65,11 @@ Shenora.Mobile.MobileWebViewInterceptor
 Shenora.Mobile.MobileWindowLifecycle
   method ReleaseHandler
   property IsRecreating
+Shenora.Mobile.MobileWindowOrientation
+  method .ctor
+  method Lock
+  method Unlock
+  property IsSupported
 Shenora.iOS.IosFileDialogs
   method .ctor
   method SaveAsync

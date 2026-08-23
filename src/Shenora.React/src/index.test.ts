@@ -60,6 +60,7 @@ import type {
   ShenoraTransport,
   UseDropZoneOptions,
   WindowResizeEdge,
+  WindowOrientationKind,
 } from './index.js';
 
 /**
@@ -111,6 +112,7 @@ const EXPECTED_EXPORTS = [
   'ShenoraError',
   'ShenoraEventBus',
   'WindowCommands',
+  'WindowOrientation',
   'bindSegmentStream',
   'codecsFromInitSegment',
   'configureBridge',
@@ -179,6 +181,7 @@ type ExportedTypeSurface = [
   MediaPlayerReport, MediaPlayerReportState, UseMediaPlayerOptions,
   SegmentBinderOptions, SegmentBinding, SegmentEntry, SegmentManifest,
   MediaSourceKind, MediaSourceGlobals, FetchState, FetchPolicy,
+  WindowOrientationKind,
 ];
 
 describe('the public barrel', () => {

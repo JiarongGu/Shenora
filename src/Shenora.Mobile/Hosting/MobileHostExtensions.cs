@@ -73,6 +73,10 @@ public static class MobileHostExtensions
         builder.Services.TryAddSingleton<IUrlLauncher>(_ => new MobileUrlLauncher(onError));
         builder.Services.TryAddSingleton<IUiInteraction, MobileUiInteraction>();
         builder.Services.TryAddSingleton<IFileDialogs, PlatformFileDialogs>();
+        // ⚠ Registered on BOTH shells so app logic compiles either way, and it REFUSES on iOS rather than
+        // half-working — `MobileWindowOrientation.IsSupported` is what an app advertises. The page's routes
+        // are opt-in (`AddShenoraWindowOrientation`): an app that never rotates mounts nothing.
+        builder.Services.TryAddSingleton<IWindowOrientation, MobileWindowOrientation>();
         // The page's ROUTE to them (D64). ⚠ Two of the four routes are DESKTOP capabilities and refuse here
         // with CapabilityNotSupported (D35); the page asks the handshake what this shell honours (D36).
         builder.Services.AddShenoraFileDialogs();

@@ -105,6 +105,7 @@ What a host advertises in its handshake, and what a page branches on instead of 
 | `ShellCapability.BackNavigation` | `backNavigation` | The shell has a SYSTEM BACK gesture the page can take responsibility for — Android's hardware or gesture back. |
 | `ShellCapability.ClipboardFiles` | `clipboardFiles` | The host can put a FILE LIST on the clipboard, for the user to paste into a file manager — the one clipboard capability that genuinely differs by shell, since a phone's pasteboard has no file list. |
 | `ShellCapability.LocalFiles` | `localFiles` | The host can serve LOCAL FILES to the page through an IWebViewInterceptor — media, images, documents, generated exports. |
+| `ShellCapability.WindowOrientation` | `windowOrientation` | The shell can HOLD the window at an orientation — IWindowOrientation. |
 
 ## Back gesture
 
@@ -126,6 +127,16 @@ The app leaving and re-entering the foreground, with how long it was away — th
 | `AppLifecycle.Module` | `SHENORA.LIFECYCLE` | The module these events are published under. |
 | `AppLifecycle.StoppedType` | `STOPPED` | Event: the app left the foreground. |
 | `AppLifecycle.ResumedType` | `RESUMED` | Event: the app came back, carrying an AppLifecycleReport. |
+
+## Window orientation routes
+
+Holding the window portrait or landscape — the page's own screen.orientation.lock() works only in fullscreen, and not at all in WKWebView.
+
+| Constant | Value | |
+|---|---|---|
+| `WindowOrientationModule.Module` | `SHENORA.ORIENTATION` | The module name this facade answers on. |
+| `WindowOrientationModule.LockType` | `LOCK` | Route: hold the window at an orientation. |
+| `WindowOrientationModule.UnlockType` | `UNLOCK` | Route: let the platform choose again. |
 
 ## Clipboard routes
 

@@ -142,6 +142,15 @@ export const ShellCapabilities = {
    * and allowed roots are the app's, and it says nothing about the URL SCHEME.
    */
   localFiles: 'localFiles',
+  /**
+   * The shell can HOLD the window at an orientation — see `WindowOrientation`. Android only today; the
+   * desktop has nothing to hold, and iOS refuses rather than half-doing it.
+   *
+   * ⚠ Branch on it, because the page's own fallback is real but weaker: `screen.orientation.lock()` is
+   * honoured only while the document is FULLSCREEN, and not at all in WKWebView. Absent here means take
+   * fullscreen first or leave rotation alone.
+   */
+  windowOrientation: 'windowOrientation',
 } as const;
 
 /** The response envelope the host returns for an {@link IpcRequest}. */

@@ -250,6 +250,40 @@ many are listening. **But a NAVIGATION that replaces the document does not reset
 gets no document-lifecycle signal, so a new page that does not re-register leaves the old interception
 standing and every press waits the full timeout before reaching the platform.
 
+### Holding the window at an orientation — portrait everywhere except the viewer
+
+🔴 **Try `screen.orientation.lock()` first, and know why it usually will not do.** The web API is honoured
+only while the document is FULLSCREEN, and WKWebView does not implement it at all — so the common shape,
+*portrait everywhere EXCEPT a media viewer*, is exactly the one a page cannot express. The host asks the
+platform directly and has neither limitation.
+
+```csharp
+shenora.Services.AddShenoraWindowOrientation();      // MauiProgram — routes only; UseAndroid/UseIOS
+                                                    // already registered the implementation
+Capabilities = [ .. MobileWindowOrientation.IsSupported
+    ? new[] { ShellCapability.WindowOrientation } : [] ],   // advertise it where it exists
+```
+
+```tsx
+const orientation = new WindowOrientation();
+useEffect(() => {
+  if (!capabilities.includes('windowOrientation')) return;   // iOS and desktop: leave rotation alone
+  void orientation.lock('landscape');
+  return () => { void orientation.unlock(); };
+}, []);
+```
+
+⚠ **`unlock()` hands the decision back; it does not rotate.** Measured on an API 36 emulator: a page
+released from a landscape lock still read `915×412` a second later and `412×915` by six seconds. Lay out
+from the resize, never from the call returning.
+⚠ **Android holds the FAMILY, not an edge** — `SensorPortrait`, so a phone held upside down is still
+portrait rather than 180° off.
+🔴 **iOS REFUSES rather than half-working, and that is deliberate.** `requestGeometryUpdate` rotates the
+window but the root view controller still reports the orientations it supports, so the next device
+rotation undoes it — a request, not a lock. Shipping that behind the same method would be an API that
+compiles on both shells and silently means something weaker on one (D39). The capability is absent
+there; branch on it.
+
 ### Coming back from the background — ask HOW LONG, not whether
 
 🔴 **For "am I on screen", use `document.visibilitychange`.** It fires on both shells and it is the web

@@ -50,6 +50,9 @@ const SECTIONS = [
   // Events only — the page never calls anything here, so the two type strings ARE the whole contract
   // and a drifted one is a subscription that silently never fires.
   ['AppLifecycle', 'App lifecycle', 'The app leaving and re-entering the foreground, with how long it was away — the one thing a throttled page cannot time itself.'],
+  // Two routes and a payload KEY, all hand-typed page-side. The enum's own wire values are mirrored by
+  // WireMirrorTests rather than published here: they are the values of a payload, not constants.
+  ['WindowOrientationModule', 'Window orientation routes', 'Holding the window portrait or landscape — the page\'s own screen.orientation.lock() works only in fullscreen, and not at all in WKWebView.'],
   // ⚠ ADDED 2026-08-18, all long shipped and none of them published here — found by a docs audit, not
   // by this gate, which is the point of NOT_WIRE below. A page names every one of these by hand.
   ['ClipboardModule', 'Clipboard routes', 'The page\'s access to the native clipboard — the capability D53 added for what React cannot reach.'],

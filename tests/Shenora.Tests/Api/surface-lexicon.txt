@@ -98,6 +98,13 @@ Back
 # microphone, geolocation or the clipboard. Same reasoning as Auth and Certificate above: the mechanism
 # is the browser's, and every synonym ("access", "grant") is vaguer for no benefit.
 Permission
+# `IWindowOrientation` / `WindowOrientation` — which way up the app's window is allowed to be. Platform
+# geometry, not domain: Android calls it `RequestedOrientation`, iOS `interfaceOrientation`, and the web
+# `screen.orientation`, so all three name it the same thing and every paraphrase is worse ("Rotation" is
+# the DISPLAY's angle, which is a different quantity; "Layout" is the page's own business). It is here
+# because the mechanism is genuinely one a shell owns and a page cannot reach — the web API works only
+# in fullscreen and not at all in WKWebView.
+Orientation
 Shell
 Ui
 Url

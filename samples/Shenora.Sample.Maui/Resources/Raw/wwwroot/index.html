@@ -1101,11 +1101,50 @@ window.addEventListener('HybridWebViewMessageReceived', function shellProbe(e) {
   try {
     const msg = JSON.parse(e.detail.message);
     if (msg.category === 'ipc' && msg.id === 'c1' && msg.data) {
-      log('t', `shell: ${msg.data.name} · capabilities: [${(msg.data.capabilities ?? []).join(', ')}]`);
+      const capabilities = msg.data.capabilities ?? [];
+      log('t', `shell: ${msg.data.name} · capabilities: [${capabilities.join(', ')}]`);
       window.removeEventListener('HybridWebViewMessageReceived', shellProbe);
+      probeOrientation(capabilities);
     }
   } catch { /* not ours */ }
 });
+
+/**
+ * THE ORIENTATION PROBE — the only thing that makes the lock observable without a human watching the
+ * glass. It reads the VIEWPORT, which is the consequence a page actually cares about: a lock the host
+ * accepted and the window ignored is indistinguishable from a working one if you only read the reply.
+ *
+ * ⚠ It branches on the CAPABILITY, so a shell without one reports SKIPPED rather than a failure — a
+ * refusal is the correct answer there, and a probe that could not tell the two apart would report a
+ * defect on iOS for ever.
+ */
+function probeOrientation(capabilities) {
+  const shape = () => `${window.innerWidth}x${window.innerHeight}`;
+  if (!capabilities.includes('windowOrientation')) {
+    log('t', `ORIENTATION: SKIPPED — this shell does not advertise it (viewport ${shape()})`);
+    return;
+  }
+  const before = shape();
+  post('SHENORA.ORIENTATION', 'LOCK', { orientation: 'landscape' });
+  // The rotation is a platform animation, so give it a beat before reading — and read TWICE, because
+  // "it never rotated" and "we looked too early" produce the same number.
+  window.setTimeout(() => {
+    // ⚠ Judged from the shape measured WHILE LOCKED, not from whatever the viewport is by the time the
+    // verdict is written — the unlock below can rotate it back before this line is logged.
+    const wide = window.innerWidth > window.innerHeight;
+    const locked = shape();
+    post('SHENORA.ORIENTATION', 'UNLOCK');
+    window.setTimeout(() => {
+      const released = shape();
+      // ⚠ A SECOND reading, several seconds later. "Unlock" hands the decision back to the platform —
+      // which is not the same as rotating back, and one early read cannot tell those apart.
+      window.setTimeout(() => {
+        log('t', `ORIENTATION: before=${before} locked=${locked} released=${released} `
+          + `settled=${shape()} landscapeWhileLocked=${wide ? 'PASS' : 'FAIL'}`);
+      }, 5000);
+    }, 1200);
+  }, 1200);
+}
 </script>
 </body>
 </html>

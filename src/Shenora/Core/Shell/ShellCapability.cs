@@ -78,6 +78,17 @@ public static class ShellCapability
     public const string LocalFiles = "localFiles";
 
     /// <summary>
+    /// The shell can HOLD the window at an orientation — <see cref="IWindowOrientation"/>.
+    /// <para>
+    /// 🔴 <b>Branch on it, because the page's own fallback is real but weaker.</b>
+    /// <c>screen.orientation.lock()</c> works in a page only while the document is FULLSCREEN, and not at
+    /// all in WKWebView — so a page that finds this absent should either take fullscreen first or leave
+    /// rotation alone, rather than calling a route that will be refused.
+    /// </para>
+    /// </summary>
+    public const string WindowOrientation = "windowOrientation";
+
+    /// <summary>
     /// The exception an unsupported capability throws. <paramref name="capability"/> is what the caller
     /// asked for, <paramref name="shell"/> is the host that cannot do it, and
     /// <paramref name="alternative"/> — when there is one — is what to do instead.

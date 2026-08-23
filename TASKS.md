@@ -65,9 +65,12 @@ both run on hardware; orientation is the only one that was ever merely an enhanc
 — it reports the one thing a throttled, possibly frozen page cannot measure: **how long it was away**. If a
 future session is tempted to add a visibility event, that is the reason not to.
 
-- [ ] **Screen orientation.** Lock to portrait, and unlock/relock around a full-screen media viewer where
-  rotation is genuinely wanted. Two calls, both platforms, no policy — the app decides WHEN. **The last of
-  the three, and the only one that is purely an enhancement.**
+- [ ] **Orientation on iOS.** Android holds it (`IWindowOrientation`, measured: the page's viewport goes
+  `412×915` → `915×412` under a landscape lock); iOS REFUSES rather than half-working, because
+  `requestGeometryUpdate` rotates the window while the root view controller still decides what it
+  supports — so the next device rotation undoes it (D39: an API that compiles on both shells and means
+  something weaker on one). **What it needs is a view-controller hook**, which means a MAUI handler
+  override and a Mac to prove it on. Until then the capability is honestly absent there.
 
 ### 🟡 `MobileAppLifecycle` "raises nothing on Android" — DID NOT REPRODUCE ON EITHER EMULATOR
 

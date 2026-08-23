@@ -32,6 +32,19 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **Hold the window at an orientation** — `IWindowOrientation` (`Lock(WindowOrientation)` / `Unlock()`),
+  the `SHENORA.ORIENTATION` routes behind `AddShenoraWindowOrientation()`, `MobileWindowOrientation`, and
+  `WindowOrientation` in `@shenora/react`. 🔴 **A page cannot do this itself:**
+  `screen.orientation.lock()` is honoured only while the document is FULLSCREEN and WKWebView does not
+  implement it at all, so *portrait everywhere except the media viewer* — the shape apps actually want —
+  is exactly what the web API cannot express. Two calls and no state: there is deliberately no "what is
+  it now" route, because the page already knows and an IPC answer would arrive later.
+  ✅ **Measured on an API 36 emulator**: the page's viewport went `412×915` → `915×412` under a landscape
+  lock and back to `412×915` after unlocking. ⚠ `Unlock()` hands the decision back rather than rotating —
+  the same run still read `915×412` a second after unlocking and `412×915` by six. ⚠ **iOS REFUSES**
+  (`CAPABILITY_NOT_SUPPORTED`) instead of half-working: `requestGeometryUpdate` rotates the window but the
+  root view controller still decides what it supports, so the next device rotation undoes it (D39).
+  Advertised as `ShellCapability.WindowOrientation` only where it is real.
 - **`NotificationPump.Report()`, surfaced as `NotificationReport` on both bridges — the answer to "my
   page receives no events".** Requests and notifications travel different paths, so a module answering
   proves nothing about events, and every way the pump could lose one was SILENT: from the page,

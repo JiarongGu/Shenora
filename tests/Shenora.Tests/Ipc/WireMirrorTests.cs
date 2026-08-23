@@ -588,6 +588,78 @@ public class WireMirrorTests
     }
 
     /// <summary>
+    /// The orientation MODULE, ROUTES, the one payload KEY, and — the part with no analogue elsewhere in
+    /// this file — the ENUM's wire values.
+    /// <para>
+    /// 🔴 <b>The enum is the half that drifts silently.</b> The host reads the value as
+    /// <see cref="Shenora.Core.Shell.WindowOrientation"/>, whose wire form is its member names camelCased by
+    /// <c>IpcJson</c>'s converter, and the client hand-writes them as a string union. Rename a member and
+    /// the route answers <c>INVALID_PAYLOAD_VALUE</c> for a call the page believes it made correctly —
+    /// and the app simply does not rotate, which is what a page with no capability looks like.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Window_orientation_module_routes_key_and_ENUM_VALUES_match_the_host()
+    {
+        var source = ClientSource("windowOrientation.ts");
+
+        var module = Regex.Match(source, @"super\('(?<module>[A-Z_.]+)'");
+        Assert.True(module.Success, "could not find the WindowOrientation `super('MODULE'` call");
+        Assert.Equal(WindowOrientationModule.Module, module.Groups["module"].Value);
+
+        var routes = Regex.Matches(source, @"\.send(?:<[^>]*>)?\('(?<route>[A-Z_]+)'")
+            .Select(m => m.Groups["route"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(routes);    // parser self-check
+        Assert.Equal(
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                WindowOrientationModule.LockType,
+                WindowOrientationModule.UnlockType,
+            },
+            routes);
+
+        // The payload key, declared once in the client's request map rather than at the call site.
+        var requests = Regex.Match(source, @"interface\s+WindowOrientationRequests\s*\{(?<body>.*?)\}\s*\n",
+            RegexOptions.Singleline);
+        Assert.True(requests.Success, "could not find `interface WindowOrientationRequests { … }`");
+        var keys = Regex.Matches(requests.Groups["body"].Value, @"\{(?<fields>[^}]*)\}")
+            .SelectMany(m => Regex.Matches(m.Groups["fields"].Value, @"(?<key>\w+)\s*:")
+                .Select(f => f.Groups["key"].Value))
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(new HashSet<string>(StringComparer.Ordinal) { "orientation" }, keys);
+
+        // …and the host really reads that spelling. An inline literal like the back module's, so the
+        // assertion is on the module's own text rather than on a constant that could drift from it.
+        var hostSource = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Shenora", "Modules", "Platform",
+            "WindowOrientationModule.cs"));
+        foreach (var key in keys) Assert.Contains($"\"{key}\"", hostSource, StringComparison.Ordinal);
+
+        // The enum's wire values against the client's union. camelCase because that is what IpcJson's
+        // JsonStringEnumConverter writes and reads — asserted rather than assumed, so a change to those
+        // options lands here instead of on a device.
+        var union = Regex.Match(source, @"WindowOrientationKind\s*=\s*(?<union>[^;]+);");
+        Assert.True(union.Success, "could not find the client's `WindowOrientationKind = …` union");
+        var clientValues = Regex.Matches(union.Groups["union"].Value, @"'(?<value>[a-zA-Z]+)'")
+            .Select(m => m.Groups["value"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(clientValues);   // parser self-check
+
+        var hostValues = Enum.GetNames<Shenora.Core.Shell.WindowOrientation>()
+            .Select(name => JsonNamingPolicy.CamelCase.ConvertName(name))
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(hostValues, clientValues);
+
+        // And the round trip itself, because the two sets agreeing as TEXT is not the same as the
+        // serializer accepting them — the LiveActivity mirror learned that the hard way.
+        foreach (var value in clientValues)
+        {
+            var parsed = JsonSerializer.Deserialize<Shenora.Core.Shell.WindowOrientation>($"\"{value}\"", IpcJson.Options);
+            Assert.Equal(value, JsonNamingPolicy.CamelCase.ConvertName(parsed.ToString()));
+        }
+    }
+
+    /// <summary>
     /// The clipboard MODULE and ROUTE strings, read from the client's actual <c>send()</c> calls — same
     /// shape and same reasoning as the file-dialog pin above.
     /// </summary>

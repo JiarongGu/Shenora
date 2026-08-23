@@ -355,6 +355,9 @@ interface Shenora.Core.Shell.IUiInteraction
   public abstract void UnblockInteraction()
 interface Shenora.Core.Shell.IUrlLauncher
   public abstract void OpenUrl(string url)
+interface Shenora.Core.Shell.IWindowOrientation
+  public abstract void Lock(Shenora.Core.Shell.WindowOrientation orientation)
+  public abstract void Unlock()
 static class Shenora.Core.Shell.ShellCapability
   public const string BackNavigation = "backNavigation"
   public const string ClipboardFiles = "clipboardFiles"
@@ -366,6 +369,7 @@ static class Shenora.Core.Shell.ShellCapability
   public const string SecondaryWindows = "secondaryWindows"
   public const string Tray = "tray"
   public const string WindowChrome = "windowChrome"
+  public const string WindowOrientation = "windowOrientation"
   public static System.NotSupportedException NotSupported(string capability, string shell, string? alternative = null)
 abstract class Shenora.Core.Shell.UiDispatcherBase : Shenora.Core.Shell.IUiDispatcher
   protected .ctor(System.Action<System.Exception>? onPostFailure = null)
@@ -383,6 +387,10 @@ enum Shenora.Core.Shell.UiTargetState (int)
   public const Shenora.Core.Shell.UiTargetState Gone = 2
   public const Shenora.Core.Shell.UiTargetState NotReady = 0
   public const Shenora.Core.Shell.UiTargetState Ready = 1
+  public int value__
+enum Shenora.Core.Shell.WindowOrientation (int)
+  public const Shenora.Core.Shell.WindowOrientation Landscape = 1
+  public const Shenora.Core.Shell.WindowOrientation Portrait = 0
   public int value__
 interface Shenora.Core.WebView.IWebViewInterceptor
   public abstract Shenora.Core.WebView.WebViewRangeDelivery RangeDelivery { get; }
@@ -1929,6 +1937,13 @@ sealed class Shenora.Modules.Platform.SafeAreaOptions
 static class Shenora.Modules.Platform.SafeAreaScript
   public const string DeliveredMarker = "shenora-safe-area"
   public static string Build(Shenora.Modules.Platform.SafeAreaOptions options, Shenora.Modules.Platform.SafeAreaInsets? insets = null)
+sealed class Shenora.Modules.Platform.WindowOrientationModule : Shenora.Core.Ipc.ModuleBase
+  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
+  public .ctor(Shenora.Core.Shell.IWindowOrientation orientation, Microsoft.Extensions.Logging.ILogger<Shenora.Modules.Platform.WindowOrientationModule>? logger = null)
+  public const string LockType = "LOCK"
+  public const string Module = "SHENORA.ORIENTATION"
+  public const string UnlockType = "UNLOCK"
+  public override string ModuleName { get; }
 sealed class Shenora.Modules.Requests.IpcRequestsModule : Shenora.Core.Ipc.ModuleBase
   protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   public .ctor(Shenora.Core.Ipc.IIpcRequestTracker tracker, Shenora.Core.Ipc.IpcRequestTrackerOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Modules.Requests.IpcRequestsModule>? logger = null)
@@ -1993,3 +2008,5 @@ sealed class Shenora.ShenoraPathsOptions : System.IEquatable<Shenora.ShenoraPath
   public string? DataEnvironmentVariable { get; init; }
   public string? ExplicitRoot { get; init; }
   public string? RootEnvironmentVariable { get; init; }
+static class Shenora.WindowOrientationServiceCollectionExtensions
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraWindowOrientation(Microsoft.Extensions.DependencyInjection.IServiceCollection services)

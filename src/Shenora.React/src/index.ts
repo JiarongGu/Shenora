@@ -72,6 +72,10 @@ export {
   type CaptionButtonRect,
 } from './windowCommands.js';
 export {
+  WindowOrientation,
+  type WindowOrientationKind,
+} from './windowOrientation.js';
+export {
   useDropZone,
   DROP_ZONE_MODULE,
   type DropZoneFileDrop,

@@ -119,6 +119,10 @@ public static class MauiProgram
 		// Foreground transitions, and how long the app was away. Same PAIR shape: MainPage constructs the
 		// MobileAppLifecycle that reports them, or this publishes nothing and a page waits for ever.
 		shenora.Services.AddShenoraAppLifecycle(AppCallback.Logger(Log));
+		// Holding the window at an orientation. ⚠ Unlike the pair above there is NO page-side half to
+		// construct — the shell's implementation comes from UseAndroid/UseIOS — but the capability must
+		// still be advertised, which MainPage does from MobileWindowOrientation.IsSupported.
+		shenora.Services.AddShenoraWindowOrientation();
 		// Mobile-only, and the reason is measured: `mac safari-eval` cannot be installed on this build Mac
 		// and WebKit does not forward a page's console.log to the unified log, so this is the only way page
 		// state arrives as TEXT rather than as pixels. See PageDiagModule.

@@ -32,6 +32,61 @@ public interface IUiInteraction
 }
 
 /// <summary>
+/// Which way up the app's window is allowed to be.
+/// </summary>
+/// <remarks>
+/// 🔴 <b>A page cannot do this, which is the whole reason it is here.</b> The web's
+/// <c>screen.orientation.lock()</c> requires the document to be FULLSCREEN, so a page can hold an
+/// orientation only while it has taken over the display — and WKWebView does not implement it at all. The
+/// platform call has no such condition.
+/// <para>
+/// ⚠ <b>Mechanism, not policy: the app decides WHEN.</b> The kit never locks anything by itself, and
+/// there is deliberately no "current orientation" here — the page reads that perfectly well
+/// (<c>screen.orientation</c>, a CSS media query), and duplicating it over IPC would only arrive later.
+/// </para>
+/// <para>
+/// ⚠ Throws <see cref="NotSupportedException"/> (via <see cref="ShellCapability.NotSupported"/>) on a
+/// shell with no expression for it. Branch on <see cref="ShellCapability.WindowOrientation"/> rather
+/// than calling and catching.
+/// </para>
+/// </remarks>
+public interface IWindowOrientation
+{
+    /// <summary>
+    /// Hold the window at <paramref name="orientation"/> until <see cref="Unlock"/>. Idempotent, and
+    /// locking to a different orientation replaces the previous lock rather than stacking.
+    /// </summary>
+    void Lock(WindowOrientation orientation);
+
+    /// <summary>
+    /// Let the platform choose again — whatever the device's own rotation setting says. Idempotent, and
+    /// unlocking without a lock is not an error.
+    /// <para>
+    /// ⚠ <b>It hands the decision back; it does not rotate.</b> The window stays where the lock left it
+    /// until the platform re-evaluates, which is not immediate — measured on an API 36 emulator, a page
+    /// released from a landscape lock still read 915×412 a second later and 412×915 by six seconds. A
+    /// page that re-lays out on `unlock` returning has laid out for the wrong shape; listen for the
+    /// resize instead.
+    /// </para>
+    /// </summary>
+    void Unlock();
+}
+
+/// <summary>
+/// The orientations a window can be held at. Deliberately the two an app actually asks for: a specific
+/// EDGE (which way up, which side) is a device-rotation detail an app has no reason to dictate, and every
+/// platform expresses "portrait" and "landscape" as a family rather than a single angle.
+/// </summary>
+public enum WindowOrientation
+{
+    /// <summary>Taller than wide, either way up.</summary>
+    Portrait,
+
+    /// <summary>Wider than tall, either way round.</summary>
+    Landscape,
+}
+
+/// <summary>
 /// Clipboard access. Fully portable — every host has a clipboard. The desktop implementation runs each
 /// operation on a dedicated STA thread.
 /// </summary>
