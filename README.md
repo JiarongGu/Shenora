@@ -18,7 +18,7 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.14.0 — pre-release, stabilising toward 1.0.** The page-facing clipboard (`useClipboard()` over an
+**v0.15.0 — pre-release, stabilising toward 1.0.** The page-facing clipboard (`useClipboard()` over an
 opt-in `SHENORA.CLIPBOARD` module — reading with no user gesture, and an app's own format carried
 verbatim, neither of which the browser's Clipboard API can do), the segment/streaming media tier, and
 the browser sessions' hook + event catalogue are the newest arrivals.
