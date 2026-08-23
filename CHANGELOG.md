@@ -72,6 +72,14 @@ at the first list and missed five more breaking changes.
   MEASURED back-gesture case, where the identical rebuild put three callbacks on one dispatcher, not
   observed here on the lifecycle path. The newest reporter now displaces the incumbent, and a repeat that
   still arrives is dropped rather than published.
+- **0.15.0's justification for arming the back callback only while a page intercepts was WRONG in the
+  shipped XML.** It said an enabled `OnBackPressedCallback` suppresses the predictive-back gesture
+  app-wide on an API 33+ target. Measured on API 36 instead: androidx registers its dispatcher with the
+  framework as an ANIMATION callback, so arming ours keeps the gesture — one registration with
+  `mIsAnimationCallback=true` while the page intercepts, and none at all when it never does, which is an
+  A/B rather than a coincidence of timing. The arming logic stays, on its other and sufficient reason:
+  an always-enabled callback routes every press through managed code to fall through. ⚠ Corrected in
+  place; 0.15.0's released entry keeps what it published.
 - **`MobileAppLifecycle`'s XML said `Window.Resumed` maps to Android's `onResume`.** It is raised from the
   activity's START — measured by ordering against `Platform.ActivityStateChanged`, where the window's
   event precedes `ActivityState.Started`.

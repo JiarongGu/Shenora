@@ -17,12 +17,21 @@ namespace Shenora.Mobile;
 /// </summary>
 /// <remarks>
 /// 🔴 <b>THE CALLBACK IS ENABLED ONLY WHILE A PAGE IS ACTUALLY INTERCEPTING</b>, tracked off
-/// <see cref="BackNavigation.InterceptingChanged"/>. An always-enabled callback would be simpler and is
-/// wrong twice: every press would enter managed code and re-enter the dispatcher to fall through, and —
-/// worse — an enabled <c>OnBackPressedCallback</c> that is not an animation callback tells Android the
-/// app handles back, which SUPPRESSES the predictive-back gesture app-wide on an API 33+ target. Off,
-/// the platform never calls us at all, which is what makes "an app that never intercepts pays nothing"
-/// literally true instead of nearly true.
+/// <see cref="BackNavigation.InterceptingChanged"/>. An always-enabled callback would be simpler and
+/// wrong: every press would enter managed code and re-enter the dispatcher to fall through, so an app
+/// that never intercepts would pay for a feature it does not use. Off, the platform never calls us at
+/// all, which is what makes "an app that never intercepts pays nothing" literally true instead of
+/// nearly true.
+/// <para>
+/// ⚠ <b>It does NOT cost the predictive-back gesture, and the opposite was claimed here until it was
+/// measured.</b> androidx registers its dispatcher with the framework as an ANIMATION callback, so
+/// arming ours keeps the platform's gesture rather than suppressing it: on API 36, with the page
+/// intercepting, the system logged one registration with <c>mIsAnimationCallback=true</c>, and with the
+/// page never intercepting, none — an A/B, so the registration is attributable to us. ⚠ That is the
+/// framework's own record of the REGISTRATION; nothing here has watched the animation on the glass.
+/// This type forwards no in-app progress (<c>handleOnBackStarted</c> and friends are not overridden),
+/// so what survives is the SYSTEM's animation, not a page-drawn one.
+/// </para>
 /// <para>
 /// ⚠ <b>The press is SYNCHRONOUS and the page's answer is not.</b> Android calls
 /// <c>HandleOnBackPressed</c> on the UI thread and takes no return value — the decision is

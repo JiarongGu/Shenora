@@ -65,9 +65,6 @@ both run on hardware; orientation is the only one that was ever merely an enhanc
 — it reports the one thing a throttled, possibly frozen page cannot measure: **how long it was away**. If a
 future session is tempted to add a visibility event, that is the reason not to.
 
-- [ ] **Predictive back still needs API 33+.** The callback is armed only while a page intercepts,
-  specifically so an app that never intercepts keeps the gesture, and that remains reasoned rather than
-  measured — MuMu is API 32.
 - [ ] **Screen orientation.** Lock to portrait, and unlock/relock around a full-screen media viewer where
   rotation is genuinely wanted. Two calls, both platforms, no policy — the app decides WHEN. **The last of
   the three, and the only one that is purely an enhancement.**

@@ -11,6 +11,41 @@ when a task matches; a measurement that lived beside them read as a law and was 
 probe chose a fixture from an iPhone 17 Pro table and lost a round trip to it — so treat a figure as
 evidence to re-check, never as a promise the platform makes.
 
+## Measured platform facts — THE BACK GESTURE AND WINDOW RECREATION (2026-08-23, API 36 AVD)
+
+Both were shipped in 0.15.0 with a reasoned justification. One held; one was the opposite of the truth.
+
+**Arming the back callback does NOT cost the predictive-back gesture.** The shipped XML said an enabled
+`OnBackPressedCallback` suppresses it app-wide on an API 33+ target. What the framework logs
+(`CoreBackPreview`, `system_server`) instead:
+
+| the page | registrations with `mIsAnimationCallback=true` |
+|---|---|
+| intercepts (our callback enabled) | **1**, ~0.3 s after the enable |
+| never intercepts | **0** |
+
+androidx registers its dispatcher as an ANIMATION callback, so the platform's gesture survives. ⚠ This is
+the framework's record of a REGISTRATION, not the animation on the glass — and `MobileBackNavigation`
+overrides no `handleOnBackStarted`, so what survives is the SYSTEM animation, never a page-drawn one.
+The A/B is what attributes the registration to us: timing alone would not, because the app already
+registers two non-animation callbacks (`mPriority=-1` and `0`) before our callback attaches at all.
+
+**A configuration change killed the app 8 times in 10** before `MobileWindowLifecycle.ReleaseHandler`
+existed — one font-scale change per trial, `ObjectDisposedException` on the `IServiceProvider` out of
+MAUI's `MauiHybridWebViewClient.ShouldInterceptRequest`.
+
+| arm (10 trials each) | crashes |
+|---|---|
+| 0.15.0 behaviour | 8/10 |
+| platform webview `StopLoading()` at unload | 10/10 |
+| `Handler.DisconnectHandler()` at unload | 0/10 |
+
+⚠ **The middle row is the useful one:** pending loads from the outgoing webview were the obvious cause and
+are not it. The handler is what holds the disposed scope.
+⚠ **And the recreation ORDER is not what it looks like** — the outgoing page's `Unloaded` runs ~0.3 s
+AFTER the replacement activity is created and its page attached (destroy `.647` → new `OnCreate` `.731`
+→ new bridge `.836` → **old page unloaded `.945`**), so `IsRecreating` already answers false there.
+
 ## Deploying to a REAL iPhone — four traps, each found by running it rather than writing it
 
 Harvested 2026-08-07 from the closed task record before it was deleted. Under **D56** this is product
