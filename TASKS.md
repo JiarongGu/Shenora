@@ -15,16 +15,17 @@ is where it lives.
 ⚠ **Length is now measured too** — `doc-shape` WARNS past 120 lines, which every one of those six cleared by
 60+. A crude proxy for a judgement no script can make, and the only signal the marker check cannot miss.
 
-**Status: v0.15.0 is PUBLISHED and VERIFIED LIVE** — all 5 NuGet packages plus `@shenora/react` and
-`@shenora/cli` answer 0.15.0, checked against the registries rather than the tree, all seven on the first
-read. Tag `v0.15.0`, release commit `e87119e`. ⚠ **A partial read is validation lag, not a half-landed
-release** — npm is usually immediate and NuGet takes a minute or two; re-check, never re-push.
-It carried the Android **system back gesture** (D79) and the **foreground report** carrying how long the
-app was away, the version stamp that could never ship on Android (a leading dot is discarded by
-`AndroidComputeResPaths`), `PackagedVersionIn(Stream)` for a bundle that is not a directory, and
-`WebViewFiles.ServeRange` made public. **A MINOR, not a patch**: one `### Breaking` (the stamp rename,
-whose old side shipped in 0.14.0) plus four `### Added`, and 349 → 358 public types.
-⚠ `src/Directory.Build.props` must now stay at `0.15.0`: the release workflow owns the bump, and a
+**Status: v0.16.0 is PUBLISHED** — tag `v0.16.0`, release commit `f61d410`, `origin == local`.
+`@shenora/react` and `@shenora/cli` answer 0.16.0 against npm; **the five NuGet packages were still
+serving 0.15.0 minutes later**, which is the validation lag every release since 0.11.0 has shown, not a
+half-landed publish: the workflow creates the tag only after every publish succeeds, and it publishes
+NuGet BEFORE npm. **Re-check, never re-push** — nuget.org never deletes a version and a re-push cannot
+fix a CDN.
+It carried **window orientation** (the last Capacitor-parity primitive), the notification path's own
+report of what it accepted/filtered/dropped/delivered, and the Android recreation crash — a font-scale
+change killed the app 8 times in 10 before, 0 in 10 after, and it needs no adopter action. **A MINOR, not
+a patch**: no `### Breaking`, 358 → 363 public types, 0 removals.
+⚠ `src/Directory.Build.props` must now stay at `0.16.0`: the release workflow owns the bump, and a
 hand-bump moves the baseline and skips a release (`release-discipline.md`).
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This is the maintainer's remaining work,
