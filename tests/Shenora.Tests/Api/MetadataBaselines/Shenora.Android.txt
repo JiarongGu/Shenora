@@ -110,4 +110,5 @@ Shenora.Mobile.MobileWebViewInterceptor
   method Use
   property RangeDelivery
 Shenora.Mobile.MobileWindowLifecycle
+  method ReleaseHandler
   property IsRecreating

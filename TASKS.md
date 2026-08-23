@@ -89,17 +89,16 @@ answers for display 0, so the control the report cites reads a different display
   = it is the page). Unreleased, so it reaches them with the next cut. They still have to background the
   app for real, which is the one thing no report can check for them.
 
-### 🔴 A CONFIGURATION CHANGE CAN KILL THE APP — intermittent, caught on the API 36 AVD
+### 📱 THE RECREATION CRASH IS FIXED — but the kit still cannot do it FOR the adopter
 
-Seen once in four font-scale changes (2026-08-23, API 36, our own sample) — `FATAL EXCEPTION: main`,
-`ObjectDisposedException: 'IServiceProvider'` from `MauiHybridWebViewClient.ShouldInterceptRequest` →
-`CreateLogger`, called by Chromium's background thread against the recreated window's disposed
-`MauiContext` scope. ⚠ **Entirely MAUI's stack; nothing is attributed to the kit** — but an adopter's app
-dies on a font-scale or locale change, and a dead app also explains a page that stopped receiving events.
+`MobileWindowLifecycle.ReleaseHandler` closes it (8/10 font-scale changes killed the app; 0/10 after,
+measured on API 36). It is a call the PAGE makes, because the one thing that would make it unforgettable —
+doing it inside `MobileIpcBridge.Dispose` — would also disconnect the handler of a page that merely
+navigated away and will reload the SAME view instance, and that case is **unmeasured**.
 
-- [ ] **Reproduce it deliberately before theorising** (`debugging-method.md`: INTERMITTENT — count trials,
-  A/B the harness). Open: does it need a request IN FLIGHT across the destroy; does keeping Shenora alive
-  across the recreation widen the window; should the old webview be torn down rather than left for GC.
+- [ ] **Measure the navigation case**, then decide whether the release can move into the bridge's dispose
+  and stop being a step to remember. Needs a two-page sample (this one has a single page, so `Unloaded`
+  only ever fires for a teardown or a recreation). If it is safe, the guide's line becomes a mechanism.
 
 ### 📱 THE STAMP FIX IS BUILT — one leg of it still needs the Mac
 

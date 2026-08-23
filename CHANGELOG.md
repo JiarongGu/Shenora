@@ -54,6 +54,16 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- 🔴 **A configuration change no longer takes an Android app down** — `MobileWindowLifecycle.ReleaseHandler`,
+  called from the page's `Unloaded`. Android recreates the window for a font-scale or locale change and
+  disposes the old window's `MauiContext` scope; MAUI's own `MauiHybridWebViewClient.ShouldInterceptRequest`
+  then resolves a logger from that scope for a request the outgoing webview is still serving, and throws
+  `ObjectDisposedException` out of a JNI-invoked override with nothing managed above it. **Measured on an
+  API 36 emulator: 8 of 10 font-scale changes killed the app; 0 of 10 with the release, over ten
+  consecutive changes in one process, with the rebuilt page handshaking every time.** ⚠ Stopping the
+  webview is not a substitute — that arm of the same experiment was 10 of 10. ⚠ It is a call the PAGE
+  makes, not something `MobileIpcBridge.Dispose` does for you: an ordinary navigation unloads and reloads
+  the same view instance, and disconnecting its handler there is unmeasured.
 - **A foreground transition is reported once, however many times the shell raises it**
   (`AppForegroundTracker`, behind `MobileAppLifecycle`). Two reporters on one process-scoped MAUI
   `Window` — which a configuration change produces, by building a new page whose constructor makes one

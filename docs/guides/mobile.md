@@ -52,6 +52,27 @@ var bridge = new MobileIpcBridge(webView, new MobileIpcBridgeOptions
 bridge.Attach();          // construct early (buffering starts), attach before the page loads
 ```
 
+🔴 **AND ON THE WAY OUT, ONE LINE THAT IS NOT OPTIONAL ON ANDROID:**
+
+```csharp
+protected override void OnUnloaded(...)        // or the page's Unloaded handler
+{
+    MobileWindowLifecycle.ReleaseHandler(webView);   // FIRST — see below
+    bridge.Dispose();
+}
+```
+
+**Without it a configuration change takes the whole app down.** Android recreates the window for a
+font-scale or locale change (MAUI's template declares orientation and theme, not those), which disposes
+the old window's `MauiContext` scope — and MAUI's own webview client then resolves a logger from that
+scope for a request the outgoing webview is still serving, throwing out of a JNI-invoked override with
+nothing managed above it. **Measured on an API 36 emulator: 8 of 10 font-scale changes killed the app;
+with this line, 0 of 10 across ten consecutive changes, and the rebuilt page handshook every time.**
+⚠ Stopping the webview is NOT a substitute — the same experiment with `StopLoading()` was 10 of 10. The
+handler is what holds the dead scope. ⚠ The kit does not do it inside `bridge.Dispose()` on purpose: a
+page that unloads and reloads the SAME view instance would have its handler pulled out from under it,
+and only the page knows which teardown it is in.
+
 **`UseAndroid`/`UseIOS` registers no `IShenoraRunner`, deliberately.** MAUI owns the loop, so
 `ShenoraApplication.Run` — contractually "blocks until shutdown" — has no honest implementation.
 Drive the pair from the platform instead: `Start()` from `Window.Created`, `Stop()` from
