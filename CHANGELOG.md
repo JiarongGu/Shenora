@@ -28,6 +28,32 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Changed
+
+- **`MobileAppLifecycle` takes an optional `ILogger` and says what it saw.** It logs the transitions it
+  watches, each stop with whether the platform called it a recreation, and — in the sample — the case
+  where a page has no `Window` to watch at all. The defect class this whole area produces is a transition
+  that is never reported, which is indistinguishable from an app that never went away; nothing in the
+  process could previously tell the two apart. ✅ **Measured end to end on Android**: on an API 36 image
+  backgrounded with HOME, one stop, one resume, and the page received `backgroundMilliseconds: 9423`;
+  a configuration change reported nothing.
+
+### Fixed
+
+- **A foreground transition is reported once, however many times the shell raises it**
+  (`AppForegroundTracker`, behind `MobileAppLifecycle`). Two reporters on one process-scoped MAUI
+  `Window` — which a configuration change produces, by building a new page whose constructor makes one
+  while the old page's is still attached — each deliver the same transition, and a duplicate `RESUMED`
+  carries a null duration that a page reads as "could not measure" and reconnects on. ⚠ Reasoned from the
+  MEASURED back-gesture case, where the identical rebuild put three callbacks on one dispatcher, not
+  observed here on the lifecycle path. The newest reporter now displaces the incumbent, and a repeat that
+  still arrives is dropped rather than published.
+- **`MobileAppLifecycle`'s XML said `Window.Resumed` maps to Android's `onResume`.** It is raised from the
+  activity's START — measured by ordering against `Platform.ActivityStateChanged`, where the window's
+  event precedes `ActivityState.Started`.
+
 ## 0.15.0 — 2026-08-23
 
 ### Breaking

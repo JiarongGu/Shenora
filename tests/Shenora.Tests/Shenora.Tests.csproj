@@ -54,6 +54,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 🔴 THE ONE MOBILE-SHELL FILE THIS SUITE COMPILES, and it is deliberately the only one.
+         `src/Shenora.Mobile/` is SOURCE with no csproj (see its README), so nothing there can be
+         referenced — which is why the shells are gated from METADATA and their behaviour only from a
+         device. `AppForegroundTracker` is the exception that pays: it is pure arithmetic with no MAUI
+         type in it, and what it decides (a rotation is not a departure; two windows are not two apps)
+         is exactly what a device run forgets to try. LINKED rather than copied — a copy would drift
+         from the shipped one silently, which is the trap the Live Activity mirror already paid for. -->
+    <Compile Include="..\..\src\Shenora.Mobile\Hosting\AppForegroundTracker.cs"
+             Link="Ipc\AppForegroundTracker.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />

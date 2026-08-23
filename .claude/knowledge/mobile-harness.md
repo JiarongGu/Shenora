@@ -14,6 +14,55 @@ the alternative was believed and turned out wrong.
 
 ## Gotchas / traps
 
+- 🔴 **`adb` CANNOT DISCOVER AN SDK EMULATOR ON THIS BOX, AND NOTHING SAYS WHY.** Measured 2026-08-23:
+  `netsh interface ipv4 show excludedportrange protocol=tcp` reserves **5487–5586**, and adb only ever
+  scans **5554–5585** — entirely inside it. So the emulator cannot bind its console/adb pair, silently
+  falls back to arbitrary ports (2042/2045/2052 here, some IPv6-only), and `adb devices` stays empty
+  while the emulator's own log repeats `adb -s emulator-5554 … device not found`. The ports look FREE to
+  `Get-NetTCPConnection`, which is what makes it unreadable.
+  - **Start it on a pair outside every excluded range and attach by hand:**
+    ```
+    emulator -avd <name> -gpu host -no-snapshot-load -ports 5600,5601 -no-boot-anim
+    adb connect 127.0.0.1:5601      # the AVD then also appears as emulator-5600
+    ```
+  - ⚠ It lands in `adb devices` TWICE (`emulator-5600` and `127.0.0.1:5601`). Pick one serial and stay on
+    it, or a `-s` run and an unqualified one silently address different transports.
+  - ⚠ **`adb install` of a hand-picked APK is not the same artifact `dev.mjs android deploy` installs.**
+    Installing `bin/Debug/net10.0-android/android-x64/*-Signed.apk` by hand put an older build on the AVD:
+    it answered `NO_HANDLER` for a module that exists and advertised the wrong capabilities, which reads
+    as a kit defect. **Deploy with `dev.mjs android deploy --device <serial>`**, and if a capability or a
+    route is missing, suspect the artifact before the code.
+
+- 🔴 **THIS EMULATOR GIVES EACH APP ITS OWN VIRTUAL DISPLAY, SO STARTING ANOTHER APP DOES NOT BACKGROUND
+  YOURS — and the obvious control reads the WRONG DISPLAY.** Measured 2026-08-23 on MuMu instance 0
+  (API 32): the sample sat alone on `Display #43`, the launcher and Settings on `Display #0`, and with
+  Settings "on top" ours was still `state=RESUMED stopped=false`. It loses FOCUS only — `onPause` fires,
+  `onStop` does not. It also explains the earlier record that `input keyevent 3` "does not background the
+  app" (HOME goes to display 0's launcher), though that one was not re-tested.
+  - ⚠ **`dumpsys activity activities | grep -m1 topResumedActivity` answers for display 0.** It reported
+    the launcher while the app under test was resumed, which reads exactly like a successful background —
+    a control that is confidently wrong is worse than none, and this one **produced a filed defect**
+    ("`MobileAppLifecycle` raises nothing on Android") that did not reproduce once the app really left.
+  - **To background it, cover it ON ITS OWN DISPLAY** — and force-stop the coverer first, or the intent is
+    delivered to its existing instance somewhere else:
+    ```
+    adb shell dumpsys activity activities | grep -nE "^Display #|shenora"   # find YOUR display
+    adb shell am force-stop com.android.settings
+    adb shell am start --display 43 -a android.settings.SETTINGS            # a real onStop
+    adb shell am start --display 43 -n <pkg>/<activity>                     # and back
+    ```
+  - **Read the top of YOUR display, not the first match** — and find the number EVERY TIME, because it
+    changes on each launch and again on each configuration change (43 → 45 → 46 in one session), while the
+    blocks also reorder. One `awk` does both:
+    ```
+    dumpsys activity activities | awk '/^Display #/{d=$2} /<pkg>\//{print d; exit}'
+    ```
+  - ⚠ **Confirm the app is ALIVE before reading a count of zero** (`adb shell pidof <pkg>`). Two runs here
+    reported `stops=0 resumes=0` after the app had died during an earlier font-scale test — the same
+    dead-instrument reading as "no BACK lines", one probe over.
+  - ⚠ **Filter the log by your own tag.** Another Shenora app on the same emulator writes the same
+    `[Shenora] lifecycle: …` text under ITS tag, and a bare grep attributes it to your run.
+
 - 🔴 **AN UNRESPONSIVE EMULATOR HANGS THE ANDROID *APP* BUILD FOR EVER — `adb kill-server` fixes it in
   seconds.** The MAUI app build's `GetPrimaryCpuAbi` runs `adb shell getprop` against every device adb
   lists, with **no timeout**, so a wedged emulator still listed as `device` stalls it at 0 % CPU. `verify`

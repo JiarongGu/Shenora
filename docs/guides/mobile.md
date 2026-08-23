@@ -241,9 +241,23 @@ platform's own answer; anything the kit published would arrive later and over IP
 2. **That this was the user leaving the APP**, rather than anything else that can hide a document.
 
 ```csharp
-shenora.Services.AddShenoraAppLifecycle();                       // MauiProgram
-_lifecycle = new MobileAppLifecycle(Window, services.GetRequiredService<AppLifecycle>());  // the page
+shenora.Services.AddShenoraAppLifecycle(log);                    // MauiProgram
+_lifecycle = new MobileAppLifecycle(                             // the page — Window exists by Loaded
+    Window, services.GetRequiredService<AppLifecycle>(), log);
 ```
+
+⚠ **Pass the log to both, and hold the reporter in a field you dispose on unload.** MAUI's `Window` is
+process-scoped and outlives the page, so a reporter left attached is joined by the next page's; the kit
+displaces the older one for you, but only if the newer one is constructed. **And if your page's `Window`
+is null when you get there, nothing is reported for the rest of the session** — say so out loud in the
+`else`, because silence here is indistinguishable from an app that never went away.
+
+🔴 **NO EVENT ON AN EMULATOR? CHECK THE APP REALLY BACKGROUNDED BEFORE SUSPECTING THE KIT.** Some Android
+emulators give each app its own virtual display, so launching another app takes FOCUS without stopping
+yours — `onPause` fires, `onStop` does not, and nothing is supposed to be reported. `adb shell dumpsys
+activity activities` lists the displays; cover your app on ITS display (`am start --display <n> …`) and
+read the top of that display's block, not the first `topResumedActivity` in the dump. This is the one
+question worth answering first: it has produced a defect report against the kit that did not reproduce.
 
 ```tsx
 useAppLifecycle({

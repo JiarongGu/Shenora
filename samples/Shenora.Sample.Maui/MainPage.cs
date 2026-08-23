@@ -49,6 +49,13 @@ public sealed class MainPage : ContentPage
 	private EventHandler? _onWindowStopped;
 	private EventHandler? _onWindowResumed;
 
+	/// <summary>
+	/// The CONTROL for the window's foreground events — they log and do nothing else. Same fields-and-unhook
+	/// discipline as the pair above, for the same process-scoped-Window reason.
+	/// </summary>
+	private EventHandler? _onWindowStoppedSeen;
+	private EventHandler? _onWindowResumedSeen;
+
 	/// <summary>The page's background, matched by the splash colour — see the csproj's comment.</summary>
 	private static readonly Color Shell = Color.FromArgb("#14161A");
 
@@ -180,11 +187,29 @@ public sealed class MainPage : ContentPage
 			services.GetRequiredService<BackNavigation>(), AppCallback.Logger(MauiProgram.Log));
 
 		// The lifecycle reporter's other half. ⚠ Needs the WINDOW, which exists by Loaded but not in the
-		// constructor — and the window is what the transitions come from, not this page.
+		// constructor — and on iOS the window is what the transitions come from, not this page.
 		if (Window is { } lifecycleWindow)
 		{
 			_lifecycle = new MobileAppLifecycle(
-				lifecycleWindow, services.GetRequiredService<AppLifecycle>());
+				lifecycleWindow, services.GetRequiredService<AppLifecycle>(),
+				AppCallback.Logger(MauiProgram.Log));
+
+			// 🔴 THE CONTROL, AND IT STAYS. `MobileAppLifecycle` reads the ACTIVITY on Android because the
+			// window is silent there — a claim about the PLATFORM, which only a run can keep honest, and it
+			// is the claim an adopter's app was broken by. These two say the window spoke; the reporter's
+			// own lines say what the kit did. One run then separates "the window is silent" from "the kit
+			// stopped listening", which no absence of lifecycle lines can do on its own.
+			_onWindowStoppedSeen = (_, _) => MauiProgram.Log("WINDOW: MAUI raised Stopped");
+			_onWindowResumedSeen = (_, _) => MauiProgram.Log("WINDOW: MAUI raised Resumed");
+			lifecycleWindow.Stopped += _onWindowStoppedSeen;
+			lifecycleWindow.Resumed += _onWindowResumedSeen;
+		}
+		else
+		{
+			// Said out loud (D63). A page whose Window is null here reports no foreground transition for
+			// the rest of the session, and silence is exactly what that looks like from the outside — it
+			// is the shape an adopter spent a day on.
+			MauiProgram.Log("lifecycle: NOT wired — this page has no Window to watch.");
 		}
 
 		// 🔴 THE BACKGROUND TRANSFER, AND IT IS THE KIT'S NOW — this sample no longer carries its own copy.
@@ -690,9 +715,13 @@ public sealed class MainPage : ContentPage
 		{
 			if (_onWindowStopped is { } stopped) window.Stopped -= stopped;
 			if (_onWindowResumed is { } resumed) window.Resumed -= resumed;
+			if (_onWindowStoppedSeen is { } stoppedSeen) window.Stopped -= stoppedSeen;
+			if (_onWindowResumedSeen is { } resumedSeen) window.Resumed -= resumedSeen;
 		}
 		_onWindowStopped = null;
 		_onWindowResumed = null;
+		_onWindowStoppedSeen = null;
+		_onWindowResumedSeen = null;
 
 		_documentFromDisk?.Dispose();
 		_documentFromDisk = null;

@@ -54,57 +54,56 @@ The bridge-tag check is proven BOTH ways on BOTH shells now — `ServeDocumentFr
 well as an env var, since `adb` cannot pass one. Android: tagged → `client READY`, untagged → the warning
 with zero handshakes.
 
-### 📱 THE CAPACITOR-PARITY PRIMITIVES — two of three built, both owed a device run
+### 📱 THE CAPACITOR-PARITY PRIMITIVES — orientation is the one left
 
 Filed 2026-08-23 by the adopter retiring Capacitor in favour of this kit's mobile shell. Their audit found
 **one app-level gap (an SMB client — theirs, not the kit's)** and three shell primitives, each a WINDOW/SHELL
-concern rather than an app one.
+concern rather than an app one. The back gesture (D79) and the foreground/resume report are built and have
+both run on hardware; orientation is the only one that was ever merely an enhancement.
 
-**BUILT: the back gesture (D79) and the foreground/resume report.** Orientation is the only one left, and it
-is the only one that was ever merely an enhancement.
 ⚠ **Resume deliberately does NOT duplicate `document.visibilitychange`**, which already fires on both shells
 — it reports the one thing a throttled, possibly frozen page cannot measure: **how long it was away**. If a
 future session is tempted to add a visibility event, that is the reason not to.
 
-**The back gesture RAN on the MuMu emulator (API 32) and passes end to end**: attaches disabled, the page
-intercepts, two presses answered `handled=true` keep the app resumed, the third answers `false` and the
-foreground becomes the launcher. The self-driven re-attach fires on each recreated activity and back still
-works after one. Two defects the run found are fixed and re-measured.
-
-- [ ] **The two things API 32 could not answer.** (a) **Predictive back** needs API 33+: the callback is
-  armed only while a page intercepts, specifically so an app that never intercepts keeps the gesture, and
-  that is reasoned rather than measured. (b) **A real background/resume** — `input keyevent 3` does NOT
-  leave the app on this MuMu instance (measured: the foreground activity was unchanged after HOME), so the
-  duration report is still unproven on hardware. ⚠ **Check the foreground before trusting any absence of
-  lifecycle lines** — that control is the only reason the first reading was not written up as
-  "`Window.Stopped` never fires".
+- [ ] **Predictive back still needs API 33+.** The callback is armed only while a page intercepts,
+  specifically so an app that never intercepts keeps the gesture, and that remains reasoned rather than
+  measured — MuMu is API 32.
 - [ ] **Screen orientation.** Lock to portrait, and unlock/relock around a full-screen media viewer where
   rotation is genuinely wanted. Two calls, both platforms, no policy — the app decides WHEN. **The last of
   the three, and the only one that is purely an enhancement.**
 
-### 🔴 `MobileAppLifecycle` RAISES NOTHING ON ANDROID — measured by the adopter on 0.15.0
+### 🟡 `MobileAppLifecycle` "raises nothing on Android" — DID NOT REPRODUCE ON EITHER EMULATOR
 
-The reporter, the module and the events all work; the MAUI wiring does not. `MobileAppLifecycle` subscribes
-`Window.Stopped`/`Window.Resumed`, and on Android those **do not fire** — so an app that follows
-`docs/guides/mobile.md` exactly (`AddShenoraAppLifecycle()` in `MauiProgram`, `new MobileAppLifecycle(Window,
-…)` in the page) gets a service that resolves, a module that answers, and **no event, ever**. Silent in the
-worst way, and it is the case your own backlog lists as unproven.
+Filed by the adopter on 0.15.0: the service resolves, the module answers, and no event ever arrives.
+Checked on an API 36 AVD backgrounded with HOME and on the emulator it was filed from; both give one
+stop, one resume and two page frames carrying the duration (numbers in the commit).
 
-**Ruled out first, in this order, because each would have been the likelier bug:**
-- the page never constructed it — it logs on both branches now, and logged the success one;
-- the app never actually backgrounded — `topResumedActivity` became the launcher and came back;
-- the page missed the frame — a page-side probe counted `SHENORA.LIFECYCLE` frames directly: **zero**;
-- the emulator swallows the transition — the SAME emulator, an hour earlier, ran an `Activity.OnResume`
-  override of the adopter's reliably.
+⚠ **What did not happen in the original report is the BACKGROUND.** On that emulator each app gets its
+own virtual display, so starting another app only takes FOCUS — and `topResumedActivity`'s first match
+answers for display 0, so the control the report cites reads a different display's activity
+(`mobile-harness.md`). Three runs here read as a confirmed defect on that same control.
 
-Driving `AppLifecycle.ReportStopped()`/`ReportResumed()` from `MainActivity.OnPause`/`OnResume` instead
-produces **exactly one** frame per background-and-return, which is the pairing your own note asks for.
+- [ ] **Ask them the two questions that separate the remaining causes**, before anything is changed for
+  them. (a) Re-run the zero-frames probe with a real background — HOME on a normal device, or
+  `am start --display <theirs>` on that emulator. (b) **Do any OTHER notifications reach their page?**
+  A request answering proves nothing about notifications: those go through `NotificationPump`, and
+  `MobileIpcBridgeOptions.NotificationFilter` drops what it rejects **silently** (and fails CLOSED on a
+  throw), so an app whose filter was written before this module existed sees exactly this symptom. If
+  nothing at all arrives, it is the pump or the ready gate, not the lifecycle feature.
+  ⚠ Also worth asking whether their page's `Window` was null when they constructed the reporter — the
+  kit and the sample both say so out loud now, which they did not on 0.15.0.
 
-- [ ] **Wire it from the activity on Android** (`ActivityLifecycleCallbacks`, or the same two overrides in
-  a `MauiAppCompatActivity` base). ⚠ Whatever lands, say in the guide which one an adopter is expected to
-  own — the current pair reads as complete and is not.
-  ⚠ **iOS is unmeasured**: `Window.Stopped`/`Resumed` may well fire there, so this may be Android-only —
-  which would make it worse rather than better, since the guide would then be right on one face.
+### 🔴 A CONFIGURATION CHANGE CAN KILL THE APP — intermittent, caught on the API 36 AVD
+
+Seen once in four font-scale changes (2026-08-23, API 36, our own sample) — `FATAL EXCEPTION: main`,
+`ObjectDisposedException: 'IServiceProvider'` from `MauiHybridWebViewClient.ShouldInterceptRequest` →
+`CreateLogger`, called by Chromium's background thread against the recreated window's disposed
+`MauiContext` scope. ⚠ **Entirely MAUI's stack; nothing is attributed to the kit** — but an adopter's app
+dies on a font-scale or locale change, and a dead app also explains a page that stopped receiving events.
+
+- [ ] **Reproduce it deliberately before theorising** (`debugging-method.md`: INTERMITTENT — count trials,
+  A/B the harness). Open: does it need a request IN FLIGHT across the destroy; does keeping Shenora alive
+  across the recreation widen the window; should the old webview be torn down rather than left for GC.
 
 ### 📱 THE STAMP FIX IS BUILT — one leg of it still needs the Mac
 
