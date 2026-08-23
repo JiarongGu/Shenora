@@ -83,6 +83,35 @@ future session is tempted to add a visibility event, that is the reason not to.
   rotation is genuinely wanted. Two calls, both platforms, no policy — the app decides WHEN. **The last of
   the three, and the only one that is purely an enhancement.**
 
+### 🔴 `ServeRange` IS INTERNAL, SO THE ONE-IMPLEMENTATION PROMISE ENDS AT A FILE PATH
+
+Filed 2026-08-23 by the same adopter, from writing an SMB reader for their mobile shell.
+`WebViewFiles.Serve(request, PATH, …)` is public; `ServeRange(request, totalLength, contentType, delivery,
+read)` — the same answer over any producer of bytes — is `internal`. Its own doc is the argument for
+exporting it: *"🔴 `WebViewRangeDelivery` has exactly ONE implementation. D44 is a measured platform fact
+whose failure mode is silent."*
+
+**A body that is not a file is not exotic** — it is SMB, an object store, a decrypting stream, a database
+blob. Every one of those adopters gets `WebViewByteRange.TryParse` and the response builders (all public,
+which is why this is survivable) and then has to re-derive the last step themselves:
+
+```csharp
+var unsliced = delivery is WebViewRangeDelivery.Unsliced;
+var sent = unsliced ? new WebViewByteRange(range.From, total - 1) : range;
+var body = unsliced ? read(0, total) : read(range.From, range.Length);
+```
+
+Three lines, and **the failure mode of getting them wrong is the worst shape there is**: every faststart
+file plays perfectly and every file whose index sits at the end fails. That is precisely the trap D44 exists
+to absorb, so leaving it outside the boundary means the kit absorbs it for the file case and hands it back
+for every other one.
+
+- [ ] **Make it public, or expose the same thing under a name you prefer** (`WebViewFiles.ServeStream`,
+  a `WebViewRangeResponse.For(...)`). The signature already takes a `Func<long, long, Stream?>`, so nothing
+  needs to change but the modifier and a doc line saying when to reach for it.
+  ⚠ Not urgent for the adopter — they copied the three lines and pointed a comment at this entry — but it
+  is a small change that deletes a copy nobody should own.
+
 ### 📱 THE STAMP FIX IS BUILT — one leg of it still needs the Mac
 
 The name lost its dot and `PackagedVersionIn` gained a `Stream` overload (`CHANGELOG.md`'s `## Unreleased`
