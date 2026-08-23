@@ -7,7 +7,7 @@
     the assemblies can never drift. `dotnet pack -p:Version=X` overrides for a release.
   -->
   <PropertyGroup>
-    <VersionPrefix>0.15.0</VersionPrefix>
+    <VersionPrefix>0.16.0</VersionPrefix>
   </PropertyGroup>
 
   <!-- Shared build settings for src/*. Deliberately under src/ (not the repo root) so tests/

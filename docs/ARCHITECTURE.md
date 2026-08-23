@@ -9,7 +9,7 @@ EXISTS. There are no dated design docs any more — D57.)
      headline is. Don't hand-edit it — and don't date this line either: the release workflow owns
      the version, so a hand-written one is stale the moment a release cuts. Everything ELSE in this
      file dates its claims instead of versioning them, for the same reason. -->
-## Current state — **v0.15.0 published**
+## Current state — **v0.16.0 published**
 
 ⚠ **That heading's WORDING is load-bearing** — `dev.mjs doctor` matches
 `## Current state — **vX.Y.Z published**` to keep the version in step with `VersionPrefix`, and syncs it
