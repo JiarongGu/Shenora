@@ -40,6 +40,35 @@ public sealed class MobileIpcBridgeOptions
     /// <summary>Invoked on each ready handshake — the moment to clear per-page state.</summary>
     public Action<IpcRequest>? OnClientReady { get; init; }
 
+    /// <summary>
+    /// Release the webview's platform handler when this bridge is disposed. <b>On by default, and turning
+    /// it off on Android costs you the app.</b>
+    /// </summary>
+    /// <remarks>
+    /// 🔴 <b>MEASURED, because the failure is a process death nobody can attribute.</b> Android recreates
+    /// the window for a font-scale or locale change, which disposes the OLD window's <c>MauiContext</c>
+    /// scope — and MAUI's own <c>MauiHybridWebViewClient.ShouldInterceptRequest</c> then resolves a logger
+    /// from that dead scope for a request the outgoing webview is still serving, throwing out of a
+    /// JNI-invoked override with nothing managed above it. On an API 36 emulator one font-scale change
+    /// killed the app in <b>8 of 10</b> trials; released, <b>0 of 10</b> over ten consecutive changes in
+    /// one process, with the rebuilt page handshaking every time.
+    /// <para>
+    /// ⚠ <b>Stopping the webview is NOT the same remedy</b> — the same experiment with the platform view's
+    /// <c>StopLoading()</c> was 10 of 10. The HANDLER is what holds the dead scope.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Turn it off for a page that unloads and RELOADS the same view instance</b> — an ordinary
+    /// navigation, where the handler would be pulled out from under a view that is coming back. That case
+    /// is unmeasured; a recreation, where MAUI builds a new page and a new view, is what this is for and
+    /// what was measured. Then call <see cref="MobileWindowLifecycle.ReleaseHandler"/> yourself at the
+    /// point your page knows it is really going away.
+    /// </para>
+    /// <para>
+    /// ⚠ iOS does not recreate a window for a configuration change, so this is a no-op there.
+    /// </para>
+    /// </remarks>
+    public bool ReleaseHandlerOnDispose { get; init; } = true;
+
     /// <summary>Diagnostics sink.</summary>
     public ILogger? Log { get; init; }
 }
@@ -223,6 +252,22 @@ public sealed class MobileIpcBridge : IDisposable
         {
             try { _webView.RawMessageReceived -= OnRawMessageReceived; }
             catch (Exception ex) { Log(() => "[Shenora.Mobile] Bridge dispose: could not detach the message handler", ex); }
+        }
+
+        // LAST, and only after this bridge has finished its own teardown: releasing the handler takes the
+        // platform view apart, so nothing above may still need it. See the option's remarks for what a
+        // recreation does to a webview whose handler is left connected — it is not a leak, it is the app.
+        if (_options.ReleaseHandlerOnDispose)
+        {
+            try
+            {
+                MobileWindowLifecycle.ReleaseHandler(_webView);
+                // ⚠ Said on SUCCESS too, not only on failure. Whether this ran is the difference between
+                // an app that survives a configuration change and one that dies on it, and an absence of
+                // failure lines is not evidence that it happened.
+                Log(() => "[Shenora.Mobile] Bridge dispose: released the webview's platform handler");
+            }
+            catch (Exception ex) { Log(() => "[Shenora.Mobile] Bridge dispose: could not release the webview handler", ex); }
         }
     }
 }

@@ -87,6 +87,7 @@ Shenora.Mobile.MobileIpcBridgeOptions
   property NotificationFilter
   property NotificationInterval
   property OnClientReady
+  property ReleaseHandlerOnDispose
   property Shell
 Shenora.Mobile.MobileSafeArea
   method .ctor

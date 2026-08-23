@@ -52,26 +52,28 @@ var bridge = new MobileIpcBridge(webView, new MobileIpcBridgeOptions
 bridge.Attach();          // construct early (buffering starts), attach before the page loads
 ```
 
-🔴 **AND ON THE WAY OUT, ONE LINE THAT IS NOT OPTIONAL ON ANDROID:**
+**On the way out, dispose the bridge from the page's `Unloaded` — and that is the whole teardown:**
 
 ```csharp
 protected override void OnUnloaded(...)        // or the page's Unloaded handler
 {
-    MobileWindowLifecycle.ReleaseHandler(webView);   // FIRST — see below
-    bridge.Dispose();
+    bridge.Dispose();      // also releases the webview's platform handler — see below
 }
 ```
 
-**Without it a configuration change takes the whole app down.** Android recreates the window for a
-font-scale or locale change (MAUI's template declares orientation and theme, not those), which disposes
-the old window's `MauiContext` scope — and MAUI's own webview client then resolves a logger from that
+🔴 **THE PART YOU WOULD NEVER GUESS, AND WHY IT IS THE BRIDGE'S JOB.** Android recreates the window for a
+font-scale or locale change (MAUI's template declares orientation and theme, not those), which disposes the
+old window's `MauiContext` scope — and MAUI's own webview client then resolves a logger from that dead
 scope for a request the outgoing webview is still serving, throwing out of a JNI-invoked override with
-nothing managed above it. **Measured on an API 36 emulator: 8 of 10 font-scale changes killed the app;
-with this line, 0 of 10 across ten consecutive changes, and the rebuilt page handshook every time.**
-⚠ Stopping the webview is NOT a substitute — the same experiment with `StopLoading()` was 10 of 10. The
-handler is what holds the dead scope. ⚠ The kit does not do it inside `bridge.Dispose()` on purpose: a
-page that unloads and reloads the SAME view instance would have its handler pulled out from under it,
-and only the page knows which teardown it is in.
+nothing managed above it. **Measured on an API 36 emulator: 8 of 10 font-scale changes killed the app; with
+the handler released, 0 of 10 across ten consecutive changes, and the rebuilt page handshook every time.**
+The kit therefore does it for you (`MobileIpcBridgeOptions.ReleaseHandlerOnDispose`, on by default) — a
+step an adopter has to remember is not a mechanism, and forgetting this one costs the app.
+⚠ Stopping the webview is NOT the same remedy — that arm of the experiment was 10 of 10. The HANDLER is
+what holds the dead scope.
+⚠ **Turn it off for a page that unloads and RELOADS the same view instance** — an ordinary navigation,
+where the handler would be pulled out from under a view that is coming back. That case is unmeasured; then
+call `MobileWindowLifecycle.ReleaseHandler(webView)` where your page knows it is really going away.
 
 **`UseAndroid`/`UseIOS` registers no `IShenoraRunner`, deliberately.** MAUI owns the loop, so
 `ShenoraApplication.Run` — contractually "blocks until shutdown" — has no honest implementation.

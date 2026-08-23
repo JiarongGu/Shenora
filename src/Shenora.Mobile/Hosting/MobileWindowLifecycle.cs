@@ -23,8 +23,13 @@ public static class MobileWindowLifecycle
 #endif
 
     /// <summary>
-    /// Let go of a view's platform handler as its page unloads. 🔴 <b>Call this for the webview from the
-    /// page's <c>Unloaded</c>, or a configuration change takes the whole app down.</b>
+    /// Let go of a view's platform handler as its page unloads.
+    /// <para>
+    /// ⚠ <b>You normally never call this</b> — <c>MobileIpcBridge</c> does it when it is disposed, because
+    /// forgetting it costs the app (see below) and a step an adopter must remember is not a mechanism.
+    /// Reach for it directly only where the kit cannot see the moment: a page with no bridge, or one that
+    /// turned <c>ReleaseHandlerOnDispose</c> off because it unloads and reloads the same view instance.
+    /// </para>
     /// </summary>
     /// <param name="view">The view going away — the page's webview. Null and no-handler are no-ops.</param>
     /// <remarks>
@@ -46,10 +51,11 @@ public static class MobileWindowLifecycle
     /// be a change with no benefit. Same shape as <see cref="IsRecreating"/>.
     /// </para>
     /// <para>
-    /// ⚠ <b>Why the kit does not do this for you from <c>MobileIpcBridge.Dispose</c></b>, which would be
-    /// the mechanism rather than a step to remember: a page that unloads and RELOADS the same view
-    /// instance — an ordinary navigation — would have its handler disconnected under it, and that case is
-    /// unmeasured. The page knows which teardown it is in; the bridge does not.
+    /// ⚠ <b>The bridge does this by default</b> (<c>MobileIpcBridgeOptions.ReleaseHandlerOnDispose</c>).
+    /// The one shape it cannot be right for is a page that unloads and RELOADS the same view instance — an
+    /// ordinary navigation, where the handler would be pulled out from under a view that is coming back.
+    /// That case is unmeasured; turn the option off there and call this where the page knows it is really
+    /// going away.
     /// </para>
     /// </remarks>
     public static void ReleaseHandler(Microsoft.Maui.IView? view)

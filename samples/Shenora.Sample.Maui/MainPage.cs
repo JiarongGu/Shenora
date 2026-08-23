@@ -719,11 +719,10 @@ public sealed class MainPage : ContentPage
 	private void OnUnloaded(object? sender, EventArgs e)
 	{
 		MauiProgram.Log("page unloaded — disposing the bridge");
-		// 🔴 FIRST, AND NOT OPTIONAL ON ANDROID. A configuration change recreates the window and disposes
-		// the old one's MauiContext scope, after which MAUI's own webview client resolves a logger from it
-		// for a request the outgoing webview is still serving — and takes the process down. Measured on an
-		// API 36 emulator: 8 of 10 font-scale changes killed the app without this line, 0 of 10 with it.
-		MobileWindowLifecycle.ReleaseHandler(_webView);
+		// ⚠ NOTHING HERE RELEASES THE WEBVIEW'S HANDLER, deliberately: `_bridge.Dispose()` below does it,
+		// because a configuration change kills the app if it is left connected (8 of 10 font-scale changes,
+		// measured) and a step an adopter must remember is not a mechanism. This sample is the CONSUMER of
+		// that default — if the trials ever regress, suspect `ReleaseHandlerOnDispose` before the page.
 		// FIRST, and off the WINDOW rather than this page: the Window outlives MainPage, so a handler left
 		// attached here would keep driving a transfer whose player and media route have just been disposed —
 		// and would be joined by a second one when the page reloads.

@@ -91,16 +91,16 @@ answers for display 0, so the control the report cites reads a different display
   = it is the page). Unreleased, so it reaches them with the next cut. They still have to background the
   app for real, which is the one thing no report can check for them.
 
-### 📱 THE RECREATION CRASH IS FIXED — but the kit still cannot do it FOR the adopter
+### 📱 THE RECREATION CRASH IS FIXED AND AUTOMATIC — one case is still unmeasured
 
-`MobileWindowLifecycle.ReleaseHandler` closes it (8/10 font-scale changes killed the app; 0/10 after,
-measured on API 36). It is a call the PAGE makes, because the one thing that would make it unforgettable —
-doing it inside `MobileIpcBridge.Dispose` — would also disconnect the handler of a page that merely
-navigated away and will reload the SAME view instance, and that case is **unmeasured**.
+`MobileIpcBridgeOptions.ReleaseHandlerOnDispose` is ON by default (owner, 2026-08-23: make it app config,
+not a step to remember — there is one adopter and they are on Android). 8/10 font-scale changes killed the
+app before; 0/10 after, measured on API 36 with no explicit call anywhere in the sample.
 
-- [ ] **Measure the navigation case**, then decide whether the release can move into the bridge's dispose
-  and stop being a step to remember. Needs a two-page sample (this one has a single page, so `Unloaded`
-  only ever fires for a teardown or a recreation). If it is safe, the guide's line becomes a mechanism.
+- [ ] **Measure the NAVIGATION case** — a page that unloads and RELOADS the same view instance, where the
+  default pulls the handler out from under a view that is coming back. Needs a two-page sample (this one
+  has a single page, so `Unloaded` only ever fires for a teardown or a recreation). The escape hatch
+  exists and is documented; what is missing is knowing whether anyone needs it.
 
 ### 📱 THE STAMP FIX IS BUILT — one leg of it still needs the Mac
 
