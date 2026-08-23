@@ -39,20 +39,22 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 📱 WHAT IS LEFT ON ANDROID NEEDS CODECS THE MuMu EMULATOR DOES NOT HAVE
+### 📱 WHAT IS LEFT ON ANDROID NEEDS A PHONE'S ENCODER, NOT AN EMULATOR'S
 
-The segment tier is answered on all three shells (`docs/design/media.md`). Both items below ran on MuMu and
-came back SKIPPED for the same underlying reason — **that emulator converts almost nothing**
-(`convert ac3/eac3/alac/dts: accepted=False`, `convert video h263/h264/hevc: accepted=False`), so no picture
-or sound ever reaches an encoder there. A real phone, or an AVD with a fuller codec set, answers both.
+The segment tier is answered on all three shells (`docs/design/media.md`), and the encoder's ARITHMETIC is
+now confirmed on an API 36 AVD: 1280×720@30 asks for 4,147 kbps, and the 400 kbps floor without the
+frame-rate factor. What no emulator here can answer is the CONSEQUENCE — a software encoder ignores the
+request, producing ~1.7–1.9 Mbps either way. ⚠ MuMu converts no picture at all; the AVD converts only
+mpeg4.
 
-- [ ] **Confirm the Android encoder change.** The bitrate was ~1/30th of intent (no frame-rate factor); the fix
-  is arithmetic and changes output size and encode cost on a phone. ⚠ It also became reachable for ORDINARY
-  1080p H.264, which a grid or head-ramp plan now re-encodes where it used to be copied — so this path is
-  newly hot, not newly correct.
-The bridge-tag check is proven BOTH ways on BOTH shells now — `ServeDocumentFromDisk` takes a file switch as
-well as an env var, since `adb` cannot pass one. Android: tagged → `client READY`, untagged → the warning
-with zero handshakes.
+- [ ] **Confirm the encoder change CHANGES ANYTHING, on a phone.** A hardware encoder that honours
+  `KEY_BIT_RATE` is the only instrument for "output size and encode cost", and the claim that this path is
+  "newly hot" for ordinary 1080p H.264 rests on it. The host logs the rate it requests now, so the run is
+  a read of two numbers.
+- [ ] **Decide what the writer should do with a REORDERED encoder.** Same runs lost 1–6 frames of 149: the
+  writer fail-closes on a backwards presentation time and drops the frame. The phone measured 60/60, so
+  this is per-encoder, not settled. Dropping is safe and lossy; buffering and sorting is neither. **An
+  owner call**, and it needs the phone number re-measured first.
 
 ### 📱 THE CAPACITOR-PARITY PRIMITIVES — orientation is the one left
 

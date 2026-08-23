@@ -122,8 +122,8 @@ public static class AndroidMediaVideoConversion
             // ⚠ Bits per pixel per FRAME, so the rate has to carry the frame rate — 0.15 bpp/frame is
             // ordinary for H.264. Without the frame-rate factor 720p lands on the 400 kbps floor and the
             // 12 Mbps ceiling needs a 40-megapixel picture to reach, which is how the omission was spotted.
-            output.SetInteger(MediaFormat.KeyBitRate,
-                (int)Math.Clamp(_width * (long)_height * frameRate * 15 / 100, 400_000, 12_000_000));
+            var bitRate = (int)Math.Clamp(_width * (long)_height * frameRate * 15 / 100, 400_000, 12_000_000);
+            output.SetInteger(MediaFormat.KeyBitRate, bitRate);
             output.SetInteger(MediaFormat.KeyFrameRate, frameRate);
             // 🔴 One keyframe a SECOND, which `SegmentGrid` cuts its segments on — changing this makes the
             // media tier's grid illegal. Also a seeking decision: a long GOP scrubs badly however good it looks.
@@ -133,6 +133,13 @@ public static class AndroidMediaVideoConversion
             _encoder.Configure(output, null, null, MediaCodecConfigFlags.Encode);
             _bridge = _encoder.CreateInputSurface()!;
             _encoder.Start();
+
+            // ⚠ SAID OUT LOUD, because the REQUEST is the only half of this the kit owns and the only half
+            // observable from outside — and an encoder need not honour it. Measured on an API 36 emulator:
+            // the same source came out at ~1.7 Mbps whether this asked for 4.1 Mbps or the 400 kbps floor,
+            // so an "the output is the wrong size" report can only be attributed with this line in hand.
+            AppCallback.Log(_log, () => $"[Shenora.Android] video encoder: {_width}x{_height}@{frameRate} "
+                                        + $"-> requested {bitRate / 1000} kbps");
 
             // ── the decoder, whose MINIMAL format is a measured trap rather than tidiness ─────────────────
             // 🔴 `MediaCodecList.FindDecoderForFormat` REFUSES the format `MediaExtractor` hands you — it

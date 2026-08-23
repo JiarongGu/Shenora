@@ -115,6 +115,23 @@ internal static class SegmentRouteProbe
     public const string SpillFixture = "clip-spill.mkv";
 
     /// <summary>
+    /// A picture the shell must RE-ENCODE, sized so the encoder's bitrate arithmetic is observable.
+    /// <para>
+    /// 🔴 <b>The committed mpeg4 fixture cannot answer that question and this one can.</b> The rate is
+    /// <c>w × h × fps × 0.15</c> bits clamped to [400 kbps, 12 Mbps], so 480×270@10 asks for 194 kbps and
+    /// lands on the FLOOR — the same place the arithmetic lands when the frame rate is missing entirely,
+    /// which is the defect the factor was added for. 1280×720@30 asks for ~4.1 Mbps, ten times the floor.
+    /// </para>
+    /// <para>
+    /// ⚠ Staged by hand like <see cref="SpillFixture"/>, so its absence falls through to the smaller
+    /// fixture rather than failing. Five seconds is enough and keeps it under a megabyte:
+    /// <c>ffmpeg -i clip-h264-aac.mkv -t 5 -vf "scale=1280:720,fps=30" -c:v mpeg4 -q:v 12 -c:a aac
+    /// -b:a 96k clip-mpeg4-720p.mkv</c>
+    /// </para>
+    /// </summary>
+    public const string BitrateFixture = "clip-mpeg4-720p.mkv";
+
+    /// <summary>
     /// What the page opens its <c>SourceBuffer</c> with: a copied H.264 picture plus a converted AAC
     /// soundtrack.
     /// <para>
@@ -373,13 +390,29 @@ internal static class SegmentRouteProbe
     {
         ArgumentNullException.ThrowIfNull(log);
 
-        const string fixture = "clip-h263-aac.mkv";
-
-        // Asked of the CONVERSION, not of the platform: whether this shell can re-encode h263 is the whole
-        // precondition, and it differs between the simulator and the phone. Checked BEFORE staging, so a
-        // shell that cannot answer does not copy a fixture it will never read.
-        if (conversion is null || !conversion.CanConvert(MediaStreamKind.Video, "h263"))
-            return "REORDER: SKIPPED — this shell does not convert h263, so no picture reaches an encoder";
+        // 🔴 ASK THE SHELL WHICH PICTURE IT CANNOT CARRY, rather than naming one. Every device answers
+        // differently — the phone converts h263, an API 36 emulator converts ONLY mpeg4, the iOS simulator
+        // converts nothing — so a hardcoded codec made this probe SKIP on the very hosts that could run it.
+        // Same selection the conversion route's own probe makes, for the same reason.
+        //
+        // ⚠ The 720p entry is FIRST and is the only one that can confirm the ENCODER'S BITRATE. The rate is
+        // `w × h × fps × 0.15` bits clamped to [400 kbps, 12 Mbps], so a 480×270@10 source lands on the
+        // floor whether or not the frame rate is in the arithmetic at all — it cannot tell a correct
+        // encoder from the bug the factor was added to fix. 1280×720@30 asks for ~4.1 Mbps and the floor is
+        // ~10× below it. Staged by hand (see BitrateFixture), so its absence falls through to the next.
+        if (conversion is null) return "REORDER: SKIPPED — this shell converts nothing";
+        var candidates = new[]
+        {
+            (Codec: "mpeg4", Clip: BitrateFixture),
+            (Codec: "mpeg4", Clip: "clip-mpeg4-aac.mkv"),
+            (Codec: "h263", Clip: "clip-h263-aac.mkv"),
+        };
+        var chosen = candidates.FirstOrDefault(c =>
+            conversion.CanConvert(MediaStreamKind.Video, c.Codec)
+            && (c.Clip != BitrateFixture || File.Exists(Path.Combine(sourceRoot, c.Clip))));
+        if (chosen.Clip is null)
+            return "REORDER: SKIPPED — this shell converts no picture codec we have a fixture for";
+        var fixture = chosen.Clip;
 
         // ⚠ Staged HERE rather than trusted: this probe runs before the conversion route's, and an absent
         // fixture answers as a missing file rather than as the engine refusing — the trap that has already
@@ -408,8 +441,14 @@ internal static class SegmentRouteProbe
 
         var segments = Directory.GetFiles(dir, $"seg*{SegmentRunRequest.SegmentExtension}");
         var picture = segments.Sum(s => Mp4FragmentReader.SampleBytes(s, DefaultSegmentEngine.VideoTrackId));
+        // The rate the ENCODER actually achieved, which is the only way to see the shell's bitrate
+        // arithmetic from outside — the request itself never leaves the shell. Judge it against
+        // `w × h × fps × 0.15` clamped to [400 kbps, 12 Mbps]: at the FLOOR the picture is telling you the
+        // frame rate did not reach the encoder.
+        var kbps = duration > TimeSpan.Zero ? picture * 8 / duration.TotalSeconds / 1000 : 0;
         return $"REORDER: ran a re-encode over {fixture} — {segments.Length} segment(s), "
-             + $"{picture} picture bytes. Read the 'picture (converted) … read=/emitted=' line above: equal "
+             + $"{picture} picture bytes over {duration.TotalSeconds:F2}s = {kbps:F0} kbps. "
+             + "Read the 'picture (converted) … read=/emitted=' line above: equal "
              + "means the encoder does NOT reorder; emitted below read means it does, and the writer said so.";
     }
 

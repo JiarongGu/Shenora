@@ -594,6 +594,35 @@ finishing the stream, which the control never does. **Keeping both is what made 
 rather than a mystery: one probe alone could not have said which behaviour was the module's and which was
 the platform's.
 
+## The re-encoder's BITRATE — the request is ours, the compliance is not (2026-08-23, API 36 AVD)
+
+`w × h × fps × 0.15` bits, clamped to [400 kbps, 12 Mbps]. The frame-rate factor was added after the rate
+came out ~1/30th of intent; this is that fix on hardware, A/B'd over one 1280×720@30 mpeg4 source
+(`clip-mpeg4-720p.mkv`, re-encoded under a 1-second grid):
+
+| arm | requested (host log) | achieved (picture bytes ÷ duration) |
+|---|---|---|
+| with the frame-rate factor | **4,147 kbps** | 1,711 kbps |
+| factor removed | **400 kbps** — the floor | 1,871 kbps |
+
+✅ **The arithmetic is confirmed**: 1280·720·30·0.15 = 4,147 kbps reaches the platform, and without the
+factor it collapses onto the floor — the original defect, reproduced.
+🔴 **The CONSEQUENCE is not.** This emulator's encoder ignores the request: the same source came out at
+~1.7–1.9 Mbps either way, marginally HIGHER in the arm that asked for a tenth as much. So "the fix changes
+output size and encode cost" remains unproven — it needs a device whose encoder honours `KEY_BIT_RATE`,
+i.e. a real phone with a hardware encoder. ⚠ **A software `c2.android.avc.encoder` is not evidence about
+either direction**, and the achieved figure alone cannot distinguish a working request from a dropped one
+— which is why the host now LOGS the request it made.
+
+⚠ **The 480×270@10 fixture cannot answer this question at all** and looks like it can: at 194 kbps it
+lands on the floor whether or not the frame rate is in the arithmetic. Sizing the fixture ABOVE the floor
+is the whole reason a second one exists.
+
+🔴 **AND THE ENCODER REORDERS, which the phone did not.** Same runs: `read=149 emitted=148` twice and
+`emitted=143` once — the writer fail-closes on a backwards presentation time and DROPS those frames, so a
+re-encode here loses 1–6 frames of 149, varying per run. The phone measured 60/60 (2026-08-15). So frame
+loss in the re-encode path is a per-ENCODER property, not a settled one.
+
 ## What is still NOT proven
 
 - **That `OutputConfig` lands early enough for a RE-ENCODED picture's init segment.** The run above wrote
