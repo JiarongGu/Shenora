@@ -59,6 +59,106 @@ public class NotificationPumpTests
         Assert.Contains("THREE", json);
     }
 
+    /// <summary>
+    /// 🔴 The pump is where a notification dies, and every way it dies used to be SILENT — so from the
+    /// page, "nothing was emitted", "your own filter rejected it" and "the gate never opened" were the
+    /// same nothing. These pin the two things an adopter has to be able to answer without us: a line
+    /// naming the first drop, and a report that keeps counting after it.
+    /// </summary>
+    public class Diagnosing_a_page_that_receives_nothing
+    {
+        private static (NotificationPump Pump, List<string> Lines) Watched(NotificationPumpOptions options)
+        {
+            var lines = new List<string>();
+            return (new NotificationPump(options with { Log = AppCallback.Logger(lines.Add) }), lines);
+        }
+
+        [Fact]
+        public void A_filtered_notification_is_NAMED_once_and_counted_after_that()
+        {
+            var (pump, lines) = Watched(new NotificationPumpOptions { Filter = _ => false });
+            using var _ = pump;
+            pump.Open();
+
+            pump.Enqueue(Note(module: "SHENORA.LIFECYCLE", type: "STOPPED"));
+            pump.Enqueue(Note(module: "SHENORA.LIFECYCLE", type: "STOPPED"));
+
+            // Named, so the adopter learns it is their OWN filter — and said once, because a filter over
+            // a busy module would otherwise write a line per event.
+            var said = Assert.Single(lines);
+            Assert.Contains("SHENORA.LIFECYCLE/STOPPED", said);
+            Assert.Contains("Filter", said);
+
+            var report = pump.Report();
+            Assert.Equal(2, report.Filtered);
+            Assert.Equal(0, report.Accepted);
+        }
+
+        [Fact]
+        public void A_throwing_filter_counts_as_filtered_because_it_fails_closed()
+        {
+            var (pump, lines) = Watched(
+                new NotificationPumpOptions { Filter = _ => throw new InvalidOperationException("boom") });
+            using var _ = pump;
+
+            pump.Enqueue(Note());
+
+            Assert.Equal(1, pump.Report().Filtered);
+            Assert.NotEmpty(lines);
+        }
+
+        [Fact]
+        public void An_OVERFLOW_says_whether_the_gate_ever_opened()
+        {
+            // The nastier shape: a client that never handshakes fills the queue and then loses the
+            // OLDEST — so the first events of the session, which are usually the interesting ones,
+            // are the ones that vanish. The line has to distinguish it from an ordinary busy queue.
+            var (pump, lines) = Watched(new NotificationPumpOptions { MaxQueued = 1 });
+            using var _ = pump;
+
+            pump.Enqueue(Note(type: "FIRST"));
+            pump.Enqueue(Note(type: "SECOND"));
+
+            Assert.Contains("CLOSED", Assert.Single(lines));
+            var report = pump.Report();
+            Assert.Equal(1, report.Overflowed);
+            Assert.False(report.IsOpen);
+            Assert.Equal(0, report.Delivered);
+        }
+
+        [Fact]
+        public void The_report_separates_EMITTED_from_DELIVERED()
+        {
+            // The whole point: a page seeing nothing while Delivered climbs is a PAGE problem, and a
+            // page seeing nothing while Accepted is 0 means the host half was never wired.
+            var (pump, _) = Watched(new NotificationPumpOptions());
+            using var __ = pump;
+
+            pump.Enqueue(Note());
+            Assert.Equal(1, pump.Report().Accepted);
+            Assert.Equal(0, pump.Report().Delivered);   // buffered — the gate is shut
+
+            pump.Open();
+            Assert.True(pump.TryDrainBatch(out _));
+            Assert.Equal(1, pump.Report().Delivered);
+        }
+
+        [Fact]
+        public void An_unserializable_payload_is_counted_where_the_page_cannot_see_it()
+        {
+            var (pump, _) = Watched(new NotificationPumpOptions());
+            using var _u = pump;
+            pump.Open();
+            pump.Enqueue(new IpcNotification { Module = "APP", Type = "BAD", Payload = new Throws() });
+            pump.Enqueue(Note(type: "GOOD"));
+
+            Assert.True(pump.TryDrainBatch(out _));
+            var report = pump.Report();
+            Assert.Equal(1, report.Unserializable);
+            Assert.Equal(1, report.Delivered);
+        }
+    }
+
     [Fact]
     public void A_filter_decides_per_channel_what_is_delivered()
     {

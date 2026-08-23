@@ -152,6 +152,12 @@ public sealed class WebViewIpcBridge : IDisposable
     public bool IsClientReady => _pump.IsOpen;
 
     /// <summary>
+    /// What became of the notifications emitted so far — read this FIRST when a page reports that it
+    /// receives no events. See <see cref="NotificationPump.Report"/>.
+    /// </summary>
+    public NotificationPumpReport NotificationReport => _pump.Report();
+
+    /// <summary>
     /// Hook <c>WebMessageReceived</c> and start the flush timer. Call on the UI thread after
     /// <see cref="WebViewHost.InitializeAsync"/> (the core must exist) and BEFORE
     /// <see cref="WebViewHost.Navigate"/> — hooking after navigation loses early messages.

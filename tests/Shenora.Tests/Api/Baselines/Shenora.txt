@@ -242,6 +242,7 @@ sealed class Shenora.Core.Ipc.ModuleRouteBuilder
   public Shenora.Core.Ipc.ModuleRouteBuilder RouteAsync(string type, System.Func<Shenora.Core.Ipc.IpcRequest, System.Threading.CancellationToken, System.Threading.Tasks.Task<object>> handler)
 sealed class Shenora.Core.Ipc.NotificationPump : System.IDisposable
   public .ctor(Shenora.Core.Ipc.NotificationPumpOptions options)
+  public Shenora.Core.Ipc.NotificationPumpReport Report()
   public System.TimeSpan FlushInterval { get; }
   public bool IsOpen { get; }
   public bool TryDrainBatch(out string? json)
@@ -264,6 +265,22 @@ sealed class Shenora.Core.Ipc.NotificationPumpOptions : System.IEquatable<Shenor
   public override string ToString()
   public static bool op_Equality(Shenora.Core.Ipc.NotificationPumpOptions? left, Shenora.Core.Ipc.NotificationPumpOptions? right)
   public static bool op_Inequality(Shenora.Core.Ipc.NotificationPumpOptions? left, Shenora.Core.Ipc.NotificationPumpOptions? right)
+struct Shenora.Core.Ipc.NotificationPumpReport : System.IEquatable<Shenora.Core.Ipc.NotificationPumpReport>
+  public .ctor(bool IsOpen, int Pending, long Accepted, long Filtered, long Overflowed, long Unserializable, long Delivered)
+  public bool Equals(Shenora.Core.Ipc.NotificationPumpReport other)
+  public bool IsOpen { get; init; }
+  public int Pending { get; init; }
+  public long Accepted { get; init; }
+  public long Delivered { get; init; }
+  public long Filtered { get; init; }
+  public long Overflowed { get; init; }
+  public long Unserializable { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.Ipc.NotificationPumpReport left, Shenora.Core.Ipc.NotificationPumpReport right)
+  public static bool op_Inequality(Shenora.Core.Ipc.NotificationPumpReport left, Shenora.Core.Ipc.NotificationPumpReport right)
+  public void Deconstruct(out bool IsOpen, out int Pending, out long Accepted, out long Filtered, out long Overflowed, out long Unserializable, out long Delivered)
 static class Shenora.Core.Ipc.PayloadHelper
   public static T GetOptionalValue<T>(System.Text.Json.JsonElement? payload, string key)
   public static T GetRequiredValue<T>(System.Text.Json.JsonElement? payload, string key)

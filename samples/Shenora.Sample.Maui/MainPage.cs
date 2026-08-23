@@ -173,7 +173,12 @@ public sealed class MainPage : ContentPage
 					? [ShellCapability.FilePicker, ShellCapability.LocalFiles, ShellCapability.BackNavigation]
 					: [ShellCapability.FilePicker, ShellCapability.LocalFiles],
 			},
-			OnClientReady = request => MauiProgram.Log($"client READY (handshake id={request.Id})"),
+			// ⚠ The report is logged HERE because this is the moment the gate opens: everything emitted
+			// during host startup was buffered until now, and if any of it was dropped on the way this
+			// is the first place that can say so. An app debugging "my page gets no events" reads the
+			// same property — it is the only view of the notification path from the host side.
+			OnClientReady = request => MauiProgram.Log(
+				$"client READY (handshake id={request.Id}) — notifications: {_bridge?.NotificationReport}"),
 			Log = AppCallback.Logger(MauiProgram.Log),
 		});
 		_bridge.Attach();

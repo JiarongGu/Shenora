@@ -30,6 +30,18 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Added
+
+- **`NotificationPump.Report()`, surfaced as `NotificationReport` on both bridges — the answer to "my
+  page receives no events".** Requests and notifications travel different paths, so a module answering
+  proves nothing about events, and every way the pump could lose one was SILENT: from the page,
+  "nothing was emitted", "your own `NotificationFilter` rejected it", "the queue overflowed" and "the
+  ready gate never opened" are the same nothing. The report separates them (`Accepted`, `Filtered`,
+  `Overflowed`, `Unserializable`, `Delivered`, plus `IsOpen`/`Pending`), and **the first drop of each
+  kind is now logged, naming the module and type** — later ones are counted rather than logged, so a
+  filter over a busy module cannot flood the log. `docs/guides/mobile.md` has the table that maps each
+  reading to its cause.
+
 ### Changed
 
 - **`MobileAppLifecycle` takes an optional `ILogger` and says what it saw.** It logs the transitions it

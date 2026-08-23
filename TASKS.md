@@ -83,15 +83,11 @@ own virtual display, so starting another app only takes FOCUS — and `topResume
 answers for display 0, so the control the report cites reads a different display's activity
 (`mobile-harness.md`). Three runs here read as a confirmed defect on that same control.
 
-- [ ] **Ask them the two questions that separate the remaining causes**, before anything is changed for
-  them. (a) Re-run the zero-frames probe with a real background — HOME on a normal device, or
-  `am start --display <theirs>` on that emulator. (b) **Do any OTHER notifications reach their page?**
-  A request answering proves nothing about notifications: those go through `NotificationPump`, and
-  `MobileIpcBridgeOptions.NotificationFilter` drops what it rejects **silently** (and fails CLOSED on a
-  throw), so an app whose filter was written before this module existed sees exactly this symptom. If
-  nothing at all arrives, it is the pump or the ready gate, not the lifecycle feature.
-  ⚠ Also worth asking whether their page's `Window` was null when they constructed the reporter — the
-  kit and the sample both say so out loud now, which they did not on 0.15.0.
+- [ ] **Point them at `bridge.NotificationReport`** rather than asking them questions — it separates the
+  remaining causes on their own machine (`Accepted=0` = the host half is not wired · `Filtered` = their own
+  `NotificationFilter`, which also swallows a THROWING one · `IsOpen=false` = no handshake · `Delivered>0`
+  = it is the page). Unreleased, so it reaches them with the next cut. They still have to background the
+  app for real, which is the one thing no report can check for them.
 
 ### 🔴 A CONFIGURATION CHANGE CAN KILL THE APP — intermittent, caught on the API 36 AVD
 

@@ -120,6 +120,12 @@ public sealed class MobileIpcBridge : IDisposable
     public bool IsClientReady => _pump.IsOpen;
 
     /// <summary>
+    /// What became of the notifications emitted so far — read this FIRST when a page reports that it
+    /// receives no events. See <see cref="NotificationPump.Report"/>.
+    /// </summary>
+    public NotificationPumpReport NotificationReport => _pump.Report();
+
+    /// <summary>
     /// Hook <c>RawMessageReceived</c> and start the flush timer. Call once, on the UI thread, before
     /// the page loads — hooking afterwards loses the handshake and every message before it.
     /// </summary>

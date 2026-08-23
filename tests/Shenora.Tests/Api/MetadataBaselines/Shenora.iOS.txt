@@ -30,6 +30,7 @@ Shenora.Mobile.MobileIpcBridge
   method Dispose
   method SendNotification
   property IsClientReady
+  property NotificationReport
 Shenora.Mobile.MobileIpcBridgeOptions
   method .ctor
   property Dispatcher

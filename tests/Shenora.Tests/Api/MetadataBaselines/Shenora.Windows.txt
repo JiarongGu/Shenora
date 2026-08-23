@@ -740,6 +740,7 @@ Shenora.Windows.WebViewIpcBridge
   method Dispose
   method SendNotification
   property IsClientReady
+  property NotificationReport
 Shenora.Windows.WebViewIpcBridgeOptions
   method .ctor
   property Dispatcher

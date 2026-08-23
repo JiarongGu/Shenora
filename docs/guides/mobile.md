@@ -259,6 +259,24 @@ activity activities` lists the displays; cover your app on ITS display (`am star
 read the top of that display's block, not the first `topResumedActivity` in the dump. This is the one
 question worth answering first: it has produced a defect report against the kit that did not reproduce.
 
+### "My page receives no events" — diagnose it without guessing
+
+🔴 **A request answering proves NOTHING about notifications.** They travel different paths: requests go
+straight through the dispatcher, events go through `NotificationPump`, which buffers, filters and drops.
+`bridge.NotificationReport` is that path's own account of itself, and it separates the four causes that
+look identical from the page:
+
+| what you see | what it means |
+|---|---|
+| `Accepted = 0` | nothing was ever emitted — the HOST half is not wired (did your `MobileAppLifecycle` construct? it logs) |
+| `Filtered` climbing | **your own** `MobileIpcBridgeOptions.NotificationFilter` is rejecting them — including a filter that THREW, which fails closed |
+| `IsOpen = false`, `Pending` climbing | the page never completed its ready handshake, so nothing has been delivered |
+| `Overflowed > 0` | the queue hit `MaxQueuedNotifications` and lost the OLDEST — the first events of the session |
+| `Delivered` climbing | the host did its job; the problem is in the PAGE's subscription |
+
+The first drop of each kind is also LOGGED, naming the module and type, so a log you already collect
+answers it. Later ones are counted rather than logged — read the report for those.
+
 ```tsx
 useAppLifecycle({
   onResumed: ({ backgroundMilliseconds }) => {

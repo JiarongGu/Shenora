@@ -738,6 +738,7 @@ sealed class Shenora.Windows.WebViewHostOptions
   public string? VirtualHost { get; init; }
 sealed class Shenora.Windows.WebViewIpcBridge : System.IDisposable
   public .ctor(Microsoft.Web.WebView2.WinForms.WebView2 webView, Shenora.Windows.WebViewIpcBridgeOptions options)
+  public Shenora.Core.Ipc.NotificationPumpReport NotificationReport { get; }
   public bool IsClientReady { get; }
   public const string HandshakeModule = "SHENORA"
   public const string HandshakeType = "READY"
