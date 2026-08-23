@@ -18,6 +18,11 @@ async function serve(): Promise<{ port: number; state: InspectState }> {
   await new Promise<void>((resolve) => server.listen(0, '0.0.0.0', resolve));
   const address = server.address();
   if (typeof address === 'string' || address === null) throw new Error('no port');
+  // ⚠ Says what happened. Under a FULL `verify` — where the .NET build and 1,792 tests saturate the box
+  // first — this has come back as 0 despite the listen callback having fired, and the only symptom was
+  // `fetch failed / Caused by: bad port` from a URL reading `:0`, which reads as a broken fetch rather
+  // than a bind that did not take. Isolated, this suite passed 8/8.
+  if (!address.port) throw new Error('the test server reported port 0 — the bind did not take');
   return { port: address.port, state };
 }
 
