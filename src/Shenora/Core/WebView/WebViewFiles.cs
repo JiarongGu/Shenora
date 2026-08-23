@@ -133,6 +133,19 @@ public static class WebViewFiles
     /// <b>per-platform delivery rule</b>, over any producer of bytes — so
     /// 🔴 <see cref="WebViewRangeDelivery"/> has exactly ONE implementation. D44 is a measured platform fact
     /// whose failure mode is silent; see that enum.
+    /// <para>
+    /// <b>Reach for this whenever the bytes are not on disk</b> — an SMB or object store, a decrypting
+    /// stream, a database blob, anything computed. <see cref="Serve"/> is this method with a
+    /// <see cref="FileInfo"/> in front of it.
+    /// </para>
+    /// <para>
+    /// 🔴 <b>It is public because the alternative is every adopter re-deriving three lines whose failure
+    /// mode is the worst shape there is.</b> Getting the <see cref="WebViewRangeDelivery.Unsliced"/> arm
+    /// wrong plays every faststart file perfectly and fails every file whose index sits at the END — so
+    /// it looks like a bad file rather than a bad response, on one platform only. That trap is exactly
+    /// what D44 exists to absorb, and absorbing it for the file case while handing it back for every
+    /// other one would be the wrong boundary.
+    /// </para>
     /// </summary>
     /// <param name="request">The request, read for its <c>Range</c> header.</param>
     /// <param name="totalLength">
@@ -144,7 +157,7 @@ public static class WebViewFiles
     /// <param name="delivery">The platform's rule, read from <see cref="IWebViewInterceptor.RangeDelivery"/>.</param>
     /// <param name="read">Produce bytes <c>[from, from + count)</c>, or null when they cannot be produced —
     /// the caller then answers the kit's single fixed 404. Called at most once per response.</param>
-    internal static WebViewResourceResponse ServeRange(WebViewResourceRequest request, long totalLength,
+    public static WebViewResourceResponse ServeRange(WebViewResourceRequest request, long totalLength,
                                                       string contentType, WebViewRangeDelivery delivery,
                                                       Func<long, long, Stream?> read)
     {

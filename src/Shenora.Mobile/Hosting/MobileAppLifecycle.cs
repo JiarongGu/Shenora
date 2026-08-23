@@ -41,7 +41,18 @@ public sealed class MobileAppLifecycle : IDisposable
         // is an unhandled exception on the UI thread rather than a failed report — which on Android
         // crosses JNI and kills the process. Both bodies below are synchronous and cannot throw:
         // `Emit` is fire-and-forget and guards every subscriber itself.
-        _onStopped = (_, _) => _lifecycle.ReportStopped();
+        //
+        // 🔴 A CONFIGURATION CHANGE IS NOT THE USER LEAVING, and `Window.Stopped` cannot tell them apart.
+        // MEASURED on an emulator: a font-scale change logged "the app left the foreground" every time,
+        // so an app reconnecting its socket on a long absence would reconnect on every rotation instead.
+        // `MobileWindowLifecycle` exists for exactly this question and already ships.
+        // ⚠ Skipping the STOP is what makes the pair consistent: the resume that follows then finds
+        // nothing to measure and honestly reports null rather than a fabricated few milliseconds.
+        _onStopped = (_, _) =>
+        {
+            if (MobileWindowLifecycle.IsRecreating) return;
+            _lifecycle.ReportStopped();
+        };
         _onResumed = (_, _) => _lifecycle.ReportResumed();
 
         _window.Stopped += _onStopped;

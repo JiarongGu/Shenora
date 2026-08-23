@@ -26,13 +26,21 @@ public static class AppLifecycleServiceCollectionExtensions
     /// </para>
     /// </summary>
     /// <param name="services">The container.</param>
-    public static IServiceCollection AddShenoraAppLifecycle(this IServiceCollection services)
+    /// <param name="log">
+    /// Where the transitions are reported. ⚠ <b>Pass one.</b> The fallback is an
+    /// <see cref="ILoggerFactory"/> from the container, and an app that registered none — which is the
+    /// ordinary case for a MAUI sample or a small shell — gets a silent reporter. Measured on a device:
+    /// the events reached the page correctly while the host side logged nothing, so the run looked like
+    /// a broken feature and was a mute instrument.
+    /// </param>
+    public static IServiceCollection AddShenoraAppLifecycle(
+        this IServiceCollection services, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton(provider => new AppLifecycle(
             provider.GetRequiredService<IEventBus>(),
-            provider.GetService<ILoggerFactory>()?.CreateLogger<AppLifecycle>()));
+            log ?? provider.GetService<ILoggerFactory>()?.CreateLogger<AppLifecycle>()));
         return services;
     }
 }

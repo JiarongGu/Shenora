@@ -38,12 +38,23 @@ public sealed class MobileBackNavigation : IDisposable
     private readonly ILogger? _log;
     private bool _disposed;
 
+    /// <summary>The raiser currently owning the process's back dispatcher — see the constructor.</summary>
+    private static MobileBackNavigation? _live;
+
     /// <param name="back">The coordinator. Register it with <c>AddShenoraBackNavigation</c>.</param>
     /// <param name="log">Optional diagnostics.</param>
     public MobileBackNavigation(BackNavigation back, ILogger? log = null)
     {
         _back = back ?? throw new ArgumentNullException(nameof(back));
         _log = log;
+
+        // 🔴 ONE RAISER PER PROCESS, because there is one back dispatcher per process. MEASURED on an
+        // emulator: without this the attach count grew 1 → 3 → 5 across three configuration changes.
+        // A recreation builds a new page whose constructor makes a new raiser, while the PREVIOUS page's
+        // raiser is still subscribed to the static activity-state signal and re-attaches to the same new
+        // activity — so two callbacks end up on one dispatcher, which this type's own remarks forbid.
+        // The old page's Unloaded does not reliably run first, so the newcomer displaces the incumbent.
+        Interlocked.Exchange(ref _live, this)?.Dispose();
 
         _back.InterceptingChanged += OnInterceptingChanged;
 #if ANDROID
@@ -138,6 +149,11 @@ public sealed class MobileBackNavigation : IDisposable
             // managed above it, which is the process death this file exists to avoid. Leaking a callback
             // the platform still owns is strictly better than that.
             _callback.Dispose();
+
+            // ⚠ Logged so ATTACH and DETACH can be counted against each other. An attach LINE is not a
+            // live callback — that mistake made a working fix look inert, because disposing the previous
+            // raiser removes its callback long after its line was printed.
+            Log("back: detached from the previous activity's back dispatcher");
         }
         catch (Exception ex)
         {
@@ -197,6 +213,7 @@ public sealed class MobileBackNavigation : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        Interlocked.CompareExchange(ref _live, null, this);
         _back.InterceptingChanged -= OnInterceptingChanged;
 #if ANDROID
         Platform.ActivityStateChanged -= OnActivityStateChanged;

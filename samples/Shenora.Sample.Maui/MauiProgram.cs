@@ -111,10 +111,14 @@ public static class MauiProgram
 		// MainPage constructs the MobileBackNavigation that actually raises a press — registered alone,
 		// the page's INTERCEPT would be accepted while no press ever arrived, which is the D63 shape
 		// where absent is indistinguishable from working.
-		shenora.Services.AddShenoraBackNavigation();
+		// ⚠ The logger is passed EXPLICITLY, and that is not decoration: this sample registers no
+		// ILoggerFactory, so the fallback leaves both coordinators mute. Measured on the emulator — a run
+		// where the events reached the page correctly and the host logged nothing, which reads exactly
+		// like a broken feature.
+		shenora.Services.AddShenoraBackNavigation(log: AppCallback.Logger(Log));
 		// Foreground transitions, and how long the app was away. Same PAIR shape: MainPage constructs the
 		// MobileAppLifecycle that reports them, or this publishes nothing and a page waits for ever.
-		shenora.Services.AddShenoraAppLifecycle();
+		shenora.Services.AddShenoraAppLifecycle(AppCallback.Logger(Log));
 		// Mobile-only, and the reason is measured: `mac safari-eval` cannot be installed on this build Mac
 		// and WebKit does not forward a page's console.log to the unified log, so this is the only way page
 		// state arrives as TEXT rather than as pixels. See PageDiagModule.

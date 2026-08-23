@@ -5,12 +5,12 @@ static class Shenora.AppCallback
   public static bool Run(System.Action work, System.Action<System.Exception>? onError = null)
   public static void Log(Microsoft.Extensions.Logging.ILogger? sink, System.Func<string> message, Microsoft.Extensions.Logging.LogLevel? level = null, System.Exception? exception = null)
 static class Shenora.AppLifecycleServiceCollectionExtensions
-  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraAppLifecycle(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraAppLifecycle(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Logging.ILogger? log = null)
 static class Shenora.AppRootArgument
   public const string Flag = "--app-root"
   public static string Resolve(string[]? args, string fallback)
 static class Shenora.BackNavigationServiceCollectionExtensions
-  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraBackNavigation(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Shenora.Modules.Platform.BackNavigationOptions? options = null)
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraBackNavigation(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Shenora.Modules.Platform.BackNavigationOptions? options = null, Microsoft.Extensions.Logging.ILogger? log = null)
 static class Shenora.ClipboardServiceCollectionExtensions
   public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraClipboard(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
 sealed class Shenora.Core.Events.EventBus : Shenora.Core.Events.IEventBus
@@ -401,6 +401,7 @@ sealed class Shenora.Core.WebView.WebViewFileOptions : System.IEquatable<Shenora
   public static bool op_Inequality(Shenora.Core.WebView.WebViewFileOptions? left, Shenora.Core.WebView.WebViewFileOptions? right)
 static class Shenora.Core.WebView.WebViewFiles
   public static Shenora.Core.WebView.WebViewResourceResponse Serve(Shenora.Core.WebView.WebViewResourceRequest request, string path, string contentType, Shenora.Core.WebView.WebViewRangeDelivery delivery)
+  public static Shenora.Core.WebView.WebViewResourceResponse ServeRange(Shenora.Core.WebView.WebViewResourceRequest request, long totalLength, string contentType, Shenora.Core.WebView.WebViewRangeDelivery delivery, System.Func<long, long, System.IO.Stream> read)
   public static string? ResolveContained(string? requestedPath, System.Collections.Generic.IReadOnlyList<string> allowedRoots)
 static class Shenora.Core.WebView.WebViewInterceptorExtensions
   public static Shenora.ShenoraApplication UseFiles(Shenora.ShenoraApplication app, Shenora.Core.WebView.WebViewFileOptions options)

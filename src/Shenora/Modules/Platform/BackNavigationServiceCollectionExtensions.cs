@@ -31,15 +31,21 @@ public static class BackNavigationServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The container.</param>
     /// <param name="options">How long a press waits for the page. Null takes the defaults.</param>
+    /// <param name="log">
+    /// Where a press that nobody answered is reported. ⚠ <b>Pass one.</b> The fallback is an
+    /// <see cref="ILoggerFactory"/> from the container, and an app that registered none gets a silent
+    /// coordinator — which costs exactly the diagnostic that matters here, since "the page did not
+    /// answer within the timeout" is the only signal that back is quietly taking the platform default.
+    /// </param>
     public static IServiceCollection AddShenoraBackNavigation(
-        this IServiceCollection services, BackNavigationOptions? options = null)
+        this IServiceCollection services, BackNavigationOptions? options = null, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton(provider => new BackNavigation(
             provider.GetRequiredService<IEventBus>(),
             options,
-            provider.GetService<ILoggerFactory>()?.CreateLogger<BackNavigation>()));
+            log ?? provider.GetService<ILoggerFactory>()?.CreateLogger<BackNavigation>()));
 
         // TryAddEnumerable for the same reason the dialogs use it: the SHELL calls this as well as the
         // app, and two facades claiming one module name is a duplicate the dispatcher rejects.

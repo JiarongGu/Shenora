@@ -63,6 +63,10 @@ at the first list and missed five more breaking changes.
     that never comes. ⚠ **Not yet run on a device**; the ordering is covered by tests, but the platform
     leg (the dispatcher callback, the re-issue on decline, re-attach after recreation) is compile-proven
     only.
+  - 🔴 **ONE RAISER PER PROCESS.** A recreation builds a new page whose constructor makes a new raiser
+    while the previous page's is still subscribed to the platform's activity-state signal and re-attaches
+    to the same new activity — two callbacks on one dispatcher. Measured across three configuration
+    changes: the attach count grew 1 → 3 → 5. A newcomer now displaces the incumbent.
   - **The platform hook is armed only while a page is intercepting**, off `InterceptingChanged`. An
     always-armed callback would tell Android the app handles back, which suppresses the predictive-back
     gesture app-wide on an API 33+ target — so an app that never intercepts would have paid for a
@@ -72,6 +76,13 @@ at the first list and missed five more breaking changes.
     known to have it". The handshake may not have landed when a child component mounts, and gating on it
     there would silently never intercept, leaving back to quit the app. Several components may intercept
     at once; the most recently mounted is asked first and the host is told once.
+- **`WebViewFiles.ServeRange` is public** — the range arithmetic, the status line and the per-platform
+  delivery rule over any producer of bytes, not just a file path. 🔴 **The three lines an adopter had to
+  re-derive without it fail in the worst possible shape:** get the `Unsliced` arm wrong and every
+  faststart file plays perfectly while every file whose index sits at the END fails, on one platform
+  only — so it reads as a bad file rather than a bad response. That is exactly the trap D44 exists to
+  absorb, and absorbing it for files while handing it back for SMB, an object store, a decrypting stream
+  or a database blob was the wrong boundary. Reported by an adopter who copied the three lines.
 - **Foreground transitions, with how long the app was away** — `AppLifecycle`,
   `AddShenoraAppLifecycle()`, the shell-side `MobileAppLifecycle`, and `useAppLifecycle` in
   `@shenora/react`. Events only; the page never calls anything.
@@ -87,6 +98,17 @@ at the first list and missed five more breaking changes.
   - ⚠ `Stopped`/`Resumed`, not `Deactivated`/`Activated`, so a dialog or the notification shade does not
     read as the user leaving. Dispose the reporter on unload — MAUI's `Window` is process-scoped, so a
     second page otherwise reports every transition twice.
+  - 🔴 **A CONFIGURATION CHANGE IS NOT THE USER LEAVING.** `Window.Stopped` fires for both and cannot tell
+    them apart, so a rotation or a font-scale change reported the app as backgrounded — measured on an
+    emulator, where an app reconnecting after a long absence would have reconnected on every rotation
+    instead. `MobileAppLifecycle` now skips the stop while `MobileWindowLifecycle.IsRecreating`, which
+    also keeps the pair consistent: the resume that follows finds nothing to measure and reports null
+    rather than a fabricated few milliseconds.
+  - ⚠ **Pass the `log` argument** that `AddShenoraAppLifecycle` and `AddShenoraBackNavigation` now take.
+    The fallback is an `ILoggerFactory` from the container, and an app that registered none gets a silent
+    coordinator — measured on a device, where the events reached the page correctly while the host logged
+    nothing, which reads exactly like a broken feature. For the back gesture it costs the one diagnostic
+    that matters: "the page did not answer within the timeout".
 - **`ResourcePackJournal.PackagedVersionIn(Stream)`** — the same answer as the directory overload, for a
   packaged bundle that is not a directory. 🔴 **On Android it never is**: the bundle is a set of app-package
   assets read through the platform's asset manager, so the path overload cannot be called there and an app

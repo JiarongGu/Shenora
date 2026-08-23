@@ -65,52 +65,21 @@ is the only one that was ever merely an enhancement.
 — it reports the one thing a throttled, possibly frozen page cannot measure: **how long it was away**. If a
 future session is tempted to add a visibility event, that is the reason not to.
 
-- [ ] **Run the back gesture on a device.** The ordering has tests with no device; the PLATFORM leg is
-  compile-proven only. The sample page now intercepts and answers (a budget of 2 HANDLED presses, then it
-  declines), which is what makes the run mean anything — without a page that intercepts, `Intercepting`
-  stays false and only the fast path is reachable. **What to check, in order:** two presses stay in the app
-  and log `BACK: press … handled=true`; the third leaves it. Then a configuration change (rotate, or change
-  font scale) and repeat — that exercises the self-driven re-attach onto the new activity.
-  ⚠ **NOT the re-issue loop** — that was reasoned through and is not a risk: `OnBackPressedDispatcher`
-  picks the first ENABLED callback, and ours is disabled while it re-issues. **The unmeasured claim is the
-  predictive-back one**: the callback is now enabled only while a page intercepts, specifically so an app
-  that never intercepts keeps Android 16's predictive back gesture. Worth confirming on the glass.
-- [ ] **Run the foreground/resume report on a device too.** Same gap as the back gesture: the arithmetic
-  has tests, the MAUI `Window.Stopped`/`Resumed` wiring has none. ⚠ **What to actually check is the PAIRING**
-  — an Android background that stops and resumes once should produce ONE duration, and the process-scoped
-  `Window` makes a doubled subscription the easy mistake.
+**The back gesture RAN on the MuMu emulator (API 32) and passes end to end**: attaches disabled, the page
+intercepts, two presses answered `handled=true` keep the app resumed, the third answers `false` and the
+foreground becomes the launcher. The self-driven re-attach fires on each recreated activity and back still
+works after one. Two defects the run found are fixed and re-measured.
+
+- [ ] **The two things API 32 could not answer.** (a) **Predictive back** needs API 33+: the callback is
+  armed only while a page intercepts, specifically so an app that never intercepts keeps the gesture, and
+  that is reasoned rather than measured. (b) **A real background/resume** — `input keyevent 3` does NOT
+  leave the app on this MuMu instance (measured: the foreground activity was unchanged after HOME), so the
+  duration report is still unproven on hardware. ⚠ **Check the foreground before trusting any absence of
+  lifecycle lines** — that control is the only reason the first reading was not written up as
+  "`Window.Stopped` never fires".
 - [ ] **Screen orientation.** Lock to portrait, and unlock/relock around a full-screen media viewer where
   rotation is genuinely wanted. Two calls, both platforms, no policy — the app decides WHEN. **The last of
   the three, and the only one that is purely an enhancement.**
-
-### 🔴 `ServeRange` IS INTERNAL, SO THE ONE-IMPLEMENTATION PROMISE ENDS AT A FILE PATH
-
-Filed 2026-08-23 by the same adopter, from writing an SMB reader for their mobile shell.
-`WebViewFiles.Serve(request, PATH, …)` is public; `ServeRange(request, totalLength, contentType, delivery,
-read)` — the same answer over any producer of bytes — is `internal`. Its own doc is the argument for
-exporting it: *"🔴 `WebViewRangeDelivery` has exactly ONE implementation. D44 is a measured platform fact
-whose failure mode is silent."*
-
-**A body that is not a file is not exotic** — it is SMB, an object store, a decrypting stream, a database
-blob. Every one of those adopters gets `WebViewByteRange.TryParse` and the response builders (all public,
-which is why this is survivable) and then has to re-derive the last step themselves:
-
-```csharp
-var unsliced = delivery is WebViewRangeDelivery.Unsliced;
-var sent = unsliced ? new WebViewByteRange(range.From, total - 1) : range;
-var body = unsliced ? read(0, total) : read(range.From, range.Length);
-```
-
-Three lines, and **the failure mode of getting them wrong is the worst shape there is**: every faststart
-file plays perfectly and every file whose index sits at the end fails. That is precisely the trap D44 exists
-to absorb, so leaving it outside the boundary means the kit absorbs it for the file case and hands it back
-for every other one.
-
-- [ ] **Make it public, or expose the same thing under a name you prefer** (`WebViewFiles.ServeStream`,
-  a `WebViewRangeResponse.For(...)`). The signature already takes a `Func<long, long, Stream?>`, so nothing
-  needs to change but the modifier and a doc line saying when to reach for it.
-  ⚠ Not urgent for the adopter — they copied the three lines and pointed a comment at this entry — but it
-  is a small change that deletes a copy nobody should own.
 
 ### 📱 THE STAMP FIX IS BUILT — one leg of it still needs the Mac
 
