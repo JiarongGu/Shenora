@@ -41,6 +41,31 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
+### 📦 `ResourcePackJournal`: a PENDING pack older than the packaged app still gets its boot
+
+Filed by the adopter, 2026-08-24, MEASURED on a real iPhone. `Open(packaged)` correctly prefers the packaged
+client over an **active** pack — the log says so and it is the hole 0.14.0 closed. A **pending** pack is
+handed back regardless of version, so a device that stages one and THEN takes an app update boots the older
+staged client anyway:
+
+```
+packaged 1.0.19, pending 1.0.18
+ota: serving PENDING bundle 1.0.18 — it must call CONFIRM to be kept
+```
+
+- [ ] **Compare the pending pack against the packaged version too, and drop it when it is not newer.** The
+  comparison already exists for `Active`; this is the same question one branch earlier. Suggested shape: the
+  result is `Packaged` and the pending entry is discarded, which is what an adopter would otherwise have to
+  reimplement on top of the journal's own decision.
+  ⚠ **The user-visible failure is the worst kind, which is why it is worth a release:** a fix that is
+  demonstrably inside the installed app does not appear, so the app looks broken AND the fix looks wrong. It
+  cost a round of "you said you fixed it" before the log was read.
+  ⚠ Not urgent for us any more — worked around in `Ota/ClientBundles.Decide` (refuse a pending pack that is
+  not newer, then let the journal's own rollback take it on the next launch; nothing is Reset, so the
+  rollback target survives). **Verified in the field on the next deploy:**
+  `ota: pending bundle 1.0.19 is not newer than the packaged client 1.0.20 — serving the packaged client`.
+  The guard stays either way; the journal is still the right owner of the comparison.
+
 ### 📱 WHAT IS LEFT ON ANDROID NEEDS A PHONE'S ENCODER, NOT AN EMULATOR'S
 
 The segment tier is answered on all three shells (`docs/design/media.md`), and the encoder's ARITHMETIC is
