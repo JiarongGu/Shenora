@@ -41,6 +41,122 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
+### 🔴 `shenora ios provision` PRINTS THE APPLE TEAM ID AND THE MAC's LAN IP IN ITS BANNER
+
+Reported by the Yaorin adopter, 2026-09-04, hit while re-minting an expired free-tier profile. The first
+line of output is:
+
+```
+shenora: provisioning 1 bundle id(s) for team <TEAMID> on <user>@<lan-ip>
+```
+
+**A team id identifies an Apple developer account**, and a LAN IP identifies a home network. Neither is a
+secret in the credential sense, and both are exactly the class of value that must not reach a public repo,
+a CI log, or an assistant transcript — none of which the CLI can see it is writing to.
+
+The careful path is already established DOWNSTREAM, which is what makes this worth fixing rather than
+shrugging at: the adopter's read-only recipe for inspecting profiles pipes `application-identifier` through
+`cut -d. -f2-` **for the sole purpose of stripping the team id** before printing it, with a note explaining
+that the uncut version was run once and could not be undone. This command re-emits the same value in its
+banner, unprompted, on every run.
+
+**Suggested shape** — the kit's call, not patched by the adopter:
+- print the bundle id(s) and the RESULT, which is what an operator needs, and leave identity out;
+- if the team id is genuinely useful for diagnosis, put it behind `--verbose` so it is opted into;
+- likewise the ssh target: `on <user>@<host>` could name the configured host ALIAS rather than the address.
+
+⚠ Not a vulnerability and not urgent: it discloses to whoever already ran the command. It is a
+DEFAULT-SAFETY issue, and the cost of getting it wrong has the shape disclosures have — deleting the log
+afterwards does not undo it.
+⚠ The rest of that flow is good and should NOT change. The preflight's
+`for <bundle>: ok (expires …) | EXPIRED | NONE` is exactly the right report, and `maui --device` correctly
+REFUSED to build against a dead profile rather than failing later at the signing step.
+
+### 🎬 THE PICTURE SURFACE (D80): THE DESIGN IS DEVICE-CONFIRMED, THE SUBSTITUTIONS ARE NOT
+
+The adopter runs this shape on Android and on an iPhone and reports it working, which retires the risk that
+mattered: **the webview really can be made see-through, the page's hole really composites, and a
+CSS-pixel rectangle really is the right contract.** Nothing below re-asks those.
+
+🔴 **ONE substitution is left to measure, because analysing the other two closed them.** Their handlers
+were read for the REASON behind each choice, not just the shape:
+
+- **iOS: their shape is now the kit's.** A `layerClass` backing layer was written first, on the grounds
+  that UIKit would then size the layer and implicit animations would not apply. **Reverted to their proven
+  sublayer + `LayoutSubviews` + `CATransaction.DisableActions`** — the cleaner mechanism was unbuilt,
+  unbuildable here, and failed as an `InvalidCastException` on page load if the export did not bind.
+- **Android's holder callbacks are FORCED, not a deviation.** `ExoPlayer.SetVideoSurfaceView(view)` takes
+  the view and registers the holder callbacks itself; `MediaPlayer.SetDisplay(holder)` takes the holder and
+  registers nothing, so the caller must. Their own comment is the spec for it: *attached AFTER the player
+  exists, detached BEFORE it is released*.
+
+- [ ] **The Android ENGINE substitution — the one thing their run genuinely cannot speak to.** They drive
+  ExoPlayer; the kit's default is `android.media.MediaPlayer` (D51/D42: no engine ships). Both sit on
+  `MediaCodec`, so the DECODERS are the same and the difference is the EXTRACTOR set — which is the whole
+  delta D80 exists for. The AVD answers it: play an `.mkv` holding H.264 through the hole, confirm the
+  frame appears and follows a scroll. ⚠ The sample's page must leave a TRANSPARENT region first; with the
+  page painting its own background, a working surface and a broken one look identical.
+- [ ] **Re-check the safe-area probe on iOS**, and that `Shenora.iOS` compiles at all — nothing on this box
+  does (`dotnet workload list` → `maui-android` alone). The sample's `Content` became a `Grid` (with
+  `SafeAreaEdges.None` to restore edge-to-edge), and that is the property iOS actually reads.
+
+### 🟡 HOW DOES A PAGE LEARN WHAT THE SHELL'S PLAYER IS DOING? The kit answers only if asked
+
+With the picture on the shell's player the page has no clock of its own — the element is not playing — so
+`PLAYER_STATUS` is the only truth about position. The kit ships the route and nothing else, so every
+adopter writes the poll. The adopter wrote it and paid for three findings the kit does not carry:
+
+- **A STATE answer that predates a command is stale in EVERY field.** Their transport ops are posts and
+  STATE is an invoke, so the two are unordered: a poll issued before a PLAY returns after it, and the
+  button flips three times around every ±10 s tap. ⚠ **The kit is NARROWER, not immune** — its drive routes
+  RETURN the resulting status, so transitions are authoritative and only the POSITION poll can go stale.
+- **A poll that always returns null is INVISIBLE.** No callback ever runs, so the scrubber keeps its
+  optimistic value and nothing says the transport is dead. They found it *from an absence* — two `route —
+  SHELL player` lines and no first-callback line — and now warn after 2 s of nulls.
+- **Nothing says WHICH player ran.** `MediaPlayerStatus` has no `Engine`, and with a pluggable seam (D80)
+  that is unanswerable from the page. Two of their debugging rounds went into the wrong engine.
+
+- [ ] **Decide the shape before building any of it.** Three candidates, and they are not equivalent: a
+  counter-aware polling hook in `@shenora/react` (their shape, no host change); pumping the shell player's
+  `StateChanged` to the page as a NOTIFICATION so transitions need no poll at all (the kit already has that
+  event and the pump — position would still poll); or documenting the trap and shipping neither.
+  ⚠ They chose polling deliberately — *"no delivery guarantees, no ordering and no teardown race"* — so the
+  notification route must answer those three before it is called the better one.
+  ⚠ `Engine` is cheap and additive but needs each shell to populate it; iOS cannot be verified here.
+
+### 🟡 ONE CAPABILITY OR TWO? The adopter needed two and the kit ships one
+
+They split it: `nativeVideoLayer` = *there is a SURFACE*, `nativeVideoPlayback` = *the shell DECODES AND
+PLAYS*. Their reason, verbatim: *"For one slice that surface was a coloured box that could not play
+anything, so a page branching on the layer alone would have handed it a film and rendered a rectangle."*
+
+The kit ships `mediaSurface` meaning BOTH, now stated that way on both sides, with `MobileMediaSurface`
+naming a null `Player` in the log on first use. **That is a mechanism, not a second wire string** — their
+split answered a BUILD-ORDER problem (surface shipped a slice ahead of the player) that the kit does not
+have, since both landed together.
+
+- [ ] **Decide from an adopter, not from here, whether the PAGE needs the two facts apart.** It does the
+  moment an app supplies its OWN player through the seam and composes the two halves separately — then
+  "a hole exists" and "something decodes into it" really are independent, and only the page can fall back.
+  ⚠ Do not pre-emptively add the second capability: D15's bar, and a capability string is forever.
+
+### 🟡 D80 MAKES A LATENT iOS DEFECT VISIBLE — a seek before the item is ready
+
+`IosMediaPlayer.SeekCore` seeks unconditionally, and `SeekAsync` only requires a source, not a READY one —
+so a `SEEK` arriving while a load is in flight seeks an unprepared `AVPlayerItem`. The adopter paid for
+this one: the decoder emits frames before it holds the references they depend on, and **green** is what a
+YUV buffer with no luma written looks like, until the next keyframe. Codec-dependent by GOP length, so it
+reads as "one file type is broken".
+
+⚠ **It was harmless until now**, which is why it is filed rather than fixed blind: with no surface the
+picture was never composited, so the green frames had nowhere to appear.
+⚠ **The common case is already safe by design** — `MediaSource.StartAt` is applied from `OnOpened`, i.e.
+after `ReadyToPlay`, which is exactly their fix. Only an explicit page seek during `Opening` reaches it.
+
+- [ ] **Defer a seek issued before the item is ready**, and apply it on `OnOpened` like `StartAt` already
+  is. Needs a Mac to verify, and the fix belongs in `IosMediaPlayer` rather than the shared state machine
+  (Android's `MediaPlayer` queues a seek during prepare itself).
+
 ### 📦 `ResourcePackJournal`: a PENDING pack older than the packaged app still gets its boot
 
 Filed by the adopter, 2026-08-24, MEASURED on a real iPhone. `Open(packaged)` correctly prefers the packaged
