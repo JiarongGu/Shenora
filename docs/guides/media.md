@@ -413,6 +413,25 @@ _surface.Player = services.GetRequiredService<AndroidMediaPlayer>();   // or Ios
 Then advertise `ShellCapability.MediaSurface` and branch on it in the page: **absent is not a degraded
 state**, it means the `<video>` element is the picture, which is the right answer on the desktop.
 
+### Reading the transport, when the shell is the player
+
+The page's element is not playing, so its `timeupdate` says nothing and **the host is the only clock**.
+`useMediaTransport` is that clock, and it owns the commands for a reason:
+
+```tsx
+const { status, unanswered, play, pause, seek } = useMediaTransport();
+```
+
+🔴 **Do not call the drive routes directly beside a poll of your own.** A status ask issued *before* a
+command returns *after* it, describing a player that has since been told to do something else — stale in
+position as well as state. Reported rather than dropped, it undoes the command's own answer and the next
+sample undoes that: three flips per press, worst around a ±10 s nudge. The hook drops those answers, which
+it can only do because every command goes through it.
+
+⚠ **Watch `unanswered`.** A poll that stops being answered has no symptom of its own — the scrubber keeps
+its last value and the buttons keep whatever the last press set. It goes true after eight consecutive
+failures and clears itself when the host comes back.
+
 ### Every way this fails looks identical — no picture
 
 - **The page painted over it.** The webview is see-through, but `body` is not. The stage element *and

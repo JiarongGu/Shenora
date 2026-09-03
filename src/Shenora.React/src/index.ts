@@ -177,3 +177,10 @@ export {
   MediaSurfaceCommands,
   type UseMediaSurfaceOptions,
 } from './mediaSurface.js';
+// Driving and reading that same player, for when the shell owns the picture and the page owns the controls.
+export {
+  useMediaTransport,
+  type MediaTransport,
+  type MediaTransportStatus,
+  type UseMediaTransportOptions,
+} from './mediaTransport.js';

@@ -69,29 +69,17 @@ were read for the REASON behind each choice, not just the shape:
   does (`dotnet workload list` → `maui-android` alone). The sample's `Content` became a `Grid` (with
   `SafeAreaEdges.None` to restore edge-to-edge), and that is the property iOS actually reads.
 
-### 🟡 HOW DOES A PAGE LEARN WHAT THE SHELL'S PLAYER IS DOING? The kit answers only if asked
+### 🟡 NOTHING SAYS WHICH PLAYER RAN
 
-With the picture on the shell's player the page has no clock of its own — the element is not playing — so
-`PLAYER_STATUS` is the only truth about position. The kit ships the route and nothing else, so every
-adopter writes the poll. The adopter wrote it and paid for three findings the kit does not carry:
+`MediaPlayerStatus` has no `Engine`, and with D80's seam an app can supply its own `MediaPlayerBase` — so
+"which decoder produced this reading" is unanswerable from the page. The adopter carries the field because
+two rounds of their debugging went into the wrong engine while nothing said which one was running; they
+carry `DroppedFrames`/`Stalls` beside it, with **-1 meaning "no figure" and never 0**, since a zero claims
+a clean play.
 
-- **A STATE answer that predates a command is stale in EVERY field.** Their transport ops are posts and
-  STATE is an invoke, so the two are unordered: a poll issued before a PLAY returns after it, and the
-  button flips three times around every ±10 s tap. ⚠ **The kit is NARROWER, not immune** — its drive routes
-  RETURN the resulting status, so transitions are authoritative and only the POSITION poll can go stale.
-- **A poll that always returns null is INVISIBLE.** No callback ever runs, so the scrubber keeps its
-  optimistic value and nothing says the transport is dead. They found it *from an absence* — two `route —
-  SHELL player` lines and no first-callback line — and now warn after 2 s of nulls.
-- **Nothing says WHICH player ran.** `MediaPlayerStatus` has no `Engine`, and with a pluggable seam (D80)
-  that is unanswerable from the page. Two of their debugging rounds went into the wrong engine.
-
-- [ ] **Decide the shape before building any of it.** Three candidates, and they are not equivalent: a
-  counter-aware polling hook in `@shenora/react` (their shape, no host change); pumping the shell player's
-  `StateChanged` to the page as a NOTIFICATION so transitions need no poll at all (the kit already has that
-  event and the pump — position would still poll); or documenting the trap and shipping neither.
-  ⚠ They chose polling deliberately — *"no delivery guarantees, no ordering and no teardown race"* — so the
-  notification route must answer those three before it is called the better one.
-  ⚠ `Engine` is cheap and additive but needs each shell to populate it; iOS cannot be verified here.
+- [ ] **Decide whether the kit answers it.** Cheap and additive on the record, but each shell has to
+  populate it, and a field only Android fills is the D39 shape one level down. ⚠ iOS cannot be verified
+  from here at all.
 
 ### 🟡 ONE CAPABILITY OR TWO? The adopter needed two and the kit ships one
 

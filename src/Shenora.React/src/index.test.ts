@@ -34,6 +34,9 @@ import type {
   SegmentManifest,
   UseMediaPlayerOptions,
   UseMediaSurfaceOptions,
+  MediaTransport,
+  MediaTransportStatus,
+  UseMediaTransportOptions,
   FileDialogFilter,
   FileDialogOptions,
   FileDialogResult,
@@ -142,6 +145,7 @@ const EXPECTED_EXPORTS = [
   'useFileDialogs',
   'useMediaPlayer',
   'useMediaSurface',
+  'useMediaTransport',
   'useShellInfo',
   'useShenora',
   'useShenoraEvent',
@@ -186,6 +190,7 @@ type ExportedTypeSurface = [
   MediaSourceKind, MediaSourceGlobals, FetchState, FetchPolicy,
   WindowOrientationKind,
   UseMediaSurfaceOptions,
+  MediaTransport, MediaTransportStatus, UseMediaTransportOptions,
 ];
 
 describe('the public barrel', () => {

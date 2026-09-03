@@ -52,6 +52,17 @@ at the first list and missed five more breaking changes.
   `MediaSurfaceView` in a layout *before* the webview, register `MobileMediaSurface` over the two views,
   and make the page's own background transparent where the picture belongs.
 
+- **`useMediaTransport()` — drive the host's player and read what it is doing.** The companion to
+  `useMediaSurface`: with the picture on the shell's surface the page's own element is not playing, so
+  the host is the only clock. Returns `status`, `unanswered`, and the commands.
+  🔴 **The commands are part of the hook, not a convenience.** A status ask issued BEFORE a command
+  returns AFTER it, describing a player that has since been told to do something else — stale in position
+  as well as state. Reported rather than dropped it undoes the command's own answer, and the next sample
+  undoes that: three flips per press. The hook can only drop those answers because every command goes
+  through it. ⚠ A command's own answer is applied at once, so a press does not wait for the next sample.
+  ⚠ **`unanswered` exists because a dead poll has no symptom of its own** — the callback simply stops,
+  the scrubber keeps its last value, and it otherwise has to be diagnosed from an absence.
+
 ### Changed
 
 - **`MediaPlayerModule`'s constructor takes an optional `IMediaSurface?`.** Source-compatible — existing
