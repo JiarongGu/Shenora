@@ -1134,6 +1134,15 @@ is not a reason. Read this section before proposing any of it.
   `UseFiles` — the portable one). The package would hold a WebView2 args adapter and one constant, both of
   which `Shenora.Windows` owns outright. Add it only when a desktop consumer shows something it genuinely
   cannot express today (a native surface, an engine binding).
+- **A second capability for "the shell DECODES" beside "the shell has a SURFACE"** — CLOSED against, 2026-09-04.
+  An adopter ships both because for one slice their surface was a coloured box that could play nothing, so a
+  page branching on the layer alone *"would have handed it a film and rendered a rectangle"*. **That is a
+  build-order fact, not a contract one:** the kit landed the surface and the player together, so
+  `ShellCapability.MediaSurface` asserts both and says so on both sides, and `MobileMediaSurface` names a
+  null `Player` in the log rather than opening a hole nothing draws into — a mechanism where the split would
+  be a wire string, and wire strings are forever. **Reopen it when an app supplying its own player through
+  D80's seam composes the two halves separately and the PAGE needs to fall back**; one adopter's transitional
+  need does not meet D15's bar.
 - **Thumbnails and image resize** — deferred with the analysis already done (D43). They cost 0 MB on every
   platform and need no engine, so they are cheap to add later, and the player does not depend on them.
 - **Folder picking as a portable capability** — CLOSED, D35. Same word, different guarantee on each platform;

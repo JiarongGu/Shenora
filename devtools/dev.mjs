@@ -109,6 +109,50 @@ function androidBuildEnv() {
   return { ...process.env, JAVA_HOME: jdk };
 }
 
+// ---- A platform TFM needs its WORKLOAD, and the failure without one does not name the prerequisite.
+//
+// Same shape as the JDK probe above, for the same reason: `dotnet build` of the solution stops with
+// `NETSDK1147: To build this project, the following workloads must be installed: ios`, repeated per
+// target, and nothing says whether that is a broken repo or a missing install. It cost a session
+// discovering that a RED gate was environmental — and worse, `verify` reads as FAILED on commits that
+// are fine, which is the one thing a gate must never do quietly.
+//
+// ⚠ Platforms are READ FROM THE CSPROJ FILES so a TFM added later cannot go unchecked, but which
+// platforms need a workload at all is a fact about the .NET SDK and is stated here: `net10.0-windows`
+// needs none, and treating it like the others reported a missing `windows` workload that does not exist.
+const WORKLOAD_PLATFORMS = new Set(['android', 'ios', 'maccatalyst', 'macos', 'tvos']);
+
+/** Platform workloads the solution needs and this machine does not have. Empty when it cannot ask. */
+function missingWorkloads() {
+  const platforms = new Set();
+  const scan = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'bin' && entry.name !== 'obj' && entry.name !== 'node_modules') scan(abs);
+      } else if (entry.name.endsWith('.csproj')) {
+        for (const m of fs.readFileSync(abs, 'utf8').matchAll(/net\d+\.\d+-([a-z]+)/g)) {
+          if (WORKLOAD_PLATFORMS.has(m[1])) platforms.add(m[1]);
+        }
+      }
+    }
+  };
+  scan(path.join(repo, 'src'));
+  if (platforms.size === 0) return [];
+
+  const listed = spawnSync('dotnet', ['workload', 'list'], { encoding: 'utf8' });
+  // Cannot ask — let the build speak for itself rather than inventing a diagnosis from a failed probe.
+  if (listed.status !== 0 || !listed.stdout) return [];
+
+  // ⚠ The ID COLUMN only. Matching anywhere in the output would let a platform named in a header or a
+  // hint line read as INSTALLED, which fails in the dangerous direction — silently restoring the
+  // confusing build error this exists to replace.
+  const ids = listed.stdout.split('\n')
+    .map((line) => line.trim().split(/\s+/)[0] ?? '')
+    .filter((id) => /^[a-z][a-z0-9-]*$/.test(id));
+  return [...platforms].filter((p) => !ids.some((id) => id === p || id.endsWith(`-${p}`)));
+}
+
 // ---- Evict this repo's packages from the NuGet GLOBAL cache after packing.
 //
 // NuGet keys the global folder (~/.nuget/packages) on id+VERSION and it wins over every source, so
@@ -818,7 +862,18 @@ switch (cmd) {
     // No -clp:ErrorsOnly: warnings must be VISIBLE (they are errors under TreatWarningsAsErrors,
     // but a suppressed-warning build is how invisible problems accumulated — P5.5 H5).
     const buildEnv = androidBuildEnv();
-    const ok = buildEnv !== null
+    // Asked BEFORE the build, so a missing prerequisite is named in one line instead of arriving as
+    // NETSDK1147 after a restore — see `missingWorkloads`.
+    const absent = buildEnv === null ? [] : missingWorkloads();
+    if (absent.length > 0) {
+      console.error(
+        `\n  This machine is missing the .NET workload(s) the solution needs: ${absent.join(', ')}.\n` +
+        `  Install with:  dotnet workload install ${absent.join(' ')}\n` +
+        '  Until then `dotnet build` of the solution stops on NETSDK1147 and NOTHING here has run —\n' +
+        '  a RED gate that says nothing about the working tree. This is a machine prerequisite, not a\n' +
+        '  repo setting; see devtools/README.md.');
+    }
+    const ok = buildEnv !== null && absent.length === 0
       && step('dotnet build', () => run('dotnet', ['build', config.solution, '-v', 'minimal'], { env: buildEnv }))
       // The update-probe is OUTSIDE the solution but INSIDE the release path — the launcher job
       // compiles it fresh on every release, so the gate must too. It drifted against the ILogger

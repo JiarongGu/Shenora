@@ -63,8 +63,14 @@ compiles is the objection this repo raises against any ungated artifact.
 
 | Need | How to get it | If it is missing |
 |---|---|---|
-| `maui-android` workload | `dotnet workload install maui-android` | the restore fails naming the missing workload |
+| `maui-android` workload | `dotnet workload install maui-android` | `dev.mjs build` names it and stops BEFORE the build (see below) |
 | `maui-ios` workload | `dotnet workload install maui-ios` | same. Needed on WINDOWS too — a `net10.0-ios` library compiles against reference assemblies and wants no Xcode; only an iOS *app* needs a Mac |
+
+⚠ **A missing workload is checked FIRST, because the raw failure does not say it is a machine problem.**
+Without it `dotnet build` stops on `NETSDK1147` repeated per target, and `verify` then reads as FAILED on
+a working tree — a red gate saying nothing about the code, which is the one thing a gate must not do. The
+platforms come from the csproj files so a new TFM cannot go unchecked; `net10.0-windows` is excluded
+because it needs no workload.
 | A JDK 17+ | **Android Studio already ships one** in its `jbr` folder | `dev.mjs build` probes for it and sets `JAVA_HOME` for the child process; with none it stops and says so, rather than letting MSBuild emit a bare `error XA5300` pointing at an install page on a machine that already has a JDK |
 
 The Android SDK resolves from its default location; set `ANDROID_HOME` only if yours is elsewhere.

@@ -82,22 +82,6 @@ smooth clock while dropping every other frame. `AVPlayerItemAccessLog` holds it 
   done"*. ⚠ **-1 means "no figure" and must never be 0**, which claims a clean play; they were bitten by
   `default(...)` skipping the initialisers at three call sites. ⚠ iOS cannot be verified from here.
 
-### 🟡 ONE CAPABILITY OR TWO? The adopter needed two and the kit ships one
-
-They split it: `nativeVideoLayer` = *there is a SURFACE*, `nativeVideoPlayback` = *the shell DECODES AND
-PLAYS*. Their reason, verbatim: *"For one slice that surface was a coloured box that could not play
-anything, so a page branching on the layer alone would have handed it a film and rendered a rectangle."*
-
-The kit ships `mediaSurface` meaning BOTH, now stated that way on both sides, with `MobileMediaSurface`
-naming a null `Player` in the log on first use. **That is a mechanism, not a second wire string** — their
-split answered a BUILD-ORDER problem (surface shipped a slice ahead of the player) that the kit does not
-have, since both landed together.
-
-- [ ] **Decide from an adopter, not from here, whether the PAGE needs the two facts apart.** It does the
-  moment an app supplies its OWN player through the seam and composes the two halves separately — then
-  "a hole exists" and "something decodes into it" really are independent, and only the page can fall back.
-  ⚠ Do not pre-emptively add the second capability: D15's bar, and a capability string is forever.
-
 ### 🟡 D80 MAKES A LATENT iOS DEFECT VISIBLE — a seek before the item is ready
 
 `IosMediaPlayer.SeekCore` seeks unconditionally, and `SeekAsync` only requires a source, not a READY one —
