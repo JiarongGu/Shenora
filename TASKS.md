@@ -41,37 +41,6 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 🔴 `shenora ios provision` PRINTS THE APPLE TEAM ID AND THE MAC's LAN IP IN ITS BANNER
-
-Reported by the Yaorin adopter, 2026-09-04, hit while re-minting an expired free-tier profile. The first
-line of output is:
-
-```
-shenora: provisioning 1 bundle id(s) for team <TEAMID> on <user>@<lan-ip>
-```
-
-**A team id identifies an Apple developer account**, and a LAN IP identifies a home network. Neither is a
-secret in the credential sense, and both are exactly the class of value that must not reach a public repo,
-a CI log, or an assistant transcript — none of which the CLI can see it is writing to.
-
-The careful path is already established DOWNSTREAM, which is what makes this worth fixing rather than
-shrugging at: the adopter's read-only recipe for inspecting profiles pipes `application-identifier` through
-`cut -d. -f2-` **for the sole purpose of stripping the team id** before printing it, with a note explaining
-that the uncut version was run once and could not be undone. This command re-emits the same value in its
-banner, unprompted, on every run.
-
-**Suggested shape** — the kit's call, not patched by the adopter:
-- print the bundle id(s) and the RESULT, which is what an operator needs, and leave identity out;
-- if the team id is genuinely useful for diagnosis, put it behind `--verbose` so it is opted into;
-- likewise the ssh target: `on <user>@<host>` could name the configured host ALIAS rather than the address.
-
-⚠ Not a vulnerability and not urgent: it discloses to whoever already ran the command. It is a
-DEFAULT-SAFETY issue, and the cost of getting it wrong has the shape disclosures have — deleting the log
-afterwards does not undo it.
-⚠ The rest of that flow is good and should NOT change. The preflight's
-`for <bundle>: ok (expires …) | EXPIRED | NONE` is exactly the right report, and `maui --device` correctly
-REFUSED to build against a dead profile rather than failing later at the signing step.
-
 ### 🎬 THE PICTURE SURFACE (D80): THE DESIGN IS DEVICE-CONFIRMED, THE SUBSTITUTIONS ARE NOT
 
 The adopter runs this shape on Android and on an iPhone and reports it working, which retires the risk that

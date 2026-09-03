@@ -35,8 +35,10 @@ const USAGE = `shenora — take a built app onto a simulator or a real iPhone
                                relaunches on the phone with a console attached (startup is the point)
   shenora ios shot [-o <file>] screenshot the booted simulator
   shenora ios push             send this working tree to the remote Mac (uncommitted edits included)
-  shenora ios provision [<extra.bundle.id>…]
-                               mint the signing profiles a device build needs (app + its extensions)
+  shenora ios provision [<extra.bundle.id>…] [--verbose]
+                               mint the signing profiles a device build needs (app + its extensions).
+                               --verbose also prints the team id and the Mac; both identify YOU, so
+                               they are left out by default
   shenora ios exec <command>   run a command on the build machine (the Mac) over ssh
 
   shenora android doctor       can this machine build, install and log? (works on Windows too)

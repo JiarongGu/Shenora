@@ -18,6 +18,7 @@ import { withPipefail, argValue, describeSpawnFailure, run, splitArgs, shellPass
 import {
   simulatorLogPredicate, describeConnection, findArtifact, describeLogOutcome, parseDeviceList,
   isAlreadyBooted, describeDeviceSigning, pickBindingBand, describeBindings, describeAotCrossPack,
+  provisionBanner,
 } from './ios.js';
 import { parseDevices, findPackage, adbCandidates, resolveJdk } from './android.js';
 import {
@@ -1158,5 +1159,56 @@ describe('main — the group/verb routing, and what it BLAMES when it cannot pro
 
     expect(out).toContain('shenora — take a built app');
     expect(code).toBeUndefined();
+  });
+});
+
+/**
+ * 🔴 A DEFAULT-SAFETY GATE, not a formatting test.
+ *
+ * `provision` printed the Apple team id and the ssh target in its opening line, unprompted, on every run
+ * — an account identifier and usually a home network, into whatever the operator happened to be piping
+ * into. Reported by an adopter, 2026-09-04.
+ *
+ * The failure mode is why this is worth a test: a disclosure cannot be undone by deleting the log
+ * afterwards, and nothing about the wrong behaviour looks wrong while you are reading it.
+ */
+describe('provision does not disclose identity unless asked', () => {
+  const TEAM = 'AB12CD34EF';
+  const TARGET = 'someone@build-mac.example';
+
+  it('leaves the team id and the ssh target out by default', () => {
+    // 🔴 EXACT, not `not.toContain`. The values that must not appear are open-ended — an account id, a
+    // host, a user name, whatever a future line adds — so asserting the absence of the two we happen to
+    // know about would pass for the third. Pinning the whole string means anything new has to be
+    // deliberate. ⚠ The guard also refuses a LAN-IP-shaped fixture in a tracked file, which is how the
+    // first version of this test was written and is the same rule the fix serves.
+    expect(provisionBanner(2, TEAM, TARGET)).toBe('shenora: provisioning 2 bundle id(s)');
+  });
+
+  it('includes them under --verbose, because a profile minted against the wrong account needs them', () => {
+    const line = provisionBanner(2, TEAM, TARGET, true);
+
+    expect(line).toContain(TEAM);
+    expect(line).toContain(TARGET);
+  });
+
+  /**
+   * 🔴 THE WIRING, because the test above passes whether or not `cmdProvision` uses it.
+   *
+   * This file's own header records that exact trap: four pure-function tests stayed green while `run`
+   * ignored the helper completely. `cmdProvision` cannot be driven from a test — `resolveTarget` builds a
+   * real `SshTarget` — so the call site is checked at the SOURCE instead. Narrow on purpose: it asks only
+   * that no line printing to stdout in this module interpolates the team id.
+   */
+  it('no console line in ios.ts interpolates the team id', () => {
+    const source = fs.readFileSync(new URL('./ios.ts', import.meta.url), 'utf8');
+    const offenders = source
+      .split('\n')
+      .map((line, i) => ({ line: line.trim(), n: i + 1 }))
+      .filter(({ line }) => /console\.(log|error|warn)/.test(line) && /\$\{team\b/.test(line));
+
+    // Self-check: a scanner that matched nothing because its pattern is wrong must not read as a pass.
+    expect(source).toContain('console.log(provisionBanner(');
+    expect(offenders.map((o) => `ios.ts:${o.n} ${o.line}`)).toEqual([]);
   });
 });

@@ -113,7 +113,13 @@ toolchain does not offer. `shenora ios provision` is that step: it drives `xcode
 ```bash
 npx shenora ios provision                          # your app
 npx shenora ios provision com.example.app.widget   # …and every extension it embeds
+npx shenora ios provision --verbose                # …and say which team and which Mac
 ```
+
+⚠ **It does not print your Apple team id or the Mac's address unless you ask.** Both identify you rather
+than the build, and this command cannot see whether its output is going to a terminal, a CI log or a
+shared transcript. `--verbose` adds them back for the one case they diagnose: a profile minted against
+the wrong account.
 
 ⚠ **Extensions need their own profiles.** An extension is provisioned separately from its container, and
 forgetting one fails at the very end of a device install with an error naming the *app*.

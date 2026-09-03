@@ -1278,6 +1278,31 @@ export function cmdPush(cfg: DeployConfig, args: string[]): void {
  * container and forgetting it fails at the very END of a device install, with an error naming the app.
  * Extra ids can be named as arguments; `cfg.bundleId` is always first.
  */
+/**
+ * The line `provision` opens with.
+ *
+ * 🔴 **IDENTITY IS OPT-IN, and the default leaves it out.** The Apple TEAM ID names a developer account
+ * and the ssh target names a machine and often a home network. Neither is a credential, and both are
+ * exactly the class of value that must not reach a public repo, a CI log or an assistant transcript —
+ * none of which this command can see it is writing to. Reported by an adopter, 2026-09-04, who had
+ * already been careful enough downstream to pipe `application-identifier` through `cut` for the sole
+ * purpose of stripping the same team id before printing it.
+ *
+ * ⚠ **The count and the RESULT are what an operator needs**, and the per-id `ok`/`MISSING` lines below
+ * carry the result already. `--verbose` adds the identity back for the case it genuinely diagnoses: a
+ * profile minted against the wrong account.
+ *
+ * ⚠ Pure, so the redaction is testable without a Mac, an ssh target or a developer account. The command
+ * itself cannot be driven from a test — `resolveTarget` builds a real `SshTarget` — which is precisely
+ * why the part that must not leak is a function rather than an inline template.
+ */
+export function provisionBanner(
+  count: number, team: string, targetLabel: string, verbose = false,
+): string {
+  const head = `shenora: provisioning ${count} bundle id(s)`;
+  return verbose ? `${head} for team ${team} on ${targetLabel}` : head;
+}
+
 export function cmdProvision(cfg: DeployConfig, args: string[]): void {
   const target = resolveTarget(cfg, args);
   if (!target) return;
@@ -1291,7 +1316,7 @@ export function cmdProvision(cfg: DeployConfig, args: string[]): void {
   const extra = own.filter((a) => !a.startsWith('-') && a.includes('.'));
   const ids = [cfg.bundleId, ...extra.filter((id) => id !== cfg.bundleId)];
 
-  console.log(`shenora: provisioning ${ids.length} bundle id(s) for team ${team} on ${target.label}`);
+  console.log(provisionBanner(ids.length, team, target.label, own.includes('--verbose')));
   const result = provisionBundleIds(target, team, ids);
   target.close();
   if (!result) return;

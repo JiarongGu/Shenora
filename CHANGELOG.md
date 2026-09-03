@@ -60,6 +60,13 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **`shenora ios provision` no longer prints your Apple team id or the build Mac's address.** They were in
+  the first line of output, unprompted, on every run — a developer-account identifier and usually a home
+  network, into whatever the operator happened to be piping into. The banner now carries the bundle-id
+  COUNT, and the per-id `ok`/`MISSING` result lines below it are unchanged; `--verbose` adds the identity
+  back for the case it diagnoses, a profile minted against the wrong account.
+  ⚠ **A default-safety fix rather than a vulnerability** — it discloses only to whoever ran the command.
+  It is worth a release because a disclosure is not undone by deleting the log afterwards.
 - **`Shenora.Android`'s package description claimed an ExoPlayer-backed player.** It has never shipped
   one: `AndroidMediaPlayer` is `android.media.MediaPlayer`, deliberately. No gate reads a
   `<Description>`, so it had been wrong on nuget.org since the player shipped.
