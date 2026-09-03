@@ -51,6 +51,24 @@ describe('useMediaTransport', () => {
   });
 
   /**
+   * 🔴 Which decoder produced the reading. With a pluggable player behind the shell's surface there is no
+   * other way to know, and assuming it wrong is the cheapest way to debug the wrong code.
+   */
+  it('carries the engine through, and null when the host names none', async () => {
+    const named = createHost({
+      status: () => Promise.resolve({ state: 'Playing', position: 0, engine: 'IosMediaPlayer' }),
+    });
+    const { result } = renderHook(() => useMediaTransport({ bridge: named.bridge, intervalMs: 5 }));
+    await waitFor(() => expect(result.current.status?.engine).toBe('IosMediaPlayer'));
+
+    // ⚠ null rather than undefined, so a caller can render "unknown" without an existence check.
+    const silent = createHost({ status: () => Promise.resolve({ state: 'Playing', position: 0 }) });
+    const other = renderHook(() => useMediaTransport({ bridge: silent.bridge, intervalMs: 5 }));
+    await waitFor(() => expect(other.result.current.status).not.toBeNull());
+    expect(other.result.current.status?.engine).toBeNull();
+  });
+
+  /**
    * ⚠ A live stream has no duration and an opening one does not know it yet. A UI that reads a missing
    * duration as 0 puts the playhead at the END of something that has just started.
    */

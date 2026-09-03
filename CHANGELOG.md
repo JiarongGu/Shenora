@@ -63,6 +63,16 @@ at the first list and missed five more breaking changes.
   ⚠ **`unanswered` exists because a dead poll has no symptom of its own** — the callback simply stops,
   the scrubber keeps its last value, and it otherwise has to be diagnosed from an absence.
 
+- **`MediaPlayerStatus.Engine` — which player produced the reading.** Defaults to the implementation's
+  type name (`AndroidMediaPlayer`, `IosMediaPlayer`, or an app's own), so no shell has to supply anything
+  and it is never absent; `MediaPlayerBase.EngineName` overrides it where a player delegates to a
+  swappable native engine and its own type name would misreport. Surfaced on `PLAYER_STATUS` and on
+  `useMediaTransport`'s status.
+  🔴 **Once an app can supply its own player through the seam, nothing else can answer "which decoder
+  ran"** — and assuming it wrong is the cheapest way to spend a session debugging the wrong code.
+  ⚠ **A diagnostic, not a branch:** it names an implementation, so anything conditional on it is coupled
+  to a class name. Branch on `ShellCapability` instead.
+
 ### Changed
 
 - **`MediaPlayerModule`'s constructor takes an optional `IMediaSurface?`.** Source-compatible — existing

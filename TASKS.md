@@ -69,17 +69,18 @@ were read for the REASON behind each choice, not just the shape:
   does (`dotnet workload list` → `maui-android` alone). The sample's `Content` became a `Grid` (with
   `SafeAreaEdges.None` to restore edge-to-edge), and that is the property iOS actually reads.
 
-### 🟡 NOTHING SAYS WHICH PLAYER RAN
+### 🟡 THE PLAYBACK HEALTH FIGURES — dropped frames and stalls
 
-`MediaPlayerStatus` has no `Engine`, and with D80's seam an app can supply its own `MediaPlayerBase` — so
-"which decoder produced this reading" is unanswerable from the page. The adopter carries the field because
-two rounds of their debugging went into the wrong engine while nothing said which one was running; they
-carry `DroppedFrames`/`Stalls` beside it, with **-1 meaning "no figure" and never 0**, since a zero claims
-a clean play.
+`MediaPlayerStatus.Engine` now answers *which* player ran. What it cannot answer is **how well** it ran,
+and the adopter's evidence is that nothing else can either: a report of *"jumping frames"* on a file that
+probes completely clean, where position and duration say nothing because a player can report a perfectly
+smooth clock while dropping every other frame. `AVPlayerItemAccessLog` holds it on iOS and
+`DecoderCounters` on Android.
 
-- [ ] **Decide whether the kit answers it.** Cheap and additive on the record, but each shell has to
-  populate it, and a field only Android fills is the D39 shape one level down. ⚠ iOS cannot be verified
-  from here at all.
+- [ ] **Decide whether the kit carries them.** Unlike `Engine` there is no free default — each shell has
+  to read a platform API, and the adopter's own Android half leaves both at -1 with *"wiring that is not
+  done"*. ⚠ **-1 means "no figure" and must never be 0**, which claims a clean play; they were bitten by
+  `default(...)` skipping the initialisers at three call sites. ⚠ iOS cannot be verified from here.
 
 ### 🟡 ONE CAPABILITY OR TWO? The adopter needed two and the kit ships one
 

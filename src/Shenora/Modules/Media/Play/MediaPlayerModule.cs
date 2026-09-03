@@ -175,5 +175,7 @@ public sealed class MediaPlayerModule : ModuleBase
         duration = status.Duration?.TotalSeconds,
         rate = status.Rate,
         error = status.Error,
+        // A diagnostic, so the page can say which decoder produced a reading rather than assuming.
+        engine = status.Engine,
     };
 }

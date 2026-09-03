@@ -148,6 +148,33 @@ public class MediaSurfaceTests
         player.AttachSurface(new object());   // must not throw
     }
 
+    /// <summary>
+    /// 🔴 <b>Every player NAMES ITSELF, including one the kit has never heard of.</b> Once an app can
+    /// supply its own through the seam, "which decoder produced this reading" has no other answer — and
+    /// the whole point is that a shell pays nothing for it, so the default must be right without an
+    /// override.
+    /// </summary>
+    [Fact]
+    public void Every_player_reports_which_one_it_is()
+    {
+        using var kitPlayer = new AudioOnlyPlayer();
+        using var appPlayer = new SurfacePlayer();
+
+        Assert.Equal(nameof(AudioOnlyPlayer), kitPlayer.Status.Engine);
+        // An app's own subclass names ITSELF, not the base it derived from.
+        Assert.Equal(nameof(SurfacePlayer), appPlayer.Status.Engine);
+    }
+
+    /// <summary>A player that delegates to a swappable native engine can say which one actually ran, which
+    /// is the case the type name would misreport.</summary>
+    [Fact]
+    public void A_player_may_name_the_engine_it_delegated_to()
+    {
+        using var player = new DelegatingPlayer();
+
+        Assert.Equal("libvlc", player.Status.Engine);
+    }
+
     private static async Task<IpcResponse> DispatchAsync(IMediaSurface? surface, string type, object payload)
     {
         var options = new MediaPlayerOptions();
@@ -178,6 +205,12 @@ public class MediaSurfaceTests
         public List<object?> Attached { get; } = [];
 
         protected override void AttachSurfaceCore(object? surface) => Attached.Add(surface);
+    }
+
+    /// <summary>A player whose real decoder is not itself — the one case the type name would misreport.</summary>
+    private sealed class DelegatingPlayer : AudioOnlyPlayer
+    {
+        protected override string EngineName => "libvlc";
     }
 
     /// <summary>The minimum a <see cref="MediaPlayerBase"/> must supply — no picture anywhere in it.</summary>

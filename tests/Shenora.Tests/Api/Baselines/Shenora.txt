@@ -1306,6 +1306,7 @@ abstract class Shenora.Modules.Media.MediaPlayerBase : Shenora.Modules.Media.IMe
   protected abstract void PauseCore()
   protected abstract void PlayCore(double rate)
   protected abstract void TeardownCore()
+  protected virtual string EngineName { get; }
   protected virtual void AttachSurfaceCore(object? surface)
   protected virtual void DetachCore()
   protected virtual void DisposeCore()
@@ -1370,6 +1371,7 @@ sealed class Shenora.Modules.Media.MediaPlayerStatus : System.IEquatable<Shenora
   public required Shenora.Modules.Media.MediaPlayerState State { get; init; }
   public static bool op_Equality(Shenora.Modules.Media.MediaPlayerStatus? left, Shenora.Modules.Media.MediaPlayerStatus? right)
   public static bool op_Inequality(Shenora.Modules.Media.MediaPlayerStatus? left, Shenora.Modules.Media.MediaPlayerStatus? right)
+  public string? Engine { get; init; }
   public string? Error { get; init; }
 sealed class Shenora.Modules.Media.MediaProbeResult : System.IEquatable<Shenora.Modules.Media.MediaProbeResult>
   public .ctor()

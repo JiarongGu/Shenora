@@ -54,6 +54,22 @@ public sealed record MediaPlayerStatus
     /// otherwise. ⚠ <b>A short, app-safe reason — never the platform's raw exception text</b>, which can
     /// reach a page.</summary>
     public string? Error { get; init; }
+
+    /// <summary>
+    /// Which player produced this reading — the implementation's type name by default, so
+    /// <c>AndroidMediaPlayer</c>, <c>IosMediaPlayer</c> or an app's own.
+    /// <para>
+    /// 🔴 <b>Read it BEFORE forming a theory about playback.</b> Once an app can supply its own player
+    /// through <see cref="MediaPlayerBase"/> (D80), "which decoder ran" is not answerable from anywhere
+    /// else — and a wrong assumption about it is the cheapest way to spend a debugging session on the
+    /// wrong code.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Diagnostic, not a branch.</b> It names an implementation, so anything conditional on it is
+    /// coupled to a class name; ask <see cref="Core.Shell.ShellCapability"/> what a shell can do instead.
+    /// </para>
+    /// </summary>
+    public string? Engine { get; init; }
 }
 
 /// <summary>What to play: a file the host can open, or a URL the platform will stream. Never a

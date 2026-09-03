@@ -57,6 +57,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
                     Duration = _hasSource ? Try(() => DurationCore, null, nameof(DurationCore)) : null,
                     Rate = _rate,
                     Error = _error,
+                    Engine = EngineName,
                 };
             }
         }
@@ -68,6 +69,16 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     /// leaves a PAUSED player <see cref="MediaPlayerState.Buffering"/> for good.
     /// </summary>
     protected MediaPlayerState State { get { lock (_gate) return _state; } }
+
+    /// <summary>
+    /// What <see cref="MediaPlayerStatus.Engine"/> reports. The type name by default, which is already the
+    /// answer to "which player is this" and costs a shell nothing to supply.
+    /// <para>
+    /// ⚠ Override where the type name would MISLEAD — a player that delegates to a swappable native
+    /// engine should name the engine it actually used, not itself.
+    /// </para>
+    /// </summary>
+    protected virtual string EngineName => GetType().Name;
 
     /// <inheritdoc />
     public Task SetRateAsync(double rate, CancellationToken cancellationToken = default)

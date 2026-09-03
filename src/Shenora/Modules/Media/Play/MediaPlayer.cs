@@ -124,7 +124,20 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     public event Action<MediaPlayerStatus>? StateChanged;
 
     /// <inheritdoc />
-    public MediaPlayerStatus Status { get { lock (_gate) return _status; } }
+    /// <summary>
+    /// <inheritdoc />
+    /// <para>
+    /// ⚠ <see cref="MediaPlayerStatus.Engine"/> is stamped HERE rather than at each of the six places
+    /// <c>_status</c> is built — one of those is the page's own report, and the page must not be able to
+    /// name the engine any more than it can name the rate.
+    /// </para>
+    /// </summary>
+    public MediaPlayerStatus Status { get { lock (_gate) return _status with { Engine = EngineName }; } }
+
+    /// <summary>What <see cref="MediaPlayerStatus.Engine"/> reports. The type name, as
+    /// <see cref="MediaPlayerBase.EngineName"/> does — this class is not that one's subclass, and the two
+    /// answer the same question the same way on purpose.</summary>
+    private string EngineName => GetType().Name;
 
     /// <inheritdoc />
     public Task SetRateAsync(double rate, CancellationToken cancellationToken = default)

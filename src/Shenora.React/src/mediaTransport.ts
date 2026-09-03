@@ -21,6 +21,17 @@ export interface MediaTransportStatus {
   rate: number;
   /** A short reason when `state` is `Failed`; never the platform's raw text. */
   error?: string | null;
+  /**
+   * Which player produced this reading — `AndroidMediaPlayer`, `IosMediaPlayer`, or an app's own.
+   *
+   * 🔴 **Log it before forming a theory about playback.** With a pluggable player behind the shell's
+   * surface, "which decoder ran" is not answerable from anywhere else, and assuming it wrong is the
+   * cheapest way to debug the wrong code.
+   *
+   * ⚠ **A diagnostic, not a branch** — it names an implementation, so anything conditional on it is
+   * coupled to a class name. Branch on the shell's capabilities instead.
+   */
+  engine?: string | null;
 }
 
 /** Inputs for {@link useMediaTransport}. */
@@ -193,5 +204,6 @@ function normalise(answer: Partial<MediaTransportStatus>): MediaTransportStatus 
     duration: Number.isFinite(answer.duration) ? Number(answer.duration) : null,
     rate: Number.isFinite(answer.rate) ? Number(answer.rate) : 1,
     error: answer.error ?? null,
+    engine: answer.engine ?? null,
   };
 }
