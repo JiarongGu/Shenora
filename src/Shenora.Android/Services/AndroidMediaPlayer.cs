@@ -11,8 +11,15 @@ namespace Shenora.Android;
 
 /// <summary>
 /// Android's <see cref="IMediaPlayer"/> — the platform's own <c>android.media.MediaPlayer</c> and not
-/// ExoPlayer, because D51 forbids shipping an engine. The state machine is
+/// ExoPlayer, which costs every consumer an AndroidX dependency for coverage most apps do not need
+/// (D42: an engine is the APP's reach, through the seam below). The state machine is
 /// <see cref="MediaPlayerBase"/>'s; this is the platform half.
+/// <para>
+/// ⚠ <b>Not a D51 question, which is what this said before.</b> D51 bounds the bytes the kit SHIPS —
+/// copyleft and codec payloads — and Media3 is Apache-2.0 and carries no codecs, driving the same
+/// <c>MediaCodec</c> decoders as the class below. The reason is dependency weight, and it is why the
+/// seam exists rather than a ban.
+/// </para>
 /// <para>
 /// The contract promises no adaptive streaming (DASH, smooth HLS switching), which is where ExoPlayer is
 /// genuinely better; an app that needs it derives its own <see cref="MediaPlayerBase"/>.
@@ -30,6 +37,10 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
 
     private PlatformPlayer? _player;
     private TaskCompletionSource? _seeking;
+
+    /// <summary>Where the picture goes, remembered across opens — a player is built per source, so the
+    /// display has to be re-applied to each one.</summary>
+    private global::Android.Views.ISurfaceHolder? _holder;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a platform callback.</param>
     public AndroidMediaPlayer(ILogger? log = null)
@@ -62,6 +73,10 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
             .SetUsage(AudioUsageKind.Media)!
             .Build());
 
+        // Before prepare, like the audio attributes: a display attached afterwards leaves the first frames
+        // decoded with nowhere to go. Null when nothing registered a surface — an audio-only app.
+        if (_holder is not null) ApplyDisplay(player, _holder);
+
         player.Prepared += OnPrepared;
         player.Completion += OnCompletion;
         player.Error += OnError;
@@ -75,6 +90,38 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
         // ASYNC prepare, never Prepare(): the synchronous one blocks the caller for however long the
         // network takes. Readiness arrives on Prepared, which is what the base is waiting for.
         player.PrepareAsync();
+    }
+
+    /// <summary>
+    /// <inheritdoc />
+    /// ⚠ The handle is an <c>ISurfaceHolder</c>, not a <c>Surface</c>: <c>MediaPlayer.SetDisplay</c> takes
+    /// the holder, and it is the holder that tells the player when the buffer underneath goes away.
+    /// </summary>
+    protected override void AttachSurfaceCore(object? surface)
+    {
+        _holder = surface as global::Android.Views.ISurfaceHolder;
+        // Applied to a LIVE player too, so a surface that appears mid-playback takes the picture over
+        // without re-opening the source — and a detach reaches the player before its buffer is released.
+        if (_player is { } player) ApplyDisplay(player, _holder);
+    }
+
+    /// <summary>
+    /// Point the player at a display, and keep the screen awake while it has one.
+    /// <para>
+    /// 🔴 <b><c>SetScreenOnWhilePlaying</c> is what a PICTURE needs and a soundtrack does not.</b> A film
+    /// generates no touch input, so without it the display sleeps mid-playback — the audio keeps going and
+    /// the screen goes dark, which reads as the player having stopped. It must follow
+    /// <c>SetDisplay</c>: the platform ties the wake lock to the surface, so asking first is a no-op.
+    /// </para>
+    /// <para>
+    /// ⚠ Turned back OFF when the display goes away, or the wake lock outlives the picture it was taken
+    /// for and an audio-only player left holding it keeps a phone's screen on.
+    /// </para>
+    /// </summary>
+    private static void ApplyDisplay(PlatformPlayer player, global::Android.Views.ISurfaceHolder? holder)
+    {
+        player.SetDisplay(holder);
+        player.SetScreenOnWhilePlaying(holder is not null);
     }
 
     /// <inheritdoc />

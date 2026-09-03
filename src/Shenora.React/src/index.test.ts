@@ -33,6 +33,7 @@ import type {
   SegmentEntry,
   SegmentManifest,
   UseMediaPlayerOptions,
+  UseMediaSurfaceOptions,
   FileDialogFilter,
   FileDialogOptions,
   FileDialogResult,
@@ -104,6 +105,7 @@ const EXPECTED_EXPORTS = [
   'MediaConversionErrorCodes',
   'MediaConversionEvents',
   'MediaPlayerCommands',
+  'MediaSurfaceCommands',
   'PNG_IMAGE',
   'SEGMENT_REMOTE_PREFIX',
   'SegmentBinderError',
@@ -139,6 +141,7 @@ const EXPECTED_EXPORTS = [
   'useDropZone',
   'useFileDialogs',
   'useMediaPlayer',
+  'useMediaSurface',
   'useShellInfo',
   'useShenora',
   'useShenoraEvent',
@@ -182,6 +185,7 @@ type ExportedTypeSurface = [
   SegmentBinderOptions, SegmentBinding, SegmentEntry, SegmentManifest,
   MediaSourceKind, MediaSourceGlobals, FetchState, FetchPolicy,
   WindowOrientationKind,
+  UseMediaSurfaceOptions,
 ];
 
 describe('the public barrel', () => {

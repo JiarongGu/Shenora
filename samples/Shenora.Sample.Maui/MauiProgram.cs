@@ -48,6 +48,11 @@ public static class MauiProgram
 		var builder = MauiApp.CreateBuilder();
 		builder.UseMauiApp<App>();
 
+		// The shell's PICTURE surface (D80): registers MediaSurfaceView's platform handler and makes the
+		// webview see-through. ⚠ Opt-in, and this sample takes it so the seam has a real consumer on a
+		// device rather than only in tests (D63) — the page's own CSS still has to leave the hole.
+		builder.UseShenoraMediaSurface();
+
 		var app = builder.Build();
 		BuildShenora();
 		return app;
@@ -85,6 +90,10 @@ public static class MauiProgram
 #elif IOS || MACCATALYST
 		shenora.UseIOS(dispatcher, ex => Log($"UI work failed: {ex}"));
 #endif
+
+		// The service half of the picture surface. Registered with no views — MainPage attaches those when
+		// it is built, because DI is composed before any page exists.
+		shenora.Services.AddShenoraMediaSurface();
 
 
 		// The scheduler and the file queue are ALREADY REGISTERED (D64); this only says where the sample

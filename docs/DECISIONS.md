@@ -135,6 +135,7 @@ docs cite them — so the number is the column to scan.
 | **D77** | THREE HOMES, and this file holds only the first: a DECISION here, a subsystem's DESIGN under `docs/design/`, an invariant in `.claude/knowledge/`. |
 | **D78** | FOR A REMOTE MEDIA SOURCE THE KIT SHIPS THE ADAPTER, NEVER THE TRANSPORT: |
 | **D79** | THE SHELL RAISES THE BACK GESTURE AND THE PAGE DECIDES WHAT IT MEANS, PER PRESS: |
+| **D80** | THE PLAYER'S SECOND SURFACE: ON A PHONE THE SHELL DRAWS THE PICTURE, AND THE PAGE KEEPS THE UI. |
 
 <!-- decisions-index:end -->
 
@@ -553,9 +554,9 @@ docs cite them — so the number is the column to scan.
   platform, including mobile — and the kit ships none.** Owner: *"mobile library is not stable to support
   different type of media but if we use engine we have the control"*. The argument is CONSISTENCY — one
   behaviour matrix across three platforms — and it beats the byte count.
-  - ⚠ **This is the APP's choice, not a statement about the kit's own path.** The kit's default is the
-    TRANSLATION LAYER — platform codecs, container repair, segments (D59/D70/D71) — rendered by a page
-    element (D54). An engine is what an app reaches for when that reach is not enough, via D51's seams.
+  - ⚠ **The APP's choice, not a statement about the kit's own path.** The kit's default is the TRANSLATION
+    LAYER — platform codecs, container repair, segments (D59/D70/D71) — rendered by the page's element on
+    the desktop and the shell's own surface on a phone (D80). An engine is the reach past both, via D51.
   - **Why:** codec support is vendor-declared PER DEVICE, and containers are a second, worse axis —
     H.264-in-MKV can fail on Android while H.264 itself decodes perfectly. **Recorded as JUDGEMENT, not
     dressed up as a measurement**, because this repo cannot verify the owner's field experience.
@@ -1107,6 +1108,21 @@ docs cite them — so the number is the column to scan.
   - ⚠ **It is a NOTIFICATION plus a REQUEST, not one call, because the kit has no host→page request.** That
     is what the token is for: an answer to a press that already timed out must not be applied to the next
     one.
+
+- **D80 — THE PLAYER'S SECOND SURFACE: ON A PHONE THE SHELL DRAWS THE PICTURE, AND THE PAGE KEEPS THE UI.**
+  `IMediaSurface` takes the rectangle the page measured and the shell's own player fills it from
+  underneath, through a transparent region the page leaves. D58 said the layer had surfaces plural and cut
+  the seam for it as *"one implementation plus a fake"*; this is the second, device-proven in an adopter.
+  - 🔴 **It refutes a premise, which is why it is a decision.** D42 said the kit's default is the
+    translation layer *rendered by a page element*. On a phone that is measured false: the element refused
+    ordinary films and the on-device re-encode built to compensate cost more than the decode it replaced.
+    So D54's *can React already do this?* answers NO.
+  - 🔴 **NO new planning verdict.** `MediaPlaybackPlanner` plans against `MediaPlaybackPolicy` — *what the
+    app's player can open* — and never names the webview, so pointing it at the native player's policy
+    already collapses the conversion cases. A `Native` action would restate the policy argument.
+  - **The kit ships no engine** (D51/D42): the default is the platform's own player and the seam is
+    `MediaPlayerBase.AttachSurfaceCore`. Its handle is `object` — `Shenora` is `net10.0` (D19/D20).
+  - ⚠ **Mobile only** — Windows reports the capability absent rather than half-satisfying it (D39).
 
 ## Anti-goals — deliberately NOT built
 

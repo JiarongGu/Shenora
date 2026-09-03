@@ -89,6 +89,29 @@ public static class ShellCapability
     public const string WindowOrientation = "windowOrientation";
 
     /// <summary>
+    /// The shell can draw the PICTURE itself, under a transparent region the page leaves —
+    /// <see cref="Modules.Media.IMediaSurface"/>.
+    /// <para>
+    /// 🔴 <b>Branch on it, because the fallback is a real player and not a degraded one.</b> Absent, the
+    /// page's own <c>&lt;video&gt;</c> element is the picture, which is the right answer wherever the
+    /// webview can decode the file — the desktop case. Present, the shell's player opens what that element
+    /// refuses, and the page draws its controls over the hole instead of inside an element.
+    /// </para>
+    /// <para>
+    /// 🔴 <b>It asserts TWO things, and advertising it on the strength of the first alone is the trap:</b> a
+    /// surface exists AND a player is attached to draw into it. A hole with no decoder behind it opens
+    /// normally, the page draws its controls over it, and nothing ever appears — which is exactly what a
+    /// film the platform refused looks like. The mobile surface names that state in the log rather than
+    /// leaving it to be diagnosed from a black rectangle.
+    /// </para>
+    /// <para>
+    /// ⚠ It still says nothing about a PARTICULAR file: what the platform decodes is the app's
+    /// <c>MediaPlaybackPolicy</c> question, per stream (D42).
+    /// </para>
+    /// </summary>
+    public const string MediaSurface = "mediaSurface";
+
+    /// <summary>
     /// The exception an unsupported capability throws. <paramref name="capability"/> is what the caller
     /// asked for, <paramref name="shell"/> is the host that cannot do it, and
     /// <paramref name="alternative"/> — when there is one — is what to do instead.

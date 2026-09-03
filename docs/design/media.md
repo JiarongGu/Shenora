@@ -5,7 +5,7 @@ tier read [`../guides/media.md`](../guides/media.md); for WHY any of it is this 
 linked below — **this doc states the design, never the rationale** (D77), so a claim here that needs
 defending belongs in a `D<n>` and a link.
 
-## The four stages, and the question each answers
+## The five stages, and the question each answers
 
 | Folder | Question | Key types |
 |---|---|---|
@@ -13,9 +13,19 @@ defending belongs in a `D<n>` and a link.
 | `Plan/` | what SHOULD happen to it? | `MediaPlaybackPlanner` → `MediaPlaybackAction` |
 | `Engine/` | how are the bytes PRODUCED? | `Mp4Remuxer` · `DefaultSegmentEngine` · `Mp4FragmentWriter` |
 | `Deliver/` | how do they REACH the page? | `UseComputedRemux` · `UseMediaConversion` · `UseSegmentStream` |
+| `Play/` | who PLAYS them, and where does the picture go? | `IMediaPlayer` · `MediaPlayerBase` · `IMediaSurface` |
 
 The split is by question rather than by feature, so containment and cache location are stated once
 (`MediaAccessOptions`) instead of once per route (D71).
+
+**`Play/` is what stops this being a converter with a player beside it.** It is one layer with **two
+surfaces** (D58): the page's own element, and — where a shell registers an `IMediaSurface` — the shell's
+own picture, drawn under a transparent region the page leaves.
+
+🔴 **Which surface is in use changes NOTHING above it.** `MediaPlaybackPlanner` plans against
+`MediaPlaybackPolicy` — *what the app's player can open* — so pointing it at the native player's policy is
+what collapses the conversion cases for a file the webview refuses but the platform decodes. There is no
+"native" action and there must not be one: it would restate the policy argument as a verdict.
 
 ## The planner chooses on what the PRODUCER can promise (D71)
 
@@ -363,6 +373,10 @@ channel's times against another's is how the sound side of every cut lands somew
   the kit provides, not a platform rule: an app supplying its own decoding library gets the engine there.
 - **No thumbnail type spanning both mechanisms** (D43) — extracting a frame needs a decoder, resizing an
   image needs an image codec; they are different capabilities wearing one word.
+- **No shell picture on the DESKTOP.** `IMediaSurface` is registered by the mobile shells only; Windows
+  reports the capability absent and the page's own element stays the picture, which is the right answer
+  wherever the webview decodes the file. Compositing a native player under WebView2 is unmeasured here,
+  and an API that compiles on three shells and means something weaker on one is what D39 refuses.
 
 ## First load does not scale with the file — measured 2026-08-21
 

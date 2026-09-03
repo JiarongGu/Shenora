@@ -22,6 +22,10 @@ public sealed class IosMediaPlayer : MediaPlayerBase
 {
     private AVPlayer? _player;
     private AVPlayerItem? _item;
+
+    /// <summary>Where the picture goes, remembered across opens — a player is built per source, so the
+    /// layer has to be re-pointed at each one.</summary>
+    private AVPlayerLayer? _layer;
     private NSObject? _endObserver;
     private IDisposable? _statusObserver;
     private IDisposable? _bufferEmptyObserver;
@@ -78,6 +82,9 @@ public sealed class IosMediaPlayer : MediaPlayerBase
         var item = new AVPlayerItem(asset);
         _item = item;
         _player = new AVPlayer(item);
+
+        // Null when nothing registered a surface — an audio-only app.
+        if (_layer is not null) _layer.Player = _player;
 
         // AVPlayerItem reports readiness through KVO, and the value can ALREADY be Ready by the time this
         // runs for a local file — hence Initial, so the handler is correct when it fires immediately.
@@ -178,8 +185,25 @@ public sealed class IosMediaPlayer : MediaPlayerBase
 
         _player?.Pause();
         _player?.ReplaceCurrentItemWithPlayerItem(null);
+        // ⚠ The LAYER is kept — it belongs to the view, not to the source — but it must stop pointing at a
+        // player that is going away, or it holds the last frame on screen after the source is released.
+        if (_layer is not null) _layer.Player = null;
         _player = null;
         _item = null;
+    }
+
+    /// <summary>
+    /// <inheritdoc />
+    /// ⚠ The handle is an <c>AVPlayerLayer</c>. It is the VIEW's, so this only points it at the current
+    /// player and never disposes it.
+    /// </summary>
+    protected override void AttachSurfaceCore(object? surface)
+    {
+        // Release the outgoing layer first — one left pointing at a player it no longer represents keeps
+        // showing that player's last frame.
+        if (_layer is not null) _layer.Player = null;
+        _layer = surface as AVPlayerLayer;
+        if (_layer is not null) _layer.Player = _player;
     }
 
     /// <summary>The conventional CMTime timescale: it divides evenly by the common frame rates (24/25/30),

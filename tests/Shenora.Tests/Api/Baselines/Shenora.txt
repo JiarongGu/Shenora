@@ -365,6 +365,7 @@ static class Shenora.Core.Shell.ShellCapability
   public const string FilePicker = "filePicker"
   public const string FolderPicker = "folderPicker"
   public const string LocalFiles = "localFiles"
+  public const string MediaSurface = "mediaSurface"
   public const string SavePicker = "savePicker"
   public const string SecondaryWindows = "secondaryWindows"
   public const string Tray = "tray"
@@ -1139,6 +1140,9 @@ interface Shenora.Modules.Media.IMediaStreamConversionRun : System.IDisposable
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Modules.Media.MediaFrame> Push(Shenora.Modules.Media.MediaFrame frame)
   public abstract System.ReadOnlyMemory<byte> OutputConfig { get; }
   public abstract int OutputFramesPerPacket { get; }
+interface Shenora.Modules.Media.IMediaSurface
+  public abstract void Hide()
+  public abstract void Show(Shenora.Modules.Media.MediaSurfaceRegion region)
 interface Shenora.Modules.Media.ISegmentEngine
   public abstract Shenora.Modules.Media.ISegmentRun? Start(Shenora.Modules.Media.SegmentRunRequest request)
   public abstract Shenora.Modules.Media.SegmentPlan? PlanSegments(Shenora.Modules.Media.MediaByteSource source, Shenora.Modules.Media.SegmentLengths lengths, System.Threading.CancellationToken cancellationToken = default)
@@ -1302,6 +1306,7 @@ abstract class Shenora.Modules.Media.MediaPlayerBase : Shenora.Modules.Media.IMe
   protected abstract void PauseCore()
   protected abstract void PlayCore(double rate)
   protected abstract void TeardownCore()
+  protected virtual void AttachSurfaceCore(object? surface)
   protected virtual void DetachCore()
   protected virtual void DisposeCore()
   protected void Log(System.Func<string> message, System.Exception? failure = null)
@@ -1317,6 +1322,7 @@ abstract class Shenora.Modules.Media.MediaPlayerBase : Shenora.Modules.Media.IMe
   public System.Threading.Tasks.Task SeekAsync(System.TimeSpan position, System.Threading.CancellationToken cancellationToken = default)
   public System.Threading.Tasks.Task SetRateAsync(double rate, System.Threading.CancellationToken cancellationToken = default)
   public event System.Action<Shenora.Modules.Media.MediaPlayerStatus> StateChanged
+  public void AttachSurface(object? surface)
   public void Dispose()
 static class Shenora.Modules.Media.MediaPlayerEvents
   public const string Load = "PLAYER_LOAD"
@@ -1330,9 +1336,11 @@ sealed class Shenora.Modules.Media.MediaPlayerException : System.Exception
   public .ctor(string message, System.Exception inner)
 sealed class Shenora.Modules.Media.MediaPlayerModule : Shenora.Core.Ipc.ModuleBase
   protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
-  public .ctor(Shenora.Modules.Media.IMediaPlayer? player, Shenora.Modules.Media.MediaPlayerOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Modules.Media.MediaPlayerModule>? logger = null)
+  public .ctor(Shenora.Modules.Media.IMediaPlayer? player, Shenora.Modules.Media.MediaPlayerOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Modules.Media.MediaPlayerModule>? logger = null, Shenora.Modules.Media.IMediaSurface? surface = null)
   public const string ReportType = "PLAYER_REPORT"
   public const string StatusType = "PLAYER_STATUS"
+  public const string SurfaceHideType = "SURFACE_HIDE"
+  public const string SurfaceShowType = "SURFACE_SHOW"
   public override string ModuleName { get; }
 sealed class Shenora.Modules.Media.MediaPlayerOptions
   public .ctor()
@@ -1487,6 +1495,22 @@ enum Shenora.Modules.Media.MediaStreamVerdict (int)
   public const Shenora.Modules.Media.MediaStreamVerdict Droppable = 2
   public const Shenora.Modules.Media.MediaStreamVerdict NeedsReEncode = 3
   public int value__
+struct Shenora.Modules.Media.MediaSurfaceRegion : System.IEquatable<Shenora.Modules.Media.MediaSurfaceRegion>
+  public .ctor(double X, double Y, double Width, double Height, bool OnTop = false)
+  public bool Equals(Shenora.Modules.Media.MediaSurfaceRegion other)
+  public bool IsDrawable { get; }
+  public bool OnTop { get; init; }
+  public const double MinimumSide = 2
+  public double Height { get; init; }
+  public double Width { get; init; }
+  public double X { get; init; }
+  public double Y { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Modules.Media.MediaSurfaceRegion left, Shenora.Modules.Media.MediaSurfaceRegion right)
+  public static bool op_Inequality(Shenora.Modules.Media.MediaSurfaceRegion left, Shenora.Modules.Media.MediaSurfaceRegion right)
+  public void Deconstruct(out double X, out double Y, out double Width, out double Height, out bool OnTop)
 sealed class Shenora.Modules.Media.Mp4Remuxer : Shenora.Modules.Media.IMediaContainerWriter
   public .ctor()
   public Shenora.Modules.Media.MediaRemuxerResult Write(System.IO.Stream source, System.IO.Stream destination, Shenora.Modules.Media.IMediaStreamConversion? conversion, System.Threading.CancellationToken cancellationToken = default)

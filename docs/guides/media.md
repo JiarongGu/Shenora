@@ -381,6 +381,57 @@ registry.Register(new RemoteMediaSource { Url = myUrl, Label = "Episode 3", Open
 - **Supply `Duration` and `HasPicture` if you already know them** — each one the kit has to discover costs a
   network read before the first manifest can be answered.
 
+## The shell draws the picture — for a film the webview will not open (D80)
+
+On a phone, some ordinary files the device decodes perfectly are refused by the webview's `<video>`
+element. Converting them on the device to make it happy costs more than the decode it replaces. The other
+answer is to let the shell's own player draw, **behind** the page, through a hole the page leaves.
+
+**The page keeps every control.** It measures where the picture goes and the shell puts it there.
+
+```tsx
+const stage = useRef<HTMLDivElement>(null);
+useMediaSurface(stage);              // sends the rectangle; hides it on unmount
+return <div ref={stage} className="stage" />;   // must be TRANSPARENT
+```
+
+```csharp
+// MauiProgram: the handler + the see-through webview, and the service
+builder.UseShenoraMediaSurface();
+shenora.Services.AddShenoraMediaSurface();
+
+// the page: the surface goes in BEFORE the webview, so it is behind it
+_surface = new MediaSurfaceView { IsVisible = false,
+    HorizontalOptions = LayoutOptions.Start, VerticalOptions = LayoutOptions.Start };
+Content = new Grid { SafeAreaEdges = SafeAreaEdges.None, Children = { _surface, _webView } };
+
+// when the page loads — and again on every page the platform builds
+services.GetRequiredService<MobileMediaSurface>().Attach(_surface, _webView, Dispatcher);
+_surface.Player = services.GetRequiredService<AndroidMediaPlayer>();   // or IosMediaPlayer
+```
+
+Then advertise `ShellCapability.MediaSurface` and branch on it in the page: **absent is not a degraded
+state**, it means the `<video>` element is the picture, which is the right answer on the desktop.
+
+### Every way this fails looks identical — no picture
+
+- **The page painted over it.** The webview is see-through, but `body` is not. The stage element *and
+  every ancestor* have to be transparent. This is the usual one.
+- **Nothing attached.** `Attach` runs when the page is built, not when the service is registered. The
+  surface logs once when it is asked to draw with no views.
+- **No `Player`.** The default `IMediaPlayer` is the page-backed one (D58) and has no picture to give —
+  resolve the shell's player by its own type.
+- **The rectangle was scaled.** CSS pixels cross unconverted; multiplying by `devicePixelRatio` puts the
+  picture several times too big and usually off screen.
+
+⚠ **`SafeAreaEdges.None` is not cosmetic on iOS.** Putting a bare `HybridWebView` inside a layout makes
+iOS inset it, which changes what `env(safe-area-inset-*)` reports to your page — so a layout that was
+edge-to-edge silently starts insetting twice once you wrap it.
+
+⚠ **The kit ships no engine.** The default is the platform's own player. For wider container coverage —
+ExoPlayer, VLC, mpv — derive `MediaPlayerBase`, override `AttachSurfaceCore` to take the handle, and
+register yours; everything above is unchanged.
+
 ## Background playback — handing off when the app leaves the screen
 
 A page-backed player stops when the page does: both mobile platforms suspend a backgrounded webview within

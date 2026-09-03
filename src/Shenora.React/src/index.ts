@@ -171,3 +171,9 @@ export {
   type MediaPlayerReportState,
   type UseMediaPlayerOptions,
 } from './mediaPlayer.js';
+// The SHELL-owned picture — the same player's second surface, for what the element cannot decode.
+export {
+  useMediaSurface,
+  MediaSurfaceCommands,
+  type UseMediaSurfaceOptions,
+} from './mediaSurface.js';

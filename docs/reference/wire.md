@@ -70,6 +70,8 @@ Routes the page sends to the host.
 |---|---|---|
 | `MediaPlayerModule.ReportType` | `PLAYER_REPORT` | Route: the page describing what its element is doing. |
 | `MediaPlayerModule.StatusType` | `PLAYER_STATUS` | Route: what is the host's player doing right now? No payload; answers like a drive command does. |
+| `MediaPlayerModule.SurfaceShowType` | `SURFACE_SHOW` | Route: put the shell's picture here. |
+| `MediaPlayerModule.SurfaceHideType` | `SURFACE_HIDE` | Route: take the shell's picture off screen. |
 
 ## Media conversion
 
@@ -106,6 +108,7 @@ What a host advertises in its handshake, and what a page branches on instead of 
 | `ShellCapability.ClipboardFiles` | `clipboardFiles` | The host can put a FILE LIST on the clipboard, for the user to paste into a file manager — the one clipboard capability that genuinely differs by shell, since a phone's pasteboard has no file list. |
 | `ShellCapability.LocalFiles` | `localFiles` | The host can serve LOCAL FILES to the page through an IWebViewInterceptor — media, images, documents, generated exports. |
 | `ShellCapability.WindowOrientation` | `windowOrientation` | The shell can HOLD the window at an orientation — IWindowOrientation. |
+| `ShellCapability.MediaSurface` | `mediaSurface` | The shell can draw the PICTURE itself, under a transparent region the page leaves — IMediaSurface. |
 
 ## Back gesture
 

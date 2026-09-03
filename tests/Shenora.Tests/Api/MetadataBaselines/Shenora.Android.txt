@@ -24,6 +24,7 @@ Shenora.Android.AndroidMediaPlayer
   method .ctor
   method ApplyRateCore
   method ApplyStartAt
+  method AttachSurfaceCore
   method OpenCore
   method PauseCore
   method PlayCore
@@ -31,6 +32,12 @@ Shenora.Android.AndroidMediaPlayer
   method TeardownCore
   property DurationCore
   property PositionCore
+Shenora.Android.AndroidMediaSurfaceHandler
+  field Mapper
+  method .ctor
+  method ConnectHandler
+  method CreatePlatformView
+  method DisconnectHandler
 Shenora.Android.AndroidMediaVideoConversion
   method CanConvert
   method Use
@@ -45,6 +52,9 @@ Shenora.Android.AndroidPlaybackSession
   property SessionToken
   property SkipInterval
   property Supported
+Shenora.Mobile.MediaSurfaceView
+  method .ctor
+  property Player
 Shenora.Mobile.MobileAppLifecycle
   method .ctor
   method Dispose
@@ -89,6 +99,15 @@ Shenora.Mobile.MobileIpcBridgeOptions
   property OnClientReady
   property ReleaseHandlerOnDispose
   property Shell
+Shenora.Mobile.MobileMediaSurface
+  method .ctor
+  method Attach
+  method Detach
+  method Hide
+  method Show
+Shenora.Mobile.MobileMediaSurfaceExtensions
+  method AddShenoraMediaSurface
+  method UseShenoraMediaSurface
 Shenora.Mobile.MobileSafeArea
   method .ctor
   method Dispose

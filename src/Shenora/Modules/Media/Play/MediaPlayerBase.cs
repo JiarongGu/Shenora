@@ -225,6 +225,33 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Give the player somewhere to put its pixels, or <c>null</c> when the surface goes away.
+    /// <para>
+    /// 🔴 <b>The handle is the PLATFORM's own, typed as <see cref="object"/> because this package is
+    /// <c>net10.0</c> and may not name a platform type (D19/D20)</b> — <c>Android.Views.ISurfaceHolder</c> on
+    /// Android, <c>AVFoundation.AVPlayerLayer</c> on iOS. A player that does not draw pictures ignores it,
+    /// which is why <see cref="AttachSurfaceCore"/> defaults to doing nothing.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Detach with <c>null</c> BEFORE the surface is destroyed.</b> A player holding a dead surface
+    /// draws into a released buffer, which on some Android devices is a native crash rather than a blank view.
+    /// </para>
+    /// </summary>
+    /// <param name="surface">The platform handle, or <c>null</c> to detach.</param>
+    public void AttachSurface(object? surface)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        Try(() => AttachSurfaceCore(surface), nameof(AttachSurface));
+    }
+
+    /// <summary>
+    /// Point the platform player at <paramref name="surface"/>, or release it when <c>null</c>. Does nothing
+    /// unless a shell overrides it, so an audio-only player costs nothing for having the seam.
+    /// </summary>
+    /// <param name="surface">The platform handle, or <c>null</c> to detach. See <see cref="AttachSurface"/>.</param>
+    protected virtual void AttachSurfaceCore(object? surface) { }
+
     // ---- What the platform tells US.
 
     /// <summary>

@@ -29,7 +29,15 @@ public sealed class MediaPlayerModule : ModuleBase
     /// command does.</summary>
     public const string StatusType = "PLAYER_STATUS";
 
+    /// <summary>Route: put the shell's picture here. Payload <c>{ x, y, width, height, onTop? }</c> in CSS
+    /// pixels — see <see cref="MediaSurfaceRegion"/>. Answers nothing; a page repositions per scroll frame.</summary>
+    public const string SurfaceShowType = "SURFACE_SHOW";
+
+    /// <summary>Route: take the shell's picture off screen. No payload. Does not stop playback.</summary>
+    public const string SurfaceHideType = "SURFACE_HIDE";
+
     private readonly IMediaPlayer? _player;
+    private readonly IMediaSurface? _surface;
     private readonly MediaPlayerOptions _options;
 
     /// <param name="player">The host's player, or <c>null</c>: this module is registered by DEFAULT, and a
@@ -38,12 +46,17 @@ public sealed class MediaPlayerModule : ModuleBase
     /// <param name="options">Read for <see cref="MediaAccessOptions.Module"/> — the same object the emitter
     /// reads, so the two cannot drift.</param>
     /// <param name="logger">Optional.</param>
-    public MediaPlayerModule(IMediaPlayer? player, MediaPlayerOptions options, ILogger<MediaPlayerModule>? logger = null)
+    /// <param name="surface">The shell's picture surface, or <c>null</c> on a shell that has none — the
+    /// desktop, where the page's own element is already the picture. Absent makes the two surface routes
+    /// answer <c>MEDIA_SURFACE_UNAVAILABLE</c> rather than succeeding silently.</param>
+    public MediaPlayerModule(IMediaPlayer? player, MediaPlayerOptions options,
+        ILogger<MediaPlayerModule>? logger = null, IMediaSurface? surface = null)
         : base(logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         _player = player;
         _options = options;
+        _surface = surface;
     }
 
     /// <inheritdoc />
@@ -70,6 +83,21 @@ public sealed class MediaPlayerModule : ModuleBase
                 return Drive(p => p.SetRateAsync(rate, cancellationToken));
             case StatusType:
                 return Task.FromResult<object?>(Wire(RequirePlayer().Status));
+
+            // 🔴 The zero-area rule lives HERE, not in each shell: a page reports an empty rectangle
+            // whenever its stage is unmounted or hidden, and every shell would otherwise have to remember
+            // that a 0×0 surface at the origin is a visible artefact rather than nothing.
+            case SurfaceShowType:
+            {
+                var region = Region(request);
+                if (region.IsDrawable) RequireSurface().Show(region);
+                else RequireSurface().Hide();
+                return Done();
+            }
+
+            case SurfaceHideType:
+                RequireSurface().Hide();
+                return Done();
         }
 
         if (!string.Equals(request.Type, ReportType, StringComparison.OrdinalIgnoreCase))
@@ -115,6 +143,22 @@ public sealed class MediaPlayerModule : ModuleBase
         _player ?? throw new ShenoraException(
             "MEDIA_PLAYER_UNAVAILABLE",
             message: "This shell registers no IMediaPlayer, so the host cannot drive playback.");
+
+    /// <summary>⚠ Same reasoning as <see cref="RequirePlayer"/>: a page that positions a picture and is
+    /// answered "fine" by a shell with no surface draws its controls over nothing, with no error to act on.</summary>
+    private IMediaSurface RequireSurface() =>
+        _surface ?? throw new ShenoraException(
+            "MEDIA_SURFACE_UNAVAILABLE",
+            message: "This shell registers no IMediaSurface, so the host cannot draw a picture.");
+
+    /// <summary>Where the page wants the picture. Every side defaults to 0, which
+    /// <see cref="MediaSurfaceRegion.IsDrawable"/> then reads as "nothing to show".</summary>
+    private static MediaSurfaceRegion Region(IpcRequest request) => new(
+        PayloadHelper.GetOptionalValue<double?>(request.Payload, "x") ?? 0,
+        PayloadHelper.GetOptionalValue<double?>(request.Payload, "y") ?? 0,
+        PayloadHelper.GetOptionalValue<double?>(request.Payload, "width") ?? 0,
+        PayloadHelper.GetOptionalValue<double?>(request.Payload, "height") ?? 0,
+        PayloadHelper.GetOptionalValue<bool?>(request.Payload, "onTop") ?? false);
 
     /// <summary>The source to open. Only <c>uri</c> is required; the page rarely knows the rest.</summary>
     private static MediaSource Source(IpcRequest request) => new()

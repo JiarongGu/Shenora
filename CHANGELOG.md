@@ -28,6 +28,42 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **The player's SECOND SURFACE — on a phone the shell draws the picture and the page keeps the UI**
+  (**D80**). `IMediaSurface` (`Show(MediaSurfaceRegion)` / `Hide()`) takes the rectangle the page measured;
+  the shell's own player fills it from underneath, through a transparent region the page leaves. The
+  chain: `MediaPlayerBase.AttachSurface` (the platform picture handle, typed `object` because `Shenora` is
+  `net10.0` and may not name a platform type) · `SURFACE_SHOW`/`SURFACE_HIDE` **on the media module that
+  already existed, not a second one** · `ShellCapability.MediaSurface` · `MediaSurfaceView` +
+  `MobileMediaSurface` + `UseShenoraMediaSurface()` on both mobile shells · `useMediaSurface(ref)` in
+  `@shenora/react`.
+  🔴 **Why it earns its place, and it is a refuted premise rather than a new feature:** the `<video>`
+  element could not open an adopter's films, and the on-device re-encode built to compensate cost
+  decode → pixel-convert → encode → mux *per segment, to produce something the device's own decoder could
+  already play*. The native surface plays the original with no transcode.
+  ⚠ **The kit still ships no engine** (D51): the default is the platform's own player — `AVPlayer` on iOS,
+  `android.media.MediaPlayer` on Android, no new package on either — and an app wanting ExoPlayer, VLC or
+  mpv derives `MediaPlayerBase` and overrides `AttachSurfaceCore`.
+  ⚠ **Mobile only.** Windows reports the capability absent rather than half-satisfying it (D39).
+  ⚠ **Three things are the app's, and each one missing looks identical — no picture:** put a
+  `MediaSurfaceView` in a layout *before* the webview, register `MobileMediaSurface` over the two views,
+  and make the page's own background transparent where the picture belongs.
+
+### Changed
+
+- **`MediaPlayerModule`'s constructor takes an optional `IMediaSurface?`.** Source-compatible — existing
+  calls compile unchanged — but the signature moved, so **recompile if you construct it yourself**. The
+  kit's own `UseMediaPlayer()` passes it.
+
+### Fixed
+
+- **`Shenora.Android`'s package description claimed an ExoPlayer-backed player.** It has never shipped
+  one: `AndroidMediaPlayer` is `android.media.MediaPlayer`, deliberately. No gate reads a
+  `<Description>`, so it had been wrong on nuget.org since the player shipped.
+
 ## 0.16.0 — 2026-08-23
 
 ### Added

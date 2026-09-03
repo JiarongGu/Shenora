@@ -105,6 +105,11 @@ Permission
 # because the mechanism is genuinely one a shell owns and a page cannot reach — the web API works only
 # in fullscreen and not at all in WKWebView.
 Orientation
+# `IMediaSurface` / `MediaSurfaceRegion` — somewhere for a player to put pixels. The platforms' own word
+# (Android `Surface`/`SurfaceView`/`ISurfaceHolder`, Core Animation's backing surfaces), and D58 already
+# uses it for the same idea in the other direction: "the webview is one of its SURFACES". Every paraphrase
+# is worse — "View" and "Layer" are each ONE platform's spelling, and "Display" is the physical screen.
+Surface
 Shell
 Ui
 Url

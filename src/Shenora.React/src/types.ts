@@ -151,6 +151,22 @@ export const ShellCapabilities = {
    * fullscreen first or leave rotation alone.
    */
   windowOrientation: 'windowOrientation',
+  /**
+   * The shell can draw the PICTURE itself, under a transparent region the page leaves — see
+   * `useMediaSurface`. The mobile shells; the desktop has none and does not need one.
+   *
+   * ⚠ Branch on it, but the fallback is a real player rather than a degraded one: absent, a `<video>`
+   * element is the picture, which is the right answer wherever the webview can decode the file. Present,
+   * the shell's own player opens what that element refuses.
+   *
+   * 🔴 It asserts TWO things: a surface exists AND a player is attached to draw into it. A host that
+   * advertises it on the strength of the surface alone gives you a hole with no decoder behind it — the
+   * controls render, nothing ever appears, and it is indistinguishable from a refused file.
+   *
+   * ⚠ It still says nothing about a GIVEN file — what the platform decodes is a per-stream question the
+   * host answers.
+   */
+  mediaSurface: 'mediaSurface',
 } as const;
 
 /** The response envelope the host returns for an {@link IpcRequest}. */

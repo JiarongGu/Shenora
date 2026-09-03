@@ -21,6 +21,7 @@ namespace Shenora.Sample.Maui;
 public sealed class MainPage : ContentPage
 {
 	private readonly HybridWebView _webView;
+	private readonly MediaSurfaceView _mediaSurface;
 	private readonly MediaRangeProbe _media = new(MauiProgram.Log);
 	private MobileIpcBridge? _bridge;
 
@@ -92,7 +93,36 @@ public sealed class MainPage : ContentPage
 			HybridRoot = "wwwroot",
 			DefaultFile = "index.html",
 		};
-		Content = _webView;
+		/* The shell's PICTURE surface (D80) — behind the webview, which is the order that lets the page
+		 * paint over it.
+		 *
+		 * ⚠ Positioned by MARGIN with explicit sizes, so Start/Start rather than the default Fill: a
+		 * filled view stretches across the whole cell and every rectangle the page sends looks identical.
+		 *
+		 * ⚠ INVISIBLE until the page asks for it. A native view left visible behind an opaque document is
+		 * merely wasted compositing; behind a TRANSPARENT region it is a rectangle over the interface.
+		 */
+		_mediaSurface = new MediaSurfaceView
+		{
+			IsVisible = false,
+			HorizontalOptions = LayoutOptions.Start,
+			VerticalOptions = LayoutOptions.Start,
+		};
+
+		/* 🔴 `SafeAreaEdges.None` IS NOT COSMETIC — IT IS WHAT PUTTING THE WEBVIEW IN A LAYOUT TAKES AWAY.
+		 *
+		 * `Content = _webView` was a BARE view, and MAUI's safe-area handling applies to an `ILayout` or an
+		 * `IContentView`. A bare HybridWebView is neither, so it drew edge to edge and
+		 * `env(safe-area-inset-*)` inside it reported the device's real insets. Wrapping it in a Grid makes
+		 * the content a LAYOUT, which iOS insets by default — and that silently changes the page's world:
+		 * the WebView starts below the notch, `env(...)` reads 0, and `MobileSafeArea`'s published numbers
+		 * are then applied INSIDE an already-inset webview, i.e. twice.
+		 *
+		 * `SafeAreaEdges.None` is what a bare `Content = _webView` used to do.
+		 * ⚠ UNVERIFIED ON iOS from this machine — nothing here compiles that TFM. The safe-area probe is
+		 * what to read on the next Mac run.
+		 */
+		Content = new Grid { SafeAreaEdges = SafeAreaEdges.None, Children = { _mediaSurface, _webView } };
 
 		// The safe-area capability, opt-in like every other kit cluster and configured here rather than
 		// assumed. Everything in the options is individually declinable — this sample takes all four so
@@ -147,6 +177,23 @@ public sealed class MainPage : ContentPage
 			return;
 		}
 
+		/* The PICTURE surface's page half (D80). Three things, and each one missing gives the same
+		 * symptom — no picture — which is why they are together and logged.
+		 *
+		 * ⚠ BEFORE the bridge, because `mediaSurface` is in the capability list below: a page branches on
+		 * it, so it must be true by the time the handshake goes out.
+		 */
+		var surface = services.GetRequiredService<MobileMediaSurface>();
+		surface.Attach(_mediaSurface, _webView, Dispatcher);
+		// The SHELL's player, resolved by its own concrete type — the default IMediaPlayer is the
+		// page-backed one (D58) and has no picture to give.
+#if ANDROID
+		_mediaSurface.Player = services.GetRequiredService<Shenora.Android.AndroidMediaPlayer>();
+#elif IOS || MACCATALYST
+		_mediaSurface.Player = services.GetRequiredService<Shenora.iOS.IosMediaPlayer>();
+#endif
+		MauiProgram.Log("media surface: attached to the page (the picture goes behind the webview)");
+
 		// Construct then Attach, the same order the desktop bridge documents: buffering starts at
 		// construction so anything emitted while the page is still loading survives.
 		_bridge = new MobileIpcBridge(_webView, new MobileIpcBridgeOptions
@@ -177,6 +224,10 @@ public sealed class MainPage : ContentPage
 					ShellCapability.LocalFiles,
 					.. MobileBackNavigation.IsSupported ? new[] { ShellCapability.BackNavigation } : [],
 					.. MobileWindowOrientation.IsSupported ? new[] { ShellCapability.WindowOrientation } : [],
+					// Unconditional: this page attached a surface a few lines above, so the shell really
+					// can draw a picture. An app that does not call AddShenoraMediaSurface must not
+					// advertise it — the page would position a picture nothing draws.
+					ShellCapability.MediaSurface,
 				],
 			},
 			// ⚠ The report is logged HERE because this is the moment the gate opens: everything emitted
@@ -719,6 +770,12 @@ public sealed class MainPage : ContentPage
 	private void OnUnloaded(object? sender, EventArgs e)
 	{
 		MauiProgram.Log("page unloaded — disposing the bridge");
+
+		// ⚠ Detach the picture surface by IDENTITY, never unconditionally. On Android the outgoing page
+		// unloads AFTER the incoming one has attached (measured at ~0.3 s in the recreation work), so
+		// "detach whatever is there" tears down the LIVE page's surface. `Detach` ignores a view that is
+		// no longer the attached one, which is what makes this safe to call from either ordering.
+		MauiProgram.Shenora?.Services.GetService<MobileMediaSurface>()?.Detach(_mediaSurface);
 		// ⚠ NOTHING HERE RELEASES THE WEBVIEW'S HANDLER, deliberately: `_bridge.Dispose()` below does it,
 		// because a configuration change kills the app if it is left connected (8 of 10 font-scale changes,
 		// measured) and a step an adopter must remember is not a mechanism. This sample is the CONSUMER of

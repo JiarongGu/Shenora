@@ -81,7 +81,10 @@ public static class MediaPlayerExtensions
             new MediaPlayerModule(
                 sp.GetRequiredService<IMediaPlayer>(),
                 sp.GetRequiredService<MediaPlayerOptions>(),
-                sp.GetService<ILogger<MediaPlayerModule>>())));
+                sp.GetService<ILogger<MediaPlayerModule>>(),
+                // Optional by design: a shell with no picture surface is the ordinary desktop case, where
+                // the page's own element already IS the picture.
+                sp.GetService<IMediaSurface>())));
 
         builder.Services.TryAddSingleton<IMediaPlayer>(services =>
         {

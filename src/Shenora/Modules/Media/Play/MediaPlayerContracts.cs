@@ -73,9 +73,13 @@ public sealed record MediaSource
 /// A media player owned by the HOST, driven by the page (D54), implemented once per shell (D19/D20). It
 /// plays what the PLATFORM decodes, which a <c>&lt;video&gt;</c> element does not.
 /// <para>
-/// <b>What this does NOT do.</b> No queue, no playlist, no gapless, no crossfade, no shuffle. And no video
-/// SURFACE: video decodes and its clock advances, but nothing composites it into the page's layout, so
-/// AUDIO is what this promises today.
+/// <b>What this does NOT do.</b> No queue, no playlist, no gapless, no crossfade, no shuffle.
+/// </para>
+/// <para>
+/// <b>The PICTURE needs two halves, and either one missing is sound with a blank frame.</b> A shell that
+/// registers an <see cref="IMediaSurface"/> — which is where the page says the picture goes — and a player
+/// that takes the platform handle it offers (<see cref="MediaPlayerBase.AttachSurface"/>). Without both,
+/// video still decodes and its clock still advances; nothing composites it into the page's layout.
 /// </para>
 /// <para>
 /// Registered as a SINGLETON by the shell and injected. ⚠ There is no <c>IDisposable</c> — disposing an
