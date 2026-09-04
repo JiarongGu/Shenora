@@ -110,6 +110,14 @@ at the first list and missed five more breaking changes.
   calls compile unchanged — but the signature moved, so **recompile if you construct it yourself**. The
   kit's own `UseMediaPlayer()` passes it.
 
+- **`MobileWindowOrientation`'s constructor takes an optional `ILogger?`**, matching every other service
+  in that shell, and iOS's refused-geometry report now goes through it. Source-compatible, same
+  recompile note as above; DI supplies it, so `UseAndroid`/`UseIOS` need no change.
+  🔴 **The report it replaces did not exist in a shipped app.** It was `Debug.WriteLine`, which is
+  `[Conditional("DEBUG")]` — the compiler removes the call from a Release build, so the one place a
+  refused orientation request is reported was silent in every configuration an adopter ships, while the
+  comment beside it said swallowing that error is how "the lock did nothing" becomes undiagnosable.
+
 ### Fixed
 
 - **`ResourcePackJournal.Open` no longer boots a staged client that a newer app build has overtaken.**

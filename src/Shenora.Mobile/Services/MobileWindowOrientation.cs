@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Core.Shell;
 
 namespace Shenora.Mobile;
@@ -34,6 +35,15 @@ namespace Shenora.Mobile;
 /// </remarks>
 public sealed class MobileWindowOrientation : IWindowOrientation
 {
+    private readonly ILogger? _log;
+
+    /// <param name="log">
+    /// Diagnostics, resolved by DI. ⚠ <b>Optional and nullable</b>, matching every other service in this
+    /// shell (<c>MobileSafeArea</c>, <c>MobileAppLifecycle</c>, <c>MobileBackNavigation</c>) — an app
+    /// constructing this by hand should not have to supply one.
+    /// </param>
+    public MobileWindowOrientation(ILogger<MobileWindowOrientation>? log = null) => _log = log;
+
 #if IOS
     /// <summary>
     /// What the app's delegate must return, and the flag that proves it does.
@@ -95,7 +105,7 @@ public sealed class MobileWindowOrientation : IWindowOrientation
         // upside-down simply never gets it and this costs nothing.
         Apply(orientation == Core.Shell.WindowOrientation.Portrait
             ? UIKit.UIInterfaceOrientationMask.Portrait | UIKit.UIInterfaceOrientationMask.PortraitUpsideDown
-            : UIKit.UIInterfaceOrientationMask.Landscape);
+            : UIKit.UIInterfaceOrientationMask.Landscape, _log);
 #else
         _ = orientation;
         throw ShellCapability.NotSupported(ShellCapability.WindowOrientation, MauiShellNames.Shell,
@@ -114,7 +124,7 @@ public sealed class MobileWindowOrientation : IWindowOrientation
 #elif IOS
         // `All` is not "every orientation" here — UIKit intersects it with `Info.plist`, so this hands the
         // decision back to the app's own declared set, which is the peer of Android's `Unspecified`.
-        Apply(UIKit.UIInterfaceOrientationMask.All);
+        Apply(UIKit.UIInterfaceOrientationMask.All, _log);
 #else
         throw ShellCapability.NotSupported(ShellCapability.WindowOrientation, MauiShellNames.Shell,
             "this shell cannot hold an orientation.");
@@ -150,7 +160,7 @@ public sealed class MobileWindowOrientation : IWindowOrientation
     /// backing it. Rotate without the first two and the next device rotation undoes it.
     /// </para>
     /// </summary>
-    private static void Apply(UIKit.UIInterfaceOrientationMask mask)
+    private static void Apply(UIKit.UIInterfaceOrientationMask mask, ILogger? log)
     {
         _mask = mask;
 
@@ -192,10 +202,16 @@ public sealed class MobileWindowOrientation : IWindowOrientation
             // reported here and nowhere else, so swallowing it is how "the lock did nothing" becomes
             // undiagnosable. It is not thrown — this runs after the mask is already in force, and the
             // system may legitimately refuse the immediate rotation while still honouring the lock.
+            // 🔴 THROUGH `ILogger`, NOT `Debug.WriteLine`. `Debug.WriteLine` is `[Conditional("DEBUG")]`,
+            // so the compiler REMOVES the call from a Release build — which is every build an adopter
+            // ships. The one report this path has would have existed only on the configuration where the
+            // problem is easiest to see anyway, while the comment above claimed it was reported.
             windowScene.RequestGeometryUpdate(
                 new UIKit.UIWindowSceneGeometryPreferencesIOS(mask),
-                error => System.Diagnostics.Debug.WriteLine(
-                    $"[Shenora] the window scene refused the orientation request: {error.LocalizedDescription}"));
+                error => log?.LogWarning(
+                    "The window scene refused the orientation request: {Reason}. The lock is still in "
+                    + "force — the app will take the orientation at the next rotation.",
+                    error.LocalizedDescription));
         }
     }
 #endif
