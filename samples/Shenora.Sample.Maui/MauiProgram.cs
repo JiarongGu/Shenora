@@ -51,7 +51,7 @@ public static class MauiProgram
 		// The shell's PICTURE surface (D80): registers MediaSurfaceView's platform handler and makes the
 		// webview see-through. ⚠ Opt-in, and this sample takes it so the seam has a real consumer on a
 		// device rather than only in tests (D63) — the page's own CSS still has to leave the hole.
-		builder.UseShenoraMediaSurface();
+		builder.UseShenoraMediaSurface(Log);
 
 		var app = builder.Build();
 		BuildShenora();

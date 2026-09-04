@@ -30,12 +30,22 @@ internal static class MobileWebViewTransparency
     /// other mappings and reaches a webview MAUI rebuilds after a configuration change.
     /// </para>
     /// </summary>
-    public static void Enable()
+    /// <param name="log">
+    /// Diagnostics, and this one earns its place. ⚠ <b>A mapper that never runs and one that runs
+    /// perfectly produce the same screen</b> — an opaque webview — so without a line here the first
+    /// question a missing picture raises is unanswerable. Measured: three device screenshots were spent
+    /// before a control proved the occluder was above the picture rather than the picture missing.
+    /// </param>
+    public static void Enable(Action<string>? log = null)
     {
         HybridWebViewHandler.Mapper.AppendToMapping(nameof(MobileWebViewTransparency), (handler, _) =>
         {
             var view = handler.PlatformView;
-            if (view is null) return;
+            if (view is null)
+            {
+                log?.Invoke("webview transparency: the handler has no platform view — NOT applied");
+                return;
+            }
 
 #if ANDROID
             // The widget's own background. The page's `body` is the second layer and is the app's.
@@ -47,6 +57,8 @@ internal static class MobileWebViewTransparency
             // scroll view carries its own background and paints over everything when it is left set.
             view.ScrollView.BackgroundColor = UIKit.UIColor.Clear;
 #endif
+            log?.Invoke("webview transparency: applied — a native layer can now show through");
         });
+        log?.Invoke("webview transparency: mapping registered (it runs when a webview is realized)");
     }
 }

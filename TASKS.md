@@ -61,20 +61,29 @@ refutes D52's headline example on a modern Android WebView. What is left:
 
 - [ ] **Re-measure the container delta on iOS and on an older WebView before D52's example is trusted.**
   It is cited as the thing the media tier exists for, and it now has one device saying otherwise.
-- [ ] **PIXELS ARE STILL UNPROVEN, and the INSTRUMENT is now the prime suspect.** Three screenshot
-  attempts on the AVD, all uniformly dark, with everything upstream confirmed in the same run:
-  `MediaPlayer: display attached (SurfaceHolder)` · the clock advancing · SurfaceFlinger listing
-  `SurfaceView[…]#450 … z=-2` · and all FOUR occluding layers opened (webview widget, HTML document, the
-  MAUI page's `BackgroundColor`, the activity window background).
-  **What is NOT eliminated is `adb screencap` itself** — it composites through SurfaceFlinger and is a
-  known-unreliable way to capture SurfaceView content on an emulator. ⚠ **Do not read those shots as
-  "compositing is broken"**: a probe that cannot tell its own failure from the platform's is worse than
-  none (`probe-diagnostics`).
-  **Next step is to test the INSTRUMENT, not the feature:** capture something known to be in a
-  SurfaceView on this emulator and see whether `screencap` shows it. If it cannot, this needs a
-  hardware device or a screen recording, not another shot.
-  ⚠ Also unverified: that the view is laid out at the size asked for. `dumpsys window`/the layer's own
-  bounds would settle it and were not read.
+- [ ] 🔴 **NOTHING BEHIND THE WEBVIEW IS VISIBLE ON THIS AVD — and that is the ONE assumption D80 rests
+  on.** Four screenshots, all uniformly dark. **A MAGENTA `BoxView` in the same Grid at the same rectangle
+  is invisible too**, which is the control that matters: it is ordinary MAUI drawing, so it exonerates both
+  the `SurfaceView` and `adb screencap` and points squarely at the webview still painting over what is
+  behind it.
+
+  **Eliminated, each with a log line in the same run** — do not re-check these:
+  - the transparency mapping runs and applies (`webview transparency: applied`);
+  - the player has its display (`MediaPlayer: display attached (SurfaceHolder)`);
+  - the surface is laid out and visible (`surface visible=True 320x180 at 0,0`);
+  - the control really was inserted into a real Grid (`control=inserted contentIsGrid=True`);
+  - the clock advances and SurfaceFlinger lists `SurfaceView[…] z=-2`.
+
+  **What is left, in order of suspicion:** the DOCUMENT is still painting a background — the shots are the
+  page's own dark colour, not black, and the opener drives CSS through `android eval`, which may have
+  reached a stale CDP target or been beaten by the page's stylesheet. Then: whether a hardware-accelerated
+  Android WebView composites transparently over a sibling at all on this emulator.
+  ⚠ **The adopter runs this shape on Android and reports it working**, so treat "the kit cannot do it" as
+  the LAST hypothesis, not the first. The difference to look at is that their page leaves a real
+  transparent region in its own CSS, where this test turns the document off from outside.
+  ⚠ **Do not iterate on this blind** — it burned four deploy cycles. The cheap decisive next step is a page
+  that ships a genuinely transparent region (a stylesheet, not an eval), so the document is provably not
+  the occluder.
 - [ ] **Re-check the safe-area probe on iOS**, and that `Shenora.iOS` compiles at all — nothing on this box
   does (`dotnet workload list` → `maui-android` alone). The sample's `Content` became a `Grid` (with
   `SafeAreaEdges.None` to restore edge-to-edge), and that is the property iOS actually reads.

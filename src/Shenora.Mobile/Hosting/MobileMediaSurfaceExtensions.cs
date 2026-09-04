@@ -35,16 +35,18 @@ public static class MobileMediaSurfaceExtensions
     /// </para>
     /// </summary>
     /// <param name="builder">The MAUI application builder.</param>
+    /// <param name="log">Diagnostics. ⚠ Supply one: a transparency mapping that never runs and one that
+    /// works look identical from the glass — an opaque webview and no picture.</param>
     /// <returns><paramref name="builder"/>, for chaining.</returns>
 #if ANDROID || IOS || MACCATALYST
-    public static MauiAppBuilder UseShenoraMediaSurface(this MauiAppBuilder builder)
+    public static MauiAppBuilder UseShenoraMediaSurface(this MauiAppBuilder builder, Action<string>? log = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.ConfigureMauiHandlers(handlers =>
             handlers.AddHandler<MediaSurfaceView, PlatformMediaSurfaceHandler>());
 
-        MobileWebViewTransparency.Enable();
+        MobileWebViewTransparency.Enable(log);
         return builder;
     }
 

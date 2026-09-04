@@ -789,9 +789,45 @@ public sealed class MainPage : ContentPage
 	/// real app leaves a transparent region in its layout instead of turning the whole page off.
 	/// </para>
 	/// </summary>
+	/// <summary>
+	/// A solid rectangle at the picture's position, shown only while the hole is open.
+	///
+	/// <para>
+	/// 🔴 <b>THE CONTROL, and without it a dark screenshot accuses the wrong thing.</b> Three shots came
+	/// back uniformly dark with the display provably attached and the clock advancing, which has two very
+	/// different explanations: the see-through chain is not actually see-through, or the capture cannot
+	/// see a <c>SurfaceView</c> at all. This is ordinary MAUI drawing at the same rectangle in the same
+	/// window, so it separates them in ONE shot — visible means the chain and the capture both work and
+	/// the picture is the problem; invisible means the chain is, and nothing has been learned about video.
+	/// </para>
+	/// </summary>
+	private BoxView? _holeControl;
+
 	private void OpenPictureHole(bool open) => Dispatcher.Dispatch(() =>
 	{
 		BackgroundColor = open ? Colors.Transparent : Shell;
+
+		if (open && _holeControl is null && Content is Grid grid)
+		{
+			// Magenta: nothing else in this app or the system bars is anywhere near it, so "did it appear"
+			// needs no colour matching.
+			_holeControl = new BoxView
+			{
+				Color = Colors.Magenta,
+				HorizontalOptions = LayoutOptions.Start,
+				VerticalOptions = LayoutOptions.Start,
+				WidthRequest = 320,
+				HeightRequest = 180,
+				Margin = new Thickness(0, 0, 0, 0),
+			};
+			// FIRST child: behind the webview, exactly where the picture is meant to be.
+			grid.Children.Insert(0, _holeControl);
+		}
+		else if (!open && _holeControl is not null && Content is Grid g)
+		{
+			g.Children.Remove(_holeControl);
+			_holeControl = null;
+		}
 #if ANDROID
 		// The window beneath the page. `Platform.CurrentActivity` is the one hosting this page.
 		var window = global::Microsoft.Maui.ApplicationModel.Platform.CurrentActivity?.Window;
@@ -801,7 +837,15 @@ public sealed class MainPage : ContentPage
 				: new global::Android.Graphics.Color(
 					(byte)(Shell.Red * 255), (byte)(Shell.Green * 255), (byte)(Shell.Blue * 255))));
 #endif
-		MauiProgram.Log($"picture hole: {(open ? "OPEN — page and window background transparent" : "closed")}");
+		// ⚠ Says WHAT HAPPENED, not what was intended. "OPEN" alone was logged for three runs while the
+		// control may never have been inserted and the surface may have been laid out at 0x0 — both of
+		// which look exactly like a compositing failure from a screenshot.
+		MauiProgram.Log($"picture hole: {(open ? "OPEN" : "closed")}"
+			+ $" · control={(_holeControl is null ? "ABSENT" : "inserted")}"
+			+ $" · contentIsGrid={Content is Grid}"
+			+ $" · surface visible={_mediaSurface.IsVisible} {_mediaSurface.Width:0}x{_mediaSurface.Height:0}"
+			+ $" at {_mediaSurface.Margin.Left:0},{_mediaSurface.Margin.Top:0}"
+			+ $" · page bg={BackgroundColor?.ToHex() ?? "null"}");
 	});
 
 	private void OnUnloaded(object? sender, EventArgs e)
