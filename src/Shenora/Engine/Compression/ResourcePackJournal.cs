@@ -230,6 +230,12 @@ public sealed partial class ResourcePackJournal
     /// 🔴 <b>Call this ONCE per app start, before the webview navigates</b>, and serve what it returns. Its
     /// side effects are the point: it spends an attempt, and it performs the rollback when one runs out.
     /// </para>
+    /// <para>
+    /// ⚠ <b>A staged pack the packaged one has OVERTAKEN is dropped without being served</b> — whether it
+    /// was confirmed or still pending — because a store release is exactly the event that should win.
+    /// Equal versions keep the staged pack: the two carry the same client, so there is nothing to gain by
+    /// churning.
+    /// </para>
     /// </summary>
     /// <param name="packagedVersion">
     /// The version of the pack built INTO this app build. 🔴 Required, and the app must bake it from the
@@ -249,7 +255,27 @@ public sealed partial class ResourcePackJournal
 
         if (state.Pending is { } pending)
         {
-            if (state.Attempts < _options.MaxAttempts)
+            // 🔴 THE SAME QUESTION AS THE ACTIVE BRANCH BELOW, ONE STEP EARLIER — and it was missing, so a
+            // device that staged a pack and THEN took an app update booted the older staged client anyway
+            // (measured on a real iPhone: packaged 1.0.19, pending 1.0.18, served the 1.0.18). The failure
+            // is the worst shape there is: a fix demonstrably inside the installed app does not appear, so
+            // the app looks broken AND the fix looks wrong.
+            //
+            // ⚠ BEFORE the attempt is spent, or the superseded pack is served exactly once — which is the
+            // whole bug, not a smaller version of it.
+            if (Newer(packagedVersion, pending))
+            {
+                state.Pending = null;
+                state.Attempts = 0;
+                Write(state);
+                // ⚠ NOT `rolledBackFrom`. That word means "this pack was served and failed to confirm", and
+                // an app surfaces it to its user; a pack overtaken by a store release never ran and never
+                // failed. Conflating them reports a defect that did not happen.
+                _log?.LogInformation("The packaged resource pack {Packaged} is newer than the staged {Pending}, "
+                                   + "so the staged one has been dropped before it was ever served.",
+                                     packagedVersion, pending);
+            }
+            else if (state.Attempts < _options.MaxAttempts)
             {
                 // 🔴 PERSIST FIRST, SERVE SECOND. A pack that faults before any of the app's code runs must
                 // still have cost an attempt, or this is an infinite retry of the same broken pack.
@@ -257,15 +283,17 @@ public sealed partial class ResourcePackJournal
                 Write(state);
                 return new ResourcePackResult(pending, ResourcePackKind.Pending, state.Attempts);
             }
-
-            // Out of attempts: it was served and never confirmed, so it does not get another chance.
-            rolledBackFrom = pending;
-            state.Pending = null;
-            state.Attempts = 0;
-            Write(state);
-            _log?.LogWarning("Resource pack {Version} was served {Attempts} time(s) without confirming, so it "
-                           + "has been rolled back. The app is running the previous pack.",
-                             pending, _options.MaxAttempts);
+            else
+            {
+                // Out of attempts: it was served and never confirmed, so it does not get another chance.
+                rolledBackFrom = pending;
+                state.Pending = null;
+                state.Attempts = 0;
+                Write(state);
+                _log?.LogWarning("Resource pack {Version} was served {Attempts} time(s) without confirming, so it "
+                               + "has been rolled back. The app is running the previous pack.",
+                                 pending, _options.MaxAttempts);
+            }
         }
 
         // 🔴 THE COMPARISON THE WHOLE TYPE EXISTS FOR. A confirmed pack still loses to a packaged one that

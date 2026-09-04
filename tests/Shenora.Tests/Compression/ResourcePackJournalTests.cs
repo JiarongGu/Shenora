@@ -160,6 +160,53 @@ public class ResourcePackJournalTests : IDisposable
     }
 
     [Fact]
+    public void A_NEWER_PACKAGED_pack_outranks_a_PENDING_staged_one_too()
+    {
+        // 🔴 THE SAME DEFECT ONE BRANCH EARLIER, and it reached a real iPhone: `Active` was compared and
+        // `Pending` was not, so a device that staged a pack and THEN took an app update booted the older
+        // staged client anyway (packaged 1.0.19, pending 1.0.18, served the 1.0.18).
+        Journal().Stage("200");            // staged, never confirmed — so it is PENDING, not Active
+        var choice = Journal().Open("300");
+
+        Assert.Equal("300", choice.Version);
+        Assert.Equal(ResourcePackKind.Packaged, choice.Kind);
+    }
+
+    [Fact]
+    public void A_superseded_PENDING_pack_costs_no_ATTEMPT_and_reports_no_rollback()
+    {
+        // 🔴 THE ORDER IS THE FIX, not the comparison. Compared AFTER the attempt is spent, the superseded
+        // pack is still served exactly once — which is the whole bug rather than a smaller version of it.
+        // So this asserts the two side effects that prove the drop happened FIRST.
+        Journal().Stage("200");
+        var choice = Journal().Open("300");
+
+        Assert.Equal(0, choice.Attempt);
+        // ⚠ NOT a rollback: that word means "served and failed to confirm", and an app surfaces it to its
+        // user. A pack a store release overtook never ran and never failed.
+        Assert.Null(choice.RolledBackFrom);
+
+        // And it is GONE rather than out-voted — an older build must not resurrect it.
+        var next = Journal().Open("150");
+        Assert.Equal("150", next.Version);
+        Assert.Equal(ResourcePackKind.Packaged, next.Kind);
+    }
+
+    [Fact]
+    public void An_EQUAL_packaged_version_leaves_a_pending_pack_alone()
+    {
+        // The boundary, pinned because the two branches could reasonably differ here and a future edit
+        // would not notice: "not NEWER" keeps the staged pack, matching the Active branch. The two carry
+        // the same client, so there is nothing to gain by dropping it.
+        Journal().Stage("200");
+        var choice = Journal().Open("200");
+
+        Assert.Equal("200", choice.Version);
+        Assert.Equal(ResourcePackKind.Pending, choice.Kind);
+        Assert.Equal(1, choice.Attempt);
+    }
+
+    [Fact]
     public void An_OLDER_packaged_pack_leaves_the_staged_one_in_force()
     {
         // The other direction, and it is the ordinary case: the whole point of staging is that a fetched
