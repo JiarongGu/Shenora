@@ -814,10 +814,22 @@ internal sealed class MatroskaSampleReader(Stream source)
         return value;
     }
 
+    /// <summary>
+    /// An EBML float, which the spec allows to be 4 or 8 bytes.
+    /// <para>
+    /// ⚠ <b>The size is re-checked HERE, not only at the call sites.</b> Both of this type's callers
+    /// already gate on <c>size is 4 or 8</c>, so this guard is currently unreachable — but the twin
+    /// implementation in <c>MatroskaProbe</c> defends itself the same way, and a reader who copies
+    /// THIS one into a third call site inherits an `ArgumentOutOfRangeException` out of the slice
+    /// below for any other declared width. A parser reading foreign bytes should not have a shape
+    /// whose safety lives entirely in its callers.
+    /// </para>
+    /// </summary>
     private double ReadFloat(long size)
     {
         Span<byte> buffer = stackalloc byte[8];
         var take = (int)size;
+        if (take is not (4 or 8)) return 0;
         if (source.ReadAtLeast(buffer[..take], take, throwOnEndOfStream: false) != take) return 0;
         return take == 4
             ? BinaryPrimitives.ReadSingleBigEndian(buffer[..4])
