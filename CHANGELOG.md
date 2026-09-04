@@ -50,7 +50,19 @@ at the first list and missed five more breaking changes.
   ⚠ **Mobile only.** Windows reports the capability absent rather than half-satisfying it (D39).
   ⚠ **Three things are the app's, and each one missing looks identical — no picture:** put a
   `MediaSurfaceView` in a layout *before* the webview, register `MobileMediaSurface` over the two views,
-  and make the page's own background transparent where the picture belongs.
+  and give the page a stage — a transparent background where the picture belongs **and** its own content
+  out of the way, which is the half that gets missed. ✅ Photographed on Android; the MAUI page's
+  `BackgroundColor` is deliberately NOT part of the chain (`docs/guides/media.md`).
+
+- **`MediaSurfaceHolder` — the handle/player rendezvous, as a type a test can reach.** Remembers the
+  platform's picture handle and the player independently and pairs whichever arrives second.
+  `MediaSurfaceView` now delegates to it, and an app writing its own surface view over
+  `MediaPlayerBase.AttachSurfaceCore` gets the same rule instead of reimplementing it.
+  🔴 **Extracted because the ordering shipped BROKEN and no gate could see it**: a handle arriving before
+  the player was dropped for good, while the XML claimed whichever came second completed the pair. The
+  view lives in a platform-only assembly and the suite is `net10.0`, so only a device could find it —
+  and the only symptom is a black rectangle, because the player still opens the file and still reports a
+  moving clock. Seven tests now cover it, including that exact ordering.
 
 - **`useMediaTransport()` — drive the host's player and read what it is doing.** The companion to
   `useMediaSurface`: with the picture on the shell's surface the page's own element is not playing, so
@@ -80,6 +92,18 @@ at the first list and missed five more breaking changes.
   kit's own `UseMediaPlayer()` passes it.
 
 ### Fixed
+
+- **`ResourcePackJournal.Open` no longer boots a staged client that a newer app build has overtaken.**
+  The packaged version was compared against a **confirmed** pack and not against a **pending** one, so a
+  device that staged a pack and then took an app update served the older staged client anyway — measured
+  on a real iPhone: `packaged 1.0.19, pending 1.0.18` → `serving PENDING bundle 1.0.18`. The comparison now
+  happens on both branches, before the attempt is spent.
+  🔴 **The user-visible failure is the worst shape there is:** a fix demonstrably inside the installed app
+  does not appear, so the app looks broken AND the fix looks wrong.
+  ⚠ **A superseded pack is dropped, not rolled back** — `RolledBackFrom` still means "served and failed to
+  confirm", which an app surfaces to its user; a pack a release overtook never ran and never failed.
+  ⚠ **EQUAL versions keep the staged pack**, matching the confirmed-pack branch: the two carry the same
+  client, so there is nothing to gain by churning. An app wanting the stricter rule can still refuse it.
 
 - **`shenora ios provision` no longer prints your Apple team id or the build Mac's address.** They were in
   the first line of output, unprompted, on every run — a developer-account identifier and usually a home
