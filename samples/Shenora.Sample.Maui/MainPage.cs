@@ -626,6 +626,11 @@ public sealed class MainPage : ContentPage
 				// caught. There is no shared name left to reach for, and that is the point.
 #if ANDROID
 				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.Android.AndroidMediaPlayer>(), MauiProgram.Log);
+				// D80's question, and it needs the SAME player one clip further on: `MediaPlayerProbe` plays
+				// an .mp4 every webview already opens, which proves the player runs and nothing about the
+				// gap the picture surface exists for.
+				await MediaSurfaceProbe.RunAsync(services.GetService<Shenora.Android.AndroidMediaPlayer>(),
+					services.GetService<Shenora.Modules.Media.IMediaSurface>(), MauiProgram.Log);
 				// The TRANSCODE tier, after the player — it asserts its output by PLAYING it, so it needs the
 				// same player and there is no point running it if the player itself did not work.
 				//
@@ -640,6 +645,8 @@ public sealed class MainPage : ContentPage
 					services.GetService<Shenora.Android.AndroidMediaPlayer>(), MauiProgram.Log);
 #elif IOS || MACCATALYST
 				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.iOS.IosMediaPlayer>(), MauiProgram.Log);
+				await MediaSurfaceProbe.RunAsync(services.GetService<Shenora.iOS.IosMediaPlayer>(),
+					services.GetService<Shenora.Modules.Media.IMediaSurface>(), MauiProgram.Log);
 				// Same as the Android arm: its own pipeline WITH a log, because the host registers the
 				// converter without one and a codec failure is otherwise reported as a malformed file.
 				var diagnosticPipeline = new Shenora.Modules.Media.MediaConversionPipeline();

@@ -378,6 +378,34 @@ channel's times against another's is how the sound side of every cut lands somew
   wherever the webview decodes the file. Compositing a native player under WebView2 is unmeasured here,
   and an API that compiles on three shells and means something weaker on one is what D39 refuses.
 
+## The shell's player and the element, on the same file — measured 2026-09-04
+
+Android emulator, **API 36 / Android 16, WebView 133.0.6943.137**. One clip, `clip-h264-aac.mkv`, handed
+to both players on the same device in the same session.
+
+| | opened it | duration | advanced |
+|---|---|---|---|
+| the shell's player (`android.media.MediaPlayer`, by file path) | ✅ | `00:01:00.023` | `1.00s → 2.50s` |
+| the page's `<video>` element (same file, page scheme) | ✅ | `60.023` | `t=1.81`, `readyState=4` |
+
+🔴 **The second row is the finding: `.mkv` holding playable H.264 is NOT a gap on this WebView** — which is
+the example D52 gives for what the media tier exists to repair. The tier is not wrong; its headline case is
+webview-specific, and this is one data point against it.
+
+⚠ **`canPlayType('video/x-matroska; codecs="avc1.42E01E,mp4a.40.2"')` answered `""` on the webview that
+then played the file.** The advisory answer and the real one disagree, so a planner keyed on `canPlayType`
+routes this file to a converter for nothing.
+
+⚠ **ONE device, and the WebView VERSION is the variable.** It says nothing about an older WebView, and
+nothing about WKWebView — where an adopter's refusals were measured and where the surface's case was made.
+
+**What this settles for D80 on Android:** the kit's zero-dependency default reaches the file, so ExoPlayer
+is not needed for CONTAINER reach here (D51/D42's seam remains the answer for an app that needs more). The
+surface earns its place on the other two grounds, both measured: playback that survives backgrounding
+(45 s native against ~15 s for the page's element) and a picture composited under the page.
+🔴 **PIXELS ARE STILL UNPROVEN.** A moving clock is not a composited picture, and the sample's page paints
+its own background — so nothing has yet looked through a transparent hole.
+
 ## First load does not scale with the file — measured 2026-08-21
 
 iPhone 16 Pro simulator, iOS 26.x, one run each. Times are from the PAGE, per term: `tManifest` is the

@@ -41,30 +41,16 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 🎬 THE PICTURE SURFACE (D80): THE DESIGN IS DEVICE-CONFIRMED, THE SUBSTITUTIONS ARE NOT
+### 🎬 THE PICTURE SURFACE (D80) — what the AVD could not answer
 
-The adopter runs this shape on Android and on an iPhone and reports it working, which retires the risk that
-mattered: **the webview really can be made see-through, the page's hole really composites, and a
-CSS-pixel rectangle really is the right contract.** Nothing below re-asks those.
+The Android run is in `docs/design/media.md`; the engine substitution is settled and the A/B there
+refutes D52's headline example on a modern Android WebView. What is left:
 
-🔴 **ONE substitution is left to measure, because analysing the other two closed them.** Their handlers
-were read for the REASON behind each choice, not just the shape:
-
-- **iOS: their shape is now the kit's.** A `layerClass` backing layer was written first, on the grounds
-  that UIKit would then size the layer and implicit animations would not apply. **Reverted to their proven
-  sublayer + `LayoutSubviews` + `CATransaction.DisableActions`** — the cleaner mechanism was unbuilt,
-  unbuildable here, and failed as an `InvalidCastException` on page load if the export did not bind.
-- **Android's holder callbacks are FORCED, not a deviation.** `ExoPlayer.SetVideoSurfaceView(view)` takes
-  the view and registers the holder callbacks itself; `MediaPlayer.SetDisplay(holder)` takes the holder and
-  registers nothing, so the caller must. Their own comment is the spec for it: *attached AFTER the player
-  exists, detached BEFORE it is released*.
-
-- [ ] **The Android ENGINE substitution — the one thing their run genuinely cannot speak to.** They drive
-  ExoPlayer; the kit's default is `android.media.MediaPlayer` (D51/D42: no engine ships). Both sit on
-  `MediaCodec`, so the DECODERS are the same and the difference is the EXTRACTOR set — which is the whole
-  delta D80 exists for. The AVD answers it: play an `.mkv` holding H.264 through the hole, confirm the
-  frame appears and follows a scroll. ⚠ The sample's page must leave a TRANSPARENT region first; with the
-  page painting its own background, a working surface and a broken one look identical.
+- [ ] **Re-measure the container delta on iOS and on an older WebView before D52's example is trusted.**
+  It is cited as the thing the media tier exists for, and it now has one device saying otherwise.
+- [ ] **Prove PIXELS, which nothing here has.** A moving clock is not a composited picture: the sample's
+  page paints its own background, so the surface has no hole to show through and a working compositor and
+  a broken one look identical. Needs a transparent region in the page plus a screenshot.
 - [ ] **Re-check the safe-area probe on iOS**, and that `Shenora.iOS` compiles at all — nothing on this box
   does (`dotnet workload list` → `maui-android` alone). The sample's `Content` became a `Grid` (with
   `SafeAreaEdges.None` to restore edge-to-edge), and that is the property iOS actually reads.
