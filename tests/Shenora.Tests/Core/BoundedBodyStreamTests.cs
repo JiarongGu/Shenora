@@ -143,7 +143,7 @@ public class BoundedBodyStreamTests
         Assert.Equal(4, body.Read(new byte[4], 0, 4));
         Assert.Throws<IOException>(() => body.Read(new byte[4], 0, 4));
 
-        var line = Assert.Single(lines.Where(l => l.Contains("FAILED MID-BODY", StringComparison.Ordinal)));
+        var line = Assert.Single(lines, l => l.Contains("FAILED MID-BODY", StringComparison.Ordinal));
         Assert.Contains("4 of 10", line, StringComparison.Ordinal);
         Assert.Contains("IOException", line, StringComparison.Ordinal);
     }
@@ -159,7 +159,9 @@ public class BoundedBodyStreamTests
         var inner = new FailsAfter(2);
         var body = new BoundedBodyStream(inner, 8);
 
-        body.Read(new byte[2], 0, 2);
+        // The count is ASSERTED rather than discarded: a `Read` that returned short here would leave the
+        // stream at a different offset and the throw below would be testing another position.
+        Assert.Equal(2, body.Read(new byte[2], 0, 2));
         Assert.Throws<IOException>(() => body.Read(new byte[2], 0, 2));
 
         // Closed AT THE FAILURE: nothing will read this body again successfully, so the handle must not wait

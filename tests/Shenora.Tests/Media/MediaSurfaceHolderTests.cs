@@ -114,7 +114,7 @@ public class MediaSurfaceHolderTests
         holder.SetHandle(new object());
         holder.Player = null;
 
-        Assert.Equal(null, player.Surfaces[^1]);
+        Assert.Null(player.Surfaces[^1]);
     }
 
     [Fact]

@@ -18,10 +18,12 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.16.0 — pre-release, stabilising toward 1.0.** The page-facing clipboard (`useClipboard()` over an
-opt-in `SHENORA.CLIPBOARD` module — reading with no user gesture, and an app's own format carried
-verbatim, neither of which the browser's Clipboard API can do), the segment/streaming media tier, and
-the browser sessions' hook + event catalogue are the newest arrivals.
+**v0.16.0 — pre-release, stabilising toward 1.0.** Newest in the PUBLISHED version: holding the window
+at an orientation (Android), the notification path's own report of what it accepted, filtered, dropped
+and delivered, and the Android recreation crash. **Landing in the tree ahead of the next release** — see
+`CHANGELOG.md`'s `## Unreleased`, which is the authority — are the shell's own **picture surface** on a
+phone (`useMediaSurface` / `useMediaTransport`: the platform's player draws the film under a transparent
+region the page leaves, no transcode, the page keeping every control) and **orientation on iOS**.
 
 > **The segment/streaming media tier is the newest part of the kit, and the only one not extracted from an
 > application that had already proven it in production.** An August 2026 review found several faults
@@ -326,8 +328,9 @@ ResourceProvider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOpti
 ## Dev loop
 
 ```
-node devtools/dev.mjs build     # dotnet build + npm build (react package)
+node devtools/dev.mjs build     # dotnet build + npm build (both npm packages)
 node devtools/dev.mjs test      # dotnet test + vitest
+node devtools/dev.mjs checks    # every hygiene gate, no build and no tests (~5 s)
 node devtools/dev.mjs verify    # build · test · typecheck · leak scan · knowledge check · doctor
 node devtools/dev.mjs pack      # nupkgs + npm tarball into publish/packages (lockstep version)
 node devtools/dev.mjs doctor    # version/readme drift check (--fix to sync)

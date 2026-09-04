@@ -44,7 +44,9 @@ public class ResourcePackStampTests : IDisposable
         var match = Regex.Match(CliSource(), @"const\s+STAMP\s*=\s*'([^']+)'");
         Assert.True(match.Success, "copy.ts no longer declares `const STAMP = '…'` — the mirror cannot check "
                                  + "a name it cannot find, so this test would otherwise pass by going blind.");
-        Assert.Equal(match.Groups[1].Value, ResourcePackJournal.StampFileName);
+        // The KIT's constant is the expected side: the CLI mirrors it, so a mismatch report should read
+        // "expected shenora-pack.json, got <whatever copy.ts drifted to>".
+        Assert.Equal(ResourcePackJournal.StampFileName, match.Groups[1].Value);
     }
 
     [Fact]

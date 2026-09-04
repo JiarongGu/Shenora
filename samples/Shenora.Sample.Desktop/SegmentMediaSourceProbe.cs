@@ -55,7 +55,9 @@ internal static class SegmentMediaSourceProbe
         {
             Interlocked.Increment(ref _handlerHits);
             var key = request.Uri.AbsolutePath.TrimStart('/');
-            return Task.FromResult(Files.TryGetValue(key, out var bytes)
+            // The type argument is explicit: the handler's contract is `Task<WebViewResourceResponse?>`
+            // and inference would produce the non-nullable `Task<WebViewResourceResponse>` (CS8619).
+            return Task.FromResult<WebViewResourceResponse?>(Files.TryGetValue(key, out var bytes)
                 ? WebViewResourceResponse.Bytes(bytes, "video/mp4")
                 : WebViewResourceResponse.NotFound());
         },

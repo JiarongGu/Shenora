@@ -5,29 +5,17 @@ this file is the size of the remaining work, which is the whole point of looking
 archive; `CHANGELOG.md` is the release-facing log. `> DIRECTION (owner):` blockquotes capture steering
 verbatim and stay as long as they still steer.
 
-🔴 **A `✅` is the same defect as `DONE`: an entry that failed to leave.** This drift has recurred SIX
-times — 502 lines holding six open tasks, then 570 holding three, 458 holding seven, 197 holding six, 123
-holding five, and 182 holding two. `doc-shape` fails on a done MARKER, and the recurrences it could not see
-are the ones without one: **no marker at all, just finished work narrated at length**, plus a marker written
-as `**✅ …**` that its regex read straight past. ⚠ **The test is not "is there a ✅", it is "would deleting
-this paragraph lose anything a future session must ACT on?"** If the answer is no, the commit that landed it
-is where it lives.
-⚠ **Length is now measured too** — `doc-shape` WARNS past 120 lines, which every one of those six cleared by
-60+. A crude proxy for a judgement no script can make, and the only signal the marker check cannot miss.
+🔴 **A `✅` is the same defect as `DONE`: an entry that failed to leave**, and this has recurred six times.
+`doc-shape` now fails on a done MARKER and warns past 120 lines — but the recurrences it could not see had
+**no marker at all, just finished work narrated at length**. ⚠ **So the test is not "is there a ✅", it is
+"would deleting this paragraph lose anything a future session must ACT on?"** If not, the commit that
+landed it is where it lives.
 
-**Status: v0.16.0 is PUBLISHED and VERIFIED LIVE** — all 5 NuGet packages plus `@shenora/react` and
-`@shenora/cli` answer 0.16.0, checked against the registries rather than the tree. Tag `v0.16.0`, release
-commit `f61d410`, `origin == local`.
-⚠ **It took three reads over ~3 minutes, and that is normal**: npm was immediate, four NuGet packages
-flipped after a minute and `Shenora.iOS` a minute behind them — exactly 0.13.0's pattern. **A partial read
-is validation lag, not a half-landed release** (the workflow tags only after every publish succeeds, and
-publishes NuGet BEFORE npm). Re-check, never re-push.
-It carried **window orientation** (the last Capacitor-parity primitive), the notification path's own
-report of what it accepted/filtered/dropped/delivered, and the Android recreation crash — a font-scale
-change killed the app 8 times in 10 before, 0 in 10 after, and it needs no adopter action. **A MINOR, not
-a patch**: no `### Breaking`, 358 → 363 public types, 0 removals.
-⚠ `src/Directory.Build.props` must now stay at `0.16.0`: the release workflow owns the bump, and a
-hand-bump moves the baseline and skips a release (`release-discipline.md`).
+**Status: v0.16.0 is PUBLISHED and VERIFIED LIVE** (tag `v0.16.0`, release commit `f61d410`).
+⚠ `src/Directory.Build.props` must stay at `0.16.0` — the workflow owns the bump, and a hand-bump moves
+the baseline and skips a release. **Cutting the next one? Read `.claude/knowledge/release-discipline.md`
+first**: it carries the by-hand `<Description>` read, the prose-audit-before-the-cut rule, and why a
+partial registry read afterwards is lag rather than a half-landed release.
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This is the maintainer's remaining work,
 > and a short list means the kit is in good shape rather than that nothing is happening. Several entries
@@ -105,19 +93,11 @@ mpeg4.
 
 ### 🔴 ORIENTATION ON iOS IS A REGRESSION THE KIT CAUSED, NOT AN ENHANCEMENT
 
-Android holds it (`IWindowOrientation`, measured: the page's viewport goes `412×915` → `915×412` under a
-landscape lock). iOS REFUSES rather than half-working (D39), because `requestGeometryUpdate` rotates the
-window while the root view controller still decides what it supports — so the next device rotation undoes
-it. That was filed as "merely an enhancement". **It is not, and reading the adopter's tree is what showed
-it:** they adopted 0.16.0's orientation, DELETED their own working `LockPortrait`/`UnlockOrientation` and
-their `screenOrientation` capability, and now guard the whole thing on `MobileWindowOrientation.IsSupported`
-— which is `false` on iOS. Their `Info.plist` permits portrait and both landscapes, so **their iPhone build
-lost its portrait lock and nobody has looked**: their own verification row for orientation says "on an
-Android phone".
-
-**BUILT and compile-verified** (`MobileWindowOrientation.SupportedInterfaceOrientations` + the app-delegate
-override, wired in the sample's `AppDelegate` and documented in `docs/guides/mobile.md`). What is left is
-the run.
+**Why this is urgent rather than nice-to-have:** the adopter took 0.16.0's orientation, DELETED their own
+working `LockPortrait`/`UnlockOrientation`, and now guard everything on
+`MobileWindowOrientation.IsSupported` — which was `false` on iOS. Their `Info.plist` permits portrait and
+both landscapes, so **their iPhone build lost its portrait lock and nobody has looked.** The fix is built
+(`SupportedInterfaceOrientations` + the app-delegate override); only the run is left.
 
 - [ ] **Prove it on an iPhone.** Three things, and the second is the one no reasoning settles: a locked app
   does not rotate; **the lock SURVIVES a device rotation** (the failure the old `requestGeometryUpdate`
@@ -133,15 +113,8 @@ future session is tempted to add a visibility event, that is the reason not to.
 
 ### 📱 THE RECREATION CRASH IS FIXED AND AUTOMATIC — one case is still unmeasured
 
-`MobileIpcBridgeOptions.ReleaseHandlerOnDispose` is ON by default (owner, 2026-08-23: make it app config,
-not a step to remember — there is one adopter and they are on Android). 8/10 font-scale changes killed the
-app before; 0/10 after, measured on API 36 with no explicit call anywhere in the sample.
-
-**Half-measured now** (`HandlerReleaseProbe`, opt-in per launch — env `SHENORA_SAMPLE_HANDLER_RELEASE` or a
-`handler-release` file in the cache dir): releasing the handler on a live webview **does not crash the app**,
-and an evaluation against the released view **never completes** — it does not throw, so an adopter's `await`
-hangs with nothing to read. `docs/guides/mobile.md` carries that, and the recommendation no longer rests on
-a hedge.
+`MobileIpcBridgeOptions.ReleaseHandlerOnDispose` is ON by default and the crash is fixed (8/10 → 0/10 on
+API 36). What `HandlerReleaseProbe` has NOT covered is navigation.
 
 - [ ] **Measure the real NAVIGATION case.** ⚠ **Do NOT re-parent the view inside its layout** — that
   shortcut is what this probe tried and it throws `MauiContext should have been set on parent`, which is an

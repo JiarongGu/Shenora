@@ -288,7 +288,7 @@ public class Mp4FragmentWriterTests
             new Mp4FragmentTrackData { Track = AudioTrack(), BaseMediaDecodeTime = 0, Samples = [], Data = ReadOnlyMemory<byte>.Empty });
 
         var moof = Find(fragment, "moof")!;
-        Assert.Single(Children(moof).Where(c => c.Type == "traf"));
+        Assert.Single(Children(moof), c => c.Type == "traf");
     }
 
     [Fact]

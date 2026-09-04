@@ -320,11 +320,17 @@ internal static class SegmentRouteProbe
         // TASKS.md as a suspected kit defect until someone asked why playback sounded fine.
         var audio = MatroskaProbe.Read(source)?.Streams.FirstOrDefault(s => s.Kind is MediaStreamKind.Audio);
         if (audio is null) return $"SEEK-RUN: SKIPPED — {Fixture} carries no sound track";
+        // ⚠ `Codec` is NULLABLE — the probe returns null for a codec id it does not recognise, so a
+        // fixture with an exotic soundtrack would have thrown a NullReferenceException here (CS8602).
+        // A probe that dies reads as a PLATFORM failure, which is the one thing it must never do
+        // (`.claude/knowledge/probe-diagnostics.md`); an unknown codec is a SKIP, like every other
+        // "this shell cannot answer" case below.
+        if (audio.Codec is not { } codec) return $"SEEK-RUN: SKIPPED — {Fixture}'s sound track has no codec the probe recognises";
         // AAC is the one audio codec an MP4 fragment can carry verbatim; anything else needs the device.
-        var carried = audio.Codec.Equals("aac", StringComparison.OrdinalIgnoreCase);
-        if (!carried && conversion?.CanConvert(MediaStreamKind.Audio, audio.Codec) is not true)
+        var carried = codec.Equals("aac", StringComparison.OrdinalIgnoreCase);
+        if (!carried && conversion?.CanConvert(MediaStreamKind.Audio, codec) is not true)
         {
-            return $"SEEK-RUN: SKIPPED — this shell can neither carry nor convert {audio.Codec}, so a run "
+            return $"SEEK-RUN: SKIPPED — this shell can neither carry nor convert {codec}, so a run "
                  + "over this fixture has no sound to place and the check below would report its absence "
                  + "as a fault";
         }

@@ -65,14 +65,21 @@ public sealed class MainPage : ContentPage
 	private enum IslandSurface { NowPlaying, LiveActivity }
 
 	/// <summary>
-	/// The sample's choice: <b>NowPlaying</b>, which is the one that actually reaches the Dynamic Island.
+	/// The sample's choice: <b>LiveActivity</b> — the app-drawn card, which is what this sample exists to
+	/// exercise because the Live Activity devkit is the part of the kit only a sample can prove.
 	/// <para>
-	/// 🔴 Not a preference — the Live Activity path cannot render on a device at all (the widget `.appex`
-	/// built by `swiftc` exits before serving; see `TASKS.md`). Now Playing needs no extension, and a
-	/// public sibling proved it on the Island for a player. It is also what Apple intends for playback.
+	/// 🔴 <b>Flip this one line to claim the Island with Now Playing instead.</b> The two are mutually
+	/// exclusive — see the call site, which records the three deploys that cost us — so the sample picks
+	/// one and says which, exactly as an adopting app must.
+	/// </para>
+	/// <para>
+	/// ⚠ <b><c>static readonly</c>, not <c>const</c>, and that is load-bearing.</b> A <c>const</c> lets the
+	/// compiler fold the comparison and report the unselected branch as unreachable (CS0162) — so the arm
+	/// nobody currently runs stops being read at all, which is how the two arms drift apart while the
+	/// build stays green. This keeps both compiled and both checked.
 	/// </para>
 	/// </summary>
-	private const IslandSurface IslandClaimant = IslandSurface.LiveActivity;
+	private static readonly IslandSurface IslandClaimant = IslandSurface.LiveActivity;
 
 	public MainPage()
 	{

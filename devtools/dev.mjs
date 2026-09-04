@@ -49,12 +49,166 @@ const ensureNpmDeps = (dir) => {
   if (fs.existsSync(path.join(dir, 'node_modules'))) return true;
   return step('npm ci (first run — installing dev dependencies)', () => runNpm('ci', { cwd: dir }));
 };
+// Every step is TIMED, and the number lands in the log whether anyone asked or not. The gate's own
+// culture is that evidence is numbers — but the one number nobody had was where its three minutes go,
+// so "the dev loop is slow" could only ever be answered by re-timing it by hand. A step that costs
+// nothing prints nothing extra; the cost is one Date.now() pair.
+// ⚠ It measures WALL CLOCK of the whole step including a spawned child, so nested steps (verify spawns
+// `build`, which steps again) each report their own — the inner ones sum to less than the outer, and
+// the difference is process startup and restore.
+const stepTimes = [];
 const step = (label, fn) => {
   console.log(`\n=== ${label} ===`);
-  const ok = fn();
-  if (!ok) console.error(`  ${label} FAILED`);
-  return ok;
+  const started = Date.now();
+  // ⚠ Await-AWARE rather than async: a sync `fn` still returns a plain boolean, so the ~40 existing
+  // call sites are untouched. Only a step that genuinely runs work in parallel returns a promise, and
+  // only `verify`'s loop awaits one. Making `step` itself `async` would have made every caller await.
+  const finish = (ok) => {
+    const ms = Date.now() - started;
+    stepTimes.push([label, ms]);
+    console.log(`  ${label} — ${fmtMs(ms)}`);
+    if (!ok) console.error(`  ${label} FAILED`);
+    return ok;
+  };
+  const result = fn();
+  return result instanceof Promise ? result.then(finish) : finish(result);
 };
+const fmtMs = (ms) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
+// Run a command, stream its output live AND keep a copy. `spawnSync` cannot do both — with piped stdio
+// it prints nothing until the process exits, which for a 16 s build is the wrong trade.
+const runTee = (exe, argv, opts = {}) => new Promise((resolve) => {
+  const child = spawn(exe, argv, { cwd: repo, shell: false, ...opts, stdio: ['inherit', 'pipe', 'pipe'] });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; process.stdout.write(d); });
+  child.stderr.on('data', (d) => { out += d; process.stderr.write(d); });
+  child.on('close', (code) => resolve({ ok: code === 0, out }));
+  child.on('error', (err) => { process.stderr.write(`${err.message}\n`); resolve({ ok: false, out }); });
+});
+
+// 🔴 THE WARNINGS WERE ALWAYS IN THE LOG AND NOTHING READ THEM. `TreatWarningsAsErrors` is set in
+// `src/Directory.Build.props` — so it covers the SHIPPED code and nothing else, and `samples/` and
+// `tests/` accumulated eight warnings unopposed, two of them from the two most recent feature commits.
+// MSBuild's own `N Warning(s)` line was printed every single run.
+//
+// So this reads that line rather than re-deriving it, and prints the codes so the summary is
+// actionable rather than a number to scroll past.
+// ⚠ It matches ANY warning, not `warning CS` — the previous filter in this repo's history was
+// CS-only and had never met a non-CS analyser warning, which is exactly what five of these eight were
+// (xUnit2000/2003/2031, CA2022).
+const summarizeBuildWarnings = (out) => {
+  // ⚠ DEDUPED FIRST, and the tally is derived from the deduped set. MSBuild prints the same warning
+  // once per target framework, so counting raw matches reported `xUnit2003×2` for ONE warning while
+  // MSBuild declared 1 — a tally that disagrees with the list printed under it is how a new diagnostic
+  // stops being believed. Caught by sabotage-verifying this check rather than by reading it.
+  const lines = [...new Set([...out.matchAll(/^.*?: warning [A-Za-z]+\d+:.*$/gm)].map((m) => m[0].trim()))];
+  const codes = new Map();
+  for (const line of lines) {
+    const code = /: warning ([A-Za-z]+\d+):/.exec(line)?.[1];
+    if (code) codes.set(code, (codes.get(code) ?? 0) + 1);
+  }
+  // MSBuild's own total is the authority — it counts what it emitted, including anything this regex
+  // does not model. A disagreement is reported rather than hidden, because the regex being wrong is
+  // the failure mode that would make this whole check quietly useless.
+  const declared = [...out.matchAll(/^\s*(\d+) Warning\(s\)/gm)].reduce((n, m) => n + Number(m[1]), 0);
+  return { lines, codes, declared };
+};
+
+// Run several independent npm scripts CONCURRENTLY and report them as one step.
+//
+// 🔴 Output is BUFFERED per job and printed whole, in declaration order — never interleaved. A gate
+// whose failure text is shuffled between four compilers reports a failure it cannot explain, which is
+// the same trap `phase-workflow.md` records for truncating a gate's output. The concurrency is the
+// only thing borrowed here; the legibility is not traded for it.
+//
+// ⚠ Only for jobs that share NOTHING. The four type-checks read four separate directories and write no
+// build output, so they cannot race each other. Anything that writes into `bin/`, `obj/` or `dist/`
+// must stay sequential.
+const runNpmParallel = async (jobs) => {
+  // ⚠ `[].every(...)` is TRUE, so an empty job list would report a passing step having checked nothing —
+  // the vacuous-pass shape `phase-workflow.md` says to hunt for. Refuse instead of passing.
+  if (jobs.length === 0) {
+    console.error('  no jobs were supplied — refusing to report a pass for a step that ran nothing.');
+    return false;
+  }
+  const results = await Promise.all(jobs.map(({ name, script, cwd }) => new Promise((resolve) => {
+    const child = spawn(`npm ${script}`, { cwd, shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { out += d; });
+    child.on('close', (code) => resolve({ name, out, ok: code === 0 }));
+    child.on('error', (err) => resolve({ name, out: `${out}\n${err.message}`, ok: false }));
+  })));
+  for (const { name, out, ok } of results) {
+    console.log(`\n--- ${name} ${ok ? 'ok' : 'FAILED'} ---`);
+    process.stdout.write(out.endsWith('\n') || out === '' ? out : `${out}\n`);
+  }
+  return results.every((r) => r.ok);
+};
+// The slowest-first roll-up, printed by the multi-step verbs. A per-step line scrolls past in a long
+// log; this is the line someone optimizing the loop actually reads.
+const printStepTimes = (total) => {
+  if (stepTimes.length < 2) return;
+  const ranked = [...stepTimes].sort((a, b) => b[1] - a[1]);
+  const width = Math.max(...ranked.map(([label]) => label.length));
+  console.log('\n=== where the time went (slowest first) ===');
+  for (const [label, ms] of ranked) {
+    const share = total > 0 ? ` ${String(Math.round((ms / total) * 100)).padStart(3)}%` : '';
+    console.log(`  ${label.padEnd(width)}  ${fmtMs(ms).padStart(8)}${share}`);
+  }
+  console.log(`  ${'TOTAL'.padEnd(width)}  ${fmtMs(total).padStart(8)}`);
+};
+// ---- The hygiene gates: everything `verify` runs that needs no build and no test run.
+//
+// 🔴 ONE list, TWO callers — `verify` splices it in and `dev.mjs checks` is it alone. Written as a
+// shared array rather than copied because a second copy is how a gate gets added to one caller and
+// not the other, and the one that silently covers less is the one people trust.
+//
+// ⚠ `checks` is a FAST INNER LOOP, not a replacement for `verify`: it answers "did I break a doc or
+// hygiene gate?" in ~10 s instead of ~2 min, and it deliberately proves nothing about the code. Say
+// so at the end of every run, because a green gate whose scope is misread is worse than no gate.
+const script = (name, ...argv) => () =>
+  spawnSync('node', [path.join(repo, 'devtools', 'scripts', name), ...argv], { stdio: 'inherit', cwd: repo }).status === 0;
+const hygieneSteps = () => [
+  ['check-sensitive --tree', script('check-sensitive.mjs', '--tree')],
+  // A path Windows cannot check out. Separate from check-sensitive on purpose: that one hunts LEAKS
+  // and its failure text ("move the value to local/") makes no sense for a filename. This is created
+  // by accident, never by a decision — a `> nul` redirect written in Git Bash creates a real file,
+  // because that spelling is cmd's null device and not the shell's. It reaches `git status` as an
+  // ordinary untracked file and `git add -A` stages it; committed, it breaks `git checkout` for
+  // every future clone on Windows.
+  ['reserved-paths', script('reserved-paths.mjs')],
+  ['knowledge check', script('knowledge.mjs', 'check')],
+  // The always-loaded budget — REPORTED here, not enforced. It existed from the start and
+  // nothing ran it, so it drifted to its ceiling unnoticed; running it in the gate is what fixes
+  // that, because the number lands in every verify log. It was briefly FATAL and that was wrong:
+  // it blocked a release by 0.2 KB on 2026-08-02, and a style budget must not outrank shipping.
+  // The script exits 0 and prints ⚠ OVER when it is over (see its own comment).
+  ['knowledge footprint', script('knowledge.mjs', 'footprint')],
+  // The gate the PROSE never had (0.2.0 design pass, D4). Every code invariant here has a test;
+  // no doc claim had anything, and a whole-codebase review found 8 of its ~13 findings in
+  // comments and docs — including a dependency graph both READMEs drew with an edge that has
+  // never existed. Precise checks only, because a fuzzy "does this symbol exist" sweep would drown
+  // the signal and get switched off.
+  ['doc-drift', script('doc-drift.mjs')],
+  // doc-shape is doc-drift's other half: doc-drift asks whether a claim matches the tree, this asks
+  // whether a doc is narrating its own past — the habit that BLINDS doc-drift, because its history
+  // suppression stays permanently on inside an amendment stack. Only the narration rows gate; the
+  // D-entry line cap is a style budget and warns, the same call the knowledge footprint above
+  // already makes and for the same reason (a fatal budget blocked a release by 0.2 KB).
+  ['doc-shape', script('doc-shape.mjs', '--check')],
+  // The generated wire reference must match the source constants. It is the one page in `docs/`
+  // that restates something the code owns, which D57 says goes stale — so it is only defensible
+  // while this gate makes that impossible.
+  ['wire-reference', script('wire-reference.mjs', '--check')],
+  // The decisions index is generated from the entries, so it can only be stale — never wrong in an
+  // interesting way. Checked here for the reason wire-reference is: a generated doc nobody
+  // regenerates is a second copy that drifts silently.
+  ['decisions-index', script('decisions-index.mjs', '--check')],
+  // doctor LAST and non-fixing: verify must FAIL on version/README drift rather than leave it to
+  // `pack` (which runs doctor --fix, so verify was scanning pre-sync files) — P5.5 H5.
+  ['doctor', () => doctor({ fix: false })],
+];
+
 const npmDirAbs = path.join(repo, ...config.npmDir.split('/'));
 const readNpmPackage = () => JSON.parse(fs.readFileSync(path.join(npmDirAbs, 'package.json'), 'utf8'));
 
@@ -873,8 +1027,28 @@ switch (cmd) {
         '  a RED gate that says nothing about the working tree. This is a machine prerequisite, not a\n' +
         '  repo setting; see devtools/README.md.');
     }
+    // 🔴 `--strict` FAILS THE BUILD ON ANY WARNING, and `verify` passes it while `verify --release`
+    // does not. The split is the one this repo already uses for `knowledge check`: a warning in
+    // `samples/` or `tests/` ships NOTHING to a consumer, so it has no business blocking a publish —
+    // but it must stop a working tree, because "visible in the log" demonstrably does not work.
+    // `TreatWarningsAsErrors` covers `src/` alone, and eight warnings accumulated outside it, two of
+    // them from the two most recent feature commits, past an `N Warning(s)` line printed every run.
+    //
+    // 🔴 WHAT THIS CANNOT SEE, AND IT WAS FOUND BY SABOTAGE RATHER THAN BY READING: a warning is
+    // emitted only when `CoreCompile` actually RUNS. Re-run the build without touching the offending
+    // file and MSBuild finds the project up to date, replays nothing, and this reports "none" with the
+    // warning still in the source — the first sabotage caught it, the identical second one did not.
+    // So this catches a warning AS IT IS INTRODUCED (the file just changed, so it recompiles), which is
+    // when the two most recent ones would have been caught, and it is NOT an audit of the tree.
+    // ⚠ `dev.mjs build --strict` after a `-t:Rebuild`, or on a clean clone, is the auditing form.
+    const strict = args.includes('--strict');
+    let warnings = null;
     const ok = buildEnv !== null && absent.length === 0
-      && step('dotnet build', () => run('dotnet', ['build', config.solution, '-v', 'minimal'], { env: buildEnv }))
+      && await step('dotnet build', async () => {
+        const r = await runTee('dotnet', ['build', config.solution, '-v', 'minimal'], { env: buildEnv });
+        warnings = summarizeBuildWarnings(r.out);
+        return r.ok;
+      })
       // The update-probe is OUTSIDE the solution but INSIDE the release path — the launcher job
       // compiles it fresh on every release, so the gate must too. It drifted against the ILogger
       // standardisation and the first compiler to see it was CI's, mid-release.
@@ -885,12 +1059,38 @@ switch (cmd) {
         const abs = path.join(repo, ...dir.split('/'));
         return ensureNpmDeps(abs) && step(`npm build (${dir.split('/').pop()})`, () => runNpm('run build', { cwd: abs }));
       });
-    process.exitCode = ok ? 0 : 1;
+
+    // Reported on EVERY build, strict or not — the point is that the number stops being something you
+    // have to go looking for. `--strict` is what turns it from a report into a gate.
+    let warningsOk = true;
+    if (ok && warnings !== null) {
+      const { lines, codes, declared } = warnings;
+      if (declared === 0 && lines.length === 0) {
+        console.log('\n=== build warnings: none from the projects that COMPILED this run ===');
+      } else {
+        console.log(`\n=== build warnings: ${declared} (MSBuild's own count) ===`);
+        // ⚠ If these two disagree the REGEX is wrong, and a silent disagreement is what would make this
+        // check quietly useless — so it is said out loud rather than reconciled away.
+        if (lines.length !== declared) {
+          console.log(`  ⚠ this tool matched ${lines.length} warning line(s) but MSBuild declared ${declared} — `
+            + 'trust MSBuild and fix the pattern in `summarizeBuildWarnings`.');
+        }
+        console.log(`  by code: ${[...codes].map(([c, n]) => `${c}×${n}`).join(', ')}`);
+        for (const line of lines) console.log(`  ${line}`);
+        console.log('  TreatWarningsAsErrors covers src/ ONLY, so these are all in samples/ or tests/.');
+        if (strict) {
+          console.error('  --strict: a warning outside src/ fails the working tree (it does not fail a release —\n'
+            + '  `verify --release` omits --strict, because a sample warning ships nothing to a consumer).');
+          warningsOk = false;
+        }
+      }
+    }
+    process.exitCode = ok && warningsOk ? 0 : 1;
     break;
   }
 
   case 'test': {
-    const which = args[0] ?? 'all';
+    const which = args.find((a) => !a.startsWith('--')) ?? 'all';
     // Fail loudly on a typo: this used to fall through both ifs and exit 0 having run NOTHING,
     // i.e. `dev.mjs test dotnett` reported success (P5.5 H5).
     if (!['all', 'dotnet', 'npm', 'clipboard'].includes(which)) {
@@ -898,6 +1098,14 @@ switch (cmd) {
       process.exitCode = 1;
       break;
     }
+    // 🔴 `dotnet test <solution>` BUILDS THE SOLUTION, and inside `verify` that build has just run —
+    // measured on a warm tree 2026-09-04: 67.4 s with it, 45.1 s without, the same 1,833 tests passing.
+    // 22 s of a 142 s gate spent re-deciding that nothing changed.
+    // ⚠ OPT-IN, and it is `verify` that opts in rather than the default flipping. A bare `dev.mjs test`
+    // on a tree someone just edited MUST compile it: the failure mode of a stale `--no-build` run is a
+    // green suite against the previous assembly, which is the one thing worse than a slow gate (the same
+    // stale-assembly trap `windows-dev-gotchas.md` records for Move-Item restores).
+    const noBuild = args.includes('--no-build');
     // 🔴 THE ONLY SUITE HELD OUT OF THE GATE, and it is deliberate rather than a concession to
     // flakiness. `Category=RealClipboard` drives the machine's ONE system clipboard, which any other
     // process can take at any moment — measured 2026-08-16, PowerShell's own Set-Clipboard failed 13 of
@@ -922,11 +1130,15 @@ switch (cmd) {
       // 🔴 SAY WHAT WAS HELD OUT, every run. A gate that quietly covers less than it appears to is worse
       // than one that covers less openly — "1,642 passed" reads as everything unless this line is there.
       console.log('  (holding out Category=RealClipboard — run `dev.mjs test clipboard` for it)');
+      // Same rule for the build: a run that compiled nothing must SAY so, or a stale pass is
+      // indistinguishable from a fresh one in the log.
+      if (noBuild) console.log('  (--no-build: running the assemblies as they stand — the caller built them)');
       ok = testEnv !== null
         // The RealClipboard category is excluded here and run by `dev.mjs test clipboard` — see the
         // block above for why a shared OS resource has no business gating a release.
         && step('dotnet test', () => run('dotnet',
-          ['test', config.solution, '-v', 'minimal', '--nologo', '--filter', 'Category!=RealClipboard'],
+          ['test', config.solution, '-v', 'minimal', '--nologo',
+            ...(noBuild ? ['--no-build'] : []), '--filter', 'Category!=RealClipboard'],
           { env: testEnv }))
         && ok;
     }
@@ -937,6 +1149,30 @@ switch (cmd) {
       // simulator name). Both sabotage-verified in each direction on 2026-08-09.
       ok = (ensureNpmDeps(cliDirAbs) && step('vitest (cli package)', () => runNpm('test', { cwd: cliDirAbs }))) && ok;
     }
+    process.exitCode = ok ? 0 : 1;
+    break;
+  }
+
+  case 'checks': {
+    // The hygiene half of `verify`, alone — no build, no tests, ~10 s against ~2 min.
+    //
+    // 🔴 WHY IT EXISTS: every one of these gates reads the WORKING TREE and none of them needs a
+    // compiler, but the only way to run them was the whole gate. So a prose or doc edit — the most
+    // common change in this repo — cost a full build+test cycle to check, and the realistic response
+    // to that is to skip it and find out at commit time.
+    // ⚠ It does NOT replace `verify`. It cannot see a compile error, a failing test or a typecheck.
+    let ok = true;
+    const checksStarted = Date.now();
+    for (const [label, fn] of hygieneSteps()) {
+      // ⚠ `await` even though every hygiene step is currently synchronous. `step` returns a PROMISE for
+      // an async one, and a promise is truthy — so an async gate added here later would pass
+      // unconditionally, having run nothing. Awaiting a boolean is free; the fail-open is not.
+      if (!(await step(`checks: ${label}`, fn))) { ok = false; break; }
+    }
+    printStepTimes(Date.now() - checksStarted);
+    console.log(ok
+      ? '\nCHECKS PASSED — hygiene only. Nothing here compiled or ran a test; `dev.mjs verify` does that.'
+      : '\nCHECKS FAILED');
     process.exitCode = ok ? 0 : 1;
     break;
   }
@@ -957,83 +1193,66 @@ switch (cmd) {
     const releaseOnly = args.includes('--release');
     const devOnly = new Set(['knowledge check', 'knowledge footprint']);
     const steps = [
-      ['build', () => spawnSync('node', [import.meta.filename, 'build'], { stdio: 'inherit', cwd: repo }).status === 0],
-      ['test', () => spawnSync('node', [import.meta.filename, 'test'], { stdio: 'inherit', cwd: repo }).status === 0],
-      ['react typecheck (incl. tests)', () => {
-        // `build` uses tsconfig.build.json, which EXCLUDES the tests, and vitest transpiles without
-        // type-checking — so nothing checked the test files at all, and the tsconfig that was written to
-        // do it had never been run (it was red on a lib version). That matters beyond tidiness: the
-        // typed-service generic is pinned by `@ts-expect-error` assertions, which are inert unless
-        // something type-checks them (P5.5 H6).
-        return runNpm('run typecheck', { cwd: path.join(repo, ...config.npmDir.split('/')) });
-      }],
-      ['react typecheck (peer FLOOR — React 18)', () => {
-        // 🔴 `peerDependencies: { react: ">=18" }` was a claim nothing had ever run. Everything here
-        // builds against React 19, so an API that only exists in 19 would compile clean and break every
-        // React 18 consumer at THEIR build. This type-checks the shipped sources against React 18's
-        // types (an aliased `@types/react18` devDependency), and is sabotage-verified: importing
-        // `useActionState` fails it and passes the ordinary typecheck.
-        return runNpm('run typecheck:floor', { cwd: path.join(repo, ...config.npmDir.split('/')) });
-      }],
-      // The CLI's own strict pass, and it now DOES cover tests (added 2026-08-09) — `tsconfig.json`
-      // includes them while `tsconfig.build.json` excludes them, so this is the only thing type-checking
-      // the suite. Kept as its own step for exactly the reason it earned: the React package's equivalent
-      // was inert for five phases because nothing ran it.
-      ['cli typecheck', () => ensureNpmDeps(cliDirAbs) && runNpm('run typecheck', { cwd: cliDirAbs })],
-      ['sample web typecheck', () => {
+      // `--strict` on the DEV gate only: a warning in `samples/`/`tests/` must stop a working tree but
+      // must never stop a publish, which is the same call `knowledge check` already makes below.
+      ['build', () => spawnSync('node', [import.meta.filename, 'build', ...(releaseOnly ? [] : ['--strict'])],
+        { stdio: 'inherit', cwd: repo }).status === 0],
+      // 🔴 `--no-build`, and ONLY because the step above just built. Measured warm 2026-09-04:
+      // 67.4 s → 45.1 s, the same 1,833 tests. `dotnet test <solution>` otherwise re-decides that
+      // nothing changed, which is 22 s of a 142 s gate. `dev.mjs test` on its own still builds.
+      ['test', () => spawnSync('node', [import.meta.filename, 'test', '--no-build'], { stdio: 'inherit', cwd: repo }).status === 0],
+      // 🔴 FOUR TYPE-CHECKS, ONE STEP, RUN CONCURRENTLY — measured 15.8 s sequential. They share
+      // nothing: four directories, four tsconfigs, no emit. Each one's REASON is why it is a separate
+      // job rather than a merged tsconfig, and each is stated on its job below.
+      // ⚠ Output is buffered and printed per job in this order (see `runNpmParallel`), so a failure
+      // still reads as one compiler's complete output rather than four shuffled together.
+      ['typechecks (4, in parallel)', () => {
+        const reactDir = path.join(repo, ...config.npmDir.split('/'));
+        const webDir = path.join(repo, ...config.sampleWebDir.split('/'));
+        // ensureNpmDeps is a SEQUENTIAL prerequisite — a first run must not have four `npm ci`s racing
+        // into the same caches. Cheap after the first (an fs.existsSync).
+        if (!ensureNpmDeps(reactDir) || !ensureNpmDeps(cliDirAbs)) return false;
+        const jobs = [
+          // `build` uses tsconfig.build.json, which EXCLUDES the tests, and vitest transpiles without
+          // type-checking — so nothing checked the test files at all, and the tsconfig that was written
+          // to do it had never been run (it was red on a lib version). That matters beyond tidiness: the
+          // typed-service generic is pinned by `@ts-expect-error` assertions, which are inert unless
+          // something type-checks them (P5.5 H6).
+          { name: 'react typecheck (incl. tests)', script: 'run typecheck', cwd: reactDir },
+          // 🔴 `peerDependencies: { react: ">=18" }` was a claim nothing had ever run. Everything here
+          // builds against React 19, so an API that only exists in 19 would compile clean and break every
+          // React 18 consumer at THEIR build. This type-checks the shipped sources against React 18's
+          // types (an aliased `@types/react18` devDependency), and is sabotage-verified: importing
+          // `useActionState` fails it and passes the ordinary typecheck.
+          { name: 'react typecheck (peer FLOOR — React 18)', script: 'run typecheck:floor', cwd: reactDir },
+          // The CLI's own strict pass, and it DOES cover tests (added 2026-08-09) — `tsconfig.json`
+          // includes them while `tsconfig.build.json` excludes them, so this is the only thing
+          // type-checking the suite. The React package's equivalent was inert for five phases because
+          // nothing ran it.
+          { name: 'cli typecheck', script: 'run typecheck', cwd: cliDirAbs },
+        ];
         // The e2e subject's TS was never type-checked by any gate (P5.5 H5). Skipped only when the
         // sample web app doesn't exist yet.
-        const webDir = path.join(repo, ...config.sampleWebDir.split('/'));
-        if (!fs.existsSync(webDir)) return true;
-        return ensureNpmDeps(webDir) && runNpm('run typecheck', { cwd: webDir });
+        if (fs.existsSync(webDir)) {
+          if (!ensureNpmDeps(webDir)) return false;
+          jobs.push({ name: 'sample web typecheck', script: 'run typecheck', cwd: webDir });
+        }
+        return runNpmParallel(jobs);
       }],
-      ['check-sensitive --tree', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'check-sensitive.mjs'), '--tree'], { stdio: 'inherit', cwd: repo }).status === 0],
-      // A path Windows cannot check out. Separate from check-sensitive on purpose: that one hunts LEAKS
-      // and its failure text ("move the value to local/") makes no sense for a filename. This is created
-      // by accident, never by a decision — a `> nul` redirect written in Git Bash creates a real file,
-      // because that spelling is cmd's null device and not the shell's. It reaches `git status` as an
-      // ordinary untracked file and `git add -A` stages it; committed, it breaks `git checkout` for
-      // every future clone on Windows.
-      ['reserved-paths', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'reserved-paths.mjs')], { stdio: 'inherit', cwd: repo }).status === 0],
-      ['knowledge check', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'knowledge.mjs'), 'check'], { stdio: 'inherit', cwd: repo }).status === 0],
-      // The always-loaded budget — REPORTED here, not enforced. It existed from the start and
-      // nothing ran it, so it drifted to its ceiling unnoticed; running it in the gate is what fixes
-      // that, because the number lands in every verify log. It was briefly FATAL and that was wrong:
-      // it blocked a release by 0.2 KB on 2026-08-02, and a style budget must not outrank shipping.
-      // The script exits 0 and prints ⚠ OVER when it is over (see its own comment).
-      ['knowledge footprint', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'knowledge.mjs'), 'footprint'], { stdio: 'inherit', cwd: repo }).status === 0],
-      // The gate the PROSE never had (0.2.0 design pass, D4). Every code invariant here has a test;
-      // no doc claim had anything, and a whole-codebase review found 8 of its ~13 findings in
-      // comments and docs — including a dependency graph both READMEs drew with an edge that has
-      // never existed. Two precise checks only (graph vs csproj, retired names stated as current),
-      // because a fuzzy "does this symbol exist" sweep would drown the signal and get switched off.
-      ['doc-drift', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'doc-drift.mjs')], { stdio: 'inherit', cwd: repo }).status === 0],
-      // doc-shape is doc-drift's other half: doc-drift asks whether a claim matches the tree, this asks
-      // whether a doc is narrating its own past — the habit that BLINDS doc-drift, because its history
-      // suppression stays permanently on inside an amendment stack. Only the narration rows gate; the
-      // D-entry line cap is a style budget and warns, the same call the knowledge footprint above
-      // already makes and for the same reason (a fatal budget blocked a release by 0.2 KB).
-      ['doc-shape', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'doc-shape.mjs'), '--check'], { stdio: 'inherit', cwd: repo }).status === 0],
-      // The generated wire reference must match the source constants. It is the one page in `docs/`
-      // that restates something the code owns, which D57 says goes stale — so it is only defensible
-      // while this gate makes that impossible.
-      ['wire-reference', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'wire-reference.mjs'), '--check'], { stdio: 'inherit', cwd: repo }).status === 0],
-      // The decisions index is generated from the entries, so it can only be stale — never wrong in an
-      // interesting way. Checked here for the reason wire-reference is: a generated doc nobody
-      // regenerates is a second copy that drifts silently.
-      ['decisions-index', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'decisions-index.mjs'), '--check'], { stdio: 'inherit', cwd: repo }).status === 0],
-      // doctor LAST and non-fixing: verify must FAIL on version/README drift rather than leave it to
-      // `pack` (which runs doctor --fix, so verify was scanning pre-sync files) — P5.5 H5.
-      ['doctor', () => doctor({ fix: false })],
+      ...hygieneSteps(),
     ];
     let ok = true;
+    const verifyStarted = Date.now();
     for (const [label, fn] of steps) {
       if (releaseOnly && devOnly.has(label)) {
         console.log(`\n=== verify: ${label} — SKIPPED (--release: repo hygiene, ships nothing) ===`);
         continue;
       }
-      if (!step(`verify: ${label}`, fn)) { ok = false; break; }
+      // `step` hands back a plain boolean for a sync step and a promise for a parallel one — see its
+      // comment. Awaiting a non-promise is a no-op, so this one line covers both.
+      if (!(await step(`verify: ${label}`, fn))) { ok = false; break; }
     }
+    printStepTimes(Date.now() - verifyStarted);
     console.log(ok ? `\nVERIFY PASSED${releaseOnly ? ' (release subset)' : ''}` : '\nVERIFY FAILED');
     process.exitCode = ok ? 0 : 1;
     break;
@@ -1641,7 +1860,7 @@ switch (cmd) {
     // ⚠ THIS STRING IS THE ONLY DISCOVERY SURFACE FOR A VERB, so a verb missing from it is a tool nobody
     // finds. `stale-scan` and `cite-scan` were both absent for their whole lives until 2026-08-10 — each
     // shipped with a `case` and a rule telling you to run it, and neither appeared here.
-    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|reserved-paths|install-hooks>');
+    console.log('usage: node devtools/dev.mjs <build|test|checks|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|reserved-paths|install-hooks>');
     console.log('  release        : retired-audit <prev-tag>   (account for every public REMOVAL)');
     console.log('                   namespace-moves <prev-tag> (old FQN -> new FQN, for the migration notes)');
     console.log('  probes         : update-probe [dir] | android-jdk');
