@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Maui.Dispatching;
 using Shenora;
 using Shenora.Modules.Platform;
@@ -137,7 +138,11 @@ public static class MobileHostExtensions
         // fail — it quietly stops working.
         //
         //     var player = services.GetRequiredService<PlatformMediaPlayer>();   // opt in by name
-        builder.Services.TryAddSingleton(_ => new PlatformMediaPlayer());
+        // ⚠ The logger is RESOLVED rather than dropped. An app that configures logging then gets the
+        // player's own diagnostics — including whether a picture surface was ever attached to it, which is
+        // otherwise indistinguishable from a working one (D80). An app that configures none is unchanged.
+        builder.Services.TryAddSingleton(sp =>
+            new PlatformMediaPlayer(sp.GetService<ILogger<PlatformMediaPlayer>>()));
 #endif
 
         return builder;

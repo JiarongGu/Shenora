@@ -100,6 +100,12 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
     protected override void AttachSurfaceCore(object? surface)
     {
         _holder = surface as global::Android.Views.ISurfaceHolder;
+        // 🔴 LOGGED, because a surface that never arrives and one that works are the same black rectangle.
+        // A device run spent two screenshots on that: the clock advanced (this player decodes audio with
+        // no display), the SurfaceView layer existed, and nothing anywhere said the two were not joined.
+        Log(() => surface is null
+            ? "MediaPlayer: display detached"
+            : $"MediaPlayer: display attached ({(_holder is null ? "NOT a SurfaceHolder — wrong handle type" : "SurfaceHolder")})");
         // Applied to a LIVE player too, so a surface that appears mid-playback takes the picture over
         // without re-opening the source — and a detach reaches the player before its buffer is released.
         if (_player is { } player) ApplyDisplay(player, _holder);

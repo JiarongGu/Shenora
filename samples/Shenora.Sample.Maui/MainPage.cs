@@ -630,7 +630,7 @@ public sealed class MainPage : ContentPage
 				// an .mp4 every webview already opens, which proves the player runs and nothing about the
 				// gap the picture surface exists for.
 				await MediaSurfaceProbe.RunAsync(services.GetService<Shenora.Android.AndroidMediaPlayer>(),
-					services.GetService<Shenora.Modules.Media.IMediaSurface>(), MauiProgram.Log);
+					services.GetService<Shenora.Modules.Media.IMediaSurface>(), MauiProgram.Log, OpenPictureHole);
 				// The TRANSCODE tier, after the player — it asserts its output by PLAYING it, so it needs the
 				// same player and there is no point running it if the player itself did not work.
 				//
@@ -773,6 +773,36 @@ public sealed class MainPage : ContentPage
 #else
 		null;
 #endif
+
+	/// <summary>
+	/// Make everything above the picture see-through, and put it back.
+	///
+	/// <para>
+	/// 🔴 <b>A <c>SurfaceView</c> draws BEHIND its window and is seen through a hole</b> — SurfaceFlinger
+	/// places it at <c>z=-2</c>, measured on the AVD. So every layer the window paints over that rectangle
+	/// hides it, and there are FOUR of them, not the two the kit's own remarks first claimed:
+	/// the webview widget (the kit's mapper), the HTML document, <b>this page's <c>BackgroundColor</c></b>,
+	/// and <b>the activity's window background</b>. Each is opaque by default and each alone is enough.
+	/// </para>
+	/// <para>
+	/// ⚠ The page's own background exists for the no-white-flash chain, so it is RESTORED afterwards — a
+	/// real app leaves a transparent region in its layout instead of turning the whole page off.
+	/// </para>
+	/// </summary>
+	private void OpenPictureHole(bool open) => Dispatcher.Dispatch(() =>
+	{
+		BackgroundColor = open ? Colors.Transparent : Shell;
+#if ANDROID
+		// The window beneath the page. `Platform.CurrentActivity` is the one hosting this page.
+		var window = global::Microsoft.Maui.ApplicationModel.Platform.CurrentActivity?.Window;
+		window?.SetBackgroundDrawable(new global::Android.Graphics.Drawables.ColorDrawable(
+			open
+				? global::Android.Graphics.Color.Transparent
+				: new global::Android.Graphics.Color(
+					(byte)(Shell.Red * 255), (byte)(Shell.Green * 255), (byte)(Shell.Blue * 255))));
+#endif
+		MauiProgram.Log($"picture hole: {(open ? "OPEN — page and window background transparent" : "closed")}");
+	});
 
 	private void OnUnloaded(object? sender, EventArgs e)
 	{

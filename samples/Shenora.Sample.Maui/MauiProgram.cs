@@ -86,6 +86,12 @@ public static class MauiProgram
 		// it says which platform it is picking. A multi-targeted app writes the `#if`; a single-platform
 		// one writes one line and never sees this.
 #if ANDROID
+		// ⚠ BEFORE UseAndroid, and that ordering is the mechanism: the shell registers the player with
+		// `TryAddSingleton`, so an app registration WINS. This sample registers no ILoggerFactory, so the
+		// DI-resolved logger the shell would otherwise use is null and the player is MUTE — and a mute
+		// player cannot tell you whether a picture surface was ever attached to it, which is the one
+		// question a black rectangle raises. Same reasoning as the back/lifecycle coordinators below.
+		shenora.Services.AddSingleton(new Shenora.Android.AndroidMediaPlayer(AppCallback.Logger(Log)));
 		shenora.UseAndroid(dispatcher, ex => Log($"UI work failed: {ex}"));
 #elif IOS || MACCATALYST
 		shenora.UseIOS(dispatcher, ex => Log($"UI work failed: {ex}"));

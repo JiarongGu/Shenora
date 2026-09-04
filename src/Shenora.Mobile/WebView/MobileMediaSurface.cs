@@ -20,18 +20,43 @@ namespace Shenora.Mobile;
 /// </summary>
 public sealed class MediaSurfaceView : View
 {
+    private object? _handle;
+    private MediaPlayerBase? _player;
+
     /// <summary>
     /// The player that draws here — the shell's own, not the page-backed one.
     /// <para>
-    /// ⚠ Assign it BEFORE the view is realized where possible. The handler attaches on whichever comes
-    /// second, so a late assignment still works, but only if it happens on the UI thread.
+    /// 🔴 <b>ORDER DOES NOT MATTER, and making that true took a device run.</b> The platform surface and
+    /// this assignment race: MAUI realizes the view when the layout does, and an app sets the player when
+    /// its page loads. Whichever arrives second completes the pair, because the handle is REMEMBERED here
+    /// and re-offered to a player that arrives after it.
+    /// </para>
+    /// <para>
+    /// ⚠ Assigning it does real work, so set it on the UI thread. The outgoing player is detached first —
+    /// two players holding one surface is a torn picture at best.
     /// </para>
     /// </summary>
-    public MediaPlayerBase? Player { get; set; }
+    public MediaPlayerBase? Player
+    {
+        get => _player;
+        set
+        {
+            if (ReferenceEquals(_player, value)) return;
+            _player?.AttachSurface(null);
+            _player = value;
+            // The surface may already exist — see the remarks. Without this the handle is dropped for
+            // good, the player decodes with nowhere to draw, and the ONLY symptom is a black rectangle.
+            if (_handle is not null) value?.AttachSurface(_handle);
+        }
+    }
 
     /// <summary>Give <see cref="Player"/> the platform handle, or take it away with <c>null</c>. Called by
     /// the platform handler; an app never calls this.</summary>
-    internal void AttachToPlayer(object? handle) => Player?.AttachSurface(handle);
+    internal void AttachToPlayer(object? handle)
+    {
+        _handle = handle;
+        _player?.AttachSurface(handle);
+    }
 }
 
 /// <summary>

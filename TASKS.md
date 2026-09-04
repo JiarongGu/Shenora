@@ -41,6 +41,19 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
+### 🟡 `MediaSurfaceView` HAS NO UNIT COVERAGE, AND THAT IS WHY A DEFECT REACHED A DEVICE
+
+It lives in `Shenora.Mobile`, which compiles only for the android/ios TFMs, while `Shenora.Tests` is
+`net10.0` — so nothing in the suite can construct it. The handle/player rendezvous shipped broken because
+of that: a handle arriving BEFORE the player was dropped for good, while the XML claimed *"the handler
+attaches on whichever comes second"*. Only the device found it.
+
+- [ ] **Give the rendezvous a test that runs in the gate.** The logic is pure — remember a handle, hand it
+  to whichever arrives second, detach the outgoing player — so it does not need MAUI. Moving it to a
+  plain type in `Shenora` that `MediaSurfaceView` delegates to would put it under the suite. ⚠ Weigh that
+  against a public type existing only for testability; the alternative is accepting that this class is
+  device-tested only, and SAYING so where the claim is made.
+
 ### 🎬 THE PICTURE SURFACE (D80) — what the AVD could not answer
 
 The Android run is in `docs/design/media.md`; the engine substitution is settled and the A/B there
@@ -48,9 +61,20 @@ refutes D52's headline example on a modern Android WebView. What is left:
 
 - [ ] **Re-measure the container delta on iOS and on an older WebView before D52's example is trusted.**
   It is cited as the thing the media tier exists for, and it now has one device saying otherwise.
-- [ ] **Prove PIXELS, which nothing here has.** A moving clock is not a composited picture: the sample's
-  page paints its own background, so the surface has no hole to show through and a working compositor and
-  a broken one look identical. Needs a transparent region in the page plus a screenshot.
+- [ ] **PIXELS ARE STILL UNPROVEN, and the INSTRUMENT is now the prime suspect.** Three screenshot
+  attempts on the AVD, all uniformly dark, with everything upstream confirmed in the same run:
+  `MediaPlayer: display attached (SurfaceHolder)` · the clock advancing · SurfaceFlinger listing
+  `SurfaceView[…]#450 … z=-2` · and all FOUR occluding layers opened (webview widget, HTML document, the
+  MAUI page's `BackgroundColor`, the activity window background).
+  **What is NOT eliminated is `adb screencap` itself** — it composites through SurfaceFlinger and is a
+  known-unreliable way to capture SurfaceView content on an emulator. ⚠ **Do not read those shots as
+  "compositing is broken"**: a probe that cannot tell its own failure from the platform's is worse than
+  none (`probe-diagnostics`).
+  **Next step is to test the INSTRUMENT, not the feature:** capture something known to be in a
+  SurfaceView on this emulator and see whether `screencap` shows it. If it cannot, this needs a
+  hardware device or a screen recording, not another shot.
+  ⚠ Also unverified: that the view is laid out at the size asked for. `dumpsys window`/the layer's own
+  bounds would settle it and were not read.
 - [ ] **Re-check the safe-area probe on iOS**, and that `Shenora.iOS` compiles at all — nothing on this box
   does (`dotnet workload list` → `maui-android` alone). The sample's `Content` became a `Grid` (with
   `SafeAreaEdges.None` to restore edge-to-edge), and that is the property iOS actually reads.

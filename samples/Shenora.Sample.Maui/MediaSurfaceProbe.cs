@@ -39,8 +39,13 @@ namespace Shenora.Sample.Maui;
 /// </summary>
 public static class MediaSurfaceProbe
 {
-    /// <summary>The container the WebView refuses and the platform's own extractor opens. D52's case.</summary>
+    /// <summary>The container D52 names as the media tier's case — kept because it is the interesting
+    /// fixture, not because this device refuses it (see the remarks above).</summary>
     private const string Clip = "clip-h264-aac.mkv";
+
+    /// <summary>How long the picture stays up so a screenshot can catch it. Long enough to aim at,
+    /// short enough not to hold the audio session away from the probes that follow.</summary>
+    private const int HoldSeconds = 14;
 
     /// <summary>
     /// Stage the MKV, hand it to the shell's player through the picture surface, and report whether the
@@ -58,7 +63,18 @@ public static class MediaSurfaceProbe
     /// <param name="player">The shell's own player, or null where none ships.</param>
     /// <param name="surface">The picture surface, or null when the app registered none.</param>
     /// <param name="log">Sink.</param>
-    public static async Task RunAsync(IMediaPlayer? player, IMediaSurface? surface, Action<string> log)
+    /// <param name="openHole">
+    /// Make the layers ABOVE the surface see-through, and put them back. Supplied by the page because only
+    /// it owns them.
+    /// <para>
+    /// 🔴 <b>A <c>SurfaceView</c> punches a hole through the WINDOW and draws behind it</b> (measured:
+    /// SurfaceFlinger places it at <c>z=-2</c>), so EVERY layer the window paints at that rectangle hides
+    /// it — the webview widget, the document, the MAUI page's <c>BackgroundColor</c>, and the activity's
+    /// own window background. Miss one and the picture is invisible with nothing to say why.
+    /// </para>
+    /// </param>
+    public static async Task RunAsync(IMediaPlayer? player, IMediaSurface? surface, Action<string> log,
+        Action<bool>? openHole = null)
     {
         if (player is null)
         {
@@ -101,6 +117,24 @@ public static class MediaSurfaceProbe
 
             log($"SURFACE: {first.TotalSeconds:F2}s -> {second.TotalSeconds:F2}s "
                 + $"state={player.Status.State} engine={player.Status.Engine}");
+
+            /* 🔴 A HOLD, so a SCREENSHOT can be taken while the picture is up — the one claim a clock
+             * cannot make. Nothing above proves a composited PIXEL: a player advancing behind an opaque
+             * page looks exactly like a player advancing behind a broken compositor.
+             *
+             * ⚠ The window is announced so the harness can aim, rather than racing a fixed sleep against
+             * a probe whose start time it cannot see. `dev.mjs android shot` during it, with the page made
+             * transparent (`android eval`), is what turns this into evidence.
+             * ⚠ Kept SHORT. This holds the audio session, and the page's own media probes run after it —
+             * a long hold here is how a background-audio measurement further down the suite becomes
+             * meaningless (`mobile-harness`).
+             */
+            openHole?.Invoke(true);
+            log($"SURFACE: HOLDING the picture for {HoldSeconds}s — screenshot now (region 0,0 320x180"
+                + $", hole={(openHole is null ? "NOT opened — the page supplied no opener" : "opened")})");
+            await Task.Delay(TimeSpan.FromSeconds(HoldSeconds));
+            log($"SURFACE: hold over at {player.Status.Position.TotalSeconds:F2}s state={player.Status.State}");
+            openHole?.Invoke(false);
             // ⚠ The verdict says what was MEASURED and no more. An earlier version of this line claimed
             // the container was "one the WebView refuses" — a premise it never tested, and one the A/B
             // then refuted on this very device. A probe that asserts its own motivation is not evidence.
