@@ -84,14 +84,26 @@ refutes D52's headline example on a modern Android WebView. What is left:
   no-white-flash chain. A dark screenshot therefore could not say WHICH layer it was showing. **Give each
   layer a distinct colour before reading a screenshot as evidence.**
 
-  🔴 **So the two properties this kit sets are NECESSARY AND NOT SUFFICIENT on Android**, and that is now
-  recorded on `MobileWebViewTransparency` itself rather than left as a claim it works.
-  ⚠ **An adopter runs this same shape on Android and reports it working**, so the missing ingredient is
-  theirs — **diff their `MauiProgram`/`MainPage`/page CSS against the sample's**, which is far cheaper than
-  another emulator round. Do NOT conclude the platform cannot do it.
-  ⚠ **Do not iterate blind — this burned six deploy cycles.** Candidates worth one read each before any
-  further device time: whether MAUI re-applies an opaque background to the platform webview after this
-  mapping runs, and whether the `HybridWebView`'s parent `ViewGroup` paints.
+  🔴 **THE ADOPTER DIFF IS DONE, AND IT POINTS AT THE HARNESS, NOT THE KIT.** Their Android build is
+  **stock**: opaque page `BackgroundColor`, a plain `HybridWebView` with no background set, the default
+  `Maui.SplashTheme`, no window flags — the same two properties this kit sets and nothing else. Their own
+  comment records the working behaviour: dropping the body background *"shows the MAUI page's own `#0F0F14`
+  through instead"*, i.e. **their webview really is see-through to the layer below**. So the approach is
+  sound and the sample's exercise of it is the suspect.
+  **Their page-side half, which the sample has no equivalent of:** `body { background: transparent }` AND
+  `#root { visibility: hidden }`, both scoped to `[data-native-video='on'][data-native-stage='full']` —
+  their note says dropping the body background alone is *"necessary and NOT sufficient"* because the
+  portalled player still has the app painting underneath it in the same webview.
+
+- [ ] **Give the sample page a REAL transparent stage** — the two rules above in its stylesheet, driven by
+  an attribute the shell sets — instead of turning the document off from outside with `android eval`. That
+  is the one structural difference left between the sample and a build known to work.
+  ⚠ **Untested hypothesis, written down rather than committed** (an unverified speculative line was
+  reverted): MAUI re-runs its own `Background` mapper on any later property change, which may repaint the
+  platform webview opaque after `MobileWebViewTransparency` ran. Setting the CONTROL's `BackgroundColor` to
+  transparent, so MAUI's mapper agrees rather than competes, is a one-line test of it.
+  ⚠ **Do not iterate blind — this burned six deploy cycles**, and the emulator then died mid-build (the
+  documented wedge; `adb kill-server`, and check `qemu` is still alive before blaming the build).
 - [ ] **Re-check the safe-area probe on iOS**, and that `Shenora.iOS` compiles at all — nothing on this box
   does (`dotnet workload list` → `maui-android` alone). The sample's `Content` became a `Grid` (with
   `SafeAreaEdges.None` to restore edge-to-edge), and that is the property iOS actually reads.

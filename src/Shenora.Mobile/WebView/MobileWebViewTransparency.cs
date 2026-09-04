@@ -10,15 +10,14 @@ namespace Shenora.Mobile;
 /// player work rescues it — and the failure is indistinguishable from a player that never started.
 /// </para>
 /// <para>
-/// 🔴 <b>AND IT IS NOT PROVEN ON ANDROID BY THIS REPO — measured 2026-09-04, API 36 / WebView
-/// 133.0.6943.137.</b> With this mapping applied (it logs that it ran), the document provably transparent
-/// (<c>html</c> and <c>body</c> both computed <c>rgba(0, 0, 0, 0)</c>, body <c>visibility: hidden</c>), the
-/// MAUI page's <c>BackgroundColor</c> and the activity window drawable both transparent, <b>nothing behind
-/// the webview rendered — not even a magenta <c>BoxView</c> sibling</b>. So these two properties are
-/// necessary and were not sufficient here.
-/// ⚠ <b>An adopter runs this same shape on Android and reports it working</b>, so the missing ingredient is
-/// theirs to diff against, NOT evidence that it cannot be done. Do not delete this class on the strength of
-/// that run; do not claim it works either.
+/// 🔴 <b>NOT DEMONSTRATED BY THIS REPO — and the adopter's build says the fault is likelier the HARNESS
+/// than this class.</b> On the AVD (2026-09-04, API 36 / WebView 133.0.6943.137) nothing behind the webview
+/// rendered, with this mapping applied, the document provably transparent (<c>html</c> and <c>body</c> both
+/// computed <c>rgba(0, 0, 0, 0)</c>) and the page and window backgrounds cleared. **But a shipping app runs
+/// this same shape on Android successfully with a STOCK MAUI setup** — opaque page background, plain
+/// <c>HybridWebView</c>, default splash theme, these two properties and nothing else — so the approach is
+/// sound and something in the sample's exercise of it is not.
+/// ⚠ <b>Neither claim it works nor delete it.</b> `TASKS.md` carries what was eliminated and what to try.
 /// </para>
 /// <para>
 /// ⚠ <b>The PAGE's own background is a layer this cannot reach.</b> A transparent webview in front of an
