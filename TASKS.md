@@ -74,16 +74,24 @@ refutes D52's headline example on a modern Android WebView. What is left:
   - the control really was inserted into a real Grid (`control=inserted contentIsGrid=True`);
   - the clock advances and SurfaceFlinger lists `SurfaceView[…] z=-2`.
 
-  **What is left, in order of suspicion:** the DOCUMENT is still painting a background — the shots are the
-  page's own dark colour, not black, and the opener drives CSS through `android eval`, which may have
-  reached a stale CDP target or been beaten by the page's stylesheet. Then: whether a hardware-accelerated
-  Android WebView composites transparently over a sibling at all on this emulator.
-  ⚠ **The adopter runs this shape on Android and reports it working**, so treat "the kit cannot do it" as
-  the LAST hypothesis, not the first. The difference to look at is that their page leaves a real
-  transparent region in its own CSS, where this test turns the document off from outside.
-  ⚠ **Do not iterate on this blind** — it burned four deploy cycles. The cheap decisive next step is a page
-  that ships a genuinely transparent region (a stylesheet, not an eval), so the document is provably not
-  the occluder.
+  **THE DOCUMENT IS ELIMINATED TOO** — it reported its OWN state in the same run: `html` and `body` both
+  computed `rgba(0, 0, 0, 0)` with `visibility: hidden`. And `eval` provably reaches the visible page: a
+  control run set `body` magenta and the whole screen turned magenta, which also proves `screencap` captures
+  webview content (it caught a playing `<video>`'s colour bars).
+
+  ⚠ **Every earlier dark shot was UNINTERPRETABLE BY CONSTRUCTION, and this is the lesson:** the sample sets
+  `Shell = #14161A` and its CSS sets `body { background: #14161a }` — the same colour, deliberately, for the
+  no-white-flash chain. A dark screenshot therefore could not say WHICH layer it was showing. **Give each
+  layer a distinct colour before reading a screenshot as evidence.**
+
+  🔴 **So the two properties this kit sets are NECESSARY AND NOT SUFFICIENT on Android**, and that is now
+  recorded on `MobileWebViewTransparency` itself rather than left as a claim it works.
+  ⚠ **An adopter runs this same shape on Android and reports it working**, so the missing ingredient is
+  theirs — **diff their `MauiProgram`/`MainPage`/page CSS against the sample's**, which is far cheaper than
+  another emulator round. Do NOT conclude the platform cannot do it.
+  ⚠ **Do not iterate blind — this burned six deploy cycles.** Candidates worth one read each before any
+  further device time: whether MAUI re-applies an opaque background to the platform webview after this
+  mapping runs, and whether the `HybridWebView`'s parent `ViewGroup` paints.
 - [ ] **Re-check the safe-area probe on iOS**, and that `Shenora.iOS` compiles at all — nothing on this box
   does (`dotnet workload list` → `maui-android` alone). The sample's `Content` became a `Grid` (with
   `SafeAreaEdges.None` to restore edge-to-edge), and that is the property iOS actually reads.

@@ -10,6 +10,17 @@ namespace Shenora.Mobile;
 /// player work rescues it — and the failure is indistinguishable from a player that never started.
 /// </para>
 /// <para>
+/// 🔴 <b>AND IT IS NOT PROVEN ON ANDROID BY THIS REPO — measured 2026-09-04, API 36 / WebView
+/// 133.0.6943.137.</b> With this mapping applied (it logs that it ran), the document provably transparent
+/// (<c>html</c> and <c>body</c> both computed <c>rgba(0, 0, 0, 0)</c>, body <c>visibility: hidden</c>), the
+/// MAUI page's <c>BackgroundColor</c> and the activity window drawable both transparent, <b>nothing behind
+/// the webview rendered — not even a magenta <c>BoxView</c> sibling</b>. So these two properties are
+/// necessary and were not sufficient here.
+/// ⚠ <b>An adopter runs this same shape on Android and reports it working</b>, so the missing ingredient is
+/// theirs to diff against, NOT evidence that it cannot be done. Do not delete this class on the strength of
+/// that run; do not claim it works either.
+/// </para>
+/// <para>
 /// ⚠ <b>The PAGE's own background is a layer this cannot reach.</b> A transparent webview in front of an
 /// opaque <c>body</c> is still opaque, so the page has to make the picture's region transparent itself.
 /// That is also the safety catch: while the page paints a background, enabling this changes nothing
