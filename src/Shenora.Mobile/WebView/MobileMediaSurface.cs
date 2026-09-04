@@ -20,16 +20,24 @@ namespace Shenora.Mobile;
 /// </summary>
 public sealed class MediaSurfaceView : View
 {
-    private object? _handle;
-    private MediaPlayerBase? _player;
+    /// <summary>
+    /// The rendezvous, which is ALL of this class's behaviour and none of its MAUI-ness.
+    /// <para>
+    /// 🔴 <b>It lives in <c>Shenora</c> so that a test can reach it.</b> This assembly compiles only for
+    /// the android/ios TFMs while the suite is <c>net10.0</c>, so nothing in the gate can construct a
+    /// <see cref="MediaSurfaceView"/> — and that is not a hypothetical: the pairing shipped BROKEN (a
+    /// handle arriving before the player was dropped for good) while the XML here claimed it worked, and
+    /// only a device found it.
+    /// </para>
+    /// </summary>
+    private readonly MediaSurfaceHolder _holder = new();
 
     /// <summary>
     /// The player that draws here — the shell's own, not the page-backed one.
     /// <para>
-    /// 🔴 <b>ORDER DOES NOT MATTER, and making that true took a device run.</b> The platform surface and
-    /// this assignment race: MAUI realizes the view when the layout does, and an app sets the player when
-    /// its page loads. Whichever arrives second completes the pair, because the handle is REMEMBERED here
-    /// and re-offered to a player that arrives after it.
+    /// 🔴 <b>ORDER DOES NOT MATTER, and making that true took a device run.</b> Whichever of the platform
+    /// surface and this assignment arrives second completes the pair — see
+    /// <see cref="MediaSurfaceHolder"/>, which owns that rule and is tested on it.
     /// </para>
     /// <para>
     /// ⚠ Assigning it does real work, so set it on the UI thread. The outgoing player is detached first —
@@ -38,25 +46,13 @@ public sealed class MediaSurfaceView : View
     /// </summary>
     public MediaPlayerBase? Player
     {
-        get => _player;
-        set
-        {
-            if (ReferenceEquals(_player, value)) return;
-            _player?.AttachSurface(null);
-            _player = value;
-            // The surface may already exist — see the remarks. Without this the handle is dropped for
-            // good, the player decodes with nowhere to draw, and the ONLY symptom is a black rectangle.
-            if (_handle is not null) value?.AttachSurface(_handle);
-        }
+        get => _holder.Player;
+        set => _holder.Player = value;
     }
 
     /// <summary>Give <see cref="Player"/> the platform handle, or take it away with <c>null</c>. Called by
     /// the platform handler; an app never calls this.</summary>
-    internal void AttachToPlayer(object? handle)
-    {
-        _handle = handle;
-        _player?.AttachSurface(handle);
-    }
+    internal void AttachToPlayer(object? handle) => _holder.SetHandle(handle);
 }
 
 /// <summary>

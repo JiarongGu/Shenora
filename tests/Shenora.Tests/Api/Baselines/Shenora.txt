@@ -1497,6 +1497,11 @@ enum Shenora.Modules.Media.MediaStreamVerdict (int)
   public const Shenora.Modules.Media.MediaStreamVerdict Droppable = 2
   public const Shenora.Modules.Media.MediaStreamVerdict NeedsReEncode = 3
   public int value__
+sealed class Shenora.Modules.Media.MediaSurfaceHolder
+  public .ctor()
+  public Shenora.Modules.Media.MediaPlayerBase? Player { get; set; }
+  public object? Handle { get; }
+  public void SetHandle(object? handle)
 struct Shenora.Modules.Media.MediaSurfaceRegion : System.IEquatable<Shenora.Modules.Media.MediaSurfaceRegion>
   public .ctor(double X, double Y, double Width, double Height, bool OnTop = false)
   public bool Equals(Shenora.Modules.Media.MediaSurfaceRegion other)
