@@ -426,6 +426,12 @@ _surface.Player = services.GetRequiredService<AndroidMediaPlayer>();   // or Ios
 Then advertise `ShellCapability.MediaSurface` and branch on it in the page: **absent is not a degraded
 state**, it means the `<video>` element is the picture, which is the right answer on the desktop.
 
+⚠ **Writing your own surface view instead of `MediaSurfaceView`?** Use `MediaSurfaceHolder` for the
+pairing rather than reimplementing it. The platform's picture handle and your player assignment RACE —
+the platform realizes its surface when the layout does, and your page sets the player when it loads — so
+whichever arrives second has to complete the pair. Dropping a handle that arrived first is a black
+rectangle and nothing else: the player still opens the file and still reports a moving clock.
+
 ### Reading the transport, when the shell is the player
 
 The page's element is not playing, so its `timeupdate` says nothing and **the host is the only clock**.
@@ -444,6 +450,12 @@ it can only do because every command goes through it.
 ⚠ **Watch `unanswered`.** A poll that stops being answered has no symptom of its own — the scrubber keeps
 its last value and the buttons keep whatever the last press set. It goes true after eight consecutive
 failures and clears itself when the host comes back.
+
+⚠ **`status.engine` says WHICH player produced the reading** — `AndroidMediaPlayer`, `IosMediaPlayer`, or
+your own. Once an app can supply its own player through `MediaPlayerBase`, nothing else can answer that,
+and assuming it wrong is the cheapest way to spend a session debugging the wrong code. **A diagnostic, not
+a branch:** it names an implementation, so anything conditional on it is coupled to a class name — branch
+on `ShellCapability` instead.
 
 ### Every way this fails looks identical — no picture
 
