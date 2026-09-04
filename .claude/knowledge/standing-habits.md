@@ -85,7 +85,11 @@ the file itself. They are prose now, and they never "complete":
 - **Re-measure the COMMENT RATIO in `src/` when a pass has been adding prose**, because it ships to
   adopters' IDEs and it has drifted upward before while a rule against it was already written: 45 %
   (2026-08-14) → 47.3 % (2026-08-15) → **40.9 % (2026-08-17: 17,186 comment / 42,035 total, 0.84 per
-  code line)** → **39.1 % (2026-08-22: 13,642 comment / 34,860 NON-BLANK, 0.64 per code line)**.
+  code line)** → **39.1 % (2026-08-22: 13,642 comment / 34,860 NON-BLANK, 0.64 per code line)** →
+  **40.3 % (2026-09-04: 15,096 comment / 37,432 NON-BLANK, 0.68 per code line — the SAME counter as
+  08-22, so these two ARE comparable)**. ⚠ The last interval added 2,572 non-blank lines of which 1,454
+  were comment: **prose grew slightly faster than code**. Not a reversal, and worth watching rather than
+  acting on.
   🔴 **STATE THE COUNTER WITH THE NUMBER, or the series stops being one.** The last two were not measured
   the same way — the 08-17 total implies blank lines were counted and the 08-22 one excludes them — so the
   drop between them is not a trend and must not be read as one. The 08-22 method: every `.cs` under `src/`

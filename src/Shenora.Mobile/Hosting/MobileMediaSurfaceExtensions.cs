@@ -25,9 +25,16 @@ public static class MobileMediaSurfaceExtensions
     ///   <item>Put a <see cref="MediaSurfaceView"/> in a layout BEFORE the webview, set its
     ///   <see cref="MediaSurfaceView.Player"/>, and <see cref="MobileMediaSurface.Attach"/> the pair when
     ///   the page is built.</item>
-    ///   <item>Make the page's own background transparent where the picture belongs — this call cannot
-    ///   reach the document, and an opaque <c>body</c> hides everything underneath it.</item>
+    ///   <item>Give the page a STAGE where the picture belongs — this call cannot reach the document.
+    ///   ⚠ <b>Both halves, and the second is the one that gets missed:</b> a transparent background AND
+    ///   the page's own content out of the way. An opaque <c>body</c> hides the picture completely, and a
+    ///   transparent one still has your interface painting over it.</item>
     /// </list>
+    /// <para>
+    /// ⚠ <b>The MAUI page's <c>BackgroundColor</c> is NOT one of them</b>, measured on Android: the
+    /// picture composites with it left fully opaque, because a <c>SurfaceView</c> punches its hole through
+    /// everything the window drew before it. Only this mapping and the DOCUMENT are in the chain.
+    /// </para>
     /// <para>
     /// ⚠ <b>Opt-in.</b> An app that plays no video should not call it: the transparency mapping applies to
     /// every webview the app realizes, and a page that stops painting its own background would then show
