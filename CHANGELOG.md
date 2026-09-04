@@ -54,6 +54,25 @@ at the first list and missed five more breaking changes.
   out of the way, which is the half that gets missed. ✅ Photographed on Android; the MAUI page's
   `BackgroundColor` is deliberately NOT part of the chain (`docs/guides/media.md`).
 
+- **iOS can hold an orientation now — `MobileWindowOrientation.SupportedInterfaceOrientations`.** It was
+  absent there, honestly but expensively: an adopter deleted their own working portrait lock to take the
+  capability and lost it on one of their two shells. **Return the new mask from your app delegate** and
+  `Lock`/`Unlock` work on both:
+  ```csharp
+  public override UIInterfaceOrientationMask GetSupportedInterfaceOrientations(
+      UIApplication application, UIWindow? forWindow) =>
+      MobileWindowOrientation.SupportedInterfaceOrientations;
+  ```
+  🔴 **A library cannot do this for you, which is why it is not automatic:** UIKit asks the APP's delegate
+  and intersects that answer with every rotation, so `requestGeometryUpdate` on its own is a request the
+  next rotation undoes.
+  ⚠ **The override IS the opt-in.** `MobileWindowOrientation.IsSupported` goes true on iOS once UIKit has
+  asked, so an app that omits it still advertises the capability as absent (D39/D36) — and `Lock` throws
+  an error naming the override rather than failing silently.
+  ⚠ **`Info.plist` stays the ceiling**, and `Unlock` hands the decision back to it. ⚠ **iOS 15 gets the
+  lock but not the immediate turn** — the two calls that rotate on demand are 16+.
+  ⚠ **Compile-verified only.** Nothing in this repo runs an iOS device; the behaviour needs a Mac.
+
 - **`MediaSurfaceHolder` — the handle/player rendezvous, as a type a test can reach.** Remembers the
   platform's picture handle and the player independently and pairs whichever arrives second.
   `MediaSurfaceView` now delegates to it, and an app writing its own surface view over

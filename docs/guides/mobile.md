@@ -285,11 +285,27 @@ released from a landscape lock still read `915×412` a second later and `412×91
 from the resize, never from the call returning.
 ⚠ **Android holds the FAMILY, not an edge** — `SensorPortrait`, so a phone held upside down is still
 portrait rather than 180° off.
-🔴 **iOS REFUSES rather than half-working, and that is deliberate.** `requestGeometryUpdate` rotates the
-window but the root view controller still reports the orientations it supports, so the next device
-rotation undoes it — a request, not a lock. Shipping that behind the same method would be an API that
-compiles on both shells and silently means something weaker on one (D39). The capability is absent
-there; branch on it.
+🔴 **iOS NEEDS ONE LINE IN YOUR `AppDelegate`, and does nothing without it.** UIKit asks the APP what
+orientations it supports and intersects that with every rotation, so `requestGeometryUpdate` alone is a
+request the next rotation undoes. A library cannot override your delegate, so you return the kit's mask:
+
+```csharp
+public override UIInterfaceOrientationMask GetSupportedInterfaceOrientations(
+    UIApplication application, UIWindow? forWindow) =>
+    MobileWindowOrientation.SupportedInterfaceOrientations;
+```
+
+**That override IS the opt-in.** `MobileWindowOrientation.IsSupported` goes true on iOS once UIKit has
+asked, so an app that omits it advertises the capability as ABSENT rather than accepting a lock nothing
+holds (D39/D36) — and calling `Lock` anyway throws an error naming this override rather than failing
+silently.
+⚠ **`Info.plist` is the ceiling on both counts.** The mask is intersected with
+`UISupportedInterfaceOrientations`, so an orientation missing there can never be locked TO, and `unlock()`
+hands the decision back to that list rather than to everything.
+⚠ **iOS 15 gets the lock but not the immediate turn** — the two calls that rotate on demand are 16+, so an
+older device holds the new orientation from its next rotation instead of snapping to it.
+⚠ **iOS orientation used to be absent entirely, and one adopter deleted a working portrait lock to take
+the capability.** If you did the same, the line above is what brings it back.
 
 ### Coming back from the background — ask HOW LONG, not whether
 

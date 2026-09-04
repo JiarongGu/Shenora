@@ -99,6 +99,13 @@ public class MetadataSurfaceTests
         var assembly = FindAssembly(project, tfm);
         // NOT skipped when missing. A gate that quietly passes because the artifact was not built is
         // a gate that fails open, which this repo has already paid for once (check-sensitive).
+        //
+        // 🔴 A STALE ARTIFACT IS THE SAME HAZARD AND THIS DOES NOT COVER IT — measured 2026-09-04.
+        // `Shenora.iOS` had not been buildable on the dev box for weeks (the `ios` workload was absent),
+        // so this test read whatever `bin/` still held and agreed with a baseline frozen before D80: SIX
+        // public types shipped unrecorded while the gate stayed green. Nothing here can tell an old
+        // assembly from a current one. **What protects it is running through `dev.mjs verify`, which
+        // BUILDS and then tests** — so a green run of this file alone proves less than it looks.
         Assert.True(assembly is not null,
             $"{project} has not been built, so its surface cannot be checked. Run `node devtools/dev.mjs build` " +
             "(it resolves the JDK the Android TFM needs) before the test suite.");

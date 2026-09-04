@@ -115,10 +115,17 @@ their `screenOrientation` capability, and now guard the whole thing on `MobileWi
 lost its portrait lock and nobody has looked**: their own verification row for orientation says "on an
 Android phone".
 
-- [ ] **Give iOS a real lock — a view-controller hook**, so the shell answers
-  `GetSupportedInterfaceOrientations` instead of merely requesting a geometry change. Needs a MAUI handler
-  override and a Mac to prove it. ⚠ **Until it lands, say so where an adopter reads it**: a capability that
-  is honestly absent is still a feature they may have deleted to take it.
+**BUILT and compile-verified** (`MobileWindowOrientation.SupportedInterfaceOrientations` + the app-delegate
+override, wired in the sample's `AppDelegate` and documented in `docs/guides/mobile.md`). What is left is
+the run.
+
+- [ ] **Prove it on an iPhone.** Three things, and the second is the one no reasoning settles: a locked app
+  does not rotate; **the lock SURVIVES a device rotation** (the failure the old `requestGeometryUpdate`
+  path had, and the reason the delegate mask exists); and `Unlock` hands the decision back rather than
+  pinning the current edge. ⚠ Check `IsSupported` is TRUE in the handshake — it goes true only once UIKit
+  has asked the delegate, and a false reading there means the capability is advertised absent for that
+  whole session. ⚠ Nothing in this repo runs an iOS device, and the sample's iOS head does not compile on
+  Windows, so its one-line override is unverified even though the library half is not.
 
 ⚠ **Resume deliberately does NOT duplicate `document.visibilitychange`**, which already fires on both shells
 — it reports the one thing a throttled, possibly frozen page cannot measure: **how long it was away**. If a
