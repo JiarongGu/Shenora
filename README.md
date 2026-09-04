@@ -42,7 +42,9 @@ the auxiliary browser sessions (off-screen render pool, interactive sessions, st
 extracted from proven in-house applications and verified end-to-end against the sample app. Every
 public and protected member is documented and gated by API-surface baselines. The kit also runs on
 **Android and iOS**, both proven on real hardware — an Android device and an iPhone 17 Pro, including
-media playback, the native save picker, audio conversion and Live Activities.
+media playback, the native save picker, audio conversion and Live Activities. On a phone the shell can
+also draw the PICTURE itself, behind a transparent region the page leaves, so a film the webview refuses
+plays without a transcode while the page keeps every control (`useMediaSurface`, `useMediaTransport`).
 
 ⚠ **The package set was reorganised by platform in 0.5.0.** `Shenora.WinForms`, `Shenora.WebView2`
 and `Shenora.WebView2.Sessions` are superseded by a single `Shenora.Windows`, and `Shenora.Android` /
@@ -56,7 +58,7 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 
 | Package | Registry | Target framework | In one line |
 |---|---|---|---|
-| `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Modules.Media` — probe, plan, serve, remux), file operations (`Shenora.Engine.Files` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.Engine.Compression`). |
+| `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Modules.Media` — probe, plan, serve, remux, and the shell's own picture surface), file operations (`Shenora.Engine.Files` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.Engine.Compression`). |
 | `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.Engine.Update`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |

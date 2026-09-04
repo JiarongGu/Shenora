@@ -467,7 +467,7 @@ is what made this file 1,400 lines and gave a reader who only wanted one of them
 |---|---|
 | [The mission scheduler](guides/missions.md) | you have a job queue, a worker pool, or a "don't let these two touch the same path" rule |
 | [The file-update queue](guides/file-updates.md) | path claims are too coarse — you need staged writes, an undo journal, or another process holds your files |
-| [Media playback](guides/media.md) | a file your user picked will not play, or you want the lifecycle in .NET rather than in the page |
+| [Media playback](guides/media.md) | a file your user picked will not play, or you want the lifecycle in .NET rather than in the page — **and on a phone, when you want the SHELL to draw the picture** under a hole the page leaves, so a film the webview refuses plays with no transcode while your page keeps every control (`useMediaSurface` + `useMediaTransport`) |
 
 ## What stays yours, permanently
 
