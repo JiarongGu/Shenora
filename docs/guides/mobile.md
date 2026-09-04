@@ -72,8 +72,13 @@ step an adopter has to remember is not a mechanism, and forgetting this one cost
 ⚠ Stopping the webview is NOT the same remedy — that arm of the experiment was 10 of 10. The HANDLER is
 what holds the dead scope.
 ⚠ **Turn it off for a page that unloads and RELOADS the same view instance** — an ordinary navigation,
-where the handler would be pulled out from under a view that is coming back. That case is unmeasured; then
-call `MobileWindowLifecycle.ReleaseHandler(webView)` where your page knows it is really going away.
+where the handler would be pulled out from under a view that is coming back — and call
+`MobileWindowLifecycle.ReleaseHandler(webView)` where your page knows it is really going away instead.
+**A released view does not quietly recover**, measured on an API 36 emulator: the app survives and nothing
+throws, but an `EvaluateJavaScriptAsync` against that view then **never completes** — it does not fail, so
+an adopter's own `await` hangs for ever with no error to read. ⚠ **The full navigate-away-and-back path is
+still unmeasured** (the sample has one page); what is measured is that the released view is not usable as
+it stands.
 
 **`UseAndroid`/`UseIOS` registers no `IShenoraRunner`, deliberately.** MAUI owns the loop, so
 `ShenoraApplication.Run` — contractually "blocks until shutdown" — has no honest implementation.

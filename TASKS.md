@@ -130,8 +130,18 @@ future session is tempted to add a visibility event, that is the reason not to.
 not a step to remember — there is one adopter and they are on Android). 8/10 font-scale changes killed the
 app before; 0/10 after, measured on API 36 with no explicit call anywhere in the sample.
 
-- [ ] **Measure the NAVIGATION case** — a page that unloads and RELOADS the same view instance, where the
-  default pulls the handler out from under a view that is coming back. Needs a two-page sample (this one
-  has a single page, so `Unloaded` only ever fires for a teardown or a recreation). The escape hatch
-  exists and is documented; what is missing is knowing whether anyone needs it.
+**Half-measured now** (`HandlerReleaseProbe`, opt-in per launch — env `SHENORA_SAMPLE_HANDLER_RELEASE` or a
+`handler-release` file in the cache dir): releasing the handler on a live webview **does not crash the app**,
+and an evaluation against the released view **never completes** — it does not throw, so an adopter's `await`
+hangs with nothing to read. `docs/guides/mobile.md` carries that, and the recommendation no longer rests on
+a hedge.
+
+- [ ] **Measure the real NAVIGATION case.** ⚠ **Do NOT re-parent the view inside its layout** — that
+  shortcut is what this probe tried and it throws `MauiContext should have been set on parent`, which is an
+  artefact of re-parenting a handler-less view and says nothing about navigation. MAUI unloads and reloads a
+  PAGE while the view keeps its parent. **The faithful mechanic is swapping `Window.Page` away and back**,
+  which fires `Unloaded`/`Loaded` on the same page instance. ⚠ It needs a run-once guard: the sample's whole
+  probe suite re-runs from `OnLoaded`, so the swap-back would recurse into this probe.
+  ⚠ **No adopter needs this yet** — the only one has a single `ContentPage` and no `PushAsync` at all, which
+  is the ordinary hybrid shape. It stays filed because the default is ON and the failure is silent.
 

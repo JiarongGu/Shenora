@@ -678,6 +678,11 @@ public sealed class MainPage : ContentPage
 					_webView,
 					MauiProgram.Shenora?.Services?.GetService<Shenora.Modules.Media.IMediaPlayer>(),
 					MauiProgram.Log));
+
+				// 🔴 DEAD LAST, AND DESTRUCTIVE — it tears the live webview down, so every probe above it
+				// would be measuring the wreckage. Opt-in per launch for the same reason
+				// `ServeDocumentFromDisk` is: a run that did not ask keeps the whole suite intact.
+				MauiProgram.Log(await HandlerReleaseProbe.RunAsync(_webView, Content as Layout, MauiProgram.Log));
 			}
 			catch (Exception ex) { MauiProgram.Log($"PLAYER: probe threw — {ex}"); }
 		});
