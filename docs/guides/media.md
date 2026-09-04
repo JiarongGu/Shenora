@@ -395,6 +395,19 @@ useMediaSurface(stage);              // sends the rectangle; hides it on unmount
 return <div ref={stage} className="stage" />;   // must be TRANSPARENT
 ```
 
+🔴 **The page has to get out of the way, and BOTH halves are load-bearing.** A transparent `body` still has
+your own interface painting over the picture, so a full-bleed stage takes the content away too. Scope it to
+a mode you set, so the page is ordinary the rest of the time:
+
+```css
+[data-stage='full'] body { background: transparent; }
+[data-stage='full'] #root { visibility: hidden; }   /* `visibility`, so nothing reflows */
+```
+
+⚠ **The MAUI page's `BackgroundColor` is NOT part of this** — measured on Android: the picture is composited
+with it left fully opaque, because a `SurfaceView` punches its hole through everything the window drew
+before it. Leave it painting your app's colour, which is what the no-white-flash chain wants anyway.
+
 ```csharp
 // MauiProgram: the handler + the see-through webview, and the service
 builder.UseShenoraMediaSurface();
@@ -434,8 +447,9 @@ failures and clears itself when the host comes back.
 
 ### Every way this fails looks identical — no picture
 
-- **The page painted over it.** The webview is see-through, but `body` is not. The stage element *and
-  every ancestor* have to be transparent. This is the usual one.
+- **The page painted over it.** The webview is see-through, but `body` is not. The stage element *and every
+  ancestor* have to be transparent. This is the usual one — and the near miss is doing only that half and
+  leaving your own content on top of the picture.
 - **Nothing attached.** `Attach` runs when the page is built, not when the service is registered. The
   surface logs once when it is asked to draw with no views.
 - **No `Player`.** The default `IMediaPlayer` is the page-backed one (D58) and has no picture to give —

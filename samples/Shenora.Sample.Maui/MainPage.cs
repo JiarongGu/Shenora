@@ -93,6 +93,9 @@ public sealed class MainPage : ContentPage
 			HybridRoot = "wwwroot",
 			DefaultFile = "index.html",
 		};
+		// What the stage ladder puts back. Read rather than assumed to be null, so restoring is restoring
+		// rather than a second guess about MAUI's default.
+		_webViewBackgroundBefore = _webView.BackgroundColor;
 		/* The shell's PICTURE surface (D80) — behind the webview, which is the order that lets the page
 		 * paint over it.
 		 *
@@ -630,7 +633,7 @@ public sealed class MainPage : ContentPage
 				// an .mp4 every webview already opens, which proves the player runs and nothing about the
 				// gap the picture surface exists for.
 				await MediaSurfaceProbe.RunAsync(services.GetService<Shenora.Android.AndroidMediaPlayer>(),
-					services.GetService<Shenora.Modules.Media.IMediaSurface>(), MauiProgram.Log, OpenPictureHole);
+					services.GetService<Shenora.Modules.Media.IMediaSurface>(), MauiProgram.Log, RunStageLadderAsync);
 				// The TRANSCODE tier, after the player — it asserts its output by PLAYING it, so it needs the
 				// same player and there is no point running it if the player itself did not work.
 				//
@@ -645,8 +648,11 @@ public sealed class MainPage : ContentPage
 					services.GetService<Shenora.Android.AndroidMediaPlayer>(), MauiProgram.Log);
 #elif IOS || MACCATALYST
 				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.iOS.IosMediaPlayer>(), MauiProgram.Log);
+				// ⚠ The SAME ladder on iOS, which has never run there: the layers differ (WKWebView carries a
+				// third one on its scroll view) but the question does not, and passing no stage would leave
+				// the shell honestly unable to show a picture with nothing saying why.
 				await MediaSurfaceProbe.RunAsync(services.GetService<Shenora.iOS.IosMediaPlayer>(),
-					services.GetService<Shenora.Modules.Media.IMediaSurface>(), MauiProgram.Log);
+					services.GetService<Shenora.Modules.Media.IMediaSurface>(), MauiProgram.Log, RunStageLadderAsync);
 				// Same as the Android arm: its own pipeline WITH a log, because the host registers the
 				// converter without one and a codec failure is otherwise reported as a malformed file.
 				var diagnosticPipeline = new Shenora.Modules.Media.MediaConversionPipeline();
@@ -775,42 +781,174 @@ public sealed class MainPage : ContentPage
 #endif
 
 	/// <summary>
-	/// Make everything above the picture see-through, and put it back.
-	///
-	/// <para>
-	/// 🔴 <b>A <c>SurfaceView</c> draws BEHIND its window and is seen through a hole</b> — SurfaceFlinger
-	/// places it at <c>z=-2</c>, measured on the AVD. So every layer the window paints over that rectangle
-	/// hides it, and there are FOUR of them, not the two the kit's own remarks first claimed:
-	/// the webview widget (the kit's mapper), the HTML document, <b>this page's <c>BackgroundColor</c></b>,
-	/// and <b>the activity's window background</b>. Each is opaque by default and each alone is enough.
-	/// </para>
-	/// <para>
-	/// ⚠ The page's own background exists for the no-white-flash chain, so it is RESTORED afterwards — a
-	/// real app leaves a transparent region in its layout instead of turning the whole page off.
-	/// </para>
-	/// </summary>
-	/// <summary>
-	/// A solid rectangle at the picture's position, shown only while the hole is open.
+	/// A solid rectangle BESIDE the picture, shown on the last rung of the stage ladder.
 	///
 	/// <para>
 	/// 🔴 <b>THE CONTROL, and without it a dark screenshot accuses the wrong thing.</b> Three shots came
 	/// back uniformly dark with the display provably attached and the clock advancing, which has two very
 	/// different explanations: the see-through chain is not actually see-through, or the capture cannot
-	/// see a <c>SurfaceView</c> at all. This is ordinary MAUI drawing at the same rectangle in the same
-	/// window, so it separates them in ONE shot — visible means the chain and the capture both work and
-	/// the picture is the problem; invisible means the chain is, and nothing has been learned about video.
+	/// see a <c>SurfaceView</c> at all. This is ordinary MAUI drawing in the same window, so it separates
+	/// them — visible means the chain and the capture both work and the picture is the problem.
+	/// </para>
+	/// <para>
+	/// 🔴 <b>It sits BELOW the picture's rectangle, not on it, and that is a correction.</b> Drawn at the
+	/// same place it competes for those pixels with the surface it is meant to exonerate — a
+	/// <c>SurfaceView</c> punches its hole by writing transparent pixels into the window, and an opaque
+	/// box painted over that hole fills them straight back in. Separated, ONE screenshot answers both
+	/// questions at once.
 	/// </para>
 	/// </summary>
 	private BoxView? _holeControl;
 
-	private void OpenPictureHole(bool open) => Dispatcher.Dispatch(() =>
-	{
-		BackgroundColor = open ? Colors.Transparent : Shell;
+	/// <summary>Where the control sits, clear of the picture's own 0,0 320x180 rectangle.</summary>
+	private const int ControlTop = 220;
 
-		if (open && _holeControl is null && Content is Grid grid)
+	/// <summary>How long each rung is held. Long enough for the harness to see the marker and shoot,
+	/// short enough that five of them do not hold the audio session away from the probes that follow.
+	/// </summary>
+	private static readonly TimeSpan StageStep = TimeSpan.FromSeconds(5);
+
+	/// <summary>The webview's own background before the ladder touched it, so step 3 can be undone.</summary>
+	private Color? _webViewBackgroundBefore;
+
+	/// <summary>
+	/// Walk the layers between the screen and the shell's picture ONE AT A TIME, so a single run names the
+	/// occluder.
+	///
+	/// <para>
+	/// 🔴 <b>EVERY EARLIER SCREENSHOT WAS UNINTERPRETABLE BY CONSTRUCTION.</b> The splash, this page and
+	/// the document are all <c>#14161A</c> deliberately — the no-white-flash chain — and a transparent
+	/// window over nothing is that colour too. So a dark shot could not say WHICH layer it was showing,
+	/// and four of them were read as evidence. Every rung below paints the layer it is testing a colour
+	/// nothing else in this app or the system bars is near.
+	/// </para>
+	///
+	/// <list type="number">
+	/// <item><b>baseline</b> — the document is still opaque. Expect the page's own UI: it proves the app
+	/// is alive, the capture works, and the coloured layers below really are hidden.</item>
+	/// <item><b>document</b> — the page's own stylesheet takes the body background and the content away.
+	/// <b>BLUE</b> here is the whole D80 assumption holding: the webview widget and the document are
+	/// see-through and this page's background paints through them.</item>
+	/// <item><b>webview background</b> — the same rung with the control's <c>BackgroundColor</c> set
+	/// transparent too, so MAUI's own <c>Background</c> mapper agrees rather than competes with
+	/// <c>MobileWebViewTransparency</c>. ⚠ <b>The hypothesis it was written for is REFUTED</b> — measured
+	/// 2026-09-04, this rung is pixel-identical to rung 2, so the mapper is not repainting the webview
+	/// opaque. It stays as the standing A/B: the day rung 2 goes dark, this one says whether that is
+	/// why.</item>
+	/// <item><b>page</b> — this page's background goes transparent. <b>RED</b> is the activity window
+	/// showing, i.e. one more layer cleared.</item>
+	/// <item><b>picture</b> — everything transparent, the control beside the picture. MAGENTA says MAUI
+	/// drawing under the webview reaches the screen; the clip's own frames at 0,0 are the pass.</item>
+	/// </list>
+	///
+	/// <para>
+	/// ⚠ <b>ONE deploy, five rungs.</b> Iterating a layer per deploy burned six cycles and then killed the
+	/// emulator. Each rung announces itself so the harness can shoot it rather than race a fixed sleep.
+	/// </para>
+	/// </summary>
+	private async Task RunStageLadderAsync()
+	{
+		// Nothing in this app or the system bars is near either of these — "did it appear" needs no
+		// colour matching, which is exactly what the dark shots lacked.
+		var pageProbeColour = Color.FromArgb("#1040FF");
+		var windowProbeColour = Color.FromArgb("#FF2A00");
+
+		try
 		{
-			// Magenta: nothing else in this app or the system bars is anywhere near it, so "did it appear"
-			// needs no colour matching.
+			await SetStageLayersAsync(pageProbeColour, windowProbeColour,
+				webViewTransparent: false, showControl: false).ConfigureAwait(false);
+			await RungAsync(1, "baseline", "expect the page's own dark UI",
+				await SetDocumentStageAsync(false).ConfigureAwait(false)).ConfigureAwait(false);
+
+			await RungAsync(2, "document", "BLUE = the widget and the document are see-through",
+				await SetDocumentStageAsync(true).ConfigureAwait(false)).ConfigureAwait(false);
+
+			await SetStageLayersAsync(pageProbeColour, windowProbeColour,
+				webViewTransparent: true, showControl: false).ConfigureAwait(false);
+			await RungAsync(3, "webview-background", "expect NO CHANGE from rung 2 — measured, the mapper "
+				+ "is not the occluder", "the webview's own BackgroundColor is transparent too")
+				.ConfigureAwait(false);
+
+			await SetStageLayersAsync(Colors.Transparent, windowProbeColour,
+				webViewTransparent: true, showControl: false).ConfigureAwait(false);
+			await RungAsync(4, "page", "RED = the page's background layer is see-through as well",
+				"this page's BackgroundColor is transparent").ConfigureAwait(false);
+
+			await SetStageLayersAsync(Colors.Transparent, Colors.Transparent,
+				webViewTransparent: true, showControl: true).ConfigureAwait(false);
+			await RungAsync(5, "picture", $"MAGENTA at 0,{ControlTop} = MAUI draws under the webview; "
+				+ "the clip's frames at 0,0 are the pass", Layout()).ConfigureAwait(false);
+		}
+		finally
+		{
+			// The page goes back to the no-white-flash chain whatever happened above — a sample left
+			// half-transparent makes every later probe's screenshot lie in a new way.
+			await SetStageLayersAsync(Shell, Shell, webViewTransparent: false, showControl: false)
+				.ConfigureAwait(false);
+			MauiProgram.Log("SURFACE-STAGE: restored — " + await SetDocumentStageAsync(false).ConfigureAwait(false));
+		}
+	}
+
+	/// <summary>Announce a rung and hold it. ⚠ The layers are applied BEFORE the marker is logged, so a
+	/// screenshot taken the moment the harness sees it is of the state the line describes.</summary>
+	private static async Task RungAsync(int number, string name, string expect, string state)
+	{
+		MauiProgram.Log($"SURFACE-STAGE {number}/5 {name} — SHOOT NOW · {expect} · {state}");
+		await Task.Delay(StageStep).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Put the three NATIVE layers into one state, on the UI thread.
+	/// <para>
+	/// ⚠ The document is not here: it is the page's own, and it is changed by the attribute the stylesheet
+	/// reads (<see cref="SetDocumentStageAsync"/>).
+	/// </para>
+	/// </summary>
+	private Task SetStageLayersAsync(Color page, Color window, bool webViewTransparent, bool showControl) =>
+		MainThread.InvokeOnMainThreadAsync(() =>
+		{
+			BackgroundColor = page;
+			_webView.BackgroundColor = webViewTransparent ? Colors.Transparent : _webViewBackgroundBefore;
+			ShowLayerControl(showControl);
+#if ANDROID
+			// The window beneath the page. `Platform.CurrentActivity` is the one hosting this page.
+			global::Microsoft.Maui.ApplicationModel.Platform.CurrentActivity?.Window?.SetBackgroundDrawable(
+				new global::Android.Graphics.Drawables.ColorDrawable(new global::Android.Graphics.Color(
+					(byte)(window.Red * 255), (byte)(window.Green * 255), (byte)(window.Blue * 255),
+					(byte)(window.Alpha * 255))));
+#endif
+			// ⚠ Says WHAT HAPPENED, not what was intended. "OPEN" alone was logged for three runs while the
+			// control may never have been inserted and the surface may have been laid out at 0x0 — both of
+			// which look exactly like a compositing failure from a screenshot.
+			MauiProgram.Log($"SURFACE-STAGE layers: page={Hex(page)} window={Hex(window)}"
+				+ $" webview={(webViewTransparent ? "transparent" : _webViewBackgroundBefore is { } b ? Hex(b) : "default")}"
+				+ $" · control={(_holeControl is null ? "ABSENT" : $"inserted at 0,{ControlTop}")}"
+				+ $" · contentIsGrid={Content is Grid} · {Layout()}");
+		});
+
+	/// <summary>
+	/// <c>#AARRGGBB</c>, and the ALPHA is the point.
+	/// <para>
+	/// ⚠ <c>Color.ToHex()</c> drops it, so <c>Colors.Transparent</c> and black both print
+	/// <c>#000000</c> — a line saying <c>page=#000000</c> for a layer that was turned OFF is the same
+	/// class of confidently-wrong instrument as the dark screenshots this ladder exists to replace.
+	/// </para>
+	/// </summary>
+	private static string Hex(Color colour) =>
+		$"#{(byte)(colour.Alpha * 255):X2}{(byte)(colour.Red * 255):X2}"
+		+ $"{(byte)(colour.Green * 255):X2}{(byte)(colour.Blue * 255):X2}";
+
+	/// <summary>What the picture surface actually IS right now — the second half of every rung's evidence.
+	/// A surface laid out at 0x0 and a compositing failure look identical from a screenshot.</summary>
+	private string Layout() =>
+		$"surface visible={_mediaSurface.IsVisible} {_mediaSurface.Width:0}x{_mediaSurface.Height:0}"
+		+ $" at {_mediaSurface.Margin.Left:0},{_mediaSurface.Margin.Top:0}";
+
+	private void ShowLayerControl(bool show)
+	{
+		if (show && _holeControl is null && Content is Grid grid)
+		{
+			// Magenta: nothing else in this app or the system bars is anywhere near it.
 			_holeControl = new BoxView
 			{
 				Color = Colors.Magenta,
@@ -818,35 +956,44 @@ public sealed class MainPage : ContentPage
 				VerticalOptions = LayoutOptions.Start,
 				WidthRequest = 320,
 				HeightRequest = 180,
-				Margin = new Thickness(0, 0, 0, 0),
+				Margin = new Thickness(0, ControlTop, 0, 0),
 			};
-			// FIRST child: behind the webview, exactly where the picture is meant to be.
+			// FIRST child: behind the webview, like the picture surface it stands in for.
 			grid.Children.Insert(0, _holeControl);
 		}
-		else if (!open && _holeControl is not null && Content is Grid g)
+		else if (!show && _holeControl is not null && Content is Grid g)
 		{
 			g.Children.Remove(_holeControl);
 			_holeControl = null;
 		}
-#if ANDROID
-		// The window beneath the page. `Platform.CurrentActivity` is the one hosting this page.
-		var window = global::Microsoft.Maui.ApplicationModel.Platform.CurrentActivity?.Window;
-		window?.SetBackgroundDrawable(new global::Android.Graphics.Drawables.ColorDrawable(
-			open
-				? global::Android.Graphics.Color.Transparent
-				: new global::Android.Graphics.Color(
-					(byte)(Shell.Red * 255), (byte)(Shell.Green * 255), (byte)(Shell.Blue * 255))));
-#endif
-		// ⚠ Says WHAT HAPPENED, not what was intended. "OPEN" alone was logged for three runs while the
-		// control may never have been inserted and the surface may have been laid out at 0x0 — both of
-		// which look exactly like a compositing failure from a screenshot.
-		MauiProgram.Log($"picture hole: {(open ? "OPEN" : "closed")}"
-			+ $" · control={(_holeControl is null ? "ABSENT" : "inserted")}"
-			+ $" · contentIsGrid={Content is Grid}"
-			+ $" · surface visible={_mediaSurface.IsVisible} {_mediaSurface.Width:0}x{_mediaSurface.Height:0}"
-			+ $" at {_mediaSurface.Margin.Left:0},{_mediaSurface.Margin.Top:0}"
-			+ $" · page bg={BackgroundColor?.ToHex() ?? "null"}");
-	});
+	}
+
+	/// <summary>
+	/// Ask the PAGE to enter or leave its stage, and read back what that did to it.
+	/// <para>
+	/// 🔴 The shell sets an ATTRIBUTE and nothing else; the two rules it selects live in the page's own
+	/// stylesheet. Turning the document off from outside — which is what <c>dev.mjs android eval</c> did
+	/// for four runs — demonstrates that a document CAN be made transparent, never that a page can do it
+	/// for itself, and the second is the thing an adopter ships.
+	/// </para>
+	/// <para>
+	/// ⚠ It REPORTS rather than assumes: a rule that failed to match and a rule that matched perfectly
+	/// produce the same silence, and the computed values are what tell them apart.
+	/// </para>
+	/// </summary>
+	private async Task<string> SetDocumentStageAsync(bool on)
+	{
+		const string report = "'stage=' + (document.documentElement.getAttribute('data-native-stage') || 'off')"
+			+ " + ' body=' + getComputedStyle(document.body).backgroundColor"
+			+ " + ' content=' + getComputedStyle(document.getElementById('scroll')).visibility";
+		var set = on
+			? "document.documentElement.setAttribute('data-native-stage', 'full')"
+			: "document.documentElement.removeAttribute('data-native-stage')";
+		// ⚠ ONE EXPRESSION — `PageProbe.Safe` wraps the script in `return (…)`, so a statement would not
+		// parse. The comma operator does the work and still yields the report.
+		return await PageProbe.EvaluateAsync(_webView, $"({set}, {report})").ConfigureAwait(false)
+			?? "the page did not answer — the stage attribute may never have been set";
+	}
 
 	private void OnUnloaded(object? sender, EventArgs e)
 	{

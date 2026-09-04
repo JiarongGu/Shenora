@@ -110,6 +110,21 @@
      the scrollbar never appears — the classic flexbox overflow trap. */
   #scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   /*
+    THE PICTURE STAGE (D80) — the PAGE's half of letting the shell's own picture show through.
+
+    The shell sets `data-native-stage` on <html>; what the mode MEANS lives here, in the page's own
+    stylesheet, because that is what an adopting app writes. Doing it from outside with
+    `dev.mjs android eval` proves the document CAN be turned off, not that a page can turn itself off.
+
+    ⚠ BOTH rules, and the second is the one that gets forgotten. A transparent <body> still has the
+    page's own content painting over the picture, so the stage has to take the content away too — an
+    adopter running this shape on Android records the same pair as "necessary and NOT sufficient".
+    `visibility` rather than `display`, so nothing reflows and the layout the page returns to is the
+    one it left.
+  */
+  html[data-native-stage='full'] body { background: transparent; }
+  html[data-native-stage='full'] #scroll { visibility: hidden; }
+  /*
     ⚠ line-height 1.15, not the inherited 1.45, and it is a SAFE-AREA fix rather than typography.
     Measured on a punch-hole device: the padding puts the content BOX exactly at the status-bar edge
     (128 device px, symmetric — 31px above the camera hole, 31px below it), but the first visible GLYPH

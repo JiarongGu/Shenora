@@ -403,8 +403,42 @@ nothing about WKWebView — where an adopter's refusals were measured and where 
 is not needed for CONTAINER reach here (D51/D42's seam remains the answer for an app that needs more). The
 surface earns its place on the other two grounds, both measured: playback that survives backgrounding
 (45 s native against ~15 s for the page's element) and a picture composited under the page.
-🔴 **PIXELS ARE STILL UNPROVEN.** A moving clock is not a composited picture, and the sample's page paints
-its own background — so nothing has yet looked through a transparent hole.
+### And the pixels — measured 2026-09-04, same device, same clip
+
+The sample walks the layers between the screen and the picture ONE at a time, holding each long enough to
+be photographed, so a single run names the occluder instead of producing another dark screenshot.
+
+| rung | document stage | MAUI page background | webview `BackgroundColor` | what the screen showed |
+|---|---|---|---|---|
+| 1 baseline | off | `#1040FF` | default | the page's own UI — everything below it hidden |
+| 2 document | **on** | `#1040FF` | default | **the clip's colour bars at 0,0 320×180**, blue elsewhere |
+| 3 webview background | on | `#1040FF` | transparent | **identical to rung 2** |
+| 4 page | on | transparent | transparent | the picture, over the activity window's `#FF2A00` |
+| 5 picture | on | transparent | transparent | the picture, **and** the magenta control at 0,220 |
+
+The clip's own frame counter read 9, 14 and 24 across the run, so it is decoding rather than showing one
+stuck frame. `SURFACE: PASS` at 27.03 s.
+
+🔴 **THE CHAIN IS TWO LAYERS, NOT FOUR: the webview widget and the DOCUMENT.** Rung 2 is the finding — the
+picture is composited with the MAUI page's background still fully opaque, because a `SurfaceView` punches
+its hole through everything the window drew before it. Clearing the page's and the activity's backgrounds
+is what the sample used to do and it was never part of the answer. ⚠ And the activity half cannot be done
+that way regardless: `SetBackgroundDrawable(ColorDrawable(Transparent))` left rungs 4 and 5 showing the red
+set at rung 3.
+
+🔴 **THE PAGE HAS TO ENTER THE STAGE ITSELF, AND BOTH RULES ARE LOAD-BEARING** —
+`body { background: transparent }` **and** taking the content away (`visibility: hidden`), selected by an
+attribute the shell sets. An adopter running this shape records the same pair as *"necessary and NOT
+sufficient"*: a transparent `body` still has the page's own content painting over the picture. The sample
+reports its computed state at the moment of the shot — `stage=full body=rgba(0, 0, 0, 0) content=hidden` —
+because a rule that failed to match and a rule that matched perfectly are otherwise the same silence.
+
+⚠ **REFUTED in the same run:** that MAUI re-runs its own `Background` mapper and repaints the platform
+webview opaque after `MobileWebViewTransparency` ran. Rung 3 makes the control's `BackgroundColor`
+transparent so the two agree rather than compete, and it is pixel-identical to rung 2.
+
+⚠ **ONE device, and it is the emulator.** Nothing here says anything about WKWebView, where the surface's
+case was originally made.
 
 ## First load does not scale with the file — measured 2026-08-21
 

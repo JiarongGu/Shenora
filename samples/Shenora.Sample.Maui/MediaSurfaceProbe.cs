@@ -63,18 +63,21 @@ public static class MediaSurfaceProbe
     /// <param name="player">The shell's own player, or null where none ships.</param>
     /// <param name="surface">The picture surface, or null when the app registered none.</param>
     /// <param name="log">Sink.</param>
-    /// <param name="openHole">
-    /// Make the layers ABOVE the surface see-through, and put them back. Supplied by the page because only
-    /// it owns them.
+    /// <param name="showStages">
+    /// The page's own stage: make the layers ABOVE the surface see-through, hold long enough to be
+    /// photographed, and put them back. Supplied by the page because only it owns them, and it replaces
+    /// this probe's hold rather than running beside it.
     /// <para>
-    /// 🔴 <b>A <c>SurfaceView</c> punches a hole through the WINDOW and draws behind it</b> (measured:
-    /// SurfaceFlinger places it at <c>z=-2</c>), so EVERY layer the window paints at that rectangle hides
-    /// it — the webview widget, the document, the MAUI page's <c>BackgroundColor</c>, and the activity's
-    /// own window background. Miss one and the picture is invisible with nothing to say why.
+    /// 🔴 <b>TWO layers, and an earlier version of this remark counted four.</b> A <c>SurfaceView</c>
+    /// punches its hole through everything the window drew BEFORE it, so the MAUI page's
+    /// <c>BackgroundColor</c> and the activity's own window background are not in the chain at all —
+    /// measured 2026-09-04, the picture is visible with the page background left fully opaque. What hides
+    /// it is the <b>webview widget</b> (the kit's mapper) and the <b>document</b>, and the document means
+    /// its background AND its content.
     /// </para>
     /// </param>
     public static async Task RunAsync(IMediaPlayer? player, IMediaSurface? surface, Action<string> log,
-        Action<bool>? openHole = null)
+        Func<Task>? showStages = null)
     {
         if (player is null)
         {
@@ -122,19 +125,28 @@ public static class MediaSurfaceProbe
              * cannot make. Nothing above proves a composited PIXEL: a player advancing behind an opaque
              * page looks exactly like a player advancing behind a broken compositor.
              *
-             * ⚠ The window is announced so the harness can aim, rather than racing a fixed sleep against
-             * a probe whose start time it cannot see. `dev.mjs android shot` during it, with the page made
-             * transparent (`android eval`), is what turns this into evidence.
-             * ⚠ Kept SHORT. This holds the audio session, and the page's own media probes run after it —
-             * a long hold here is how a background-audio measurement further down the suite becomes
-             * meaningless (`mobile-harness`).
+             * 🔴 THE PAGE OWNS IT WHERE THERE IS ONE, and that is the difference between this and four
+             * uninterpretable screenshots: the layers over the picture belong to the page, so a stage it
+             * enters ITSELF is the thing an adopter ships. Turning the document off from outside with
+             * `dev.mjs android eval` shows only that a document can be made transparent.
+             * ⚠ Kept SHORT either way. This holds the audio session, and the page's own media probes run
+             * after it — a long hold here is how a background-audio measurement further down the suite
+             * becomes meaningless (`mobile-harness`).
              */
-            openHole?.Invoke(true);
-            log($"SURFACE: HOLDING the picture for {HoldSeconds}s — screenshot now (region 0,0 320x180"
-                + $", hole={(openHole is null ? "NOT opened — the page supplied no opener" : "opened")})");
-            await Task.Delay(TimeSpan.FromSeconds(HoldSeconds));
+            if (showStages is null)
+            {
+                // Said out loud (D63): with nothing above the picture made see-through, an invisible
+                // picture is the EXPECTED outcome and must not be read as a compositing failure.
+                log($"SURFACE: HOLDING the picture for {HoldSeconds}s — the page supplied no stage, so "
+                    + "every layer above it is still opaque (region 0,0 320x180)");
+                await Task.Delay(TimeSpan.FromSeconds(HoldSeconds));
+            }
+            else
+            {
+                log("SURFACE: handing over to the page's stage — it announces each step for the camera");
+                await showStages();
+            }
             log($"SURFACE: hold over at {player.Status.Position.TotalSeconds:F2}s state={player.Status.State}");
-            openHole?.Invoke(false);
             // ⚠ The verdict says what was MEASURED and no more. An earlier version of this line claimed
             // the container was "one the WebView refuses" — a premise it never tested, and one the A/B
             // then refuted on this very device. A probe that asserts its own motivation is not evidence.

@@ -48,6 +48,8 @@ export interface UseMediaSurfaceOptions {
  * 🔴 **The element must be genuinely TRANSPARENT, and so must everything behind it.** The picture is drawn
  * BELOW the webview, so any opaque ancestor — most often a `body` background — hides it completely. That
  * failure looks exactly like a player that never started, so check the backgrounds before the player.
+ * ⚠ **A transparent `body` is necessary and not sufficient for a full-bleed stage**: your own content is
+ * still painting over the picture. Hide it for the duration — `docs/guides/media.md` has the two rules.
  *
  * ⚠ **Gate it on the `mediaSurface` capability**, by rendering this component only on a shell that has one:
  * a host without a surface answers every post with `MEDIA_SURFACE_UNAVAILABLE`. Read the capability from a
