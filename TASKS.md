@@ -62,6 +62,69 @@ belongs beside the existing provisioning stub, not in the CLI's portable half.
 ⚠ D15: one consumer — but the weekly free-tier expiry is what makes it bite. A profile that dies while
 the developer is travelling currently means the app is gone until they are home.
 
+### 🌐 A CHROMIUM SHELL OF THE KIT'S OWN — Windows, macOS and Linux, on CEF's own windows
+
+**Owner, 2026-09-28**, over six answers:
+- **A new package id.** The engine's bytes come from the app's restore of an upstream package reference,
+  and never sit inside a kit nupkg.
+- **The kit builds it now.** The first adopter takes it instead of writing a host of its own.
+- **All three desktops, ahead of a consumer**: *"its not really about we have consumer rn or not, we need to
+  prepare … the window one without chromium is mostly about small size of the final app"*. So WebView2 stays
+  the small-app engine, and Chromium's value is REACH.
+- **The shape is ONE shell the kit owns, on CEF's Views framework** (`CefWindow` + `CefBrowserView`). It has
+  no WinForms and no Avalonia: *"we mostly not using any winform feature if we going self managed chrome"*.
+  The page draws everything and Chromium supplies the window, so the kit owns the CEF binding plus the
+  per-OS native services behind the contracts it already has.
+- **Rejected:** Avalonia + CefGlue (a UI toolkit whose drawing goes unused, with the same binding problem);
+  MAUI (no supported way to host CEF on a Mac, since Mac Catalyst is not AppKit, and its Linux support IS
+  Avalonia's backend); CefSharp (Windows-only, with no Views API); and CefGlue as-is (CEF 120, no Views).
+
+**The why is D81** (an engine is a package, and its bytes arrive through the app's restore) **and D82**
+(one shell of the kit's own, on CEF's Views, ahead of a consumer). D26, D15, D37 and D51 are corrected
+in place to point at them.
+
+**The order, each step measured before the next is shaped:**
+1. **The kit's own binding (owner, 2026-09-28), Windows first.** It is generated from CEF's C API with
+   CEF's own header parser and rerun at every CEF release; only what the shell uses gets a hand-written
+   layer. CefGlue binds CEF **120** and no Views (its `cef_version.h`; no `views` header in its generator's
+   125). CEF's own builds are current on all three OSes (**154**, 2026-09-25, in
+   `cef-builds.spotifycdn.com/index.json`). The proof is a `CefWindow` + `CefBrowserView` opened from C#
+   on those binaries.
+2. **Read the adopter's own probe evidence** when it lands: the debug port's reach across processes,
+   CDP-opened tabs, session cookies, Playwright, the round trip, codecs, install size and licences. Do not
+   repeat it.
+3. **The Windows shell on Views:** a frameless window, native draggable regions, the caption hit-test,
+   the bridge over `IpcHostBridge` + `NotificationPump`, a kit-named page transport in
+   `createHostTransport`'s chain, and file drops carrying the engine's own paths (owner: the drop-zone
+   overlay is likely unneeded). **Constraints the kit's probe set** (CEF 152, Windows, 2026-09-28):
+   - 🔴 **A `--remote-debugging-port` on the app's OWN command line opens the port onto the bridge page**,
+     with nothing in the settings. `CommandLineArgsDisabled` closes that route, and a port set in the
+     settings still works under it. So the shell disables command-line args in production and is the only
+     thing that can set a port.
+   - **Chromium's windows are in-process, on CEF's UI thread** (the reverse of WebView2's), and a subclass
+     installs from THAT thread only. The caption hit-test (Snap Layouts on page-drawn buttons) is answered
+     there.
+   - CEF raises everything on its UI thread with no synchronization context, so dispatch needs one over
+     CEF's UI task runner, or the context-preserving pipeline has no UI thread to preserve.
+   - The renderers are a subprocess exe of the shell's choosing. Never let it be the app's exe behind the
+     single-instance gate.
+4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
+   reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
+   old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).
+5. **Linux:** the per-OS services are the hard part: a tray over D-Bus (StatusNotifierItem) and file dialogs
+   through xdg-desktop-portal.
+
+**The first adopter moves off `OptimizedForm` and `SecondaryWindows`** onto the new shell's window type.
+What it keeps (modules, dispatcher, event bus, `ShenoraPaths`) lives in `Shenora` and is engine-neutral
+already. `IpcHostBridge` + `NotificationPump` are what both current shells wrap, and `configureBridge({
+transport })` works today. ⚠ **On WebView2 today**, `BrowserArguments` appends an app's
+`additionalArguments` in ALL modes, so nothing refuses `--remote-debugging-port` on the environment hosting
+the bridge page in production. The adopter is safe (its browser builds its OWN environment); the kit is not.
+
+**Measured by the adopter on WebView2, 2026-09-28**: the limits it is leaving are the API's, not Chromium's.
+A tab a CDP client opens has no window and raises no event, where Edge 154 on its own profile shows it; a
+session cookie ends with the process, with no setting to keep it.
+
 ### 🎬 THE PICTURE SURFACE (D80) — Android is answered, iOS is not
 
 Android is done end to end, pixels included: the run, the layer table and the two refutations are in

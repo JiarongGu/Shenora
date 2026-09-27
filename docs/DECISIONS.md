@@ -82,7 +82,7 @@ docs cite them — so the number is the column to scan.
 | **D23** | The module contract carries the EVENT path, and the kit tracks long-running requests. |
 | **D24** | Frameless chrome is a FIXED WinForms type, not an attachable behaviour. |
 | **D25** | Frameless chrome and native drop zones are the kit's FLAGSHIP pair: settled, and not to be redesigned without adopter evidence. |
-| **D26** | the kit's DESKTOP scope is Windows only, and Linux is served by the SERVER-BACKED profile rather than by a native Linux shell. |
+| **D26** | a desktop shell must expose the NATIVE WINDOW, not merely host a WebView. |
 | **D27** | the scheduler's unit is a MISSION, and a definition is not an execution. |
 | **D28** | the queue's storage is named for what it is, and the queue itself stays internal. |
 | **D29** | a chain is ONE queue entry, not N with dependency edges. |
@@ -136,6 +136,8 @@ docs cite them — so the number is the column to scan.
 | **D78** | FOR A REMOTE MEDIA SOURCE THE KIT SHIPS THE ADAPTER, NEVER THE TRANSPORT: |
 | **D79** | THE SHELL RAISES THE BACK GESTURE AND THE PAGE DECIDES WHAT IT MEANS, PER PRESS: |
 | **D80** | THE PLAYER'S SECOND SURFACE: ON A PHONE THE SHELL DRAWS THE PICTURE, AND THE PAGE KEEPS THE UI. |
+| **D81** | AN ENGINE IS A PACKAGE BOUNDARY, AND ITS BYTES ARRIVE THROUGH THE APP'S OWN RESTORE, NEVER INSIDE A KIT NUPKG. |
+| **D82** | THE DESKTOP REACHES MACOS AND LINUX THROUGH ONE CHROMIUM SHELL OF THE KIT'S OWN, ON CEF'S VIEWS FRAMEWORK, BUILT AHEAD OF A CONSUMER. |
 
 <!-- decisions-index:end -->
 
@@ -232,6 +234,7 @@ docs cite them — so the number is the column to scan.
   an application is being built, it gets generalized (per `generic-library.md`) and moved in on a minor
   release. The app keeps a thin wrapper; the framework gains the proven core. This extends D8 from a
   bootstrap strategy into the permanent operating model — **not a speculative roadmap.**
+  ⚠ **D82 is a deliberate exception, by the owner:** the Chromium shell is built ahead of any consumer.
 
 - **D16 — Mobile shells are a target, and the IPC envelope is transport-neutral so they cost no contract
   change.** That prediction held exactly: the kit ships its own **MAUI `HybridWebView`** shells
@@ -346,17 +349,12 @@ docs cite them — so the number is the column to scan.
   **So `useDropZone` is not optional sugar — it is THE file-drop path on this kit**, and a DOM drop
   handler is what it replaces, not an alternative to it.
 
-- **D26 — the kit's DESKTOP scope is Windows only, and Linux is served by the SERVER-BACKED profile
-  rather than by a native Linux shell.** ⚠ Read this as DESKTOP scope, not kit scope — D32 added Android and iOS
-  shells, and they ship; the two decisions are about different platforms.
-  - 🔴 **The reusable part is the SELECTION CRITERION: a candidate shell must expose the NATIVE WINDOW, not
-    merely host a WebView.** Without one there is nowhere to put transparent native overlays over page
-    elements, so drop zones are impossible and the D25 eager-copy problem returns. That is what ruled out
-    **Photino** (confirmed still true 2026-08-15) and it is the question to ask of any future candidate —
-    **Avalonia** being the unevaluated one.
-  - **Reopen on a real Linux consumer plus a shell that passes that test.** Until then the answer is the
-    server-backed profile, which already runs there; the Windows shell is ~60 % of the kit's C# and none of
-    it ports.
+- **D26 — a desktop shell must expose the NATIVE WINDOW, not merely host a WebView.** D82 replaced the
+  Windows-only desktop scope this entry once set, and this criterion is what survives. Without a native
+  window there is nowhere to put native overlays over page elements or to answer the OS's hit-test, so drop
+  zones and page-drawn caption buttons both become impossible. That is what ruled out **Photino**
+  (confirmed still true 2026-08-15). CEF passes on Windows: its Chromium windows sit in the app's process.
+  - **The server-backed profile still serves Linux** for an app that wants no desktop shell at all.
 
 - **D27 — the scheduler's unit is a MISSION, and a definition is not an execution.**
   - **The naming rejections generalise:** `Work` is too common a word to grep; `Task` collides with
@@ -496,7 +494,7 @@ docs cite them — so the number is the column to scan.
 
 - **D37 — ONE shell package per PLATFORM, named for the platform.** The three Windows packages merged
   into `Shenora.Windows`; the mobile shell ships as `Shenora.Android` + `Shenora.iOS`. The package COUNT
-  has moved since (header table); **the SHAPE this decided is what governs.**
+  has moved since (header table); **the SHAPE this decided is what governs**, D82's engine shell excepted.
   - 🔴 **The test, applied in both directions: does the boundary correspond to something a CONSUMER
     experiences?** "I am building an Android app" does — so mobile SPLIT even though the two share every
     line of source. "WinForms without WebView2" does not — this kit's premise is React in a webview, so
@@ -693,8 +691,8 @@ docs cite them — so the number is the column to scan.
   - 🔴 **PATENTS ARE NOT COPYRIGHT** — openh264 being BSD grants no H.264 patent rights, so this settles
     the licence question and leaves the patent one open, per shipped codec. Not legal advice.
   - ⚠ **ffmpeg's licence is DETERMINED by what is compiled in**, `--enable-nonfree` may not be distributed
-    at all, and **the operational test is DISTRIBUTION, not "is it in the code base"** — a build-time
-    fetch, a fixture vendoring a binary, or a release asset all leak it from a clean repo.
+    at all, and **the operational test is DISTRIBUTION, not "is it in the code base"**: a build-time fetch,
+    a fixture vendoring a binary or a release asset all leak it from a clean repo. D81 narrows it for an ENGINE.
 
 - **D52 — the media layer is a TRANSLATION LAYER FOR THE WEB, not a media toolkit: the MINIMUM
   transformation that makes a file playable in a webview, and never more.** (Owner: *"we're not remaking
@@ -1123,6 +1121,34 @@ docs cite them — so the number is the column to scan.
   - **The kit ships no engine** (D51/D42): the default is the platform's own player and the seam is
     `MediaPlayerBase.AttachSurfaceCore`. Its handle is `object` — `Shenora` is `net10.0` (D19/D20).
   - ⚠ **Mobile only** — Windows reports the capability absent rather than half-satisfying it (D39).
+
+- **D81 — AN ENGINE IS A PACKAGE BOUNDARY, AND ITS BYTES ARRIVE THROUGH THE APP'S OWN RESTORE, NEVER
+  INSIDE A KIT NUPKG.** A Chromium shell gets its own package id because an app that chose WebView2 must
+  not carry ~350 MB it never runs (CEF 152's Windows x64 runtime). D55's test, *does the adopter's app
+  carry this at RUN TIME?*, answers no, which is the one case D55 leaves a package for. Owner: *"the
+  chromium engine will be downloaded from its package reference or source so we dont have to ship the
+  binary into nuget"*.
+  - 🔴 **This NARROWS D51 for an engine, deliberately.** D51 counts a build-time fetch as distribution.
+    Here the app opts in by referencing the package, and the bytes come from the engine's own published
+    builds, so the kit never conveys them. Everything else D51 governs is unchanged.
+  - **It is the reopening D68 asked for.** D68 refused to charge every consumer for one consumer's
+    runtime, and only apps that reference this package pay.
+  - ⚠ **The engine's security updates become the app's.** The failure mode is a binding that cannot
+    follow CEF's release cadence, not the size.
+
+- **D82 — THE DESKTOP REACHES MACOS AND LINUX THROUGH ONE CHROMIUM SHELL OF THE KIT'S OWN, ON CEF'S VIEWS
+  FRAMEWORK, BUILT AHEAD OF A CONSUMER.** Owner: *"its not really about we have consumer rn or not, we need
+  to prepare"*. So it sets D15 aside for this shell and replaces D26's Windows-only desktop. WebView2 stays
+  the small-app engine on Windows.
+  - 🔴 **No UI toolkit.** The page draws everything and Chromium supplies the window (`CefWindow` +
+    `CefBrowserView`), so the shell would use nothing WinForms or Avalonia draws. Owner: *"we mostly not
+    using any winform feature if we going self managed chrome"*. The kit owns the CEF binding and the
+    per-OS native services, behind the contracts it already has.
+  - **Rejected:** MAUI, which has no supported way to host CEF on a Mac (Mac Catalyst is UIKit, and CEF
+    embeds in AppKit) and whose Linux support is Avalonia's backend. Avalonia, whose drawing goes unused.
+    CefSharp, which is Windows-only and has no Views API. CefGlue as-is, which binds CEF 120 without
+    Views. So the kit generates its own binding from CEF's C API.
+  - **D37's naming by platform does not fit** a shell that spans three platforms, so it is named for the engine.
 
 ## Anti-goals — deliberately NOT built
 
