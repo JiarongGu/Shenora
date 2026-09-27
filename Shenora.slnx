@@ -16,6 +16,8 @@
     <Project Path="src/Shenora.Android/Shenora.Android.csproj" />
     <Project Path="src/Shenora.iOS/Shenora.iOS.csproj" />
     <Project Path="src/Shenora.Windows/Shenora.Windows.csproj" />
+    <!-- The Chromium shell (D82). Not packable yet; in the gate so the generated binding always compiles. -->
+    <Project Path="src/Shenora.Chromium/Shenora.Chromium.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Shenora.Tests/Shenora.Tests.csproj" />

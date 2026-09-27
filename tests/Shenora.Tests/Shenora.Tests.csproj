@@ -11,6 +11,7 @@
     <CodePage>65001</CodePage>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Same harmless WebView2-WPF WindowsBase conflict as Shenora.Windows — demote it. -->
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
   </PropertyGroup>
@@ -79,6 +80,9 @@
          promised the namespaces were unchanged, which was true for exactly two days; the correction
          then named Shenora.Modules.Update.Compression, which has never existed. -->
     <ProjectReference Include="..\..\src\Shenora.Windows\Shenora.Windows.csproj" />
+    <!-- The Chromium shell's memory layer is tested by calling the native function pointers the way CEF
+         does, which needs unsafe code (AllowUnsafeBlocks above). No CEF binary is loaded. -->
+    <ProjectReference Include="..\..\src\Shenora.Chromium\Shenora.Chromium.csproj" />
     <!-- The desktop SAMPLE, so the cookie-login driver keeps its tests after moving out of the
          library (P7). It is a recipe now, not public surface — but its invariants are sibling
          post-mortems (a STALE auth cookie must not capture; closing a signed-out window must not

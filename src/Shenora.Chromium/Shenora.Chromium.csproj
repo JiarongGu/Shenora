@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Chromium shell (D81, D82): one shell of the kit's own for Windows, macOS and Linux, on CEF's
+    Views framework. Not packable until the shell is; today it holds the binding.
+
+    Interop/Generated/ is written by `node devtools/dev.mjs cef-binding` from the pin in cef.json and
+    is never edited by hand. Common/ is what every OS shares. The rest differs by OS (window and event
+    handles, main args, platform thread ids, wchar_t), and Common references those types by name, so a
+    build compiles Common plus exactly ONE OS folder. CefOs picks it from the runtime identifier and
+    defaults to Windows; `-p:CefOs=Linux` compile-checks another OS from this machine.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CefOs Condition="'$(CefOs)' == '' and $(RuntimeIdentifier.StartsWith('osx'))">MacOS</CefOs>
+    <CefOs Condition="'$(CefOs)' == '' and $(RuntimeIdentifier.StartsWith('linux'))">Linux</CefOs>
+    <CefOs Condition="'$(CefOs)' == ''">Windows</CefOs>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Interop/Generated/Windows/**;Interop/Generated/MacOS/**;Interop/Generated/Linux/**" />
+    <Compile Include="Interop/Generated/$(CefOs)/**/*.cs" />
+    <None Include="cef.json;THIRD-PARTY-NOTICES.md" />
+  </ItemGroup>
+
+</Project>

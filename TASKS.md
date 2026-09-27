@@ -95,9 +95,19 @@ in place to point at them.
    **Proven on Windows, 2026-09-28:** ClangSharp's P/Invoke generator (21.1.8.4) over `include/capi` +
    `capi/views` at `CEF_API_VERSION=15400` produced a binding (297 files, 189 exports), and C# drove CEF 154
    through it alone: a frameless `CefWindow` around a `CefBrowserView`, the page loaded, a clean shutdown.
-   **What is left:** the generator as a tracked devtool (the `windows.h` types remapped to `nint`, one run
-   per OS), real reference counting, and the subprocess model (CEF ships `bootstrap.exe`, which loads the
-   client as a DLL).
+   **Now tracked:** `node devtools/dev.mjs cef-binding` writes `src/Shenora.Chromium/Interop/Generated/`
+   (285 files common to all three OSes and 12–13 per OS, since a build compiles Common plus one), and
+   `CefObject` is the memory layer CEF's reference counts drive.
+   **What is left:** struct-layout tests (ClangSharp can generate them, and every per-OS difference is
+   pointer-sized, so all three layouts can be checked on x64 Windows), and the subprocess model below.
+   - 🔴 **Windows' sandbox exists only through CEF's launcher since CEF 150** (`cef_sandbox.lib` is no longer
+     shipped): `bootstrap.exe`, renamed to `{app}.exe`, creates the sandbox and loads a NATIVE `{app}.dll`
+     exporting `RunWinMain`, and every subprocess re-enters it. So a .NET app needs a native shim in front
+     of it, or NativeAOT, or it runs unsandboxed, which is wrong for a browser on the open web.
+   - **The page bridge needs no renderer code:** the page `fetch`es a kit route that the browser process
+     answers through the resource handler (D45's pipeline), and the host pushes with
+     `frame->execute_java_script`. Both are in the generated binding. So .NET can stay in the browser
+     process alone.
 2. **Read the adopter's own probe evidence** when it lands: the debug port's reach across processes,
    CDP-opened tabs, session cookies, Playwright, the round trip, codecs, install size and licences. Do not
    repeat it.

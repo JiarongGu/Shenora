@@ -199,6 +199,16 @@ Shenora.slnx
 │   │                                    ⚠ A RESTRUCTURE UPDATES THE MAP FOR THE FOLDERS ITS OWN COMMITS
 │   │                                    TOUCHED, which is not the same set as the folders it MOVED —
 │   │                                    D65 moved every one and three went missing from this tree.
+│   ├── Shenora.Chromium    net10.0, one build per OS — no deps yet; NOT packable yet (D81, D82)
+│   │                                          The Chromium shell of the kit's own, on CEF's Views
+│   │                                          framework, for Windows, macOS and Linux. Today it holds
+│   │                                          the binding and its memory layer. Interop/Generated/ is
+│   │                                          written by `dev.mjs cef-binding` (ClangSharp over CEF's C
+│   │                                          API at ONE Stable API version, pinned in cef.json):
+│   │                                          Common/ plus one folder per OS, and a build compiles
+│   │                                          Common + ONE, chosen by CefOs from the runtime identifier.
+│   │                                          CefObject: CEF's reference counts own the lifetime of
+│   │                                          what the shell implements. No CEF binary ships from here.
 │   ├── Shenora.Launcher/    (C++17 + CMake, plus the packaging csproj)
 │   │                                          B4b: puts the per-RID launcher binaries the `launcher`
 │   │                                          release matrix builds (win-x64 + linux-x64) into one nupkg
