@@ -138,6 +138,7 @@ docs cite them — so the number is the column to scan.
 | **D80** | THE PLAYER'S SECOND SURFACE: ON A PHONE THE SHELL DRAWS THE PICTURE, AND THE PAGE KEEPS THE UI. |
 | **D81** | AN ENGINE IS A PACKAGE BOUNDARY, AND ITS BYTES ARRIVE THROUGH THE APP'S OWN RESTORE, NEVER INSIDE A KIT NUPKG. |
 | **D82** | THE DESKTOP REACHES MACOS AND LINUX THROUGH ONE CHROMIUM SHELL OF THE KIT'S OWN, ON CEF'S VIEWS FRAMEWORK, BUILT AHEAD OF A CONSUMER. |
+| **D83** | THE CHROMIUM ENGINE HAS TWO HOSTS, AND THE WINDOWS SHELL DEPENDS ON IT. |
 
 <!-- decisions-index:end -->
 
@@ -1149,6 +1150,21 @@ docs cite them — so the number is the column to scan.
     CefSharp, which is Windows-only and has no Views API. CefGlue as-is, which binds CEF 120 without
     Views. So the kit generates its own binding from CEF's C API.
   - **D37's naming by platform does not fit** a shell that spans three platforms, so it is named for the engine.
+
+- **D83 — THE CHROMIUM ENGINE HAS TWO HOSTS, AND THE WINDOWS SHELL DEPENDS ON IT.** `Shenora.Chromium` is
+  Chromium-FIRST: a shell on CEF's Views framework for all three desktops, designed around CEF's own ideas
+  rather than the WinForms shell's shape. `Shenora.Windows` offers Chromium as an ENGINE OPTION beside
+  WebView2, a WinForms control in `WebViewHost`'s shape, so an app changes engines without leaving
+  `OptimizedForm` or `SecondaryWindows`. Owner: *"a new package as chromium first also make shenora.windows
+  supports chromium"*.
+  - 🔴 **`Shenora.Windows` → `Shenora.Chromium`, and CEF's bytes arrive only on opt-in.** Every Windows app
+    carries the binding's assembly (230 KB, measured) and none carries the engine unless it chooses it. That
+    is D81's boundary: the BYTES, not the assembly.
+  - **Two threading models, one engine.** The Views shell runs CEF's loop on the main thread; the WinForms
+    host needs CEF's multi-threaded loop, because WinForms owns that thread.
+  - **The page finds the transport because the shell MARKS THE HTML it serves** (D36: the host advertises).
+    In development the shell proxies the dev server's document to mark it too.
+  - ⚠ On Windows both hosts start through CEF's `bootstrap.exe` and the kit's shim, or there is no sandbox.
 
 ## Anti-goals — deliberately NOT built
 

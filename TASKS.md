@@ -71,22 +71,25 @@ the developer is travelling currently means the app is gone until they are home.
 - **All three desktops, ahead of a consumer**: *"its not really about we have consumer rn or not, we need to
   prepare … the window one without chromium is mostly about small size of the final app"*. So WebView2 stays
   the small-app engine, and Chromium's value is REACH.
-- **The shape is ONE shell the kit owns, on CEF's Views framework** (`CefWindow` + `CefBrowserView`). It has
-  no WinForms and no Avalonia: *"we mostly not using any winform feature if we going self managed chrome"*.
-  The page draws everything and Chromium supplies the window, so the kit owns the CEF binding plus the
-  per-OS native services behind the contracts it already has.
+- **The shape is a shell the kit owns, on CEF's Views framework** (`CefWindow` + `CefBrowserView`), with
+  no Avalonia: *"we mostly not using any winform feature if we going self managed chrome"*. The page draws
+  everything and Chromium supplies the window, so the kit owns the CEF binding plus the per-OS native
+  services behind the contracts it already has.
+- **And `Shenora.Windows` gets Chromium as an engine option** (D83), a WinForms control beside
+  `WebViewHost`. `Shenora.Windows` depends on `Shenora.Chromium`, and CEF's bytes arrive only on opt-in.
 - **Rejected:** Avalonia + CefGlue (a UI toolkit whose drawing goes unused, with the same binding problem);
   MAUI (no supported way to host CEF on a Mac, since Mac Catalyst is not AppKit, and its Linux support IS
   Avalonia's backend); CefSharp (Windows-only, with no Views API); and CefGlue as-is (CEF 120, no Views).
 
-**The why is D81** (an engine is a package, and its bytes arrive through the app's restore) **and D82**
-(one shell of the kit's own, on CEF's Views, ahead of a consumer). D26, D15, D37 and D51 are corrected
-in place to point at them.
+**The why is D81** (an engine is a package, and its bytes arrive through the app's restore), **D82** (one
+shell of the kit's own, on CEF's Views, ahead of a consumer) **and D83** (two hosts, the Windows shell
+depending on the engine, and the page finding its transport because the shell marks the HTML). D26, D15,
+D37 and D51 are corrected in place to point at them.
 
 **The order, each step measured before the next is shaped:**
-1. **The kit's own binding (owner, 2026-09-28), Windows first.** It is generated from CEF's C API with
-   CEF's own header parser and rerun at every CEF release; only what the shell uses gets a hand-written
-   layer. CefGlue binds CEF **120** and no Views (its `cef_version.h`; no `views` header in its generator's
+1. **The kit's own binding (owner, 2026-09-28), Windows first.** It is generated from CEF's C API headers
+   by ClangSharp, once per OS, whenever the pin moves to a new API version; only what the shell uses gets a
+   hand-written layer. CefGlue binds CEF **120** and no Views (its `cef_version.h`; no `views` header in its generator's
    125). CEF's own builds are current on all three OSes (**154**, 2026-09-25, in
    `cef-builds.spotifycdn.com/index.json`). **CEF's API versioning is what makes this manageable**: a
    client built for one Stable API version runs on every past and future binary that supports it
@@ -143,6 +146,11 @@ in place to point at them.
    - **Under Views, the page's drag bar becomes a real caption only when the shell forwards
      `on_draggable_regions_changed` to `set_draggable_regions`**: HTCAPTION with the forwarding, HTCLIENT
      without it, through real routing (`WindowFromPoint`).
+3b. **Chromium inside `Shenora.Windows` (D83):** a WinForms control in `WebViewHost`'s shape on CEF's
+   multi-threaded message loop, since WinForms owns the main thread, with IPC dispatched on the WinForms
+   UI thread as `WebViewIpcBridge` does. It is the adopter's direct path, since it keeps `OptimizedForm` and
+   `SecondaryWindows`. The kit's caption-button hole already works over CEF's child windows (measured, CEF
+   152). The same shim starts it.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).
