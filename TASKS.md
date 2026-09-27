@@ -111,10 +111,14 @@ in place to point at them.
      way. ⚠ One child stays high when sandboxed and is unidentified.
      **Left:** the app's build laying out `{app}.exe` (CEF's bootstrap, from CEF's own build, per D81) +
      `{app}.dll` (the shim) + `{app}.App.dll`, and the managed host that reads those runtime properties.
-   - **The page bridge needs no renderer code:** the page `fetch`es a kit route that the browser process
-     answers through the resource handler (D45's pipeline), and the host pushes with
-     `frame->execute_java_script`. Both are in the generated binding. So .NET can stay in the browser
-     process alone.
+   - **The page bridge needs no renderer code, and the kit's IPC runs over it unchanged** (prototype,
+     2026-09-28, sandboxed through the shim). The page `fetch`es `POST /__shenora/ipc` on its own origin,
+     the browser process answers from the resource handler on CEF's IO thread, and the host pushes with
+     `frame->execute_java_script`. The REAL `@shenora/react` `ShenoraBridge` into the REAL
+     `MessageDispatcher` + `IpcHostBridge` + `NotificationPump`: the handshake, an echo whose handler ran on
+     CEF's UI thread, a notification, and `NO_HANDLER` for an unknown route. 100 `invoke`s: median 0.9 ms,
+     p95 1.7 ms. **Left:** the page choosing this transport without sniffing (D36; the dev server is not
+     served by the kit), and promoting the prototype into the shell.
 2. **Read the adopter's own probe evidence** when it lands: the debug port's reach across processes,
    CDP-opened tabs, session cookies, Playwright, the round trip, codecs, install size and licences. Do not
    repeat it.
