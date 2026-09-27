@@ -99,11 +99,18 @@ in place to point at them.
    (285 files common to all three OSes and 12–13 per OS, since a build compiles Common plus one), and
    `CefObject` is the memory layer CEF's reference counts drive.
    **What is left:** struct-layout tests (ClangSharp can generate them, and every per-OS difference is
-   pointer-sized, so all three layouts can be checked on x64 Windows), and the subprocess model below.
+   pointer-sized, so all three layouts can be checked on x64 Windows).
    - 🔴 **Windows' sandbox exists only through CEF's launcher since CEF 150** (`cef_sandbox.lib` is no longer
      shipped): `bootstrap.exe`, renamed to `{app}.exe`, creates the sandbox and loads a NATIVE `{app}.dll`
-     exporting `RunWinMain`, and every subprocess re-enters it. So a .NET app needs a native shim in front
-     of it, or NativeAOT, or it runs unsandboxed, which is wrong for a browser on the open web.
+     exporting `RunWinMain`, and every subprocess re-enters it. **The owner chose a native shim, sandboxed**:
+     `src/Shenora.Chromium/native/shim_win.cpp` (`dev.mjs cef-native`, 284 KB with the static CRT). A
+     subprocess runs CEF alone; the browser process starts `{app}.App.dll` through hostfxr, and the sandbox
+     and instance travel as runtime properties that no child inherits. **Measured through it (A/B, same
+     binaries):** sandboxed, the children ran 3× untrusted + 1× low + 1× high integrity; with `no_sandbox`,
+     all five ran at the parent's level; `coreclr.dll` loaded in the browser process and in no child either
+     way. ⚠ One child stays high when sandboxed and is unidentified.
+     **Left:** the app's build laying out `{app}.exe` (CEF's bootstrap, from CEF's own build, per D81) +
+     `{app}.dll` (the shim) + `{app}.App.dll`, and the managed host that reads those runtime properties.
    - **The page bridge needs no renderer code:** the page `fetch`es a kit route that the browser process
      answers through the resource handler (D45's pipeline), and the host pushes with
      `frame->execute_java_script`. Both are in the generated binding. So .NET can stay in the browser

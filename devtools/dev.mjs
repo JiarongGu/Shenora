@@ -1856,6 +1856,12 @@ switch (cmd) {
     run('node', [path.join(repo, 'devtools', 'scripts', 'cef-binding.mjs'), ...args]);
     break;
 
+  // cef-native — build the Chromium shell's native shim (src/Shenora.Chromium/native), the DLL CEF's
+  // bootstrap.exe loads under the app's name so Chromium's sandbox exists on Windows. Windows only today.
+  case 'cef-native':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'cef-native.mjs'), ...args]);
+    break;
+
   case 'install-hooks':
     // Point git at the tracked hooks dir so the sensitive-info pre-commit guard runs (a clone only
     // needs this once — core.hooksPath is local config, the hook script itself is versioned).
@@ -1867,7 +1873,7 @@ switch (cmd) {
     // ⚠ THIS STRING IS THE ONLY DISCOVERY SURFACE FOR A VERB, so a verb missing from it is a tool nobody
     // finds. `stale-scan` and `cite-scan` were both absent for their whole lives until 2026-08-10 — each
     // shipped with a `case` and a rule telling you to run it, and neither appeared here.
-    console.log('usage: node devtools/dev.mjs <build|test|checks|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|reserved-paths|cef-binding|install-hooks>');
+    console.log('usage: node devtools/dev.mjs <build|test|checks|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|reserved-paths|cef-binding|cef-native|install-hooks>');
     console.log('  release        : retired-audit <prev-tag>   (account for every public REMOVAL)');
     console.log('                   namespace-moves <prev-tag> (old FQN -> new FQN, for the migration notes)');
     console.log('  probes         : update-probe [dir] | android-jdk');
