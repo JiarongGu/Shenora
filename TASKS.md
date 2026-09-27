@@ -88,8 +88,16 @@ in place to point at them.
    CEF's own header parser and rerun at every CEF release; only what the shell uses gets a hand-written
    layer. CefGlue binds CEF **120** and no Views (its `cef_version.h`; no `views` header in its generator's
    125). CEF's own builds are current on all three OSes (**154**, 2026-09-25, in
-   `cef-builds.spotifycdn.com/index.json`). The proof is a `CefWindow` + `CefBrowserView` opened from C#
-   on those binaries.
+   `cef-builds.spotifycdn.com/index.json`). **CEF's API versioning is what makes this manageable**: a
+   client built for one Stable API version runs on every past and future binary that supports it
+   (`chromiumembedded.github.io/cef/api_versioning.html`; CEF 154 supports 13300–15400). So a security
+   update is a binary swap, not a regeneration.
+   **Proven on Windows, 2026-09-28:** ClangSharp's P/Invoke generator (21.1.8.4) over `include/capi` +
+   `capi/views` at `CEF_API_VERSION=15400` produced a binding (297 files, 189 exports), and C# drove CEF 154
+   through it alone: a frameless `CefWindow` around a `CefBrowserView`, the page loaded, a clean shutdown.
+   **What is left:** the generator as a tracked devtool (the `windows.h` types remapped to `nint`, one run
+   per OS), real reference counting, and the subprocess model (CEF ships `bootstrap.exe`, which loads the
+   client as a DLL).
 2. **Read the adopter's own probe evidence** when it lands: the debug port's reach across processes,
    CDP-opened tabs, session cookies, Playwright, the round trip, codecs, install size and licences. Do not
    repeat it.
@@ -108,6 +116,12 @@ in place to point at them.
      CEF's UI task runner, or the context-preserving pipeline has no UI thread to preserve.
    - The renderers are a subprocess exe of the shell's choosing. Never let it be the app's exe behind the
      single-instance gate.
+   - 🔴 **Every exe that hosts a CEF process needs Windows 10's `supportedOS` manifest.** Without it the
+     GPU process crashed three times per run, and with it never (A/B, two runs each, binaries differing
+     only in the manifest). Make it a GATE on the shipped exes.
+   - **Under Views, the page's drag bar becomes a real caption only when the shell forwards
+     `on_draggable_regions_changed` to `set_draggable_regions`**: HTCAPTION with the forwarding, HTCLIENT
+     without it, through real routing (`WindowFromPoint`).
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).
