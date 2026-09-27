@@ -15,7 +15,27 @@ interface ChromeWebView {
 interface WebViewWindow {
   chrome?: { webview?: ChromeWebView };
   HybridWebView?: HybridWebViewApi;
+  __shenora_chromium?: ChromiumHost;
 }
+
+/**
+ * The Chromium shell's marker. The shell writes it into every HTML document it serves, so its presence
+ * IS the host advertising itself (D36, D83), never a guess about the engine. The page posts to `ipc`, a
+ * same-origin route the shell answers; the shell pushes by calling `receive`, which the transport sets.
+ */
+export interface ChromiumHost {
+  ipc: string;
+  receive?: ChromiumReceive;
+}
+
+/** A named type, not inline: WireMirrorTests reads the interface's fields and would count a parameter. */
+type ChromiumReceive = (message: unknown) => void;
+
+/** The global the Chromium shell marks a document with. Mirrored by `ChromiumTransport.HostGlobal`. */
+export const CHROMIUM_HOST_GLOBAL = '__shenora_chromium' satisfies keyof WebViewWindow;
+
+/** What the Chromium shell calls to push a message. Mirrored by `ChromiumTransport.ReceiveMember`. */
+export const CHROMIUM_RECEIVE = 'receive' satisfies keyof ChromiumHost;
 
 /**
  * The MAUI host surface, injected by `_framework/hybridwebview.js` (.NET 10; a copy under
@@ -57,7 +77,7 @@ export interface ShenoraTransport {
  */
 export function isShenoraAvailable(): boolean {
   const host = webViewWindow();
-  return !!host?.chrome?.webview || !!host?.HybridWebView;
+  return !!host?.chrome?.webview || !!host?.HybridWebView || !!chromiumHost(host);
 }
 
 /** The WebView2 postMessage transport, or null outside a WebView2 host. */
@@ -105,12 +125,58 @@ export function createHybridWebViewTransport(): ShenoraTransport | null {
   };
 }
 
+/** The marker, when it is well-formed; anything else on that global is not ours. */
+function chromiumHost(host: WebViewWindow | undefined): ChromiumHost | undefined {
+  const marker = host?.[CHROMIUM_HOST_GLOBAL];
+  return marker && typeof marker === 'object' && typeof marker.ipc === 'string' ? marker : undefined;
+}
+
+/**
+ * Everyone listening on one marker. The host calls ONE function, so it fans out here: a second
+ * transport (a bridge replaced by `configureBridge`, say) must not silence the first, which is how two
+ * WebView2 listeners behave too.
+ */
+const chromiumListeners = new WeakMap<ChromiumHost, Set<(message: string) => void>>();
+
+/**
+ * The Chromium shell's transport, or null outside it. There is no code in the renderer: the page posts
+ * each envelope with `fetch` to the marker's same-origin `ipc` route, which the shell answers from its
+ * resource handler, and the shell pushes by calling the marker's `receive`.
+ */
+export function createChromiumTransport(): ShenoraTransport | null {
+  const marker = chromiumHost(webViewWindow());
+  if (!marker) return null;
+
+  let listeners = chromiumListeners.get(marker);
+  if (!listeners) {
+    const set = new Set<(message: string) => void>();
+    chromiumListeners.set(marker, set);
+    marker[CHROMIUM_RECEIVE] = (message) => {
+      // Narrow first: anything on the page can call this, and only strings are ours.
+      if (typeof message === 'string') for (const listener of [...set]) listener(message);
+    };
+    listeners = set;
+  }
+  const own = listeners;
+  return {
+    // A failed post is left to the bridge's request timeout, which names the call; an unhandled
+    // rejection here would name nothing.
+    post: (message) => {
+      void fetch(marker.ipc, { method: 'POST', body: message }).catch(() => undefined);
+    },
+    subscribe: (listener) => {
+      own.add(listener);
+      return () => { own.delete(listener); };
+    },
+  };
+}
+
 /**
  * The transport for whichever Shenora host this page is running in, or null in a plain browser.
  * This is what the bridge uses by default, so an app that simply calls `invoke`/`post` works on the
- * desktop shell and the MAUI shell without knowing which one it is. A page is only ever in one of
- * them; WebView2 wins if both objects are somehow present.
+ * desktop shell, the MAUI shell and the Chromium shell without knowing which one it is. A page is only
+ * ever in one of them; the order decides only if several objects are somehow present.
  */
 export function createHostTransport(): ShenoraTransport | null {
-  return createWebView2Transport() ?? createHybridWebViewTransport();
+  return createWebView2Transport() ?? createHybridWebViewTransport() ?? createChromiumTransport();
 }

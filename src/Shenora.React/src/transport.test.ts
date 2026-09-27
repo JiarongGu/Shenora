@@ -1,5 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  CHROMIUM_HOST_GLOBAL,
+  CHROMIUM_RECEIVE,
+  createChromiumTransport,
   createHostTransport,
   createHybridWebViewTransport,
   createWebView2Transport,
@@ -177,5 +180,78 @@ describe('host detection across both shells', () => {
 
     installHost();
     expect(isShenoraAvailable()).toBe(true);
+  });
+});
+
+/**
+ * The Chromium shell (D83) has no code in the renderer: the shell marks the document with a global
+ * naming its same-origin IPC route, the page posts with `fetch`, and the shell pushes by calling the
+ * marker's `receive`. The marker's two names are mirrored in C# by WireMirrorTests.
+ */
+function installChromiumHost(ipc: unknown = '/__shenora/ipc') {
+  const marker: Record<string, unknown> = { ipc };
+  (globalThis as { window?: unknown }).window = { [CHROMIUM_HOST_GLOBAL]: marker };
+  const fetched: Array<{ url: string; init: RequestInit }> = [];
+  vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
+    fetched.push({ url, init });
+    return Promise.resolve(new Response(null, { status: 204 }));
+  }));
+  const push = (message: unknown) => (marker[CHROMIUM_RECEIVE] as (m: unknown) => void)(message);
+  return { marker, fetched, push };
+}
+
+describe('createChromiumTransport', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is null with no marker, or a marker that is not the shell\'s', () => {
+    expect(createChromiumTransport()).toBeNull();
+    (globalThis as { window?: unknown }).window = { [CHROMIUM_HOST_GLOBAL]: 'not an object' };
+    expect(createChromiumTransport()).toBeNull();
+    installChromiumHost(42);
+    expect(createChromiumTransport()).toBeNull();
+  });
+
+  it('posts each envelope to the marker\'s route, verbatim, as a POST', () => {
+    const host = installChromiumHost('/route-the-shell-chose');
+    createChromiumTransport()!.post('{"id":"1"}');
+    expect(host.fetched).toEqual([{ url: '/route-the-shell-chose', init: { method: 'POST', body: '{"id":"1"}' } }]);
+  });
+
+  it('delivers what the shell pushes, and only strings', () => {
+    const host = installChromiumHost();
+    const received: string[] = [];
+    createChromiumTransport()!.subscribe((m) => received.push(m));
+    host.push('{"category":"ipc"}');
+    host.push({ not: 'a string' });
+    host.push(null);
+    expect(received).toEqual(['{"category":"ipc"}']);
+  });
+
+  it('keeps an earlier transport listening when a second one is created', () => {
+    // The shell calls ONE function, so a second transport replacing it would silence the first.
+    const host = installChromiumHost();
+    const first: string[] = [];
+    const second: string[] = [];
+    createChromiumTransport()!.subscribe((m) => first.push(m));
+    createChromiumTransport()!.subscribe((m) => second.push(m));
+    host.push('both');
+    expect(first).toEqual(['both']);
+    expect(second).toEqual(['both']);
+  });
+
+  it('stops delivering once unsubscribed', () => {
+    const host = installChromiumHost();
+    const received: string[] = [];
+    const off = createChromiumTransport()!.subscribe((m) => received.push(m));
+    off();
+    host.push('late');
+    expect(received).toEqual([]);
+  });
+
+  it('is what createHostTransport picks, and isShenoraAvailable sees, in the Chromium shell', () => {
+    const host = installChromiumHost();
+    expect(isShenoraAvailable()).toBe(true);
+    createHostTransport()!.post('chromium');
+    expect(host.fetched.map((f) => f.init.body)).toEqual(['chromium']);
   });
 });

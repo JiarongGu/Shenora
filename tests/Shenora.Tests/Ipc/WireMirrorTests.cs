@@ -161,6 +161,20 @@ public class WireMirrorTests
     }
 
     [Fact]
+    public void The_Chromium_marker_matches_on_both_sides()
+    {
+        // D83: the shell marks the document and the page's transport reads it. A one-sided rename leaves
+        // a page that finds no host (the global) or a host whose pushes land nowhere (receive).
+        var source = ClientSource("transport.ts");
+
+        Assert.Equal(Shenora.Chromium.ChromiumTransport.HostGlobal, ParseExportedString(source, "CHROMIUM_HOST_GLOBAL"));
+        Assert.Equal(Shenora.Chromium.ChromiumTransport.ReceiveMember, ParseExportedString(source, "CHROMIUM_RECEIVE"));
+        Assert.Equal(
+            new[] { Shenora.Chromium.ChromiumTransport.IpcMember, Shenora.Chromium.ChromiumTransport.ReceiveMember }.ToHashSet(StringComparer.Ordinal),
+            ParseInterfaceFieldNames(source, "ChromiumHost"));
+    }
+
+    [Fact]
     public void The_envelope_categories_match_on_both_sides()
     {
         // The category is what routes a host message to "resolve a pending call" vs "unbundle a

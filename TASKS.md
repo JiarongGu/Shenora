@@ -120,8 +120,13 @@ D37 and D51 are corrected in place to point at them.
      `frame->execute_java_script`. The REAL `@shenora/react` `ShenoraBridge` into the REAL
      `MessageDispatcher` + `IpcHostBridge` + `NotificationPump`: the handshake, an echo whose handler ran on
      CEF's UI thread, a notification, and `NO_HANDLER` for an unknown route. 100 `invoke`s: median 0.9 ms,
-     p95 1.7 ms. **Left:** the page choosing this transport without sniffing (D36; the dev server is not
-     served by the kit), and promoting the prototype into the shell.
+     p95 1.7 ms. **The client half is built:** `createChromiumTransport()` in `createHostTransport()`'s
+     chain, with `ChromiumTransport` (`MarkHtml`, `PushScript`) on the host side and the marker's names
+     mirrored by `WireMirrorTests` (sabotage-verified both ways, which the TS `satisfies keyof` also catches
+     at compile time). **Left:** the shell calling `MarkHtml` on every document it serves, including a
+     proxied dev-server page; accepting IPC only from the APP's browser AND the app's origin (a page in
+     another browser sharing the handler could otherwise make a cross-origin, no-cors POST to the route);
+     and promoting the prototype into the shell.
 2. **Read the adopter's own probe evidence** when it lands: the debug port's reach across processes,
    CDP-opened tabs, session cookies, Playwright, the round trip, codecs, install size and licences. Do not
    repeat it.

@@ -121,6 +121,7 @@ const EXPECTED_EXPORTS = [
   'bindSegmentStream',
   'codecsFromInitSegment',
   'configureBridge',
+  'createChromiumTransport',
   'createHostTransport',
   'createHybridWebViewTransport',
   'createRequestsStore',

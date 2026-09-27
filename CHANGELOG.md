@@ -32,6 +32,13 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`createChromiumTransport()` in `@shenora/react`, and `createHostTransport()` finds the Chromium shell**
+  (**D83**). That shell marks each HTML document it serves with `window.__shenora_chromium`, naming a
+  same-origin route. The page posts each envelope there with `fetch`, and the shell pushes by calling the
+  marker's `receive`, so no kit code runs in a renderer. `isShenoraAvailable()` answers true there too. The
+  shell itself (`Shenora.Chromium`) is not a package yet; this is its client half, and a page on the default
+  bridge will need no change to move onto it.
+
 - **The player's SECOND SURFACE — on a phone the shell draws the picture and the page keeps the UI**
   (**D80**). `IMediaSurface` (`Show(MediaSurfaceRegion)` / `Hide()`) takes the rectangle the page measured;
   the shell's own player fills it from underneath, through a transparent region the page leaves. The

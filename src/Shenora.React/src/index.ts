@@ -23,6 +23,7 @@ export {
   createHostTransport,
   createWebView2Transport,
   createHybridWebViewTransport,
+  createChromiumTransport,
   type ShenoraTransport,
 } from './transport.js';
 export {

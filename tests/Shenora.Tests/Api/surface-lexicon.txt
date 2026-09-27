@@ -48,6 +48,9 @@ Browser
 # `ClientCertificateRequested`, unavoidable on a mutual-TLS intranet, and there is no more generic word
 # for a certificate than "certificate".
 Certificate
+# `ChromiumTransport` (D83) — the engine's own name, as `WebView2` is WebView2's: the Chromium shell hosts
+# Chromium, and there is no more generic word for the engine a package is named after (D82).
+Chromium
 Clipboard
 Cookie
 Dpi
@@ -134,6 +137,9 @@ Panel
 # that could not grow to say FULL SCREEN.
 Placement
 Splash
+# `ChromiumTransport` (D83) — the kit's own word for the channel the IPC envelope rides (D16), already the
+# client's (`ShenoraTransport`, `createHostTransport`), so the host half of one takes the same name.
+Transport
 Tray
 Viewport
 Maximizable
