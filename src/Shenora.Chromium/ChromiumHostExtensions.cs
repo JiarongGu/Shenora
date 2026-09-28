@@ -31,6 +31,7 @@ public static class ChromiumHostExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
+        options.Window.Validate(nameof(options));
 
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton(sp => new CefUiDispatcher(

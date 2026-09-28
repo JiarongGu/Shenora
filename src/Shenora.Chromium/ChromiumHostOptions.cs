@@ -65,4 +65,23 @@ public sealed class ChromiumWindowOptions
 
     /// <summary>The page to open, relative to the app's origin. Null means its root.</summary>
     public string? Path { get; init; }
+
+    /// <summary>
+    /// The window paints the caption buttons itself, as the system does, over the rectangles the page reserves
+    /// with <c>SET_CAPTION_BUTTONS</c>: the platform's glyphs and colours, repainted as the pointer moves. The page
+    /// draws nothing there; an idle button is transparent, so the page's title bar shows through. Windows only.
+    /// <para>
+    /// Light or dark follows the page's <c>SET_THEME</c>. Until the page sends one it is the system's app theme, read
+    /// as the window opens and not followed afterwards, so a page whose theme can differ from the system's sends it.
+    /// </para>
+    /// <para>Requires <see cref="Frameless"/>: a framed window has the system's own buttons.</para>
+    /// </summary>
+    public bool NativeCaptionButtons { get; init; }
+
+    /// <summary>Refuse a combination that cannot work, where the caller can see why.</summary>
+    internal void Validate(string parameter)
+    {
+        if (NativeCaptionButtons && !Frameless)
+            throw new ArgumentException($"{nameof(NativeCaptionButtons)} requires {nameof(Frameless)}: a framed window has the system's own caption buttons.", parameter);
+    }
 }

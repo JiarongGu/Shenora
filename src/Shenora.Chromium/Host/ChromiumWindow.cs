@@ -22,6 +22,8 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     private _cef_browser_view_t* _browserView;
     private _cef_window_t* _window;
     private CaptionHitTest? _captionHitTest;
+    private NativeCaptionButtons? _nativeCaptions;
+    private CaptionButtonPalette? _theme;   // the page's, once it has said; else the system's
 
     public ChromiumWindow(string name, ChromiumWindowOptions options, ChromiumServing serving, ChromiumOrigins origins,
         Func<ChromiumBrowser, ChromiumIpcBridge> bridge, Action<ChromiumWindow> destroyed, ILogger? log, IUrlLauncher? urls = null)
@@ -77,22 +79,42 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         false;
 #endif
 
+    /// <summary>The window paints the caption buttons itself (<see cref="ChromiumWindowOptions.NativeCaptionButtons"/>).</summary>
+    public bool PaintsCaptionButtons => _options.NativeCaptionButtons && SupportsCaptionButtons;
+
+    /// <summary>The page's theme, once it has sent one.</summary>
+    internal CaptionButtonPalette? Theme => _theme;
+
+    /// <summary><c>SET_THEME</c>: the page's theme, which the painted caption buttons follow. UI thread.</summary>
+    public void SetTheme(bool dark)
+    {
+        _theme = CaptionButtonPalette.ForTheme(dark);
+        _nativeCaptions?.SetPalette(_theme);
+    }
+
     /// <summary><c>SET_CAPTION_BUTTONS</c>: the page's button rectangles in CSS px. UI thread.</summary>
     public void SetCaptionButtons(System.Text.Json.JsonElement? payload)
     {
         if (_window == null) return;
-        _captions.Set(CaptionButtons.Parse(payload, _captionHitTest?.Scale ?? 1.0));
+        var scale = _captionHitTest?.Scale ?? 1.0;
+        var regions = CaptionButtons.Parse(payload, scale);
+        _captions.Set(regions);
+        _nativeCaptions?.Place(regions, scale);
         _captionHitTest?.Refresh();
     }
 
-    private void CaptionStateChanged(CaptionButtonState state) => Browser.Bridge.Notify(new Shenora.Core.Ipc.IpcNotification
+    private void CaptionStateChanged(CaptionButtonState state)
     {
-        Module = ChromiumWindowCommands.Module,
-        Type = ChromiumWindowCommands.CaptionButtonStateEvent,
-        Payload = state,
-        // Each state is the whole state, so an undelivered one is superseded by the next.
-        CoalesceKey = ChromiumWindowCommands.CaptionButtonStateEvent,
-    });
+        _nativeCaptions?.Show(state);
+        Browser.Bridge.Notify(new Shenora.Core.Ipc.IpcNotification
+        {
+            Module = ChromiumWindowCommands.Module,
+            Type = ChromiumWindowCommands.CaptionButtonStateEvent,
+            Payload = state,
+            // Each state is the whole state, so an undelivered one is superseded by the next.
+            CoalesceKey = ChromiumWindowCommands.CaptionButtonStateEvent,
+        }, immediate: true);
+    }
 
     private void InvokeCaptionButton(CaptionButtonKind kind)
     {
@@ -119,7 +141,11 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
 
     // The old page's caption buttons are gone with it, or their rectangles would keep stealing clicks from a page
     // that never drew them.
-    void IChromiumBrowserHost.DocumentStarted() => _captions.Set([]);
+    void IChromiumBrowserHost.DocumentStarted()
+    {
+        _captions.Set([]);
+        _nativeCaptions?.Place([], 1.0);
+    }
 
     // The window's own callbacks carry its lifetime (WindowCreated, WindowDestroyed), and CEF's own close request
     // reaches it through can_close.
@@ -143,6 +169,9 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         // Before the page can ask for anything: the drag area needs the frame's hit-test from the start.
         _captionHitTest = CaptionHitTest.Attach(window->get_window_handle(window), _captions, _log);
 #endif
+        // Without the hit-test, painted buttons would look real and do nothing.
+        if (PaintsCaptionButtons && _captionHitTest is not null)
+            _nativeCaptions = new NativeCaptionButtons(window, _theme ?? CaptionButtonPalette.SystemTheme());
         AppCallback.Log(_log, () => $"[Shenora.Chromium] Window '{Name}' shown");
     }
 
@@ -150,6 +179,8 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     {
         _captionHitTest?.Dispose();
         _captionHitTest = null;
+        _nativeCaptions?.Dispose();
+        _nativeCaptions = null;
         Browser.Bridge.Dispose();
         if (_window != null) { using var w = new CefRef<_cef_window_t>(_window); _window = null; }
         if (_browserView != null) { using var v = new CefRef<_cef_browser_view_t>(_browserView); _browserView = null; }
@@ -186,6 +217,23 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             Struct->can_maximize = &Yes;
             Struct->can_minimize = &Yes;
             Struct->@base.@base.get_preferred_size = &PreferredSize;
+            Struct->on_window_activation_changed = &ActivationChanged;
+            Struct->on_window_bounds_changed = &BoundsChanged;
+        }
+
+        [UnmanagedCallersOnly]
+        private static void ActivationChanged(_cef_window_delegate_t* self, _cef_window_t* window, int active)
+        {
+            using var w = new CefRef<_cef_window_t>(window);
+            AppCallback.Run(() => From<WindowDelegate>(self)._owner._nativeCaptions?.Activated(active == 1));
+        }
+
+        // A maximize or a restore resizes the window: maximize's glyph follows.
+        [UnmanagedCallersOnly]
+        private static void BoundsChanged(_cef_window_delegate_t* self, _cef_window_t* window, _cef_rect_t* bounds)
+        {
+            using var w = new CefRef<_cef_window_t>(window);
+            AppCallback.Run(() => From<WindowDelegate>(self)._owner._nativeCaptions?.WindowSized());
         }
 
         [UnmanagedCallersOnly]

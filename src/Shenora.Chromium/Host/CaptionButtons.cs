@@ -27,6 +27,11 @@ internal sealed record CaptionButtonState(CaptionButtonKind? Hot, CaptionButtonK
 /// Layouts on maximize, and it costs the page every mouse event in those rectangles (Windows calls them
 /// non-client), so hover, press and release are handled here, as <c>OptimizedForm</c> does for the WinForms
 /// shell. Pure: the Win32 subclass (<see cref="CaptionHitTest"/>) feeds it, so it is tested without a window.
+/// <para>
+/// A press behaves as a native caption button's, which captures the mouse until the release: while it is held,
+/// only its button shows, pressed while the pointer is on it and plain while it is off, and the release ends it
+/// wherever it happens. Without that, a release on the drag bar left the button pressed (measured, real input).
+/// </para>
 /// </summary>
 /// <param name="changed">The state changed. Called on the thread that fed the change.</param>
 /// <param name="invoke">A button was clicked: pressed and released on the same button.</param>
@@ -35,15 +40,19 @@ internal sealed class CaptionButtons(Action<CaptionButtonState> changed, Action<
     private CaptionButtonRect[] _regions = [];
     private CaptionButtonKind? _hot;
     private CaptionButtonKind? _pressed;
+    private CaptionButtonKind? _held;   // the button a press started on, until its release
 
     public bool IsEmpty => _regions.Length == 0;
 
-    /// <summary>Replace the regions. Clearing them clears the state too, or the page is left rendering a hover
-    /// that can never end.</summary>
+    /// <summary>A press is held: the pointer's moves and the release belong to it.</summary>
+    public bool IsPressed => _held is not null;
+
+    /// <summary>Replace the regions. Clearing them clears the state too, a held press included, or the page is left
+    /// rendering a hover that can never end.</summary>
     public void Set(IReadOnlyList<CaptionButtonRect> regions)
     {
         _regions = [.. regions];
-        if (_regions.Length == 0) Update(null, null);
+        if (_regions.Length == 0) Cancel();
     }
 
     /// <summary>The button at a point in client pixels, or null.</summary>
@@ -54,20 +63,41 @@ internal sealed class CaptionButtons(Action<CaptionButtonState> changed, Action<
         return null;
     }
 
-    /// <summary>The pointer moved over the non-client area, onto <paramref name="kind"/> or off every button.</summary>
-    public void Hover(CaptionButtonKind? kind) => Update(kind, _pressed);
-
-    /// <summary>The pointer left the non-client area entirely, including into the page.</summary>
-    public void Leave() => Update(null, null);
-
-    public void Press(CaptionButtonKind kind) => Update(kind, kind);
-
-    /// <summary>Acts only if the press STARTED on this button, matching every other button on the system.</summary>
-    public void Release(CaptionButtonKind kind)
+    /// <summary>The pointer moved onto <paramref name="kind"/>, or off every button.</summary>
+    public void Hover(CaptionButtonKind? kind)
     {
-        var wasPressed = _pressed;
+        if (_held is { } held) Update(kind == held ? held : null, kind == held ? held : null);
+        else Update(kind, null);
+    }
+
+    /// <summary>The pointer left the non-client area entirely, including into the page. A held press ignores it:
+    /// its moves arrive through the capture.</summary>
+    public void Leave()
+    {
+        if (_held is null) Update(null, null);
+    }
+
+    public void Press(CaptionButtonKind kind)
+    {
+        _held = kind;
+        Update(kind, kind);
+    }
+
+    /// <summary>The press ended with the pointer on <paramref name="kind"/>, or off every button. Acts only if the
+    /// press STARTED on that button, matching every other button on the system.</summary>
+    public void Release(CaptionButtonKind? kind)
+    {
+        var held = _held;
+        _held = null;
         Update(kind, null);
-        if (wasPressed == kind) invoke(kind);
+        if (kind is { } released && held == released) invoke(released);
+    }
+
+    /// <summary>The press was taken away (its capture lost): nothing shows, and nothing is clicked.</summary>
+    public void Cancel()
+    {
+        _held = null;
+        Update(null, null);
     }
 
     private void Update(CaptionButtonKind? hot, CaptionButtonKind? pressed)

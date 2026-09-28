@@ -145,7 +145,10 @@ D37 and D51 are corrected in place to point at them.
    shell by its marker, and a handshake, an echo, `IS_MAXIMIZED` and 100 `invoke`s (median 1.0 ms, p95
    3.6 ms) worked, with a clean exit when the window closed.
    **Page-drawn caption buttons are real ones** (`SET_CAPTION_BUTTONS`, and `useCaptionButtonState` for hover
-   and press), Snap Layouts included, seen with a real cursor. The frameless window resizes from its edges.
+   and press), Snap Layouts included, and a press behaves as the system's (27 real-cursor checkpoints). Or
+   the window paints them (`NativeCaptionButtons`): the system's glyphs, its measured fills, fades and
+   `SET_THEME`; their 85/150 ms fades are the system's measured timings, not re-measured on ours. Whether
+   either mode shows the system's caption tooltips is unmeasured. The frameless window resizes from its edges.
    ⚠ Maximized, its client overhangs the monitor's work area by 1 px on every side.
    **`useDropZone` gets real paths with no overlay** (the page is Alloy style, D84): the page's own drop names
    the zone, and the host answers with the paths CEF reported as the drag entered. A file dropped anywhere
@@ -178,7 +181,10 @@ D37 and D51 are corrected in place to point at them.
      single-instance gate.
    - 🔴 **Every exe that hosts a CEF process needs Windows 10's `supportedOS` manifest.** Without it the
      GPU process crashed three times per run, and with it never (A/B, two runs each, binaries differing
-     only in the manifest). Make it a GATE on the shipped exes.
+     only in the manifest). The exe the kit's layout ships carries it: CEF 154's `bootstrap.exe` and
+     `bootstrapc.exe`, which become `<App>.exe`. So does `dotnet.exe`, should an app start without the
+     launcher (that path is unmeasured, below). A plain .NET apphost does not; the targets turn it off
+     anyway, since CEF's launcher is the app's exe.
    - **Under Views, the page's drag bar becomes a real caption only when the shell forwards
      `on_draggable_regions_changed` to `set_draggable_regions`**: HTCAPTION with the forwarding, HTCLIENT
      without it, through real routing (`WindowFromPoint`).
@@ -194,6 +200,11 @@ D37 and D51 are corrected in place to point at them.
    - Nothing acts on the page's `-webkit-app-region: drag` areas in an embedded browser (`START_DRAG`
      works). Under Views, CEF reports them through `on_draggable_regions_changed`; whether it does for a
      child browser is unmeasured.
+   - ⚠ **`OptimizedForm`'s caption buttons have the press defect the Chromium shell had**, read from the
+     source and not measured: it swallows the non-client press without taking the capture. On the
+     Chromium shell that left a button pressed after a release on the drag bar, and another button lit
+     while one was held. The cases to measure are the ones that found it: release on the drag bar, drag
+     onto another button, and a click that moves the window from under the pointer.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).

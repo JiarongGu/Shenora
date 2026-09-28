@@ -148,6 +148,28 @@ public class ChromiumIpcBridgeTests
         Assert.Equal(0, onBus);
     }
 
+    // What follows the pointer cannot wait for the tick: up to 50 ms behind the cursor is visible (measured).
+    [Fact]
+    public async Task An_immediate_notification_is_pushed_without_waiting_for_the_tick()
+    {
+        var (bridge, host, _) = Make();
+        var state = new IpcNotification { Module = "SHENORA.WINDOW", Type = "CAPTION_BUTTON_STATE", Payload = new { hot = "close" } };
+
+        bridge.Notify(state, immediate: true);
+        host.RunUi();
+        Assert.Empty(host.Pushed);   // before the handshake it waits, like any other
+
+        bridge.Incoming(Request(IpcHostBridge.HandshakeModule, IpcHostBridge.HandshakeType));
+        await SettleAsync(host);
+        host.Pushed.Clear();
+        bridge.Notify(state, immediate: true);
+        host.RunUi();
+
+        Assert.Contains("CAPTION_BUTTON_STATE", Assert.Single(host.Pushed));
+        host.Tick();
+        Assert.Single(host.Pushed);   // and the tick has nothing left of it to send
+    }
+
     [Fact]
     public async Task A_new_document_closes_the_gate_so_nothing_drains_into_a_page_that_left()
     {

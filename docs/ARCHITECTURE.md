@@ -206,8 +206,9 @@ Shenora.slnx
 │   │                                          Alloy-style browser (D84). `UseChromium` runs the app on
 │   │                                          CEF's loop (Host/: the runner; each page's browser,
 │   │                                          with its IPC bridge, drops, dialogs and recovery, and
-│   │                                          the Views window hosting it, with its commands and the
-│   │                                          frame's hit-test; the UI dispatcher;
+│   │                                          the Views window hosting it, with its commands, the
+│   │                                          frame's hit-test and the caption buttons it can
+│   │                                          paint as overlays; the UI dispatcher;
 │   │                                          CefStartup, shared with the engine below).
 │   │                                          ChromiumEngine + ChromiumChildBrowser are
 │   │                                          the embedding for a host that owns its UI

@@ -62,17 +62,90 @@ public class CaptionButtonsTests
         Assert.Empty(clicks);
     }
 
+    // A native caption button captures the mouse for its press, so only it can show, and only under the pointer.
     [Fact]
-    public void Leaving_the_non_client_area_clears_hover_and_press_so_the_next_release_clicks_nothing()
+    public void While_a_press_is_held_only_its_button_shows_and_only_while_the_pointer_is_on_it()
+    {
+        var (buttons, states, _) = Create();
+
+        buttons.Press(CaptionButtonKind.Minimize);
+        buttons.Hover(CaptionButtonKind.Close);   // another button does not light
+        buttons.Hover(null);
+        buttons.Hover(CaptionButtonKind.Minimize);   // back on: pressed again
+
+        Assert.Equal(
+            [new CaptionButtonState(CaptionButtonKind.Minimize, CaptionButtonKind.Minimize), new CaptionButtonState(null, null),
+             new CaptionButtonState(CaptionButtonKind.Minimize, CaptionButtonKind.Minimize)],
+            states);
+    }
+
+    [Fact]
+    public void A_release_off_every_button_ends_the_press_and_clicks_nothing()
+    {
+        var (buttons, states, clicks) = Create();
+
+        buttons.Press(CaptionButtonKind.Maximize);
+        buttons.Release(null);   // on the drag bar
+        buttons.Hover(CaptionButtonKind.Close);
+
+        Assert.Empty(clicks);
+        Assert.False(buttons.IsPressed);
+        Assert.Equal(new CaptionButtonState(CaptionButtonKind.Close, null), states[^1]);
+    }
+
+    [Fact]
+    public void A_press_dragged_off_and_back_clicks_on_its_release()
+    {
+        var (buttons, _, clicks) = Create();
+
+        buttons.Press(CaptionButtonKind.Maximize);
+        buttons.Hover(null);
+        buttons.Hover(CaptionButtonKind.Maximize);
+        buttons.Release(CaptionButtonKind.Maximize);
+
+        Assert.Equal([CaptionButtonKind.Maximize], clicks);
+    }
+
+    [Fact]
+    public void Leaving_the_non_client_area_clears_a_hover_but_not_a_held_press()
+    {
+        var (buttons, states, clicks) = Create();
+
+        buttons.Hover(CaptionButtonKind.Close);
+        buttons.Leave();
+        Assert.Equal(new CaptionButtonState(null, null), states[^1]);
+
+        // The capture decides where a held press is; a leave during it is noise.
+        buttons.Press(CaptionButtonKind.Close);
+        buttons.Leave();
+        buttons.Release(CaptionButtonKind.Close);
+        Assert.Equal([CaptionButtonKind.Close], clicks);
+    }
+
+    [Fact]
+    public void A_lost_capture_cancels_the_press_so_its_release_clicks_nothing()
     {
         var (buttons, states, clicks) = Create();
 
         buttons.Press(CaptionButtonKind.Close);
-        buttons.Leave();
+        buttons.Cancel();
         buttons.Release(CaptionButtonKind.Close);
 
         Assert.Empty(clicks);
         Assert.Equal(new CaptionButtonState(null, null), states[1]);
+    }
+
+    [Fact]
+    public void Clearing_the_regions_during_a_press_cancels_it()
+    {
+        var (buttons, _, clicks) = Create();
+
+        buttons.Press(CaptionButtonKind.Close);
+        buttons.Set([]);
+        buttons.Release(CaptionButtonKind.Close);
+
+        Assert.False(buttons.IsPressed);
+        Assert.Empty(clicks);
     }
 
     [Fact]

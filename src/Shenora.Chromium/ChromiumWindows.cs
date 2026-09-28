@@ -55,6 +55,7 @@ public sealed unsafe class ChromiumWindows
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(options);
+        options.Validate(nameof(options));   // here, since the window itself is made on CEF's thread
         return _ui.Post(() => OpenOnUi(name, options));
     }
 

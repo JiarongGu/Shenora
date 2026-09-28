@@ -109,6 +109,10 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
    * ⚠ The Chromium shell forgets the rects when a new document loads, so send them from the page on
    * every load as well as on every layout change.
    *
+   * On either shell the window can paint the buttons itself instead (`NativeCaptionButtons` on
+   * `OptimizedFormOptions` or `ChromiumWindowOptions`): then the page reserves the rects and draws nothing
+   * there. The Chromium shell's painted buttons follow {@link WindowCommands.setTheme}.
+   *
    * ⚠ Re-send on every layout change: the rectangles are a snapshot, and a stale one moves the
    * hit-test off the button the user can see. Pass an empty array to hand the pixels back to the page.
    */
@@ -120,9 +124,9 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
 /**
  * Which caption button to render hot or pressed, for buttons registered with
  * {@link WindowCommands.setCaptionButtons}, where CSS `:hover` no longer fires. The Chromium shell sends it to
- * the window's own page. The WebView2 shell sends nothing by itself: by default it paints the caption buttons
- * itself (`NativeCaptionButtons`), and an app drawing its own there can emit this event from
- * `OptimizedForm.CaptionButtonStateChanged`.
+ * the window's own page as the pointer moves. The WebView2 shell sends nothing by itself: with
+ * `NativeCaptionButtons` it paints the caption buttons itself, and an app drawing its own there can emit this
+ * event from `OptimizedForm.CaptionButtonStateChanged`.
  */
 export function useCaptionButtonState(options: { bus?: ShenoraEventBus } = {}): CaptionButtonState {
   const [state, setState] = useState<CaptionButtonState>({});

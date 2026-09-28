@@ -52,6 +52,7 @@ sealed class Shenora.Chromium.ChromiumWindowOptions
   public .ctor()
   public System.Drawing.Color? BackgroundColor { get; init; }
   public bool Frameless { get; init; }
+  public bool NativeCaptionButtons { get; init; }
   public int Height { get; init; }
   public int Width { get; init; }
   public string? Path { get; init; }

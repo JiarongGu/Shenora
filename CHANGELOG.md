@@ -35,7 +35,10 @@ at the first list and missed five more breaking changes.
 - **`Shenora.Chromium`, a new package: Chromium through CEF, for an app that ships its own browser engine
   instead of WebView2** (**D81–D84**). Two hosts:
   - **its own shell, `UseChromium(ChromiumHostOptions)`**, on CEF's windows (`ChromiumWindows` opens them by
-    name): frameless chrome whose page-drawn caption buttons are real ones, so Snap Layouts works; file
+    name): frameless chrome whose page-drawn caption buttons are real ones, so Snap Layouts works, and behave
+    as the system's (a press holds the pointer until its release, wherever that is), or which the window
+    paints itself in the system's own glyphs and colours, fading on hover at the system's timings (`ChromiumWindowOptions.NativeCaptionButtons`,
+    following the page's `SET_THEME`); file
     drops with real paths; CEF's native file dialogs; the clipboard; secondary windows; crash reload; and
     dev-server hot reload;
   - **`ChromiumView`, a control in `Shenora.Windows`**, with `UseChromiumEngine()` running CEF beside the
@@ -65,9 +68,9 @@ at the first list and missed five more breaking changes.
   page registers its caption buttons with `setCaptionButtons`, the host takes the hit-test there, so CSS
   `:hover` no longer fires over them. The hook tells the page which button is hot or pressed, from the host's
   `SHENORA.WINDOW` / `CAPTION_BUTTON_STATE` event. The Chromium shell sends that event to the window's own
-  page. The WebView2 shell does not send it: it paints its own caption buttons by default
-  (`NativeCaptionButtons`), and an app drawing them itself there can emit the event from
-  `OptimizedForm.CaptionButtonStateChanged`.
+  page as the pointer moves, not on the notification tick. The WebView2 shell does not send it: with
+  `OptimizedFormOptions.NativeCaptionButtons` it paints the buttons itself, and an app drawing them there can
+  emit the event from `OptimizedForm.CaptionButtonStateChanged`.
 
 - **The player's SECOND SURFACE — on a phone the shell draws the picture and the page keeps the UI**
   (**D80**). `IMediaSurface` (`Show(MediaSurfaceRegion)` / `Hide()`) takes the rectangle the page measured;

@@ -106,9 +106,14 @@ internal sealed class ChromiumIpcBridge : IDisposable
 
     /// <summary>Queue a notification for THIS window's page only. The bus cannot address one: its events reach
     /// every window.</summary>
-    public void Notify(IpcNotification notification)
+    /// <param name="notification">The notification.</param>
+    /// <param name="immediate">Flush now rather than on the next tick, for what follows the pointer: a tick behind the
+    /// cursor shows (4–60 ms measured on the caption buttons). The page must still be ready.</param>
+    public void Notify(IpcNotification notification, bool immediate = false)
     {
-        if (!_disposed) _pump.Enqueue(notification);
+        if (_disposed) return;
+        _pump.Enqueue(notification);
+        if (immediate) OnOwnThread(Flush);
     }
 
     /// <summary>The main frame started loading a new document: whoever handshook can no longer receive. Any thread.</summary>
@@ -133,6 +138,15 @@ internal sealed class ChromiumIpcBridge : IDisposable
     private void Tick()
     {
         if (_disposed) return;
+        Flush();
+        if (!_schedule(_options.NotificationInterval, Tick))
+            AppCallback.Log(_options.Log, () => "[Shenora.Chromium] The flush tick stopped: CEF's UI thread is gone", LogLevel.Debug);
+    }
+
+    // Everything queued, in order: an immediate flush takes whatever the tick would have sent before it.
+    private void Flush()
+    {
+        if (_disposed) return;
         try
         {
             if (_pump.TryDrainBatch(out var batch) && batch is not null) Push(batch);
@@ -141,8 +155,6 @@ internal sealed class ChromiumIpcBridge : IDisposable
         {
             AppCallback.Log(_options.Log, () => "[Shenora.Chromium] Notification flush failed", LogLevel.Warning, ex);
         }
-        if (!_schedule(_options.NotificationInterval, Tick))
-            AppCallback.Log(_options.Log, () => "[Shenora.Chromium] The flush tick stopped: CEF's UI thread is gone", LogLevel.Debug);
     }
 
     private void Push(string json) =>
