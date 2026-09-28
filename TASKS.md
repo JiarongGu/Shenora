@@ -112,8 +112,13 @@ D37 and D51 are corrected in place to point at them.
      binaries):** sandboxed, the children ran 3× untrusted + 1× low + 1× high integrity; with `no_sandbox`,
      all five ran at the parent's level; `coreclr.dll` loaded in the browser process and in no child either
      way. ⚠ One child stays high when sandboxed and is unidentified.
-     **Left:** the app's build laying out `{app}.exe` (CEF's bootstrap, from CEF's own build, per D81) +
-     `{app}.dll` (the shim) + `{app}.App.dll`, and the managed host that reads those runtime properties.
+     **The app build does the layout** (`src/Shenora.Chromium/build/Shenora.Chromium.targets`). It fetches
+     the pinned build ONCE per machine, checks its SHA-1 against `cef.json` (all six platforms pinned), and
+     extracts it. After Build and Publish it places `<App>.exe` (CEF's bootstrap) and `<App>.dll` (the shim)
+     beside `<App>.App.dll`. The targets pack into `build/` ONLY, so a direct reference is the opt-in D83
+     requires. **Left:** the shim as a packed per-RID binary; the macOS and Linux layouts (the targets refuse
+     them by name); and, once step 3b makes `Shenora.Windows` depend on this package, proof that a WebView2
+     app does not receive the targets (derived from NuGet's default `PrivateAssets`, not yet exercised).
    - **The page bridge needs no renderer code, and the kit's IPC runs over it unchanged** (prototype,
      2026-09-28, sandboxed through the shim). The page `fetch`es `POST /__shenora/ipc` on its own origin,
      the browser process answers from the resource handler on CEF's IO thread, and the host pushes with

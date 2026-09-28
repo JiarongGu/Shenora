@@ -1,0 +1,153 @@
+<Project>
+
+  <!--
+    The Chromium shell's app build (D81, D82): the engine arrives through THIS build, from CEF's own published
+    builds, and never sits inside a kit package.
+
+      ShenoraChromiumFetchCef   the pinned CEF build for the RuntimeIdentifier, downloaded ONCE per machine into
+                                a shared cache, its SHA-1 checked against the pin (deleted, and the build failed,
+                                on a mismatch), and extracted.
+      ShenoraChromiumLayout     after Build (and Publish): CEF's runtime beside the app, CEF's bootstrap.exe as
+                                <App>.exe, and the kit's shim as <App>.dll. The launcher creates Chromium's
+                                sandbox and loads <App>.dll, which starts the app's own <App>.App.dll.
+
+    So the app's assembly is named <App>.App, and the build refuses otherwise rather than lay out an app that
+    cannot start. Set ShenoraChromiumLayout=false to build without the engine (a compile-only CI step).
+    Windows only today: the macOS and Linux layouts (app bundles, helper processes) are not built yet.
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)Shenora.Chromium.Cef.g.targets" />
+
+  <PropertyGroup>
+    <ShenoraChromiumLayout Condition="'$(ShenoraChromiumLayout)' == ''">true</ShenoraChromiumLayout>
+    <!-- CEF's bootstrap.exe IS the app's exe, so the .NET apphost would be a second, wrong one. -->
+    <UseAppHost Condition="'$(ShenoraChromiumLayout)' == 'true'">false</UseAppHost>
+
+    <ShenoraCefPlatform Condition="'$(RuntimeIdentifier)' == 'win-x64'">windows64</ShenoraCefPlatform>
+    <ShenoraCefPlatform Condition="'$(RuntimeIdentifier)' == 'win-arm64'">windowsarm64</ShenoraCefPlatform>
+    <ShenoraCefPlatform Condition="'$(RuntimeIdentifier)' == 'osx-x64'">macosx64</ShenoraCefPlatform>
+    <ShenoraCefPlatform Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">macosarm64</ShenoraCefPlatform>
+    <ShenoraCefPlatform Condition="'$(RuntimeIdentifier)' == 'linux-x64'">linux64</ShenoraCefPlatform>
+    <ShenoraCefPlatform Condition="'$(RuntimeIdentifier)' == 'linux-arm64'">linuxarm64</ShenoraCefPlatform>
+
+    <!-- Shared by every app on the machine: the Windows x64 build is 165 MB to download and 424 MB extracted.
+         Two builds can race on it (parallel projects, two solutions), so each one downloads and extracts into
+         names of its own and only an atomic rename publishes dist/. -->
+    <_ShenoraCefRun>$([System.Guid]::NewGuid().ToString('N'))</_ShenoraCefRun>
+    <!-- Windows' own bsdtar, never whichever tar PATH finds: from Git Bash that is GNU tar, which took 112 s to
+         the bsdtar's 28 s for the same fetch, measured side by side. -->
+    <_ShenoraTar Condition="'$(OS)' == 'Windows_NT' and Exists('$(SystemRoot)\System32\tar.exe')">&quot;$(SystemRoot)\System32\tar.exe&quot;</_ShenoraTar>
+    <_ShenoraTar Condition="'$(_ShenoraTar)' == ''">tar</_ShenoraTar>
+    <ShenoraCefCache Condition="'$(ShenoraCefCache)' == '' and '$(OS)' == 'Windows_NT'">$(LOCALAPPDATA)\Shenora\cef</ShenoraCefCache>
+    <ShenoraCefCache Condition="'$(ShenoraCefCache)' == ''">$(HOME)/.cache/shenora/cef</ShenoraCefCache>
+    <ShenoraCefRoot>$([System.IO.Path]::Combine('$(ShenoraCefCache)', '$(ShenoraCefBuild)', '$(ShenoraCefPlatform)'))</ShenoraCefRoot>
+    <ShenoraCefDist>$([System.IO.Path]::Combine('$(ShenoraCefRoot)', 'dist'))</ShenoraCefDist>
+
+    <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == ''">$(MSBuildThisFileDirectory)..\runtimes\$(RuntimeIdentifier)\native\shenora_chromium_shim.dll</ShenoraChromiumShim>
+  </PropertyGroup>
+
+  <!-- GetFileHash has no SHA-1, and SHA-1 is what CEF's index publishes. -->
+  <UsingTask TaskName="ShenoraCefSha1" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <File ParameterType="System.String" Required="true" />
+      <Hash ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        using (var stream = System.IO.File.OpenRead(File))
+        using (var sha1 = System.Security.Cryptography.SHA1.Create())
+            Hash = System.BitConverter.ToString(sha1.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!-- Publishes a finished extraction as dist/ by renaming it, which is atomic, so dist/ only ever exists
+       complete. A build that loses the race deletes its own copy and uses the winner's. -->
+  <UsingTask TaskName="ShenoraCefPublish" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Source ParameterType="System.String" Required="true" />
+      <Destination ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        try { if (!System.IO.Directory.Exists(Destination)) System.IO.Directory.Move(Source, Destination); }
+        catch (System.IO.IOException) when (System.IO.Directory.Exists(Destination)) { }
+        if (System.IO.Directory.Exists(Source)) System.IO.Directory.Delete(Source, true);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!-- Every refusal runs BEFORE the fetch, so a build that cannot be laid out never downloads 165 MB first. -->
+  <Target Name="_ShenoraChromiumCheck">
+    <Error Condition="'$(ShenoraCefPlatform)' == ''"
+           Text="Shenora.Chromium needs a RuntimeIdentifier CEF publishes a build for (win-x64, win-arm64, osx-x64, osx-arm64, linux-x64, linux-arm64); this build has '$(RuntimeIdentifier)'. Set &lt;RuntimeIdentifier&gt; in the app's project." />
+    <Error Condition="!$(ShenoraCefPlatform.StartsWith('windows'))" Text="The Chromium shell's app layout is Windows-only today (this build targets $(RuntimeIdentifier)); the macOS and Linux layouts are not built yet." />
+    <Error Condition="!$(AssemblyName.EndsWith('.App'))"
+           Text="A Shenora.Chromium app's own assembly must be named '&lt;App&gt;.App' (this one is '$(AssemblyName)'): CEF's launcher runs as &lt;App&gt;.exe and loads &lt;App&gt;.dll, the kit's shim, which starts &lt;App&gt;.App.dll. Set &lt;AssemblyName&gt;$(AssemblyName).App&lt;/AssemblyName&gt;." />
+    <Error Condition="!Exists('$(ShenoraChromiumShim)')" Text="The kit's shim is missing at $(ShenoraChromiumShim) (in this repo: node devtools/dev.mjs cef-native, then point ShenoraChromiumShim at its output)." />
+  </Target>
+
+  <Target Name="ShenoraChromiumFetchCef" DependsOnTargets="_ShenoraChromiumCheck" Condition="'$(ShenoraChromiumLayout)' == 'true'">
+    <ItemGroup>
+      <_ShenoraCefPick Include="@(ShenoraCefDistribution)" Condition="'%(Identity)' == '$(ShenoraCefPlatform)'" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_ShenoraCefFile>@(_ShenoraCefPick->'%(File)')</_ShenoraCefFile>
+      <_ShenoraCefSha1>@(_ShenoraCefPick->'%(Sha1)')</_ShenoraCefSha1>
+      <_ShenoraCefPart>$(_ShenoraCefFile).$(_ShenoraCefRun).part</_ShenoraCefPart>
+      <_ShenoraCefArchive>$([System.IO.Path]::Combine('$(ShenoraCefRoot)', '$(_ShenoraCefPart)'))</_ShenoraCefArchive>
+      <_ShenoraCefStaging>dist.$(_ShenoraCefRun)</_ShenoraCefStaging>
+      <_ShenoraCefNeeded Condition="!Exists('$(ShenoraCefDist)')">true</_ShenoraCefNeeded>
+    </PropertyGroup>
+    <Error Condition="'$(_ShenoraCefFile)' == ''" Text="The pinned CEF build $(ShenoraCefBuild) names no distribution for $(ShenoraCefPlatform)." />
+
+    <MakeDir Condition="'$(_ShenoraCefNeeded)' == 'true'" Directories="$(ShenoraCefRoot)" />
+    <DownloadFile Condition="'$(_ShenoraCefNeeded)' == 'true'"
+                  SourceUrl="https://cef-builds.spotifycdn.com/$([System.Uri]::EscapeDataString('$(_ShenoraCefFile)'))"
+                  DestinationFolder="$(ShenoraCefRoot)" DestinationFileName="$(_ShenoraCefPart)" />
+    <ShenoraCefSha1 Condition="'$(_ShenoraCefNeeded)' == 'true'" File="$(_ShenoraCefArchive)">
+      <Output TaskParameter="Hash" PropertyName="_ShenoraCefActual" />
+    </ShenoraCefSha1>
+    <Delete Condition="'$(_ShenoraCefNeeded)' == 'true' and '$(_ShenoraCefActual)' != '$(_ShenoraCefSha1)'" Files="$(_ShenoraCefArchive)" />
+    <Error Condition="'$(_ShenoraCefNeeded)' == 'true' and '$(_ShenoraCefActual)' != '$(_ShenoraCefSha1)'"
+           Text="The CEF download failed its SHA-1 check: got $(_ShenoraCefActual), the pin says $(_ShenoraCefSha1). The file was deleted; the next build downloads it again." />
+
+    <!-- Relative paths from inside the cache, so a GNU tar (a POSIX host) never reads `D:\…` as a remote host. -->
+    <MakeDir Condition="'$(_ShenoraCefNeeded)' == 'true'" Directories="$(ShenoraCefRoot)\$(_ShenoraCefStaging)" />
+    <Exec Condition="'$(_ShenoraCefNeeded)' == 'true'" ContinueOnError="true" WorkingDirectory="$(ShenoraCefRoot)"
+          Command="$(_ShenoraTar) -xjf &quot;$(_ShenoraCefPart)&quot; --strip-components=1 -C $(_ShenoraCefStaging)">
+      <Output TaskParameter="ExitCode" PropertyName="_ShenoraCefTar" />
+    </Exec>
+    <Delete Condition="'$(_ShenoraCefNeeded)' == 'true'" Files="$(_ShenoraCefArchive)" />
+    <RemoveDir Condition="'$(_ShenoraCefNeeded)' == 'true' and '$(_ShenoraCefTar)' != '0'" Directories="$(ShenoraCefRoot)\$(_ShenoraCefStaging)" />
+    <Error Condition="'$(_ShenoraCefNeeded)' == 'true' and '$(_ShenoraCefTar)' != '0'" Text="Extracting the CEF build failed (tar exited $(_ShenoraCefTar)); nothing was kept, so the next build starts again." />
+    <ShenoraCefPublish Condition="'$(_ShenoraCefNeeded)' == 'true'" Source="$(ShenoraCefRoot)\$(_ShenoraCefStaging)" Destination="$(ShenoraCefDist)" />
+  </Target>
+
+  <Target Name="_ShenoraChromiumLayoutInputs" DependsOnTargets="ShenoraChromiumFetchCef">
+    <PropertyGroup>
+      <_ShenoraAppExe>$(AssemblyName.Substring(0, $([MSBuild]::Subtract($(AssemblyName.Length), 4))))</_ShenoraAppExe>
+      <!-- A GUI app gets the GUI launcher, a console app the console one; the shim answers both. -->
+      <_ShenoraBootstrap Condition="'$(OutputType)' == 'WinExe'">bootstrap.exe</_ShenoraBootstrap>
+      <_ShenoraBootstrap Condition="'$(OutputType)' != 'WinExe'">bootstrapc.exe</_ShenoraBootstrap>
+    </PropertyGroup>
+    <ItemGroup>
+      <_ShenoraCefRuntime Include="$(ShenoraCefDist)\Release\*.dll;$(ShenoraCefDist)\Release\*.bin;$(ShenoraCefDist)\Release\*.json" />
+      <_ShenoraCefResources Include="$(ShenoraCefDist)\Resources\**\*" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="ShenoraChromiumLayout" AfterTargets="Build" DependsOnTargets="_ShenoraChromiumLayoutInputs" Condition="'$(ShenoraChromiumLayout)' == 'true'">
+    <Copy SourceFiles="@(_ShenoraCefRuntime)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ShenoraCefDist)\Release\$(_ShenoraBootstrap)" DestinationFiles="$(OutDir)$(_ShenoraAppExe).exe" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(OutDir)$(_ShenoraAppExe).dll" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="ShenoraChromiumPublishLayout" AfterTargets="Publish" DependsOnTargets="_ShenoraChromiumLayoutInputs" Condition="'$(ShenoraChromiumLayout)' == 'true'">
+    <Copy SourceFiles="@(_ShenoraCefRuntime)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(PublishDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ShenoraCefDist)\Release\$(_ShenoraBootstrap)" DestinationFiles="$(PublishDir)$(_ShenoraAppExe).exe" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(PublishDir)$(_ShenoraAppExe).dll" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

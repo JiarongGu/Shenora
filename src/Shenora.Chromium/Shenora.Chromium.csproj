@@ -24,6 +24,11 @@
     <Compile Remove="Interop/Generated/Windows/**;Interop/Generated/MacOS/**;Interop/Generated/Linux/**" />
     <Compile Include="Interop/Generated/$(CefOs)/**/*.cs" />
     <None Include="cef.json;THIRD-PARTY-NOTICES.md" />
+    <!-- The app-build targets, which fetch CEF from its own published builds (D81) and lay the app out beside
+         CEF's launcher. build/ and never buildTransitive/: NuGet keeps a dependency's build/ private by default,
+         so an app gets the engine only by referencing this package itself, and a Shenora.Windows app, which
+         depends on it (D83), does not. -->
+    <None Include="build\*.targets" Pack="true" PackagePath="build\" />
   </ItemGroup>
 
   <ItemGroup>

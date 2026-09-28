@@ -212,7 +212,11 @@ Shenora.slnx
 │   │                                          Common/ plus one folder per OS, and a build compiles
 │   │                                          Common + ONE, chosen by CefOs from the runtime identifier.
 │   │                                          CefObject: CEF's reference counts own the lifetime of
-│   │                                          what the shell implements. native/ is the Windows shim
+│   │                                          what the shell implements. build/ is the APP build:
+│   │                                          it fetches the pinned CEF build once per machine
+│   │                                          (SHA-1 against cef.json), then lays out CEF's
+│   │                                          bootstrap.exe as <App>.exe + the shim as <App>.dll
+│   │                                          beside the app's <App>.App.dll. native/ is the Windows shim
 │   │                                          (`dev.mjs cef-native`): CEF's bootstrap.exe, renamed to
 │   │                                          the app, loads it, so Chromium's sandbox exists; renderers
 │   │                                          run CEF alone and only the browser process starts .NET.
