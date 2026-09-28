@@ -16,12 +16,19 @@
     <CefOs Condition="'$(CefOs)' == '' and $(RuntimeIdentifier.StartsWith('osx'))">MacOS</CefOs>
     <CefOs Condition="'$(CefOs)' == '' and $(RuntimeIdentifier.StartsWith('linux'))">Linux</CefOs>
     <CefOs Condition="'$(CefOs)' == ''">Windows</CefOs>
+    <!-- CEF_WINDOWS / CEF_MACOS / CEF_LINUX, for the few call sites whose C types differ (main args). -->
+    <DefineConstants>$(DefineConstants);CEF_$(CefOs.ToUpperInvariant())</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="Interop/Generated/Windows/**;Interop/Generated/MacOS/**;Interop/Generated/Linux/**" />
     <Compile Include="Interop/Generated/$(CefOs)/**/*.cs" />
     <None Include="cef.json;THIRD-PARTY-NOTICES.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The kit's portable core: IPC, the resource pipeline a shell implements (D45), the runner seam. -->
+    <ProjectReference Include="..\Shenora\Shenora.csproj" />
   </ItemGroup>
 
 </Project>

@@ -130,10 +130,17 @@ D37 and D51 are corrected in place to point at them.
 2. **Read the adopter's own probe evidence** when it lands: the debug port's reach across processes,
    CDP-opened tabs, session cookies, Playwright, the round trip, codecs, install size and licences. Do not
    repeat it.
-3. **The Windows shell on Views:** a frameless window, native draggable regions, the caption hit-test,
-   the bridge over `IpcHostBridge` + `NotificationPump`, a kit-named page transport in
-   `createHostTransport`'s chain, and file drops carrying the engine's own paths (owner: the drop-zone
-   overlay is likely unneeded). **Constraints the kit's probe set** (CEF 152, Windows, 2026-09-28):
+3. **The Windows shell on Views.** **Slice 1 is built** (owner: windows first, multi-view composition in
+   slice 2): `builder.UseChromium(new ChromiumHostOptions { … })`, `ChromiumWindows`, CEF's own frameless
+   windows with native drag regions, the bundle served and marked, the app's interceptor pipeline behind
+   it, IPC over the kit's own bridge, and the `SHENORA.WINDOW` routes. It is 61 tests without CEF, plus an
+   end-to-end run through the public API in the shim layout: the real client's DEFAULT bridge found the
+   shell by its marker, and a handshake, an echo, `IS_MAXIMIZED` and 100 `invoke`s (median 1.0 ms, p95
+   3.6 ms) worked, with a clean exit when the window closed.
+   **Left:** the caption hit-test (Snap Layouts), file drops carrying the engine's own paths (owner: the
+   drop-zone overlay is likely unneeded), a renderer-crash reload, native services (dialogs, clipboard,
+   URL launch), secondary windows exercised end to end, and the app build's layout (step 3's MSBuild
+   half). **Constraints the kit's probe set** (CEF 152, Windows, 2026-09-28):
    - 🔴 **A `--remote-debugging-port` on the app's OWN command line opens the port onto the bridge page**,
      with nothing in the settings. `CommandLineArgsDisabled` closes that route, and a port set in the
      settings still works under it. So the shell disables command-line args in production and is the only

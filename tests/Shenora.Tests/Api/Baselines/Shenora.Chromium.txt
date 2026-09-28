@@ -1,3 +1,15 @@
+static class Shenora.Chromium.ChromiumHostExtensions
+  public static Shenora.ShenoraApplicationBuilder UseChromium(Shenora.ShenoraApplicationBuilder builder, Shenora.Chromium.ChromiumHostOptions options)
+sealed class Shenora.Chromium.ChromiumHostOptions
+  public .ctor()
+  public Shenora.Chromium.ChromiumWindowOptions Window { get; init; }
+  public Shenora.Core.Ipc.ShellInfo? Shell { get; init; }
+  public bool? IsDevelopment { get; init; }
+  public int DevToolsPort { get; init; }
+  public string VirtualHost { get; init; }
+  public string? CachePath { get; init; }
+  public string? ContentRoot { get; init; }
+  public string? DevUrl { get; init; }
 static class Shenora.Chromium.ChromiumTransport
   public const string DefaultIpcPath = "/__shenora/ipc"
   public const string HostGlobal = "__shenora_chromium"
@@ -6,3 +18,17 @@ static class Shenora.Chromium.ChromiumTransport
   public static string MarkHtml(string html, string ipcPath = "/__shenora/ipc")
   public static string MarkerScript(string ipcPath = "/__shenora/ipc")
   public static string PushScript(string message)
+sealed class Shenora.Chromium.ChromiumWindowOptions
+  public .ctor()
+  public System.Drawing.Color? BackgroundColor { get; init; }
+  public bool Frameless { get; init; }
+  public int Height { get; init; }
+  public int Width { get; init; }
+  public string? Path { get; init; }
+  public string? Title { get; init; }
+sealed class Shenora.Chromium.ChromiumWindows
+  public bool Activate(string name)
+  public bool Close(string name)
+  public bool IsOpen(string name)
+  public bool Open(string name, Shenora.Chromium.ChromiumWindowOptions options)
+  public const string MainWindowName = "main"
