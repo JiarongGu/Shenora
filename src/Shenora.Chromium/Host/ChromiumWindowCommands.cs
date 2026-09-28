@@ -10,8 +10,14 @@ namespace Shenora.Chromium.Host;
 /// window, and the page learns hover and press from <see cref="CaptionButtonStateEvent"/>. <c>SET_THEME</c>, and
 /// <c>SET_CAPTION_BUTTONS</c> on another OS, answer <c>NO_ROUTE</c> (the module exists, the type does not), as
 /// the WebView2 module does for a route that is not wired.
+/// <para>
+/// ONE module for every window, mapped once: each command acts on the window whose page sent it
+/// (<see cref="ChromiumWindowContext"/>), so a secondary window's close closes that window, and a main window
+/// opened again is served like the first. Outside a window's dispatch every command is a no-op.
+/// </para>
 /// </summary>
-internal sealed class ChromiumWindowCommands(ChromiumWindow window) : ModuleBase
+/// <param name="current">The window whose page sent the request being handled.</param>
+internal sealed class ChromiumWindowCommands(Func<ChromiumWindow?> current) : ModuleBase
 {
     public const string Module = "SHENORA.WINDOW";
     public const string MinimizeType = "MINIMIZE";
@@ -35,15 +41,16 @@ internal sealed class ChromiumWindowCommands(ChromiumWindow window) : ModuleBase
     // Dispatched on CEF's UI thread (the bridge dispatches there), where the window may be touched.
     protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
     {
+        var window = current();
         switch (request.Type.ToUpperInvariant())
         {
-            case MinimizeType: window.Minimize(); return Done();
-            case ToggleMaximizeType: window.ToggleMaximize(); return Done();
-            case CloseType: window.Close(); return Done();
-            case IsMaximizedType: return Task.FromResult<object?>(new { Maximized = window.IsMaximized });
+            case MinimizeType: window?.Minimize(); return Done();
+            case ToggleMaximizeType: window?.ToggleMaximize(); return Done();
+            case CloseType: window?.Close(); return Done();
+            case IsMaximizedType: return Task.FromResult<object?>(new { Maximized = window?.IsMaximized ?? false });
             case StartDragType or StartResizeType: return Done();
             case SetCaptionButtonsType when ChromiumWindow.SupportsCaptionButtons:
-                window.SetCaptionButtons(request.Payload);
+                window?.SetCaptionButtons(request.Payload);
                 return Done();
             default: throw UnknownType(request);
         }

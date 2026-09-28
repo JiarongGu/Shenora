@@ -55,6 +55,6 @@ public class ChromiumWindowCommandsTests
         var window = new ChromiumWindow("main", new ChromiumWindowOptions(), new ChromiumServing(null, origins, new ChromiumInterceptor()), origins,
             w => new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher() }, ui, _ => { }, (_, _) => true),
             _ => { }, null);
-        return new ChromiumWindowCommands(window);
+        return new ChromiumWindowCommands(() => window);
     }
 }

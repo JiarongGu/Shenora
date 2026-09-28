@@ -7,9 +7,14 @@ namespace Shenora.Chromium.Host;
 /// CEF hands the host the dragged files' real paths as the drag enters (<see cref="ChromiumWindow.TakeDraggedFiles"/>),
 /// and the page's own DOM drop says WHICH zone received it, so the page delivers the drop and asks for the paths.
 /// <c>REGISTER</c> answers <c>{ pageDrop: true }</c> to say so; the WebView2 shell answers nothing, and the hook
-/// keeps its overlay protocol there. The zones are per page, forgotten when a new document starts.
+/// keeps its overlay protocol there.
+/// <para>
+/// ONE module for every window: the zones, and the drag, are the window's whose page sent the request
+/// (<see cref="ChromiumWindowContext"/>), and the window forgets its zones when a new document starts.
+/// </para>
 /// </summary>
-internal sealed class ChromiumDropZones : ModuleBase
+/// <param name="current">The window whose page sent the request being handled.</param>
+internal sealed class ChromiumDropZones(Func<ChromiumWindow?> current) : ModuleBase
 {
     public const string Module = "SHENORA.DROPZONE";
     public const string RegisterType = "REGISTER";
@@ -21,33 +26,25 @@ internal sealed class ChromiumDropZones : ModuleBase
     /// <c>{ files }</c>, the real paths of the drag it ended.</summary>
     public const string DropType = "DROP";
 
-    private readonly ChromiumWindow _window;
-    private readonly HashSet<string> _zones = new(StringComparer.Ordinal);
-
-    public ChromiumDropZones(ChromiumWindow window)
-    {
-        _window = window;
-        window.DocumentReplaced += _zones.Clear;
-    }
-
     public override string ModuleName => Module;
 
     // Dispatched on CEF's UI thread, where the window's drag state lives.
     protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
     {
+        var window = current();
         switch (request.Type.ToUpperInvariant())
         {
             case RegisterType or UpdateType:
-                _zones.Add(ZoneId(request));
+                window?.DropZones.Add(ZoneId(request));
                 return Task.FromResult<object?>(new { PageDrop = true });
             case UnregisterType:
-                _zones.Remove(ZoneId(request));
+                window?.DropZones.Remove(ZoneId(request));
                 return Done();
             case ShowType:
                 return Done();   // an overlay to raise is the WebView2 shell's protocol
             case DropType:
                 // Only for a zone this page declared: a drop anywhere else is not the kit's to deliver.
-                var files = _zones.Contains(ZoneId(request)) ? _window.TakeDraggedFiles() : [];
+                var files = window is not null && window.DropZones.Contains(ZoneId(request)) ? window.TakeDraggedFiles() : [];
                 return Task.FromResult<object?>(new { Files = files });
             default:
                 throw UnknownType(request);

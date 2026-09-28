@@ -70,8 +70,22 @@ internal sealed unsafe class ChromiumWindow
     public ChromiumIpcBridge Bridge { get; }
     public ILogger? Log => _log;
 
-    /// <summary>The main frame started a new document: per-page state the window's modules hold is gone.</summary>
-    public Action? DocumentReplaced { get; set; }
+    /// <summary>The page's drop zones (<see cref="ChromiumDropZones"/>). UI thread.</summary>
+    public HashSet<string> DropZones { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The main frame started a new document, and everything the old page set up here goes with it: whoever
+    /// handshook can no longer receive (<c>ContentLoading</c>'s counterpart), and its caption buttons, drop zones
+    /// and drag would otherwise keep answering for a page that never made them. The new page sends its own. UI
+    /// thread.
+    /// </summary>
+    public void DocumentStarted()
+    {
+        Bridge.DocumentReplaced();
+        _captions.Set([]);
+        _draggedFiles = [];
+        DropZones.Clear();
+    }
 
     /// <summary>True while the page's own browser is this id: the IPC route answers no other.</summary>
     public bool IsOwnBrowser(_cef_browser_t* browser) => browser != null && _browserId != 0 && browser->get_identifier(browser) == _browserId;
@@ -673,20 +687,13 @@ internal sealed unsafe class ChromiumWindow
             From<Load>(self)._owner._recovery.LoadSucceeded();
         }
 
-        // The main frame's new document: whoever handshook can no longer receive (ContentLoading's counterpart),
-        // and the old page's caption buttons are gone with it, or their rectangles would keep stealing clicks
-        // from a page that never drew them. The new page sends its own.
         [UnmanagedCallersOnly]
         private static void LoadStart(_cef_load_handler_t* self, _cef_browser_t* browser, _cef_frame_t* frame, cef_transition_type_t transition)
         {
             using var b = new CefRef<_cef_browser_t>(browser);
             using var f = new CefRef<_cef_frame_t>(frame);
             if (frame == null || frame->is_main(frame) != 1) return;
-            var owner = From<Load>(self)._owner;
-            AppCallback.Run(owner.Bridge.DocumentReplaced);
-            AppCallback.Run(() => owner._captions.Set([]));
-            owner._draggedFiles = [];
-            AppCallback.Run(() => owner.DocumentReplaced?.Invoke());
+            AppCallback.Run(From<Load>(self)._owner.DocumentStarted);
         }
     }
 

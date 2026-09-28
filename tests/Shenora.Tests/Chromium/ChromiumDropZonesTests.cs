@@ -13,14 +13,19 @@ namespace Shenora.Tests.Chromium;
 /// </summary>
 public class ChromiumDropZonesTests
 {
-    private static (ChromiumDropZones Module, ChromiumWindow Window) Create()
+    internal static ChromiumWindow Window(string name = "main")
     {
         var origins = ChromiumOrigins.For("app.local", null, isDevelopment: false);
         var ui = new CefUiDispatcher(_ => true, () => true);
-        var window = new ChromiumWindow("main", new ChromiumWindowOptions(), new ChromiumServing(null, origins, new ChromiumInterceptor()), origins,
+        return new ChromiumWindow(name, new ChromiumWindowOptions(), new ChromiumServing(null, origins, new ChromiumInterceptor()), origins,
             w => new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher() }, ui, _ => { }, (_, _) => true),
             _ => { }, null);
-        return (new ChromiumDropZones(window), window);
+    }
+
+    private static (ChromiumDropZones Module, ChromiumWindow Window) Create()
+    {
+        var window = Window();
+        return (new ChromiumDropZones(() => window), window);
     }
 
     private static Task<IpcResponse> Send(ChromiumDropZones module, string type, string zoneId) =>
@@ -83,10 +88,28 @@ public class ChromiumDropZonesTests
         var (module, window) = Create();
         await Send(module, "REGISTER", "z1");
 
-        window.DocumentReplaced?.Invoke();
+        window.DocumentStarted();
         window.FilesDraggedIn([@"C:\a.txt"]);
 
         Assert.Equal("""{"files":[]}""", Json(await Send(module, "DROP", "z1")));
+    }
+
+    [Fact]
+    public async Task One_module_keeps_each_windows_zones_and_drag_apart()
+    {
+        var main = Window("main");
+        var second = Window("second");
+        var module = new ChromiumDropZones(() => ChromiumWindowContext.Current);
+
+        using (ChromiumWindowContext.Enter(main)) await Send(module, "REGISTER", "z1");
+        main.FilesDraggedIn([@"C:\for-main.txt"]);
+        second.FilesDraggedIn([@"C:\for-second.txt"]);
+
+        // The second window never declared z1, so its drop gets nothing, and main's drag is untouched.
+        using (ChromiumWindowContext.Enter(second))
+            Assert.Equal("""{"files":[]}""", Json(await Send(module, "DROP", "z1")));
+        using (ChromiumWindowContext.Enter(main))
+            Assert.Equal("""{"files":["C:\\for-main.txt"]}""", Json(await Send(module, "DROP", "z1")));
     }
 
     [Theory]

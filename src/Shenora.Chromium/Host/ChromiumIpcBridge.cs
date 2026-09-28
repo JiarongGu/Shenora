@@ -22,6 +22,10 @@ internal sealed class ChromiumIpcBridgeOptions
     public int MaxQueuedNotifications { get; init; } = 10_000;
 
     public ILogger? Log { get; init; }
+
+    /// <summary>Entered around each dispatch, so a module learns which window's page asked
+    /// (<see cref="ChromiumWindowContext"/>).</summary>
+    public Func<IDisposable>? EnterWindow { get; init; }
 }
 
 /// <summary>
@@ -92,7 +96,9 @@ internal sealed class ChromiumIpcBridge : IDisposable
 
     private async Task HandleAsync(string json)
     {
-        var response = await _host.HandleIncomingAsync(json);   // never throws, by its contract
+        string? response;
+        using (_options.EnterWindow?.Invoke())
+            response = await _host.HandleIncomingAsync(json);   // never throws, by its contract
         if (response is not null && !_disposed) Push(response);
     }
 

@@ -97,6 +97,30 @@ public class ChromiumIpcBridgeTests
     }
 
     [Fact]
+    public async Task A_request_is_dispatched_as_its_windows_across_its_awaits()
+    {
+        var host = new FakeHost();
+        var window = ChromiumDropZonesTests.Window("second");
+        var dispatcher = new MessageDispatcher();
+        var seen = new List<bool>();
+        dispatcher.UseRoute("TEST", "WHO", async (request, _) =>
+        {
+            seen.Add(ReferenceEquals(ChromiumWindowContext.Current, window));
+            await Task.Yield();
+            seen.Add(ReferenceEquals(ChromiumWindowContext.Current, window));
+            return IpcResponse.CreateSuccess(request.Id, null);
+        });
+        var bridge = new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = dispatcher, EnterWindow = () => ChromiumWindowContext.Enter(window) },
+            host.Dispatcher, host.Pushed.Add, host.Schedule);
+
+        bridge.Incoming(Request("TEST", "WHO"));
+        await SettleAsync(host);
+
+        Assert.Equal([true, true], seen);
+        Assert.Null(ChromiumWindowContext.Current);   // and nothing leaks out of the dispatch
+    }
+
+    [Fact]
     public async Task A_window_local_notification_reaches_this_page_and_never_the_bus()
     {
         var (bridge, host, bus) = Make();

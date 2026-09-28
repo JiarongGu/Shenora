@@ -11,8 +11,8 @@ namespace Shenora.Chromium;
 
 /// <summary>
 /// The Chromium shell's windows, by name. Every window is CEF's own, on CEF's UI thread, showing a page from
-/// the app's origin with its own IPC bridge. Opening a name that is open activates it. The shell quits when
-/// the last one closes.
+/// the app's origin with its own IPC bridge, and a page's window commands and drop zones act on its own window.
+/// Opening a name that is open activates it. The shell quits when the last one closes.
 /// </summary>
 public sealed unsafe class ChromiumWindows
 {
@@ -87,6 +87,10 @@ public sealed unsafe class ChromiumWindows
         app.Pipeline.ApplyTo(interceptor);   // the app's UseFiles and routes reach every window (D64)
         _serving = new ChromiumServing(_options.ContentRoot, _origins, interceptor,
             isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log);
+        // Every window's commands and drop zones, mapped ONCE: each acts on the window whose page asked. An app
+        // that mapped its own module under one of these names wins.
+        _dispatcher.TryMapModule(new ChromiumWindowCommands(() => ChromiumWindowContext.Current));
+        _dispatcher.TryMapModule(new ChromiumDropZones(() => ChromiumWindowContext.Current));
     }
 
     private void OpenOnUi(string name, ChromiumWindowOptions options)
@@ -96,12 +100,6 @@ public sealed unsafe class ChromiumWindows
 
         var window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls);
         _open[name] = window;
-        // The main window's commands and drop zones, unless the app mapped its own module under a name (it wins).
-        if (name == MainWindowName)
-        {
-            _dispatcher.TryMapModule(new ChromiumWindowCommands(window));
-            _dispatcher.TryMapModule(new ChromiumDropZones(window));
-        }
 
         var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
         if ((options.BackgroundColor ?? _options.Window.BackgroundColor) is { } color) settings.background_color = (uint)color.ToArgb();
@@ -115,7 +113,11 @@ public sealed unsafe class ChromiumWindows
     }
 
     private ChromiumIpcBridge NewBridge(ChromiumWindow window) =>
-        new(new ChromiumIpcBridgeOptions { Dispatcher = _dispatcher, EventBus = _events, Shell = _options.Shell, Log = _log },
+        new(new ChromiumIpcBridgeOptions
+            {
+                Dispatcher = _dispatcher, EventBus = _events, Shell = _options.Shell, Log = _log,
+                EnterWindow = () => ChromiumWindowContext.Enter(window),
+            },
             _ui, window.Push, (delay, work) => CefTask.PostDelayed(cef_thread_id_t.TID_UI, delay, work));
 
     private void Closed(ChromiumWindow window)
