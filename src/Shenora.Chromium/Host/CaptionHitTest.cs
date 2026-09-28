@@ -20,6 +20,11 @@ namespace Shenora.Chromium.Host;
 /// <see cref="CaptionButtons"/> wherever they happen.
 /// </para>
 /// <para>
+/// A frameless window's press on the drag area is taken the same way, and handed to the system's move loop once the
+/// pointer passes the drag threshold, so the window moves under the pointer from the press, and a still click enters
+/// no modal loop.
+/// </para>
+/// <para>
 /// A render widget is replaced when its renderer is (a crash, a cross-site navigation). The top-level window
 /// hears of each new child (<c>WM_PARENTNOTIFY</c>) and subclasses it.
 /// </para>
@@ -29,9 +34,10 @@ internal sealed unsafe class CaptionHitTest : IDisposable
     private const uint WM_CREATE = 0x0001, WM_NCDESTROY = 0x0082, WM_NCHITTEST = 0x0084, WM_NCMOUSEMOVE = 0x00A0,
         WM_NCLBUTTONDOWN = 0x00A1, WM_NCLBUTTONUP = 0x00A2, WM_NCLBUTTONDBLCLK = 0x00A3, WM_MOUSEMOVE = 0x0200,
         WM_LBUTTONUP = 0x0202, WM_RBUTTONDOWN = 0x0204, WM_MBUTTONDBLCLK = 0x0209, WM_XBUTTONDOWN = 0x020B,
-        WM_XBUTTONDBLCLK = 0x020D, WM_PARENTNOTIFY = 0x0210, WM_CAPTURECHANGED = 0x0215, WM_NCMOUSELEAVE = 0x02A2;
+        WM_XBUTTONDBLCLK = 0x020D, WM_PARENTNOTIFY = 0x0210, WM_MOVING = 0x0216, WM_CAPTURECHANGED = 0x0215,
+        WM_EXITSIZEMOVE = 0x0232, WM_NCMOUSELEAVE = 0x02A2;
     private const nint MK_LBUTTON = 0x0001;
-    private const int HTERROR = -2, HTTRANSPARENT = -1, HTNOWHERE = 0, HTCLIENT = 1, HTMINBUTTON = 8, HTMAXBUTTON = 9, HTCLOSE = 20;
+    private const int HTERROR = -2, HTTRANSPARENT = -1, HTNOWHERE = 0, HTCLIENT = 1, HTCAPTION = 2, HTMINBUTTON = 8, HTMAXBUTTON = 9, HTCLOSE = 20;
     private const nuint TopId = 1, ChildId = 2;
     private const string RenderWidgetClass = "Chrome_RenderWidgetHostHWND";
 
@@ -43,21 +49,31 @@ internal sealed unsafe class CaptionHitTest : IDisposable
     private bool _disposed;
     private bool _capturing;   // a press on a button holds the mouse capture
     private bool _releasing;   // the capture change our own release causes
+    private bool _captionDrag;      // a press on the drag area holds the capture, until it moves far enough or ends
+    private POINT? _captionPress;   // where that press began
+    private POINT? _movePress;      // that press, while the loop it started has not placed the window yet
+    private readonly bool _frameless;
 
-    private CaptionHitTest(nint top, CaptionButtons buttons, ILogger? log)
+    private CaptionHitTest(nint top, CaptionButtons buttons, bool frameless, ILogger? log)
     {
         _top = top;
         _buttons = buttons;
+        _frameless = frameless;
         _log = log;
         _self = GCHandle.Alloc(this);
     }
 
     /// <summary>Subclass the top-level window and the render widgets it has. Null when it cannot be (no handle, or
     /// the call failed). At window creation, so the page's drag area works before anything else is asked.</summary>
-    public static CaptionHitTest? Attach(nint top, CaptionButtons buttons, ILogger? log)
+    /// <param name="top">The window.</param>
+    /// <param name="buttons">The page's caption buttons.</param>
+    /// <param name="frameless">The page draws the title bar: its drag area moves the window as a system caption would.
+    /// A framed window's own caption is left to Chromium.</param>
+    /// <param name="log">Diagnostics.</param>
+    public static CaptionHitTest? Attach(nint top, CaptionButtons buttons, bool frameless, ILogger? log)
     {
         if (top == 0) return null;
-        var hitTest = new CaptionHitTest(top, buttons, log);
+        var hitTest = new CaptionHitTest(top, buttons, frameless, log);
         if (SetWindowSubclass(top, &TopProc, TopId, (nuint)GCHandle.ToIntPtr(hitTest._self)) != 0)
         {
             hitTest.Refresh();
@@ -104,6 +120,7 @@ internal sealed unsafe class CaptionHitTest : IDisposable
     {
         if (_disposed) return;
         if (_capturing) EndCapture();
+        if (_captionDrag) EndCaptionDrag();
         _disposed = true;
         RemoveWindowSubclass(_top, &TopProc, TopId);
         foreach (var child in _children) RemoveWindowSubclass(child, &ChildProc, ChildId);
@@ -144,6 +161,33 @@ internal sealed unsafe class CaptionHitTest : IDisposable
         finally { _releasing = false; }
     }
 
+    private void EndCaptionDrag()
+    {
+        _captionDrag = false;
+        _captionPress = null;
+        _releasing = true;
+        try { ReleaseCapture(); }
+        finally { _releasing = false; }
+    }
+
+    // A mouse message the system synthesized from touch or pen carries this signature in its extra info.
+    private static bool FromTouchOrPen() => ((ulong)GetMessageExtraInfo() & 0xFFFFFF00) == 0xFF515700;
+
+    // Snapped to an edge or a corner (Windows 10+); false where the call does not exist.
+    private static bool IsArranged(nint hwnd)
+    {
+        try { return IsWindowArranged(hwnd) != 0; }
+        catch (EntryPointNotFoundException) { return false; }
+    }
+
+    // The system's own drag rectangle, centred on the press, at this window's DPI.
+    private bool PastDragThreshold(POINT press, POINT at)
+    {
+        var dpi = GetDpiForWindow(_top);
+        return Math.Abs(at.X - press.X) > GetSystemMetricsForDpi(SM_CXDRAG, dpi) / 2
+            || Math.Abs(at.Y - press.Y) > GetSystemMetricsForDpi(SM_CYDRAG, dpi) / 2;
+    }
+
     private static CaptionButtonKind? FromHitTest(nint code) => (int)code switch
     {
         HTMINBUTTON => CaptionButtonKind.Minimize,
@@ -177,6 +221,53 @@ internal sealed unsafe class CaptionHitTest : IDisposable
                 case WM_NCMOUSELEAVE:
                     me._buttons.Leave();
                     break;
+                // ── A press on the page's drag area ─────────────────────────────────────────────────────────────
+                // Held with the capture until the pointer passes the system's drag threshold, and only then handed to
+                // the system's move loop. Each way of doing it otherwise was measured worse:
+                // - straight to the loop at the press, a STILL press stalled this thread, and the page's IPC, ~500 ms;
+                // - left to Chromium, the loop began only a step or two along, so the window trailed the pointer (5/6
+                //   of a 200 px drag), and on a maximized window a pointer leaving the bar fast was lost altogether,
+                //   so dragging it down did not restore it (3 of 8).
+                // The page's drag area of a frameless window, pressed with a mouse: what was measured. A framed window's
+                // own caption, and a press synthesized from touch or pen, stay Chromium's.
+                case WM_NCLBUTTONDOWN when (int)wParam == HTCAPTION && me._frameless && !FromTouchOrPen():
+                    me._captionPress = new POINT { X = (short)(lParam & 0xFFFF), Y = (short)((lParam >> 16) & 0xFFFF) };
+                    SetCapture(hwnd);
+                    me._captionDrag = true;
+                    return 0;
+                case WM_MOUSEMOVE or WM_LBUTTONUP when me._captionDrag:
+                    if (msg == WM_LBUTTONUP || (wParam & MK_LBUTTON) == 0) { me.EndCaptionDrag(); return 0; }   // a click
+                    var moved = new POINT { X = (short)(lParam & 0xFFFF), Y = (short)((lParam >> 16) & 0xFFFF) };
+                    ClientToScreen(hwnd, &moved);
+                    if (me._captionPress is { } press && me.PastDragThreshold(press, moved))
+                    {
+                        me.EndCaptionDrag();
+                        // A maximized or snapped window is left to the system, which places the restored one under the
+                        // pointer itself.
+                        me._movePress = IsZoomed(hwnd) == 0 && !IsArranged(hwnd) ? press : null;
+                        DefWindowProcW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, (nint)(((moved.Y & 0xFFFF) << 16) | (moved.X & 0xFFFF)));
+                        // Modal: the loop has run and ended here. If it never ran, a later move must not inherit this one.
+                        me._movePress = null;
+                    }
+                    return 0;
+                case WM_CAPTURECHANGED when me._captionDrag && !me._releasing:   // taken away before it moved
+                    me._captionDrag = false;
+                    me._captionPress = null;
+                    break;
+                // The loop's first proposal is placed as the system's caption would have placed it: where the window
+                // is, moved by the pointer's travel since the PRESS. Once: the loop builds each later proposal from where
+                // the window is by then (added to every one, it accumulated: 517 px for a 200 px drag, measured).
+                case WM_MOVING when me._movePress is { } from && GetWindowRect(hwnd, out var now) != 0:
+                    var proposed = (RECT*)lParam;
+                    var pointer = GetMessagePos();
+                    int x = now.Left + (short)(pointer & 0xFFFF) - from.X, y = now.Top + (short)((pointer >> 16) & 0xFFFF) - from.Y;
+                    int w = proposed->Right - proposed->Left, h = proposed->Bottom - proposed->Top;
+                    *proposed = new RECT { Left = x, Top = y, Right = x + w, Bottom = y + h };
+                    me._movePress = null;
+                    break;
+                case WM_EXITSIZEMOVE:
+                    me._movePress = null;
+                    break;
                 case WM_NCLBUTTONDOWN or WM_NCLBUTTONDBLCLK when FromHitTest(wParam) is { } pressed:
                     me._buttons.Press(pressed);
                     me.BeginCapture();
@@ -199,7 +290,7 @@ internal sealed unsafe class CaptionHitTest : IDisposable
                     return 0;
                 // The other buttons during a held press, as the system's loop ignores them: passed on, they would reach
                 // Chromium in the middle of a press it never saw begin.
-                case (>= WM_RBUTTONDOWN and <= WM_MBUTTONDBLCLK) or (>= WM_XBUTTONDOWN and <= WM_XBUTTONDBLCLK) when me._capturing:
+                case (>= WM_RBUTTONDOWN and <= WM_MBUTTONDBLCLK) or (>= WM_XBUTTONDOWN and <= WM_XBUTTONDBLCLK) when me._capturing || me._captionDrag:
                     return 0;
                 case WM_CAPTURECHANGED when me._releasing:
                     return 0;
@@ -273,6 +364,16 @@ internal sealed unsafe class CaptionHitTest : IDisposable
     [DllImport("comctl32")]
     private static extern int RemoveWindowSubclass(nint hwnd, delegate* unmanaged<nint, uint, nint, nint, nuint, nuint, nint> proc, nuint id);
     [DllImport("comctl32")] private static extern nint DefSubclassProc(nint hwnd, uint msg, nint wParam, nint lParam);
+    [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32")] private static extern int GetWindowRect(nint hwnd, out RECT rect);
+    [DllImport("user32")] private static extern int ClientToScreen(nint hwnd, POINT* point);
+    [DllImport("user32")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
+    [DllImport("user32")] private static extern nint DefWindowProcW(nint hwnd, uint msg, nint wParam, nint lParam);
+    [DllImport("user32")] private static extern nint GetMessageExtraInfo();
+    [DllImport("user32")] private static extern int IsWindowArranged(nint hwnd);
+    private const int SM_CXDRAG = 68, SM_CYDRAG = 69;
+    [DllImport("user32")] private static extern uint GetMessagePos();
+    [DllImport("user32")] private static extern int IsZoomed(nint hwnd);
     [DllImport("user32")] private static extern int EnumChildWindows(nint parent, delegate* unmanaged<nint, nint, int> proc, nint lParam);
     [DllImport("user32")] private static extern uint GetWindowThreadProcessId(nint hwnd, uint* processId);
     [DllImport("user32")] private static extern int GetClassNameW(nint hwnd, char* name, int max);
@@ -287,7 +388,7 @@ internal sealed unsafe class CaptionHitTest : IDisposable
 /// <summary>No caption hit-test on this OS yet: the macOS and Linux shells are not built.</summary>
 internal sealed class CaptionHitTest : IDisposable
 {
-    public static CaptionHitTest? Attach(nint top, CaptionButtons buttons, ILogger? log) => null;
+    public static CaptionHitTest? Attach(nint top, CaptionButtons buttons, bool frameless, ILogger? log) => null;
     public double Scale => 1.0;
     public void Refresh() { }
     public void Dispose() { }

@@ -148,7 +148,10 @@ D37 and D51 are corrected in place to point at them.
    and press), Snap Layouts included, and a press behaves as the system's (27 real-cursor checkpoints). Or
    the window paints them (`NativeCaptionButtons`): the system's glyphs, its measured fills, fades and
    `SET_THEME`; their 85/150 ms fades are the system's measured timings, not re-measured on ours. Whether
-   either mode shows the system's caption tooltips is unmeasured. The frameless window resizes from its edges.
+   either mode shows the system's caption tooltips is unmeasured. With a real pointer, beside a native window:
+   the page's drag bar moves the window exactly (a still press stalls nothing), all four edges and two corners
+   resize it (the other two corners unmeasured), a double-click maximizes and restores, and dragging a maximized
+   window's bar restores it. Mouse only: touch and pen, and a framed window's caption, are left to Chromium.
    ⚠ Maximized, its client overhangs the monitor's work area by 1 px on every side.
    **`useDropZone` gets real paths with no overlay** (the page is Alloy style, D84): the page's own drop names
    the zone, and the host answers with the paths CEF reported as the drag entered. A file dropped anywhere
@@ -163,10 +166,8 @@ D37 and D51 are corrected in place to point at them.
    act on its own window, a main window opened again included. Development against a real Vite server works
    end to end: the proxied document is marked, IPC runs on the dev origin, and an edit hot-reloads the page
    (D83 has the one Chromium check that needed turning off).
-   **Left:**
-   - app hooks for downloads, permissions and renderer failure, which wait for an app that asks (the defaults
-     are the WebView2 shell's, D84);
-   - a real pointer drag and resize of the window (their routing is measured, the move is not).
+   **Left:** app hooks for downloads, permissions and renderer failure, which wait for an app that asks (the
+   defaults are the WebView2 shell's, D84).
 
    **Constraints the kit's probe set** (CEF 152, Windows, 2026-09-28):
    - 🔴 **A `--remote-debugging-port` on the app's OWN command line opens the port onto the bridge page**,

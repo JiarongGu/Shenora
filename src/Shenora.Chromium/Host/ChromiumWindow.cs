@@ -167,7 +167,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         window->show(window);
 #if CEF_WINDOWS
         // Before the page can ask for anything: the drag area needs the frame's hit-test from the start.
-        _captionHitTest = CaptionHitTest.Attach(window->get_window_handle(window), _captions, _log);
+        _captionHitTest = CaptionHitTest.Attach(window->get_window_handle(window), _captions, _options.Frameless, _log);
 #endif
         // Without the hit-test, painted buttons would look real and do nothing.
         if (PaintsCaptionButtons && _captionHitTest is not null)
