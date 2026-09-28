@@ -18,6 +18,21 @@ public class ChromiumRoutingTests
         bool navigation = false, string? initiator = "https://app.local") =>
         ChromiumRouting.Classify(new Uri(url), method, own, main, navigation, initiator, Origins);
 
+    [Theory]
+    [InlineData(ChromiumRouting.ClipboardPermission, "https://app.local", true)]
+    [InlineData(ChromiumRouting.ClipboardPermission, "http://localhost:5173", true)]     // the dev server, in development
+    [InlineData(ChromiumRouting.ClipboardPermission, "https://example.com", false)]      // a page the app navigated to
+    [InlineData(ChromiumRouting.ClipboardPermission, null, false)]
+    [InlineData(ChromiumRouting.ClipboardPermission, "not an origin", false)]
+    [InlineData(1u << 8, "https://app.local", false)]                                    // any other permission
+    [InlineData(ChromiumRouting.ClipboardPermission | 1u << 8, "https://app.local", false)] // clipboard bundled with another
+    public void A_permission_prompt_allows_only_the_apps_own_clipboard_read(uint requested, string? origin, bool allowed) =>
+        Assert.Equal(allowed, ChromiumRouting.AllowsPermission(requested, origin, Origins));
+
+    [Fact]
+    public void The_clipboard_flag_is_CEFs() =>
+        Assert.Equal((uint)Shenora.Chromium.Interop.cef_permission_request_types_t.CEF_PERMISSION_TYPE_CLIPBOARD, ChromiumRouting.ClipboardPermission);
+
     [Fact]
     public void The_apps_own_post_to_the_ipc_route_is_ipc()
     {

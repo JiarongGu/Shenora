@@ -1174,9 +1174,11 @@ docs cite them — so the number is the column to scan.
     capability the drop-zone stack exists for.
   - **Chrome's own UI goes with it** (CEF's headers): downloads are cancelled without a download handler,
     permission requests are denied or ignored instead of prompting, fullscreen stays inside the page unless
-    the host triggers it, and an unresponsive renderer gets no dialog. That is the WebView2 shell's own
-    policy for downloads and permissions (it cancels downloads, and denies every permission outside
-    `PermittedPermissions`), save the clipboard reads that list allows by default.
+    the host triggers it, and an unresponsive renderer gets no dialog. Downloads then match the WebView2
+    shell's policy, which cancels them. ⚠ **A permission prompt left to CEF is IGNORED, and the page's promise
+    never settles** (measured: a clipboard read and a notification request both hung), so the shell answers
+    every prompt with the WebView2 shell's own default: a clipboard read from the app's page is allowed, and
+    everything else is denied.
   - ⚠ **Alloy changed the frame's hit-test**: Chromium's render widget answers HTCLIENT over the page's drag
     area, so the shell's child subclass defers every non-client answer to CEF's top-level window. Any other
     behaviour measured under Chrome style is re-measured before it is relied on.

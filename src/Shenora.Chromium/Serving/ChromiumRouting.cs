@@ -65,6 +65,23 @@ internal static class ChromiumRouting
     public static bool RefusesNavigation(string url, bool isMainFrame) =>
         isMainFrame && url.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>CEF's <c>CEF_PERMISSION_TYPE_CLIPBOARD</c> flag (a test pins it to the generated enum).</summary>
+    public const uint ClipboardPermission = 1u << 4;
+
+    /// <summary>
+    /// The answer to a permission prompt, and there must always be one: an Alloy page's prompt left to CEF is
+    /// IGNORED, and the page's promise never settles (measured: a clipboard read and a notification request
+    /// both hung). The WebView2 shell's policy, so an app sees one: a clipboard read from the app's own page
+    /// is allowed, and everything else is denied.
+    /// </summary>
+    /// <param name="requested">The prompt's permission flags.</param>
+    /// <param name="requestingOrigin">The origin CEF names, e.g. <c>https://app.local</c>.</param>
+    /// <param name="origins">The app's origins.</param>
+    public static bool AllowsPermission(uint requested, string? requestingOrigin, ChromiumOrigins origins) =>
+        requested == ClipboardPermission
+        && Uri.TryCreate(requestingOrigin, UriKind.Absolute, out var from)
+        && new[] { origins.App, origins.Dev }.Any(origin => origin is not null && SameOrigin(from, origin));
+
     private static bool SameOrigin(Uri url, Uri origin) =>
         string.Equals(url.Scheme, origin.Scheme, StringComparison.OrdinalIgnoreCase)
         && string.Equals(url.Host, origin.Host, StringComparison.OrdinalIgnoreCase)

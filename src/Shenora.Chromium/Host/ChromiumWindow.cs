@@ -315,6 +315,7 @@ internal sealed unsafe class ChromiumWindow
         private readonly Load _load;
         private readonly Drag _drag;
         private readonly Display _display;
+        private readonly Permissions _permissions;
 
         public Client(ChromiumWindow owner)
         {
@@ -323,11 +324,13 @@ internal sealed unsafe class ChromiumWindow
             _load = new Load(owner);
             _drag = new Drag(owner);
             _display = new Display(owner);
+            _permissions = new Permissions(owner);
             Struct->get_request_handler = &GetRequests;
             Struct->get_life_span_handler = &GetLifeSpan;
             Struct->get_load_handler = &GetLoad;
             Struct->get_drag_handler = &GetDrag;
             Struct->get_display_handler = &GetDisplay;
+            Struct->get_permission_handler = &GetPermissions;
         }
 
         // A getter handing CEF one of our structs must add the reference CEF takes.
@@ -336,6 +339,34 @@ internal sealed unsafe class ChromiumWindow
         [UnmanagedCallersOnly] private static _cef_load_handler_t* GetLoad(_cef_client_t* self) => From<Client>(self)._load.ForCef();
         [UnmanagedCallersOnly] private static _cef_drag_handler_t* GetDrag(_cef_client_t* self) => From<Client>(self)._drag.ForCef();
         [UnmanagedCallersOnly] private static _cef_display_handler_t* GetDisplay(_cef_client_t* self) => From<Client>(self)._display.ForCef();
+        [UnmanagedCallersOnly] private static _cef_permission_handler_t* GetPermissions(_cef_client_t* self) => From<Client>(self)._permissions.ForCef();
+    }
+
+    /// <summary>Answers every permission prompt (<see cref="ChromiumRouting.AllowsPermission"/>). Media access
+    /// has its own callback, left to Alloy's default, which denies and settles (measured).</summary>
+    private sealed class Permissions : CefObject<_cef_permission_handler_t>
+    {
+        private readonly ChromiumWindow _owner;
+
+        public Permissions(ChromiumWindow owner)
+        {
+            _owner = owner;
+            Struct->on_show_permission_prompt = &ShowPrompt;
+        }
+
+        // Returning 1 says the callback is ours to run, which happens before returning.
+        [UnmanagedCallersOnly]
+        private static int ShowPrompt(_cef_permission_handler_t* self, _cef_browser_t* browser, ulong promptId, _cef_string_utf16_t* origin,
+            uint requested, _cef_permission_prompt_callback_t* callback)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var c = new CefRef<_cef_permission_prompt_callback_t>(callback);
+            var owner = From<Permissions>(self)._owner;
+            var allow = AppCallback.RunOrDefault(() => ChromiumRouting.AllowsPermission(requested, CefStrings.Read(origin), owner.Origins), fallback: false);
+            callback->cont(callback, allow ? cef_permission_request_result_t.CEF_PERMISSION_RESULT_ACCEPT : cef_permission_request_result_t.CEF_PERMISSION_RESULT_DENY);
+            if (!allow) AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': denied a permission prompt (flags {requested:X})");
+            return 1;
+        }
     }
 
     private sealed class Requests : CefObject<_cef_request_handler_t>

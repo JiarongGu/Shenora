@@ -152,8 +152,8 @@ D37 and D51 are corrected in place to point at them.
    the zone, and the host answers with the paths CEF reported as the drag entered. A file dropped anywhere
    else no longer navigates the app away.
    **Left:**
-   - the WebView2 shell's one permission allowance, clipboard reads (`PermittedPermissions`), which Alloy
-     ignores (D84); app hooks for downloads and permissions wait for an app that asks;
+   - app hooks for downloads and permissions, which wait for an app that asks (the defaults are the WebView2
+     shell's, D84);
    - a real pointer drag and resize of the window (their routing is measured, the move is not);
    - a renderer-crash reload, native services (dialogs, clipboard, URL launch), secondary windows exercised
      end to end, and the dev-server proxy run against a real Vite server (only unit-tested so far).
