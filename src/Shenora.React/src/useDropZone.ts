@@ -6,6 +6,17 @@ import { debounce, randomId } from './internal.js';
 /** The reserved module the drop-zone stack speaks (host: `DropZoneManager`/`DropZoneModule`). */
 export const DROP_ZONE_MODULE = 'SHENORA.DROPZONE';
 
+/** The host's answer to REGISTER. The WebView2 shell answers nothing; the Chromium shell answers
+ * `pageDrop`: no overlay, the page's own drop names the zone and `DROP` returns the paths. */
+interface DropZoneRegistration {
+  pageDrop?: boolean;
+}
+
+/** The Chromium shell's answer to `DROP`: the real paths of the drag the page's drop ended. */
+interface DropZoneFiles {
+  files: string[];
+}
+
 /** A native file drop delivered to a zone. */
 export interface DropZoneFileDrop {
   zoneId: string;
@@ -62,14 +73,17 @@ const newZoneId = (): string => randomId('drop-zone-');
  * across the IPC boundary before the app knows whether it wants any of them. This gives you `string[]`
  * OS paths instead — open lazily, stream, hash incrementally, move or link without copying.
  *
- * The host positions a transparent native overlay over the element to capture those paths, including
- * for drags started while the app is in the background. Bounds re-sync (debounced) on
- * resize/scroll/intersection changes; the host converts the CSS rect to physical pixels per-monitor.
+ * **On the WebView2 shell** the host positions a transparent native overlay over the element to capture
+ * those paths, including for drags started while the app is in the background. Bounds re-sync
+ * (debounced) on resize/scroll/intersection changes; the host converts the CSS rect to physical pixels
+ * per-monitor. How the visibility dance works: mouse leaves the element → SHOW (overlay up, ready to
+ * catch a drag); mouse enters → the host hides the overlay (hover effects keep working); an inactive
+ * window always shows overlays (background drag-drop); while the overlay is visible the host emits
+ * DRAG_ENTER/DRAG_LEAVE for CSS feedback.
  *
- * How the visibility dance works: mouse leaves the element → SHOW (overlay up, ready to catch a
- * drag); mouse enters → the host hides the overlay (hover effects keep working); an inactive
- * window always shows overlays (background drag-drop); while the overlay is visible the host
- * emits DRAG_ENTER/DRAG_LEAVE for CSS feedback.
+ * **On the Chromium shell there is no overlay.** The engine hands the host the drag's real paths as it
+ * enters, so the host answers REGISTER with `pageDrop`, this hook takes the page's own drag events on the
+ * element, and a drop there asks the host for the paths. Your code is the same on both.
  */
 export function useDropZone(options: UseDropZoneOptions): void {
   const { targetRef, enabled = true } = options;
@@ -120,6 +134,9 @@ export function useDropZone(options: UseDropZoneOptions): void {
   // never exists again. Cleanup bumps the epoch; acks from an older epoch are ignored.
   const epochRef = useRef(0);
   const lastBoundsRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  // The host said the PAGE delivers drops (the Chromium shell). Read by the DOM listeners at event time,
+  // so they do nothing until REGISTER is answered, and nothing at all on the WebView2 shell.
+  const pageDropRef = useRef(false);
 
   const syncBoundsRef = useRef<() => void>(() => {});
   syncBoundsRef.current = () => {
@@ -147,10 +164,12 @@ export function useDropZone(options: UseDropZoneOptions): void {
       lastBoundsRef.current = bounds;
       const epoch = epochRef.current;
       bridge
-        .invoke(DROP_ZONE_MODULE, 'REGISTER', { payload: { zoneId: zoneIdRef.current, ...bounds } })
+        .invoke<DropZoneRegistration | undefined>(DROP_ZONE_MODULE, 'REGISTER', { payload: { zoneId: zoneIdRef.current, ...bounds } })
         .then(
-          () => {
-            if (epochRef.current === epoch) isRegisteredRef.current = true;
+          (registration) => {
+            if (epochRef.current !== epoch) return;
+            isRegisteredRef.current = true;
+            pageDropRef.current = registration?.pageDrop === true;
           },
           (error: unknown) => reportRef.current(error, 'REGISTER'),
         )
@@ -176,6 +195,7 @@ export function useDropZone(options: UseDropZoneOptions): void {
     syncBoundsRef.current();
 
     const sendShow = debounce(() => {
+      if (pageDropRef.current) return;   // no overlay to raise
       (bridgeRef.current ?? getBridge())
         .invoke(DROP_ZONE_MODULE, 'SHOW', { payload: { zoneId: zoneIdRef.current } })
         .catch((error: unknown) => reportRef.current(error, 'SHOW'));
@@ -223,7 +243,68 @@ export function useDropZone(options: UseDropZoneOptions): void {
         isRegisteredRef.current = false;
         registeringRef.current = false; // a remount must re-send immediately
         attemptedRef.current = false;
+        pageDropRef.current = false;
       }
+    };
+  }, [enabled, element]);
+
+  // The Chromium shell's drops: the page's own drag events on the element, acted on only once the host
+  // answered REGISTER with `pageDrop`. Claiming `dragover` is what makes the element a drop target at all.
+  useEffect(() => {
+    if (!enabled || !element) return;
+    const dropClass = dropClassRef.current;
+    const carriesFiles = (event: DragEvent) => [...(event.dataTransfer?.types ?? [])].includes('Files');
+    // dragenter/dragleave fire for every child the pointer crosses, so count them rather than trusting one.
+    let depth = 0;
+
+    const onDragEnter = (event: DragEvent) => {
+      if (!pageDropRef.current || !carriesFiles(event)) return;
+      event.preventDefault();
+      depth++;
+      element.classList.add(dropClass);
+    };
+    const onDragOver = (event: DragEvent) => {
+      if (!pageDropRef.current || !carriesFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    };
+    const onDragLeave = () => {
+      if (!pageDropRef.current) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) element.classList.remove(dropClass);
+    };
+    const onDrop = (event: DragEvent) => {
+      if (!pageDropRef.current || !carriesFiles(event)) return;
+      event.preventDefault();
+      depth = 0;
+      element.classList.remove(dropClass);
+      const rect = element.getBoundingClientRect();
+      const position = {
+        x: Math.round((event.clientX - rect.left) * devicePixelRatio),
+        y: Math.round((event.clientY - rect.top) * devicePixelRatio),
+      };
+      const zoneId = zoneIdRef.current;
+      (bridgeRef.current ?? getBridge())
+        .invoke<DropZoneFiles>(DROP_ZONE_MODULE, 'DROP', { payload: { zoneId } })
+        .then(
+          (answer) => {
+            const files = answer?.files ?? [];
+            if (files.length > 0) onDropRef.current(files, { zoneId, files, position });
+          },
+          (error: unknown) => reportRef.current(error, 'DROP'),
+        );
+    };
+
+    element.addEventListener('dragenter', onDragEnter);
+    element.addEventListener('dragover', onDragOver);
+    element.addEventListener('dragleave', onDragLeave);
+    element.addEventListener('drop', onDrop);
+    return () => {
+      element.removeEventListener('dragenter', onDragEnter);
+      element.removeEventListener('dragover', onDragOver);
+      element.removeEventListener('dragleave', onDragLeave);
+      element.removeEventListener('drop', onDrop);
+      element.classList.remove(dropClass);
     };
   }, [enabled, element]);
 

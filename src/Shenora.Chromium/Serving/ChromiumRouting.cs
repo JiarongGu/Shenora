@@ -57,6 +57,14 @@ internal static class ChromiumRouting
         return ChromiumRoute.Network;
     }
 
+    /// <summary>
+    /// True when the page's MAIN frame must not navigate to <paramref name="url"/>: a local file. Chromium opens a
+    /// file dropped anywhere the page did not claim, which navigates the app's own window away from the app
+    /// (measured). No app page means to leave for a file on disk.
+    /// </summary>
+    public static bool RefusesNavigation(string url, bool isMainFrame) =>
+        isMainFrame && url.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
+
     private static bool SameOrigin(Uri url, Uri origin) =>
         string.Equals(url.Scheme, origin.Scheme, StringComparison.OrdinalIgnoreCase)
         && string.Equals(url.Host, origin.Host, StringComparison.OrdinalIgnoreCase)

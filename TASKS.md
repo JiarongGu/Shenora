@@ -148,10 +148,18 @@ D37 and D51 are corrected in place to point at them.
    **Page-drawn caption buttons are real ones** (`SET_CAPTION_BUTTONS`, and `useCaptionButtonState` for hover
    and press), Snap Layouts included, seen with a real cursor. ⚠ Maximized, CEF's frameless client is 2 px
    narrower than the monitor, with or without the kit's style bits.
-   **Left:** file drops carrying the engine's own paths (owner: the drop-zone overlay is likely unneeded), a
-   renderer-crash reload, native services (dialogs, clipboard,
-   URL launch), secondary windows exercised end to end, and the dev-server proxy run against a real Vite
-   server (only unit-tested so far). **Constraints the kit's probe set** (CEF 152, Windows, 2026-09-28):
+   **`useDropZone` gets real paths with no overlay** (the page is Alloy style, D84): the page's own drop names
+   the zone, and the host answers with the paths CEF reported as the drag entered. A file dropped anywhere
+   else no longer navigates the app away.
+   **Left:**
+   - what Alloy style hands the shell (D84): downloads, permission requests, fullscreen;
+   - the frameless window's edges answer HTBORDER, so it cannot be resized with the pointer (measured
+     without the Snap Layouts style bits);
+   - a real pointer drag of the window by the page's drag area (its routing is measured, the move is not);
+   - a renderer-crash reload, native services (dialogs, clipboard, URL launch), secondary windows exercised
+     end to end, and the dev-server proxy run against a real Vite server (only unit-tested so far).
+
+   **Constraints the kit's probe set** (CEF 152, Windows, 2026-09-28):
    - 🔴 **A `--remote-debugging-port` on the app's OWN command line opens the port onto the bridge page**,
      with nothing in the settings. `CommandLineArgsDisabled` closes that route, and a port set in the
      settings still works under it. So the shell disables command-line args in production and is the only

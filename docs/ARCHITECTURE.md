@@ -199,11 +199,13 @@ Shenora.slnx
 │   │                                    ⚠ A RESTRUCTURE UPDATES THE MAP FOR THE FOLDERS ITS OWN COMMITS
 │   │                                    TOUCHED, which is not the same set as the folders it MOVED —
 │   │                                    D65 moved every one and three went missing from this tree.
-│   ├── Shenora.Chromium    net10.0, one build per OS — deps: Shenora; NOT packable yet (D81–D83)
+│   ├── Shenora.Chromium    net10.0, one build per OS — deps: Shenora; NOT packable yet (D81–D84)
 │   │                                          The Chromium shell of the kit's own, on CEF's Views
-│   │                                          framework, for Windows, macOS and Linux. `UseChromium`
-│   │                                          runs the app on CEF's loop (Host/: the runner, windows,
-│   │                                          the UI dispatcher, the IPC bridge, window commands);
+│   │                                          framework, for Windows, macOS and Linux; each page an
+│   │                                          Alloy-style browser (D84). `UseChromium` runs the app on
+│   │                                          CEF's loop (Host/: the runner, windows, the UI
+│   │                                          dispatcher, the IPC bridge, window commands, drop zones,
+│   │                                          and the frame's hit-test);
 │   │                                          Serving/ answers the app's origin (the bundle, marked,
 │   │                                          then the app's interceptor pipeline; the IPC route only
 │   │                                          for the app's own browser and origin). Interop/Generated/ is

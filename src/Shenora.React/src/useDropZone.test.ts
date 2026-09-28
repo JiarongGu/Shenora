@@ -357,3 +357,112 @@ describe('useDropZone', () => {
     expect(element.getAttribute('data-drop-zone-id')).toBe(registered);
   });
 });
+
+describe('useDropZone on the Chromium shell (the host answers REGISTER with pageDrop)', () => {
+  /** A DOM drag event as Chromium raises it: jsdom has no DragEvent, so the fields are attached. */
+  function drag(type: string, types: string[] = ['Files'], at = { clientX: 0, clientY: 0 }) {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', { value: { types, dropEffect: 'none' } });
+    Object.defineProperty(event, 'clientX', { value: at.clientX });
+    Object.defineProperty(event, 'clientY', { value: at.clientY });
+    return event;
+  }
+
+  async function pageDropFixture(onDrop: (files: string[], drop: unknown) => void = () => {}) {
+    const fixture = createFixture();
+    fixture.transport.autoAck = false;
+    renderHook(() =>
+      useDropZone({ targetRef: fixture.targetRef, onDrop, zoneId: 'z1', dropClassName: 'hovering', bridge: fixture.bridge, bus: fixture.bus }));
+    await flush();
+    await act(async () => {
+      fixture.transport.respondToLast({ pageDrop: true });   // the REGISTER
+      await Promise.resolve();
+    });
+    return fixture;
+  }
+
+  it('claims a file drag, asks the host for the paths on drop, and hands them to onDrop', async () => {
+    const drops: unknown[] = [];
+    const { transport, element } = await pageDropFixture((files, drop) => drops.push({ files, drop }));
+
+    const over = drag('dragover');
+    act(() => { element.dispatchEvent(over); });
+    expect(over.defaultPrevented).toBe(true);   // without this the element is no drop target at all
+
+    const dropEvent = drag('drop', ['Files'], { clientX: 10, clientY: 4 });
+    act(() => { element.dispatchEvent(dropEvent); });
+    expect(dropEvent.defaultPrevented).toBe(true);
+    expect(transport.lastRequest()).toMatchObject({ module: DROP_ZONE_MODULE, type: 'DROP', payload: { zoneId: 'z1' } });
+
+    await act(async () => {
+      transport.respondToLast({ files: ['C:\a.txt', 'C:\b c.txt'] });
+      await Promise.resolve();
+    });
+    expect(drops).toEqual([{ files: ['C:\a.txt', 'C:\b c.txt'], drop: { zoneId: 'z1', files: ['C:\a.txt', 'C:\b c.txt'], position: { x: 10, y: 4 } } }]);
+  });
+
+  it('does not call onDrop when the host has no paths for the drop', async () => {
+    const drops: unknown[] = [];
+    const { transport, element } = await pageDropFixture((files) => drops.push(files));
+
+    act(() => { element.dispatchEvent(drag('drop')); });
+    await act(async () => {
+      transport.respondToLast({ files: [] });
+      await Promise.resolve();
+    });
+    expect(drops).toEqual([]);
+  });
+
+  it('leaves a drag that carries no files to the page', async () => {
+    const { transport, element } = await pageDropFixture();
+    const over = drag('dragover', ['text/plain']);
+    const dropEvent = drag('drop', ['text/plain']);
+
+    act(() => {
+      element.dispatchEvent(over);
+      element.dispatchEvent(dropEvent);
+    });
+
+    expect(over.defaultPrevented).toBe(false);
+    expect(dropEvent.defaultPrevented).toBe(false);
+    expect(transport.routes()).toEqual(['REGISTER']);
+  });
+
+  it('holds the drop class across the children a drag crosses, and clears it on leaving', async () => {
+    const { element } = await pageDropFixture();
+
+    act(() => {
+      element.dispatchEvent(drag('dragenter'));
+      element.dispatchEvent(drag('dragenter'));   // into a child
+      element.dispatchEvent(drag('dragleave'));   // out of the child
+    });
+    expect(element.classList.contains('hovering')).toBe(true);
+
+    act(() => { element.dispatchEvent(drag('dragleave')); });
+    expect(element.classList.contains('hovering')).toBe(false);
+  });
+
+  it('raises no overlay: SHOW is never sent', async () => {
+    const { transport, element } = await pageDropFixture();
+
+    act(() => { element.dispatchEvent(new Event('mouseleave')); });
+    await flush();
+
+    expect(transport.routes()).toEqual(['REGISTER']);
+  });
+
+  it('on the WebView2 shell (REGISTER answered with nothing) the page drag events are left alone', async () => {
+    const { transport, bus, bridge, element, targetRef } = createFixture();
+    renderHook(() => useDropZone({ targetRef, onDrop: () => {}, zoneId: 'z1', bridge, bus }));
+    await flush();   // autoAck answers REGISTER with no data
+
+    const over = drag('dragover');
+    act(() => {
+      element.dispatchEvent(over);
+      element.dispatchEvent(drag('drop'));
+    });
+
+    expect(over.defaultPrevented).toBe(false);
+    expect(transport.routes()).toEqual(['REGISTER']);
+  });
+});

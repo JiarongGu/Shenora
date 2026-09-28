@@ -139,6 +139,7 @@ docs cite them — so the number is the column to scan.
 | **D81** | AN ENGINE IS A PACKAGE BOUNDARY, AND ITS BYTES ARRIVE THROUGH THE APP'S OWN RESTORE, NEVER INSIDE A KIT NUPKG. |
 | **D82** | THE DESKTOP REACHES MACOS AND LINUX THROUGH ONE CHROMIUM SHELL OF THE KIT'S OWN, ON CEF'S VIEWS FRAMEWORK, BUILT AHEAD OF A CONSUMER. |
 | **D83** | THE CHROMIUM ENGINE HAS TWO HOSTS, AND THE WINDOWS SHELL DEPENDS ON IT. |
+| **D84** | THE CHROMIUM SHELL'S PAGE IS AN ALLOY-STYLE BROWSER. |
 
 <!-- decisions-index:end -->
 
@@ -1165,6 +1166,19 @@ docs cite them — so the number is the column to scan.
   - **The page finds the transport because the shell MARKS THE HTML it serves** (D36: the host advertises).
     In development the shell proxies the dev server's document to mark it too.
   - ⚠ On Windows both hosts start through CEF's `bootstrap.exe` and the kit's shim, or there is no sandbox.
+- **D84 — THE CHROMIUM SHELL'S PAGE IS AN ALLOY-STYLE BROWSER.** CEF offers two runtime styles, and the shell's
+  browser views are Alloy: Chromium's content layer, without Chrome's own UI. The window stays Chrome style,
+  which may host an Alloy view. Owner: *"Alloy browser views"*.
+  - 🔴 **Why: the client callbacks the kit's translation layer needs exist only there** (D54). Measured: in
+    Chrome style CEF never called `on_drag_enter`, so a dropped file's real path was unreachable, which is the
+    capability the drop-zone stack exists for.
+  - **What Chrome style did that becomes the shell's, and so the app's, to decide** (CEF's own headers):
+    downloads are cancelled without a download handler, permission requests are denied or ignored instead of
+    prompting, fullscreen must be triggered by the host, and an unresponsive renderer gets no dialog. An app
+    shell deciding its own policy is the point, but each is kit work until it is built.
+  - ⚠ **Alloy changed the frame's hit-test**: Chromium's render widget answers HTCLIENT over the page's drag
+    area, so the shell's child subclass defers every non-client answer to CEF's top-level window. Any other
+    behaviour measured under Chrome style is re-measured before it is relied on.
 
 ## Anti-goals — deliberately NOT built
 

@@ -80,8 +80,12 @@ public sealed unsafe class ChromiumWindows
 
         var window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log);
         _open[name] = window;
-        // The main window's commands, unless the app mapped its own module under that name (it wins).
-        if (name == MainWindowName) _dispatcher.TryMapModule(new ChromiumWindowCommands(window));
+        // The main window's commands and drop zones, unless the app mapped its own module under a name (it wins).
+        if (name == MainWindowName)
+        {
+            _dispatcher.TryMapModule(new ChromiumWindowCommands(window));
+            _dispatcher.TryMapModule(new ChromiumDropZones(window));
+        }
 
         var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
         if ((options.BackgroundColor ?? _options.Window.BackgroundColor) is { } color) settings.background_color = (uint)color.ToArgb();

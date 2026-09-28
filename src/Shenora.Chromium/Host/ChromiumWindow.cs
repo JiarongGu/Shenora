@@ -22,6 +22,7 @@ internal sealed unsafe class ChromiumWindow
     private readonly Action<ChromiumWindow> _destroyed;
     private readonly ILogger? _log;
     private readonly WindowDelegate _delegate;
+    private readonly BrowserViewDelegate _viewDelegate = new();
     private readonly Client _client;
     private _cef_browser_view_t* _browserView;
     private _cef_window_t* _window;
@@ -30,6 +31,7 @@ internal sealed unsafe class ChromiumWindow
     private volatile int _browserId;
     private readonly CaptionButtons _captions;
     private CaptionHitTest? _captionHitTest;
+    private string[] _draggedFiles = [];
 
     public ChromiumWindow(string name, ChromiumWindowOptions options, ChromiumServing serving, ChromiumOrigins origins,
         Func<ChromiumWindow, ChromiumIpcBridge> bridge, Action<ChromiumWindow> destroyed, ILogger? log)
@@ -54,6 +56,9 @@ internal sealed unsafe class ChromiumWindow
     public ChromiumIpcBridge Bridge { get; }
     public ILogger? Log => _log;
 
+    /// <summary>The main frame started a new document: per-page state the window's modules hold is gone.</summary>
+    public Action? DocumentReplaced { get; set; }
+
     /// <summary>True while the page's own browser is this id: the IPC route answers no other.</summary>
     public bool IsOwnBrowser(_cef_browser_t* browser) => browser != null && _browserId != 0 && browser->get_identifier(browser) == _browserId;
 
@@ -64,7 +69,7 @@ internal sealed unsafe class ChromiumWindow
         fixed (char* p = text)
         {
             var s = CefStrings.View(p, text.Length);
-            _browserView = Cef.cef_browser_view_create(_client.ForCef(), &s, settings, null, null, null);
+            _browserView = Cef.cef_browser_view_create(_client.ForCef(), &s, settings, null, null, _viewDelegate.ForCef());
         }
         if (_browserView == null) throw new InvalidOperationException($"CEF would not create the browser view for window '{Name}'.");
         Cef.cef_window_create_top_level(_delegate.ForCef());
@@ -93,16 +98,11 @@ internal sealed unsafe class ChromiumWindow
         false;
 #endif
 
-    /// <summary>
-    /// <c>SET_CAPTION_BUTTONS</c>: the page's button rectangles in CSS px. UI thread. The window's subclasses are
-    /// installed on the first call, so a page that never draws caption buttons costs nothing.
-    /// </summary>
+    /// <summary><c>SET_CAPTION_BUTTONS</c>: the page's button rectangles in CSS px. UI thread.</summary>
     public void SetCaptionButtons(System.Text.Json.JsonElement? payload)
     {
         if (_window == null) return;
-#if CEF_WINDOWS
-        _captionHitTest ??= CaptionHitTest.Attach(_window->get_window_handle(_window), _captions, _log);
-#endif
+        _captionHitTest?.EnableSnapLayouts();
         _captions.Set(CaptionButtons.Parse(payload, _captionHitTest?.Scale ?? 1.0));
         _captionHitTest?.Refresh();
     }
@@ -115,6 +115,44 @@ internal sealed unsafe class ChromiumWindow
         // Each state is the whole state, so an undelivered one is superseded by the next.
         CoalesceKey = ChromiumWindowCommands.CaptionButtonStateEvent,
     });
+
+    /// <summary>
+    /// The paths of the files in the drag that last entered this window, handed out ONCE: the page's drop asks
+    /// for them, and a later drop with no new drag must not receive them again. UI thread.
+    /// </summary>
+    public string[] TakeDraggedFiles()
+    {
+        var files = _draggedFiles;
+        _draggedFiles = [];
+        return files;
+    }
+
+    // CEF's UI thread, as an external drag enters: the only moment the engine hands over real paths, because
+    // the page's own drop event carries `File` objects with none.
+    private void DragEntered(_cef_browser_t* browser, _cef_drag_data_t* data)
+    {
+        _draggedFiles = [];
+        if (!IsOwnBrowser(browser) || data == null || data->is_file(data) != 1) return;
+        var list = Cef.cef_string_list_alloc();
+        try
+        {
+            if (data->get_file_paths(data, list) != 1) return;
+            var count = (int)Cef.cef_string_list_size(list);
+            var files = new string[count];
+            for (var i = 0; i < count; i++)
+            {
+                var value = default(_cef_string_utf16_t);
+                Cef.cef_string_list_value(list, (nuint)i, &value);
+                files[i] = CefStrings.Read(&value);
+                Cef.cef_string_utf16_clear(&value);
+            }
+            FilesDraggedIn(files);
+        }
+        finally { Cef.cef_string_list_free(list); }
+    }
+
+    /// <summary>A drag carrying these files entered the page. UI thread.</summary>
+    public void FilesDraggedIn(string[] files) => _draggedFiles = files;
 
     private void InvokeCaptionButton(CaptionButtonKind kind)
     {
@@ -153,6 +191,10 @@ internal sealed unsafe class ChromiumWindow
         var size = new _cef_size_t { width = _options.Width, height = _options.Height };
         window->center_window(window, &size);
         window->show(window);
+#if CEF_WINDOWS
+        // Before the page can ask for anything: the drag area needs the frame's hit-test from the start.
+        _captionHitTest = CaptionHitTest.Attach(window->get_window_handle(window), _captions, _log);
+#endif
         AppCallback.Log(_log, () => $"[Shenora.Chromium] Window '{Name}' shown");
     }
 
@@ -241,6 +283,19 @@ internal sealed unsafe class ChromiumWindow
         }
     }
 
+    /// <summary>
+    /// The page's browser is ALLOY style (D84): Chromium's content layer without Chrome's own UI, which is what
+    /// the shell's client callbacks need. Measured: in Chrome style CEF never called <c>on_drag_enter</c>, so a
+    /// drop's real paths were unreachable. The window stays Chrome style, which may host an Alloy view.
+    /// </summary>
+    private sealed class BrowserViewDelegate : CefObject<_cef_browser_view_delegate_t>
+    {
+        public BrowserViewDelegate() => Struct->get_browser_runtime_style = &Style;
+
+        [UnmanagedCallersOnly]
+        private static cef_runtime_style_t Style(_cef_browser_view_delegate_t* self) => cef_runtime_style_t.CEF_RUNTIME_STYLE_ALLOY;
+    }
+
     private sealed class Client : CefObject<_cef_client_t>
     {
         private readonly Requests _requests;
@@ -280,6 +335,29 @@ internal sealed unsafe class ChromiumWindow
             _owner = owner;
             Struct->get_resource_request_handler = &GetResourceRequestHandler;
             Struct->on_render_process_terminated = &OnRendererGone;
+            Struct->on_before_browse = &BeforeBrowse;
+        }
+
+        // Answering 1 cancels the navigation.
+        [UnmanagedCallersOnly]
+        private static int BeforeBrowse(_cef_request_handler_t* self, _cef_browser_t* browser, _cef_frame_t* frame, _cef_request_t* request, int userGesture, int isRedirect)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var f = new CefRef<_cef_frame_t>(frame);
+            using var r = new CefRef<_cef_request_t>(request);
+            var owner = From<Requests>(self)._owner;
+            try
+            {
+                var url = CefStrings.TakeUserFree(request->get_url(request));
+                if (!ChromiumRouting.RefusesNavigation(url, frame != null && frame->is_main(frame) == 1)) return 0;
+                AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': refused navigating the page to a local file");
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                AppCallback.Log(owner.Log, () => "[Shenora.Chromium] Checking a navigation failed; it was allowed", LogLevel.Warning, ex);
+                return 0;
+            }
         }
 
         // CEF's IO thread. `Network` answers null, which leaves the request to Chromium's own stack.
@@ -459,6 +537,8 @@ internal sealed unsafe class ChromiumWindow
             var owner = From<Load>(self)._owner;
             AppCallback.Run(owner.Bridge.DocumentReplaced);
             AppCallback.Run(() => owner._captions.Set([]));
+            owner._draggedFiles = [];
+            AppCallback.Run(() => owner.DocumentReplaced?.Invoke());
         }
     }
 
@@ -470,6 +550,18 @@ internal sealed unsafe class ChromiumWindow
         {
             _owner = owner;
             Struct->on_draggable_regions_changed = &RegionsChanged;
+            Struct->on_drag_enter = &DragEnter;
+        }
+
+        // Answering 0 lets the drag continue into the page, whose own drop event names the zone.
+        [UnmanagedCallersOnly]
+        private static int DragEnter(_cef_drag_handler_t* self, _cef_browser_t* browser, _cef_drag_data_t* data, cef_drag_operations_mask_t mask)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var d = new CefRef<_cef_drag_data_t>(data);
+            var owner = From<Drag>(self)._owner;
+            AppCallback.Run(() => owner.DragEntered(browser, data));
+            return 0;
         }
 
         // Forwarding is what makes the page's drag bar a real caption: HTCAPTION with it, HTCLIENT without

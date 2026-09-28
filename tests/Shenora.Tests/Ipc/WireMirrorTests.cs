@@ -908,7 +908,7 @@ public class WireMirrorTests
         // The hook has no BaseModuleService — it calls the bridge directly — so the routes are read from
         // `invoke(MODULE, 'ROUTE'` and the events from `subscribe<…>(MODULE, 'TYPE'`. Keeping them apart
         // is the point: a route pinned as an event would pass while the wrong half drifted.
-        var routes = Regex.Matches(source, @"\.invoke\(DROP_ZONE_MODULE,\s*'(?<route>[A-Z_]+)'")
+        var routes = Regex.Matches(source, @"\.invoke(?:<[^>]*>)?\(DROP_ZONE_MODULE,\s*'(?<route>[A-Z_]+)'")
             .Select(m => m.Groups["route"].Value)
             .ToHashSet(StringComparer.Ordinal);
         var events = Regex.Matches(source, @"\.subscribe(?:<[^>]*>)?\(DROP_ZONE_MODULE,\s*'(?<type>[A-Z_]+)'")
@@ -925,6 +925,8 @@ public class WireMirrorTests
                 DropZoneModule.UpdateType,
                 DropZoneModule.UnregisterType,
                 DropZoneModule.ShowType,
+                // The Chromium shell's: its page delivers the drop and asks for the paths.
+                Shenora.Chromium.Host.ChromiumDropZones.DropType,
             },
             routes);
         Assert.Equal(

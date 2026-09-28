@@ -39,6 +39,11 @@ at the first list and missed five more breaking changes.
   shell itself (`Shenora.Chromium`) is not a package yet; this is its client half, and a page on the default
   bridge will need no change to move onto it.
 
+- **`useDropZone()` works on the Chromium shell, with no change to your code.** That shell draws no overlay:
+  it answers `REGISTER` with `pageDrop`, the hook then takes the page's own drag events on the element, and a
+  drop there asks the host (`DROP`) for the real paths the engine reported as the drag entered. On the
+  WebView2 shell the hook behaves exactly as before.
+
 - **`useCaptionButtonState()` in `@shenora/react`, with `CaptionButtonState` and `WindowEventTypes`.** Once a
   page registers its caption buttons with `setCaptionButtons`, the host takes the hit-test there, so CSS
   `:hover` no longer fires over them. The hook tells the page which button is hot or pressed, from the host's

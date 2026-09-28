@@ -5,29 +5,29 @@ namespace Shenora.Chromium.Host;
 
 #if CEF_WINDOWS
 /// <summary>
-/// The Win32 half of <see cref="CaptionButtons"/>: subclasses on CEF's top-level window and on Chromium's
-/// render-widget children, which are in this process on CEF's UI thread (measured), where every call here runs.
+/// The frame's hit-test on Windows: subclasses on CEF's top-level window and on Chromium's render-widget
+/// children, which are in this process on CEF's UI thread (measured), where every call here runs.
 /// <para>
-/// The OS asks the CHILD first, because <c>WindowFromPoint</c> lands on it, and it answers with the Views frame's
-/// own hit-test, which knows nothing of the page's buttons (measured: HTCLIENT at the buttons, HTCAPTION only on
-/// a <c>-webkit-app-region: drag</c> area). So over a
-/// button the child answers <c>HTTRANSPARENT</c>, the OS asks the top-level window beneath it on the same
-/// thread, and that answers <c>HTMINBUTTON</c>/<c>HTMAXBUTTON</c>/<c>HTCLOSE</c>, which is what Snap Layouts
-/// attaches to, provided the window is styled resizable and maximizable, which attaching adds. The non-client
-/// press and release are then SWALLOWED: the default handling would run the OS's own caption-button loop
-/// against a caption this window does not draw.
+/// The OS asks the CHILD first, because <c>WindowFromPoint</c> lands on it, and with an Alloy-style page (D84) the
+/// child answers HTCLIENT everywhere, even over a <c>-webkit-app-region: drag</c> area the top-level window
+/// answers HTCAPTION for (measured), so the OS would hand a press there to the page. So wherever the top-level
+/// window gives a non-client answer, the child answers <c>HTTRANSPARENT</c> and the OS asks the top-level window
+/// beneath it on the same thread. That covers the drag area, and the page's caption buttons, where the
+/// top-level window answers <c>HTMINBUTTON</c>/<c>HTMAXBUTTON</c>/<c>HTCLOSE</c> for <see cref="CaptionButtons"/>,
+/// which is what Snap Layouts attaches to. The non-client press and release there are SWALLOWED: the default
+/// handling would run the OS's own caption-button loop against a caption this window does not draw.
 /// </para>
 /// <para>
-/// A render widget is replaced when its renderer is (a crash, a cross-site navigation), so
-/// <see cref="Refresh"/> subclasses whatever children exist whenever the page re-sends its buttons, which it
-/// must do after every load anyway.
+/// A render widget is replaced when its renderer is (a crash, a cross-site navigation). The top-level window
+/// hears of each new child (<c>WM_PARENTNOTIFY</c>) and subclasses it.
 /// </para>
 /// </summary>
 internal sealed unsafe class CaptionHitTest : IDisposable
 {
-    private const uint WM_NCDESTROY = 0x0082, WM_NCHITTEST = 0x0084, WM_NCMOUSEMOVE = 0x00A0,
-        WM_NCLBUTTONDOWN = 0x00A1, WM_NCLBUTTONUP = 0x00A2, WM_NCLBUTTONDBLCLK = 0x00A3, WM_NCMOUSELEAVE = 0x02A2;
-    private const int HTTRANSPARENT = -1, HTMINBUTTON = 8, HTMAXBUTTON = 9, HTCLOSE = 20;
+    private const uint WM_CREATE = 0x0001, WM_NCDESTROY = 0x0082, WM_NCHITTEST = 0x0084, WM_NCMOUSEMOVE = 0x00A0,
+        WM_NCLBUTTONDOWN = 0x00A1, WM_NCLBUTTONUP = 0x00A2, WM_NCLBUTTONDBLCLK = 0x00A3, WM_PARENTNOTIFY = 0x0210,
+        WM_NCMOUSELEAVE = 0x02A2;
+    private const int HTERROR = -2, HTTRANSPARENT = -1, HTNOWHERE = 0, HTCLIENT = 1, HTMINBUTTON = 8, HTMAXBUTTON = 9, HTCLOSE = 20;
     private const nuint TopId = 1, ChildId = 2;
     private const string RenderWidgetClass = "Chrome_RenderWidgetHostHWND";
 
@@ -37,6 +37,7 @@ internal sealed unsafe class CaptionHitTest : IDisposable
     private readonly GCHandle _self;
     private readonly HashSet<nint> _children = [];
     private bool _disposed;
+    private bool _snapLayouts;
 
     private CaptionHitTest(nint top, CaptionButtons buttons, ILogger? log)
     {
@@ -46,25 +47,35 @@ internal sealed unsafe class CaptionHitTest : IDisposable
         _self = GCHandle.Alloc(this);
     }
 
-    /// <summary>Subclass the top-level window. Null when it cannot be (no handle, or the call failed).</summary>
+    /// <summary>Subclass the top-level window and the render widgets it has. Null when it cannot be (no handle, or
+    /// the call failed). At window creation, so the page's drag area works before anything else is asked.</summary>
     public static CaptionHitTest? Attach(nint top, CaptionButtons buttons, ILogger? log)
     {
         if (top == 0) return null;
         var hitTest = new CaptionHitTest(top, buttons, log);
         if (SetWindowSubclass(top, &TopProc, TopId, (nuint)GCHandle.ToIntPtr(hitTest._self)) != 0)
         {
-            // Snap Layouts needs the window styled resizable and maximizable. Measured against a control window
-            // that shows the flyout: CEF's frameless style never got it, WS_MAXIMIZEBOX alone never did, and
-            // exactly these two bits did in every trial. (Adding WS_CAPTION as well lost it again.) Neither bit
-            // adds a frame: the client area stays the whole window (measured), though Windows 11 now rounds the
-            // window's corners.
-            SetWindowLongPtrW(top, GWL_STYLE, GetWindowLongPtrW(top, GWL_STYLE) | WS_THICKFRAME | WS_MAXIMIZEBOX);
-            SetWindowPos(top, 0, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+            hitTest.Refresh();
             return hitTest;
         }
-        AppCallback.Log(log, () => $"[Shenora.Chromium] Could not subclass the window for its caption buttons (error {Marshal.GetLastPInvokeError()})", LogLevel.Warning);
+        AppCallback.Log(log, () => $"[Shenora.Chromium] Could not subclass the window for its hit-test (error {Marshal.GetLastPInvokeError()})", LogLevel.Warning);
         hitTest._self.Free();
         return null;
+    }
+
+    /// <summary>
+    /// Style the window so Windows offers Snap Layouts on the page's maximize button. Once, when the page first
+    /// registers caption buttons. Measured against a control window that shows the flyout: CEF's frameless
+    /// style never got it, WS_MAXIMIZEBOX alone never did, and exactly these two bits did in every trial.
+    /// (Adding WS_CAPTION as well lost it again.) Neither bit adds a frame: the client area stays the whole
+    /// window (measured), though Windows 11 now rounds the window's corners.
+    /// </summary>
+    public void EnableSnapLayouts()
+    {
+        if (_disposed || _snapLayouts) return;
+        _snapLayouts = true;
+        SetWindowLongPtrW(_top, GWL_STYLE, GetWindowLongPtrW(_top, GWL_STYLE) | WS_THICKFRAME | WS_MAXIMIZEBOX);
+        SetWindowPos(_top, 0, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     }
 
     /// <summary>Physical pixels per CSS pixel, from the window's own DPI (per monitor).</summary>
@@ -86,12 +97,16 @@ internal sealed unsafe class CaptionHitTest : IDisposable
         try { EnumChildWindows(_top, &CollectChild, GCHandle.ToIntPtr(handle)); }
         finally { handle.Free(); }
 
-        var thread = GetWindowThreadProcessId(_top, null);
-        foreach (var child in found)
-        {
-            if (_children.Contains(child) || GetWindowThreadProcessId(child, null) != thread || !IsRenderWidget(child)) continue;
-            if (SetWindowSubclass(child, &ChildProc, ChildId, (nuint)GCHandle.ToIntPtr(_self)) != 0) _children.Add(child);
-        }
+        foreach (var child in found) Adopt(child);
+    }
+
+    // Only a render widget on this window's own thread: a subclass installs from that thread alone, and
+    // HTTRANSPARENT passes a hit-test on only to a window of the same thread.
+    private void Adopt(nint child)
+    {
+        if (_disposed || _children.Contains(child) || !IsRenderWidget(child)) return;
+        if (GetWindowThreadProcessId(child, null) != GetWindowThreadProcessId(_top, null)) return;
+        if (SetWindowSubclass(child, &ChildProc, ChildId, (nuint)GCHandle.ToIntPtr(_self)) != 0) _children.Add(child);
     }
 
     public void Dispose()
@@ -155,6 +170,9 @@ internal sealed unsafe class CaptionHitTest : IDisposable
                 case WM_NCLBUTTONUP when FromHitTest(wParam) is { } released:
                     me._buttons.Release(released);
                     return 0;
+                case WM_PARENTNOTIFY when (wParam & 0xFFFF) == WM_CREATE:
+                    me.Adopt(lParam);   // a new render widget: a renderer was replaced
+                    break;
                 case WM_NCDESTROY:
                     RemoveWindowSubclass(hwnd, &TopProc, TopId);
                     break;
@@ -174,7 +192,13 @@ internal sealed unsafe class CaptionHitTest : IDisposable
         try
         {
             me = (CaptionHitTest)GCHandle.FromIntPtr((nint)data).Target!;
-            if (msg == WM_NCHITTEST && me.ButtonAt(lParam) is not null) return HTTRANSPARENT;
+            if (msg == WM_NCHITTEST)
+            {
+                // The top-level window's answer, caption buttons included: anything but the page's own client
+                // area is the frame's, so the OS must ask the frame.
+                var frame = (int)SendMessageW(me._top, WM_NCHITTEST, wParam, lParam);
+                if (frame is not (HTCLIENT or HTNOWHERE or HTTRANSPARENT or HTERROR)) return HTTRANSPARENT;
+            }
             if (msg == WM_NCDESTROY)
             {
                 RemoveWindowSubclass(hwnd, &ChildProc, ChildId);
@@ -223,6 +247,7 @@ internal sealed unsafe class CaptionHitTest : IDisposable
     [DllImport("user32")] private static extern int GetClassNameW(nint hwnd, char* name, int max);
     [DllImport("user32")] private static extern int ScreenToClient(nint hwnd, POINT* point);
     [DllImport("user32")] private static extern uint GetDpiForWindow(nint hwnd);
+    [DllImport("user32")] private static extern nint SendMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
     [DllImport("user32")] private static extern int TrackMouseEvent(TRACKMOUSEEVENT* track);
 }
 #else
@@ -231,6 +256,7 @@ internal sealed class CaptionHitTest : IDisposable
 {
     public static CaptionHitTest? Attach(nint top, CaptionButtons buttons, ILogger? log) => null;
     public double Scale => 1.0;
+    public void EnableSnapLayouts() { }
     public void Refresh() { }
     public void Dispose() { }
 }
