@@ -32,6 +32,7 @@ internal sealed unsafe class ChromiumWindow
     private readonly CaptionButtons _captions;
     private CaptionHitTest? _captionHitTest;
     private string[] _draggedFiles = [];
+    private readonly RendererRecovery _recovery;
 
     public ChromiumWindow(string name, ChromiumWindowOptions options, ChromiumServing serving, ChromiumOrigins origins,
         Func<ChromiumWindow, ChromiumIpcBridge> bridge, Action<ChromiumWindow> destroyed, ILogger? log)
@@ -48,6 +49,16 @@ internal sealed unsafe class ChromiumWindow
         // The click runs AFTER the message that delivered it: closing the window from inside its own
         // subclassed window procedure would destroy it mid-call.
         _captions = new CaptionButtons(CaptionStateChanged, kind => CefTask.Post(cef_thread_id_t.TID_UI, () => InvokeCaptionButton(kind)));
+        _recovery = new RendererRecovery(message => AppCallback.Log(_log, () => $"[Shenora.Chromium] Window '{Name}': {message}", LogLevel.Warning));
+    }
+
+    // CEF's UI thread, from the renderer-terminated callback. The reload is posted, so it runs after CEF has
+    // finished reporting the dead renderer.
+    private void RendererTerminated()
+    {
+        Bridge.RendererGone();
+        if (!_recovery.ShouldReload(DateTime.UtcNow)) return;
+        CefTask.Post(cef_thread_id_t.TID_UI, () => { if (_browser != null) _browser->reload(_browser); });
     }
 
     public string Name { get; }
@@ -437,8 +448,8 @@ internal sealed unsafe class ChromiumWindow
         {
             using var b = new CefRef<_cef_browser_t>(browser);
             var owner = From<Requests>(self)._owner;
-            AppCallback.Run(owner.Bridge.RendererGone);
             AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': the renderer terminated ({status}, {errorCode})", LogLevel.Warning);
+            AppCallback.Run(owner.RendererTerminated);
         }
     }
 
@@ -566,6 +577,17 @@ internal sealed unsafe class ChromiumWindow
         {
             _owner = owner;
             Struct->on_load_start = &LoadStart;
+            Struct->on_load_end = &LoadEnd;
+        }
+
+        // Only a SUCCESSFUL main-frame load restores the crash-reload budget; an error page must not.
+        [UnmanagedCallersOnly]
+        private static void LoadEnd(_cef_load_handler_t* self, _cef_browser_t* browser, _cef_frame_t* frame, int httpStatusCode)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var f = new CefRef<_cef_frame_t>(frame);
+            if (frame == null || frame->is_main(frame) != 1 || httpStatusCode is < 200 or >= 400) return;
+            From<Load>(self)._owner._recovery.LoadSucceeded();
         }
 
         // The main frame's new document: whoever handshook can no longer receive (ContentLoading's counterpart),

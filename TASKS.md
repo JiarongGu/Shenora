@@ -150,13 +150,13 @@ D37 and D51 are corrected in place to point at them.
    ⚠ Maximized, its client overhangs the monitor's work area by 1 px on every side.
    **`useDropZone` gets real paths with no overlay** (the page is Alloy style, D84): the page's own drop names
    the zone, and the host answers with the paths CEF reported as the drag entered. A file dropped anywhere
-   else no longer navigates the app away.
+   else no longer navigates the app away. A crashed renderer is reloaded on the WebView2 shell's policy.
    **Left:**
-   - app hooks for downloads and permissions, which wait for an app that asks (the defaults are the WebView2
-     shell's, D84);
+   - app hooks for downloads, permissions and renderer failure, which wait for an app that asks (the defaults
+     are the WebView2 shell's, D84);
    - a real pointer drag and resize of the window (their routing is measured, the move is not);
-   - a renderer-crash reload, native services (dialogs, clipboard, URL launch), secondary windows exercised
-     end to end, and the dev-server proxy run against a real Vite server (only unit-tested so far).
+   - native services (dialogs, clipboard, URL launch), secondary windows exercised end to end, and the
+     dev-server proxy run against a real Vite server (only unit-tested so far).
 
    **Constraints the kit's probe set** (CEF 152, Windows, 2026-09-28):
    - 🔴 **A `--remote-debugging-port` on the app's OWN command line opens the port onto the bridge page**,
