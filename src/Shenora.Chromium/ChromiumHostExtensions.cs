@@ -18,7 +18,8 @@ public static class ChromiumHostExtensions
     /// a transport with no code in the renderer (D83). The main window opens once CEF has started, and the app
     /// ends when the last window closes. Unless the app registered its own first, it registers the shell's
     /// <see cref="IUrlLauncher"/> (the user's browser, http/https only; a page's popups go there) and
-    /// <see cref="IFileDialogs"/> (CEF's native dialogs over the main window), with the page's route to the dialogs.
+    /// <see cref="IFileDialogs"/> (CEF's native dialogs over the main window), with the page's route to the dialogs,
+    /// and on Windows <see cref="IClipboardService"/>.
     /// <para>
     /// ⚠ On Windows, Chromium's sandbox exists only when the app starts through CEF's <c>bootstrap.exe</c> and
     /// the kit's shim (D82). Started any other way it runs, and logs a warning that the sandbox is off.
@@ -39,6 +40,10 @@ public static class ChromiumHostExtensions
         builder.Services.TryAddSingleton<IUiDispatcher>(sp => sp.GetRequiredService<CefUiDispatcher>());
         // The native services, TryAdd so an app's own registration wins.
         builder.Services.TryAddSingleton<IUrlLauncher, ChromiumUrlLauncher>();
+#if CEF_WINDOWS
+        // The page's route to it stays the app's opt-in (AddShenoraClipboard), as with the WebView2 shell.
+        builder.Services.TryAddSingleton<IClipboardService, Win32Clipboard>();
+#endif
         builder.Services.AddSingleton(sp => new ChromiumWindows(options, sp.GetRequiredService<CefUiDispatcher>(),
             sp.GetRequiredService<IMessageDispatcher>(), sp.GetService<IEventBus>(), sp.GetService<ILogger<ChromiumWindows>>(),
             sp.GetRequiredService<IUrlLauncher>()));
