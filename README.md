@@ -63,6 +63,7 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 | `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Modules.Media` — probe, plan, serve, remux, and the shell's own picture surface), file operations (`Shenora.Engine.Files` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.Engine.Compression`). |
 | `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.Engine.Update`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
+| `Shenora.Chromium` | NuGet | `net10.0` (Windows today) | Chromium through CEF, for an app that ships its own browser engine instead of WebView2 (D81): a shell of its own (`UseChromium`), and the embedding `Shenora.Windows` hosts as a `ChromiumView`. **CEF is not in the package** — your app's build fetches the pinned CEF build and lays the app out beside CEF's launcher, so reference it from the app's own project. |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell. It SHARES the MAUI-shaped half with `Shenora.Android` (`src/Shenora.Mobile/`: transport, dispatcher, safe area, interception) and owns what is genuinely per-platform — AVPlayer, `MPNowPlayingInfoCenter`, ActivityKit — in its own `Services/`. |
 | `@shenora/react` | npm | ES2022 / ESM · **React ≥ 18** | The client half — bridge, event bus, store, hooks. Built and tested against the LATEST React (19); 18 is supported and the floor is enforced rather than assumed — `verify` type-checks the shipped sources against React 18's types, so an API that does not exist there fails here instead of in your build. 18 is the floor because `useSyncExternalStore` is, and the store is built on it. |
@@ -80,17 +81,20 @@ the WinRT projections exist only when the target framework names a Windows SDK v
 by name with the one-line fix in the message; retarget and they work, on a Windows 10 1809 floor. **The kit
 does not narrow your supported platforms for a feature you did not ask for.**
 
-Dependencies — the graph is a **fan, one level deep**: each shell references `Shenora` and nothing else
-of the kit's, so referencing two shells is impossible by construction rather than by convention.
+Dependencies — the graph is a **fan, one level deep**: each platform shell references `Shenora` and no
+other shell, so referencing two shells is impossible by construction rather than by convention. The one
+further edge is the Chromium engine, which `Shenora.Windows` references for its `ChromiumView` (D83): its
+managed code comes along, and CEF itself only into an app that references `Shenora.Chromium` directly.
 (It was a *diamond* while `Shenora.Ipc` sat in the middle; D65 removed that level.)
 
 ```
                       Shenora           net10.0    portable: no Windows reference
                          ↑              (Core · Engine · Modules — the IPC stack is
-            ┌────────────┼────────────┐  Shenora.Core.Ipc, a NAMESPACE, not a package)
-            │            │            │
-   Shenora.Windows  Shenora.Android  Shenora.iOS
-   net10.0-windows  net10.0-android  net10.0-ios
+            ┌────────────┼────────────┬───────────────┐  Shenora.Core.Ipc, a NAMESPACE)
+            │            │            │               │
+   Shenora.Windows  Shenora.Android  Shenora.iOS   Shenora.Chromium   net10.0, Windows today
+   net10.0-windows  net10.0-android  net10.0-ios      ↑   (D81)
+            └─────────────────────────────────────────┘   ChromiumView (D83)
 
    Shenora.Launcher — native, referenced by nothing; a build-time artifact (D50)
 ```
@@ -276,6 +280,31 @@ downloads, web messages, renderer failures), and five hooks decide what happens 
 dialog, an auth challenge, a certificate request, a popup or a permission prompt. Three of those
 prevent a wedge that would otherwise stop an off-screen page for good.
 **`docs/guides/sessions.md`** is the guide.
+
+### `Shenora.Chromium` — Chromium instead of WebView2
+
+The kit's own Chromium, through CEF (D81–D84), in either of two hosts. **Its own shell**, on CEF's windows:
+frameless chrome with real caption buttons and Snap Layouts, file drops with real paths, native file
+dialogs, the clipboard, secondary windows, crash reload and dev-server hot reload. **Or inside a WinForms
+app**, as a `ChromiumView` control beside the WebView2 one, keeping `OptimizedForm`, the window commands
+and `SecondaryWindows`:
+
+```csharp
+// Its own shell.
+builder.UseChromium(new ChromiumHostOptions { ContentRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot") });
+
+// Or in a WinForms app: CEF runs beside the WinForms loop, and each view is a page.
+builder.UseWindows(new WindowsHostOptions { MainForm = sp => new MainForm(sp.GetRequiredService<ChromiumEngine>()) });
+builder.UseChromiumEngine(new ChromiumEngineOptions { ContentRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot") });
+// in MainForm: Controls.Add(new ChromiumView(engine) { Dock = DockStyle.Fill });
+```
+
+⚠ **Reference `Shenora.Chromium` from the app's own project, with a `RuntimeIdentifier` (`win-x64`), and
+name its assembly `<App>.App`.** Its build fetches the pinned CEF build once per machine (about 170 MB
+to download, SHA-1-checked) and lays the app out as `<App>.exe`, CEF's launcher, which creates Chromium's
+sandbox and starts `<App>.App.dll`. The build refuses a layout that could not start, and an engine with no
+CEF beside it says which package to reference. A reference that arrives only through `Shenora.Windows`
+carries the code, not CEF. Windows only today.
 
 ### `@shenora/react` — the client half
 

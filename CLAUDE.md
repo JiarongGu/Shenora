@@ -22,9 +22,10 @@ them: what .NET can do and React cannot.** So the question for any feature is no
 `.NET does the platform work · React does the interface · the kit owns the seam and the IPC.`
 
 Shipped as NuGet packages (`Shenora` + ONE shell per platform, `Shenora.Windows|Android|iOS` — D37 —
-plus the native `Shenora.Launcher`, D50) + npm (`@shenora/react`, plus the build-time `@shenora/cli` —
-D67), all versioned in lockstep. **There is no optional feature tier** (D53/D55/D65): a capability gets
-a FOLDER inside `Shenora`, never a package id. The layer is the namespace — `Shenora.Core.*` (Events ·
+plus the native `Shenora.Launcher`, D50, and the Chromium engine `Shenora.Chromium`, D81) + npm
+(`@shenora/react`, plus the build-time `@shenora/cli` — D67), all versioned in lockstep. **There is no
+optional feature tier** (D53/D55/D65): a capability gets a FOLDER inside `Shenora`, never a package id —
+an ENGINE is the one package boundary, because an app that chose WebView2 must not carry CEF (D81). The layer is the namespace — `Shenora.Core.*` (Events ·
 Ipc · Shell · WebView), `Shenora.Engine.*` (Files · Missions), `Shenora.Modules.*` (Media · FileDialog ·
 Platform · Requests · Update). ⚠ **`Shenora.Ipc` is retired as BOTH a package id and a namespace.**
 Code is **extracted from proven sibling apps**, not

@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    The Chromium shell (D81, D82): one shell of the kit's own for Windows, macOS and Linux, on CEF's
-    Views framework. Not packable until the shell is; today it holds the binding.
+    The Chromium engine (D81-D84): the kit's own Chromium shell on CEF's Views framework, and the embedding a
+    host that owns its UI thread uses (D83). Its own package id, because an app that chose WebView2 must not
+    carry CEF (D81); CEF's bytes never ship in it, the app's build fetches them.
 
     Interop/Generated/ is written by `node devtools/dev.mjs cef-binding` from the pin in cef.json and
     is never edited by hand. Common/ is what every OS shares. The rest differs by OS (window and event
@@ -11,7 +12,10 @@
     defaults to Windows; `-p:CefOs=Linux` compile-checks another OS from this machine.
   -->
   <PropertyGroup>
-    <IsPackable>false</IsPackable>
+    <!-- IsPackable stays INLINE — the coverage gate finds shipped projects by text-matching it. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.Chromium</PackageId>
+    <Description>Shenora's Chromium engine, through CEF, for an app that ships its own browser engine instead of WebView2. UseChromium is a shell of the kit's own: CEF's windows with frameless chrome, real caption buttons and Snap Layouts, file drops with real paths, native file dialogs, the clipboard, secondary windows, crash reload and dev-server hot reload, with IPC over a transport that needs no code in the renderer. ChromiumEngine and ChromiumChildBrowser embed a page in a window the host owns, which is how Shenora.Windows hosts one beside its WebView2 control. CEF itself is not in the package: the app's build fetches the pinned CEF build, checks its SHA-1, and lays the app out beside CEF's launcher with the kit's shim, which is what gives Chromium its sandbox. Windows today.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <CefOs Condition="'$(CefOs)' == '' and $(RuntimeIdentifier.StartsWith('osx'))">MacOS</CefOs>
     <CefOs Condition="'$(CefOs)' == '' and $(RuntimeIdentifier.StartsWith('linux'))">Linux</CefOs>

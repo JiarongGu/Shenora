@@ -8,6 +8,7 @@ using Shenora.Modules.FileDialog;
 using Shenora.Modules.Media;
 using Shenora.Core.Shell;
 using Shenora.Engine.Files;
+using Shenora.Chromium;
 
 namespace Shenora.Windows;
 
@@ -158,6 +159,27 @@ public static class WindowsHostExtensions
             new MainFormUiDispatcher(sp.GetRequiredService<IFormInteraction>()));
         return builder;
     }
+
+    /// <summary>
+    /// Run Chromium beside the WinForms loop, for <see cref="ChromiumView"/> controls (D83): CEF's message loop runs
+    /// on a thread of its own. The runner answers CEF's subprocesses before the single-instance gate, starts the
+    /// engine after the process init and before the first hook, and stops it after the loop, once every window's
+    /// browser has closed, <see cref="SecondaryWindows"/> included. Call it beside <see cref="UseWindows"/>, in
+    /// either order; resolve the <see cref="ChromiumEngine"/> for each view.
+    /// <para>
+    /// ⚠ <b>The app's own project must reference the <c>Shenora.Chromium</c> package.</b> Its build fetches CEF and
+    /// lays the app out beside CEF's launcher, and a reference that only reaches it through this package does not
+    /// run that build, so the engine would find no CEF beside the app and say so as it starts.
+    /// </para>
+    /// </summary>
+    /// <param name="builder">The app being composed.</param>
+    /// <param name="options">Where the pages come from, where CEF keeps its cache, and development settings.</param>
+    public static ShenoraApplicationBuilder UseChromiumEngine(this ShenoraApplicationBuilder builder, ChromiumEngineOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        builder.Services.TryAddSingleton(sp => new ChromiumEngine(options, sp.GetService<ILogger<ChromiumEngine>>()));
+        return builder;
+    }
 }
 
 /// <summary>The WinForms run sequence. The ORDER is load-bearing — see <c>docs/design/shells.md</c>.</summary>
@@ -166,6 +188,15 @@ internal sealed class WinFormsRunner : IShenoraRunner
     public void Run(ShenoraApplication app)
     {
         var options = app.Services.GetRequiredService<WindowsHostOptions>();
+
+        // A Chromium engine (UseChromiumEngine) answers CEF's subprocesses before anything: without CEF's launcher
+        // this exe is every one of them, and one that went on would meet the single-instance gate and exit.
+        var engine = app.Services.GetService<ChromiumEngine>();
+        if (engine is not null && ChromiumEngine.RunIfSubprocess(out var subprocessExit))
+        {
+            Environment.Exit(subprocessExit);
+            return;
+        }
 
         // Single-instance gate FIRST — before any lifecycle hook takes an OS lock (the WebView2 prewarm
         // takes the user-data-folder lock), and so a losing launch answers instantly.
@@ -194,6 +225,10 @@ internal sealed class WinFormsRunner : IShenoraRunner
                 WinFormsBootstrap.Initialize(options.Bootstrap
                     ?? new WinFormsBootstrapOptions { ApplicationName = app.ApplicationName });
             }
+
+            // After the process init, which must be the first to set the DPI mode; before any hook or form, since
+            // a ChromiumView opens its browser as its handle is created.
+            engine?.Start(app);
 
             // The hook sequence lives on ShenoraApplication (Start/Stop) so every runner shares one
             // ordering, one start/stop asymmetry and one idempotency rule.
@@ -253,6 +288,14 @@ internal sealed class WinFormsRunner : IShenoraRunner
         }
         finally
         {
+            if (engine is not null)
+            {
+                // Every browser closes before CEF does. A secondary window outlives the main loop on a thread of
+                // its own, so close them; Stop waits, briefly, for their browsers.
+                app.Services.GetService<SecondaryWindows>()?.CloseAll();
+                engine.Stop();
+            }
+
             // Released LAST and explicitly, so a --restarted relaunch waiting on the mutex gets it the
             // moment shutdown work is done rather than at process teardown.
             guard?.Dispose();

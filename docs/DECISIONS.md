@@ -20,7 +20,7 @@ that landed it, not here.
 
 > ## The package set — here, once
 >
-> **There are five packable projects, plus 2 npm packages.** Verify with `node devtools/dev.mjs doctor`,
+> **There are six packable projects, plus 2 npm packages.** Verify with `node devtools/dev.mjs doctor`,
 > which prints the real count. ⚠ **That sentence's WORDING is load-bearing** — `doc-drift` reads
 > "there are `<n>` packable projects" from this file and fails closed if it is reworded away, because a
 > count-check that silently stops finding its subject passes forever while checking nothing.
@@ -29,6 +29,7 @@ that landed it, not here.
 > |---|---|---|
 > | **the framework** | `Shenora` | the three cores (IPC · EventBus · RouteInterceptor), the engine layer, and the modules — D65 |
 > | **shells** (D37) | `Shenora.Windows` · `Shenora.Android` · `Shenora.iOS` | one per platform; each implements the cores and its modules' platform halves |
+> | **engine** (D81) | `Shenora.Chromium` | Chromium through CEF: a shell of its own, and the embedding `Shenora.Windows` hosts; CEF's bytes arrive through the app's build, never in the package |
 > | **native** (D50) | `Shenora.Launcher` | C++ sources + per-RID binaries; NO managed surface |
 > | **npm** | `@shenora/react` | what the app imports |
 > | **npm** (D67) | `@shenora/cli` | build-time only — the `shenora` binary, a `devDependency`, in NO shipped artifact |
@@ -1161,8 +1162,9 @@ docs cite them — so the number is the column to scan.
   `OptimizedForm` or `SecondaryWindows`. Owner: *"a new package as chromium first also make shenora.windows
   supports chromium"*.
   - 🔴 **`Shenora.Windows` → `Shenora.Chromium`, and CEF's bytes arrive only on opt-in.** Every Windows app
-    carries the binding's assembly (230 KB, measured) and none carries the engine unless it chooses it. That
-    is D81's boundary: the BYTES, not the assembly.
+    carries the engine's assembly (270 KB at CEF 154, measured) and none carries CEF unless it references
+    the package itself: the dependency excludes its build assets (measured from a local feed). That is
+    D81's boundary: the BYTES, not the assembly.
   - **Two threading models, one engine.** The Views shell runs CEF's loop on the main thread; the WinForms
     host needs CEF's multi-threaded loop, because WinForms owns that thread.
   - **The page finds the transport because the shell MARKS THE HTML it serves** (D36: the host advertises).

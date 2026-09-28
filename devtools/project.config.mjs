@@ -36,6 +36,10 @@ export default {
     // artifactPackableProjects below.
     'src/Shenora.Launcher',
     'src/Shenora.Windows',
+    // The Chromium engine (D81): its own package id, because an app that chose WebView2 must not carry CEF.
+    // Artifact-packed like the launcher: its native shim comes from release.yml's chromium-shim job, or
+    // locally from `dev.mjs cef-native`.
+    'src/Shenora.Chromium',
     // The two mobile faces. Both are listed because the API-baseline coverage check reads IsPackable
     // as the definition of "shipped", so a project claiming it while the tooling skips it is the two
     // halves disagreeing. WHERE each can be packed is the separate question below.
@@ -63,7 +67,7 @@ export default {
    * routine dev-box pack — while the csproj itself still errors if pack is forced without them, so the
    * only way to ship an empty native package is to work at it.
    */
-  artifactPackableProjects: ['src/Shenora.Launcher'],
+  artifactPackableProjects: ['src/Shenora.Launcher', 'src/Shenora.Chromium'],
   /**
    * The npm package that has a BUILD and TESTS — `verify` builds and vitests this one, and the sample
    * web app consumes it. Kept singular because those steps are genuinely about the React client.

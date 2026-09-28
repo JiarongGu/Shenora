@@ -32,12 +32,29 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`Shenora.Chromium`, a new package: Chromium through CEF, for an app that ships its own browser engine
+  instead of WebView2** (**D81–D84**). Two hosts:
+  - **its own shell, `UseChromium(ChromiumHostOptions)`**, on CEF's windows (`ChromiumWindows` opens them by
+    name): frameless chrome whose page-drawn caption buttons are real ones, so Snap Layouts works; file
+    drops with real paths; CEF's native file dialogs; the clipboard; secondary windows; crash reload; and
+    dev-server hot reload;
+  - **`ChromiumView`, a control in `Shenora.Windows`**, with `UseChromiumEngine()` running CEF beside the
+    WinForms loop. It keeps `OptimizedForm`, the window commands (`CoordinateSpace` = the view) and
+    `SecondaryWindows`, whose pages dispatch on their own threads. Underneath it is a small public
+    embedding, `ChromiumEngine` + `ChromiumChildBrowser`, which puts a page in any native window.
+
+  ⚠ **CEF itself is not in the package**, and that is D81's point: an app that chose WebView2 carries none of
+  it. The app's build fetches the pinned CEF build once per machine (about 170 MB, SHA-1-checked) and lays the app
+  out as `<App>.exe`, CEF's launcher, which gives Chromium its sandbox and starts `<App>.App.dll`. So
+  **reference `Shenora.Chromium` from the app's own project**, with a `RuntimeIdentifier`: a reference that
+  arrives only through `Shenora.Windows` brings the code, not CEF, and the engine says so as it starts.
+  Windows only today.
+
 - **`createChromiumTransport()` in `@shenora/react`, and `createHostTransport()` finds the Chromium shell**
   (**D83**). That shell marks each HTML document it serves with `window.__shenora_chromium`, naming a
   same-origin route. The page posts each envelope there with `fetch`, and the shell pushes by calling the
-  marker's `receive`, so no kit code runs in a renderer. `isShenoraAvailable()` answers true there too. The
-  shell itself (`Shenora.Chromium`) is not a package yet; this is its client half, and a page on the default
-  bridge will need no change to move onto it.
+  marker's `receive`, so no kit code runs in a renderer. `isShenoraAvailable()` answers true there too, and a
+  page on the default bridge needs no change to run on either host.
 
 - **`useDropZone()` works on the Chromium shell, with no change to your code.** That shell draws no overlay:
   it answers `REGISTER` with `pageDrop`, the hook then takes the page's own drag events on the element, and a

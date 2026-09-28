@@ -15,10 +15,11 @@ EXISTS. There are no dated design docs any more — D57.)
 `## Current state — **vX.Y.Z published**` to keep the version in step with `VersionPrefix`, and syncs it
 on `--fix`. Never hand-edit the number; never reword the line.
 
-There are five packable projects + two npm packages. **Four are the framework and its shells, organised
+There are six packable projects + two npm packages. **Four are the framework and its shells, organised
 BY PLATFORM (D37)**: `Shenora` and one shell each for `Windows`, `Android` and `iOS`, all shipped from ONE
-Windows runner. The fifth is the native `Launcher` (D50); the npm pair is `@shenora/react` and the
-build-time `@shenora/cli` (D67).
+Windows runner. The fifth is the native `Launcher` (D50), and the sixth the Chromium engine, `Chromium`
+(D81), whose CEF arrives through the app's build; the npm pair is `@shenora/react` and the build-time
+`@shenora/cli` (D67).
 
 ⚠ **There is NO optional-feature tier**: media, files and compression are FOLDERS inside `Shenora`
 (D53, D55) — a capability gets a namespace, never a package id, because a nuget.org listing of
@@ -199,7 +200,7 @@ Shenora.slnx
 │   │                                    ⚠ A RESTRUCTURE UPDATES THE MAP FOR THE FOLDERS ITS OWN COMMITS
 │   │                                    TOUCHED, which is not the same set as the folders it MOVED —
 │   │                                    D65 moved every one and three went missing from this tree.
-│   ├── Shenora.Chromium    net10.0, one build per OS — deps: Shenora; NOT packable yet (D81–D84)
+│   ├── Shenora.Chromium    net10.0, one build per OS (the package: Windows) — deps: Shenora (D81–D84)
 │   │                                          The Chromium shell of the kit's own, on CEF's Views
 │   │                                          framework, for Windows, macOS and Linux; each page an
 │   │                                          Alloy-style browser (D84). `UseChromium` runs the app on
@@ -247,14 +248,15 @@ Shenora.slnx
 │   │                                          surface, so it declares <NoManagedSurface>true</> and
 │   │                                          MetadataSurfaceTests exempts it BY THAT DECLARATION —
 │   │                                          delete the line and the baseline gate turns back on.
-│   ├── Shenora.Windows     net10.0-windows  — deps: Shenora, Microsoft.Web.WebView2
+│   ├── Shenora.Windows     net10.0-windows  — deps: Shenora, Shenora.Chromium, Microsoft.Web.WebView2
 │   │                                          The Windows shell, WHOLE (merged 2026-08-02 from
 │   │                                          WinForms + WebView2 + WebView2.Sessions). Three folders
 │   │                                          keep the areas legible: Shell/ (primitives — bootstrap,
 │   │                                          frameless chrome, tray, secondary windows, window state,
 │   │                                          STA dialogs/clipboard, the UI-thread dispatcher),
 │   │                                          WebView/ (hosting, serving, IPC bridge, drop zones,
-│   │                                          window commands), Sessions/ (render pool, interactive,
+│   │                                          window commands; ChromiumView, a Chromium page as a
+│   │                                          control, D83), Sessions/ (render pool, interactive,
 │   │                                          streaming — and a PRODUCER on Core's IEventBus: a session
 │   │                                          publishes what its browser does, scoped by a per-session
 │   │                                          id, rather than owning bespoke subscription taps).

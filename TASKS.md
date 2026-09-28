@@ -118,13 +118,12 @@ D37 and D51 are corrected in place to point at them.
      beside `<App>.App.dll`. The targets pack into `build/` ONLY, so a direct reference is the opt-in D83
      requires. The package carries the win-x64 shim in `tools/`, staged by `dev.mjs cef-native`, and packing
      without it fails. An app with nothing but a `PackageReference` to it, from a local feed, built and ran.
+     The package ships, its shim built by `release.yml`'s `chromium-shim` job. A WebView2 app that
+     references only `Shenora.Windows` gets its managed code and none of its targets (the dependency
+     excludes `Build`, measured from a local feed), and the engine names the package to add.
      **Left:**
-     - making the package packable: add it to `packableProjects` and `artifactPackableProjects`, and add a
-       `release.yml` job that runs `cef-native` and stages the shim the way the launcher's is staged;
      - a win-arm64 shim (the targets accept the RID, and the package has no shim for it);
-     - the macOS and Linux layouts (the targets refuse them by name);
-     - once step 3b makes `Shenora.Windows` depend on this package, proof that a WebView2 app does not
-       receive the targets (derived from NuGet's default `PrivateAssets`, not yet exercised).
+     - the macOS and Linux layouts (the targets refuse them by name).
    - **The page bridge needs no renderer code, and the kit's IPC runs over it unchanged** (prototype,
      2026-09-28, sandboxed through the shim). The page `fetch`es `POST /__shenora/ipc` on its own origin,
      the browser process answers from the resource handler on CEF's IO thread, and the host pushes with
@@ -183,36 +182,18 @@ D37 and D51 are corrected in place to point at them.
    - **Under Views, the page's drag bar becomes a real caption only when the shell forwards
      `on_draggable_regions_changed` to `set_draggable_regions`**: HTCAPTION with the forwarding, HTCLIENT
      without it, through real routing (`WindowFromPoint`).
-3b. **Chromium inside `Shenora.Windows` (D83):** a `ChromiumView` control and `UseChromiumEngine()` (owner),
-   on CEF's multi-threaded message loop, since WinForms owns the main thread, with IPC dispatched on the
-   WinForms UI thread as `WebViewIpcBridge` does. It is the adopter's direct path, since it keeps
-   `OptimizedForm` and `SecondaryWindows`. The kit's caption-button hole already works over CEF's child
-   windows (measured, CEF 152). The same shim starts it. The embedding it stands on exists:
-   `ChromiumEngine` + `ChromiumChildBrowser`. `ChromiumView` and `UseChromiumEngine()` are proven as untracked
-   probe code over the public APIs, in an `OptimizedForm` with the kit's `WindowCommandModule`:
-   - the caption hole: at the page's buttons the form answers HTMINBUTTON, HTMAXBUTTON and HTCLOSE, and a
-     real hover on maximize opens the Snap Layouts flyout;
-   - a real press on the page's drag bar moves the window through `START_DRAG`, exactly with the cursor;
-   - maximize and restore;
-   - drops with real paths;
-   - a `SecondaryWindows` window whose page dispatches on its own thread;
-   - keyboard focus: focusing the view gives the page focus, and a real keystroke reaches its input.
-
-   What is left is moving them into `Shenora.Windows`, in the change that makes `Shenora.Chromium` packable
-   (owner). Until then `Shenora.Windows` cannot reference it, since its package would depend on one the
-   feed lacks. Also:
-   - ⚠ WinForms' `Focus()` on the view returns false and its `Focused` stays false, because Win32 focus
-     lands in CEF's child window, which another thread owns. Tab navigation out of the page, back to
-     WinForms controls, is unmeasured.
-   - `UseChromiumEngine()` calls `RunIfSubprocess` before the runner, `Start` before the first form and
-     `Stop` after the loop. The path without the shim, where `RunIfSubprocess` matters, is unmeasured
-     under WinForms.
-   - ⚠ The WebView2 `DropZoneModule` has the same module name, `SHENORA.DROPZONE`. In an app that maps it
-     first, the engine's `TryMapModule` loses the name. Derived and unmeasured: a Chromium page's drops
-     would then get the WebView2 overlay protocol and no paths.
-   - Nothing acts on the page's `-webkit-app-region: drag` areas in an embedded browser yet. Under Views,
-     CEF reports them through `on_draggable_regions_changed`; whether it does for a child browser is
-     unmeasured.
+3b. **`ChromiumView` in `Shenora.Windows` (D83), what is left.** The control and `UseChromiumEngine()` ship,
+   proven in an `OptimizedForm` with the kit's window commands: the caption hole and Snap Layouts, a real
+   `START_DRAG`, drops with real paths, `SecondaryWindows` pages on their own threads, and keyboard focus.
+   - Tab navigation out of the page, back to WinForms controls, is unmeasured. WinForms' `Focused` stays
+     false while the page has the focus, because it is in CEF's child window, which another thread owns.
+   - The path without CEF's launcher, where `RunIfSubprocess` matters, is unmeasured under WinForms.
+   - ⚠ The WebView2 `DropZoneModule` has the same module name, `SHENORA.DROPZONE`, so an app mixing both
+     engines cannot have both drop protocols. The engine takes the name only if it is free. Derived and
+     unmeasured: a Chromium page would then get the WebView2 overlay protocol and no paths.
+   - Nothing acts on the page's `-webkit-app-region: drag` areas in an embedded browser (`START_DRAG`
+     works). Under Views, CEF reports them through `on_draggable_regions_changed`; whether it does for a
+     child browser is unmeasured.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).

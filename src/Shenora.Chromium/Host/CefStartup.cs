@@ -81,10 +81,30 @@ internal static unsafe class CefStartup
 
     private static int _apiVersionSelected;
 
-    // Once per process: it must precede every other CEF call.
+    // Once per process: it must precede every other CEF call, so it is also where a missing runtime shows first.
     private static void SelectApiVersion()
     {
-        if (Interlocked.Exchange(ref _apiVersionSelected, 1) == 0) Cef.cef_api_hash(CefApi.Version, 0);
+        if (Volatile.Read(ref _apiVersionSelected) == 1) return;
+        // The binding's structs are ONE OS's (CefOs), so a build run on another reads CEF's memory wrongly.
+#if CEF_WINDOWS
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("This build of Shenora.Chromium is Windows'.");
+#elif CEF_MACOS
+        if (!OperatingSystem.IsMacOS()) throw new PlatformNotSupportedException("This build of Shenora.Chromium is macOS'.");
+#elif CEF_LINUX
+        if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("This build of Shenora.Chromium is Linux'.");
+#endif
+        try
+        {
+            Cef.cef_api_hash(CefApi.Version, 0);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new InvalidOperationException(
+                "CEF's runtime is not beside the app. Reference the Shenora.Chromium package from the app's own project: "
+                + "its build fetches the pinned CEF build and lays the app out beside CEF's launcher. A reference that "
+                + "only reaches it through another package (Shenora.Windows) does not run that build (D83).", ex);
+        }
+        Volatile.Write(ref _apiVersionSelected, 1);
     }
 
     private static nint RuntimePointer(string name) =>

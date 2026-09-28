@@ -36,6 +36,14 @@ struct Shenora.Windows.CaptionButtonState : System.IEquatable<Shenora.Windows.Ca
   public static bool op_Equality(Shenora.Windows.CaptionButtonState left, Shenora.Windows.CaptionButtonState right)
   public static bool op_Inequality(Shenora.Windows.CaptionButtonState left, Shenora.Windows.CaptionButtonState right)
   public void Deconstruct(out Shenora.Windows.CaptionButtonKind? Hot, out Shenora.Windows.CaptionButtonKind? Pressed)
+sealed class Shenora.Windows.ChromiumView : System.Windows.Forms.Control
+  [Browsable(false)] [DesignerSerializationVisibility(0)] public Shenora.Chromium.ChromiumChildBrowser? Browser { get; }
+  [DefaultValue(null)] public string? Path { get; set; }
+  protected override void OnGotFocus(System.EventArgs e)
+  protected override void OnHandleCreated(System.EventArgs e)
+  protected override void OnHandleDestroyed(System.EventArgs e)
+  protected override void OnSizeChanged(System.EventArgs e)
+  public .ctor(Shenora.Chromium.ChromiumEngine engine, Microsoft.Extensions.Logging.ILogger<Shenora.Windows.ChromiumView>? log = null)
 sealed class Shenora.Windows.ClipboardService : Shenora.Core.Shell.IClipboardService
   public .ctor()
   public System.Threading.Tasks.Task ClearAsync()
@@ -829,6 +837,7 @@ sealed class Shenora.Windows.WindowStateOptions
   public int MinVisibleWidth { get; init; }
   public int MinWidth { get; init; }
 static class Shenora.Windows.WindowsHostExtensions
+  public static Shenora.ShenoraApplicationBuilder UseChromiumEngine(Shenora.ShenoraApplicationBuilder builder, Shenora.Chromium.ChromiumEngineOptions? options = null)
   public static Shenora.ShenoraApplicationBuilder UseWindows(Shenora.ShenoraApplicationBuilder builder, Shenora.Windows.WindowsHostOptions options)
 sealed class Shenora.Windows.WindowsHostOptions
   public Shenora.Windows.SingleInstanceHostOptions? SingleInstance { get; init; }

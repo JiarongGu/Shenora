@@ -27,17 +27,21 @@ project that turns red if it stops being true.
 ## The run sequence
 
 `UseWindows(options)` registers `WinFormsRunner`, and `ShenoraApplication.Run` executes it. The order is
-load-bearing at four points, each marked:
+load-bearing at four points, each marked, and the Chromium engine's three steps (marked C) run only when
+`UseChromiumEngine()` registered one:
 
 ```
+C. ChromiumEngine.RunIfSubprocess  ← before everything: CEF's subprocesses exit here
 1. single-instance gate            ← FIRST: before any hook takes an OS lock
 2. WinFormsBootstrap.Initialize    ← before any control exists
+C. engine.Start(app)               ← after the process init, before any hook or form
 3. app.Start()                     ← the shared hook sequence, owned by ShenoraApplication
 4. MainForm(services)              ← created, NOT shown
 5. IFormInteraction.SetMainForm    ← native services need the window
 6. WindowStateManager.AttachTo     ← geometry applied BEFORE the loop shows it
 7. Application.Run(form)           ← or the MessageLoop test seam
 8. app.Stop()                      ← reverse order, guarded, runs even if startup failed partway
+C. SecondaryWindows.CloseAll, engine.Stop()  ← every browser closes before CEF does
 9. guard.Dispose()                 ← LAST and explicit
 ```
 
@@ -46,6 +50,13 @@ because the WebView2 environment prewarm takes the user-data-folder lock. 2 is b
 because the DPI and text-rendering settings reject a later call. 6 is before 7 because geometry set
 after a form is shown is a visible jump. 9 is explicit — not merely a closed handle — so a `--restarted`
 relaunch waiting on the mutex proceeds the moment shutdown work is done.
+
+The engine's subprocess check comes before the gate because, without CEF's launcher, the app's exe is
+every CEF subprocess too, and one that reached the gate would exit without rendering (derived: that path
+is unmeasured under WinForms, since the app build always lays out the launcher). `engine.Start` comes
+before any form because a `ChromiumView` opens its browser as its handle is created. And CEF must not shut
+down while a browser is open: a `SecondaryWindows` window outlives the main loop on its own thread, so the
+runner closes them, and `Stop` waits a few seconds at most for the browsers still closing.
 
 ## Process init: STA or fail
 

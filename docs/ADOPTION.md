@@ -274,6 +274,32 @@ Replace hand-rolled `EnsureCoreWebView2Async` + settings + event wiring with `We
 **Verify:** the app loads from the dev server and from the packaged bundle, and an external link
 opens in the system browser exactly once.
 
+### Stage 2 on Chromium — when the app ships its own engine
+
+`ChromiumView` takes the WebView2 control's place in the same form, and the rest of the WinForms shell stays
+(D83): `OptimizedForm`, the window commands, native caption buttons with Snap Layouts, `SecondaryWindows`.
+
+1. **Reference `Shenora.Chromium` from the app's own project** with `<RuntimeIdentifier>win-x64</RuntimeIdentifier>`,
+   and name the app's assembly `<App>.App` (`<AssemblyName>MyApp.App</AssemblyName>`). The build fetches the pinned
+   CEF build and lays the app out as `MyApp.exe`, which is CEF's launcher, starting `MyApp.App.dll`. A reference
+   through `Shenora.Windows` alone brings the code and not CEF, and the engine says so as it starts.
+2. **Compose the engine beside the shell:** `builder.UseChromiumEngine(new ChromiumEngineOptions { ContentRoot =
+   …, DevUrl = … })` next to `UseWindows`. Its options say where every view's page comes from: `ContentRoot`,
+   `DevUrl` and `VirtualHost`, and the app's `app.Use…()` pipeline, frozen as the first view opens.
+3. **Swap the control:** `new ChromiumView(engine) { Dock = DockStyle.Fill, Path = … }`, with the engine
+   resolved from the services. The view serves its page and bridges its IPC itself, so the `WebViewHost` and
+   `WebViewIpcBridge` setup goes. Map `WindowCommandModule` as before, with `CoordinateSpace = view`.
+4. **Drops:** do not map the WebView2 `DropZoneModule`. The engine answers `SHENORA.DROPZONE` itself, with the
+   real paths, and `useDropZone()` needs no change. The two share that one module name, and the engine takes
+   it only if it is free as the first view opens.
+
+The page needs no change on the default bridge: `createHostTransport()` finds this host. What differs:
+WinForms' `Focused` stays false while the page has the keyboard focus, and Tab navigation out of the page
+back to WinForms controls is unmeasured.
+
+**Verify:** the app starts from `MyApp.exe`, the page loads from the dev server and from the bundle, and
+the caption buttons, a window drag and a file drop behave as they did on WebView2.
+
 ---
 
 ## Stage 3 — the IPC substrate

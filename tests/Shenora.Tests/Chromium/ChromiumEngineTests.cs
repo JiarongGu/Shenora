@@ -15,6 +15,18 @@ public class ChromiumEngineTests
     }
 
     [Fact]
+    public void An_app_without_CEF_beside_it_is_told_which_package_lays_it_out()
+    {
+        // The test output has no libcef: nothing here runs the package's build targets.
+        Assert.False(File.Exists(Path.Combine(AppContext.BaseDirectory, "libcef.dll")));
+
+        var error = Assert.Throws<InvalidOperationException>(() => ChromiumEngine.RunIfSubprocess(out _));
+
+        Assert.Contains("Reference the Shenora.Chromium package", error.Message);
+        Assert.IsType<DllNotFoundException>(error.InnerException);
+    }
+
+    [Fact]
     public void Stopping_an_engine_that_never_started_does_nothing()
     {
         var engine = new ChromiumEngine();

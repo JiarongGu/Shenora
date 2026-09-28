@@ -37,6 +37,14 @@ Shenora.Windows.CaptionButtonState
   method op_Inequality
   property Hot
   property Pressed
+Shenora.Windows.ChromiumView
+  method .ctor
+  method OnGotFocus
+  method OnHandleCreated
+  method OnHandleDestroyed
+  method OnSizeChanged
+  property Browser
+  property Path
 Shenora.Windows.ClipboardService
   method .ctor
   method ClearAsync
@@ -827,6 +835,7 @@ Shenora.Windows.WindowStateOptions
   property MinVisibleWidth
   property MinWidth
 Shenora.Windows.WindowsHostExtensions
+  method UseChromiumEngine
   method UseWindows
 Shenora.Windows.WindowsHostOptions
   method .ctor
