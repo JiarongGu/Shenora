@@ -1164,7 +1164,10 @@ docs cite them — so the number is the column to scan.
   - **Two threading models, one engine.** The Views shell runs CEF's loop on the main thread; the WinForms
     host needs CEF's multi-threaded loop, because WinForms owns that thread.
   - **The page finds the transport because the shell MARKS THE HTML it serves** (D36: the host advertises).
-    In development the shell proxies the dev server's document to mark it too.
+    In development the shell proxies the dev server's document to mark it too. ⚠ **A proxied document is not
+    local to Chromium**, so its WebSocket back to the dev server, the hot-reload socket, is refused by the
+    local-network check with no prompt (measured). In development against a dev server the Chromium shell
+    turns that one check off for WebSockets; production keeps it.
   - ⚠ On Windows both hosts start through CEF's `bootstrap.exe` and the kit's shim, or there is no sandbox.
 - **D84 — THE CHROMIUM SHELL'S PAGE IS AN ALLOY-STYLE BROWSER.** CEF offers two runtime styles, and the shell's
   browser views are Alloy: Chromium's content layer, without Chrome's own UI. The window stays Chrome style,

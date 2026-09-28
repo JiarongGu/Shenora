@@ -158,12 +158,13 @@ D37 and D51 are corrected in place to point at them.
    clipboard, in the WebView2 shell's formats. ⚠ Its pictures are `PNG` only: a bitmap-only copy (Print
    Screen) reads as no picture, since the shell carries no image codec; a page's `navigator.clipboard` has
    images in full. Secondary windows run their own pages, and each page's window commands and drop zones
-   act on its own window, a main window opened again included.
+   act on its own window, a main window opened again included. Development against a real Vite server works
+   end to end: the proxied document is marked, IPC runs on the dev origin, and an edit hot-reloads the page
+   (D83 has the one Chromium check that needed turning off).
    **Left:**
    - app hooks for downloads, permissions and renderer failure, which wait for an app that asks (the defaults
      are the WebView2 shell's, D84);
-   - a real pointer drag and resize of the window (their routing is measured, the move is not);
-   - the dev-server proxy run against a real Vite server (only unit-tested so far).
+   - a real pointer drag and resize of the window (their routing is measured, the move is not).
 
    **Constraints the kit's probe set** (CEF 152, Windows, 2026-09-28):
    - 🔴 **A `--remote-debugging-port` on the app's OWN command line opens the port onto the bridge page**,

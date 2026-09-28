@@ -25,7 +25,7 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
         Cef.cef_api_hash(CefApi.Version, 0);
         var args = MainArgs(RuntimePointer("Shenora.Chromium.Instance"));
         var isDevelopment = options.IsDevelopment ?? app.Environment.IsDevelopment;
-        var cefApp = new ChromiumApp(() => Started(app, isDevelopment));
+        var cefApp = new ChromiumApp(() => Started(app, isDevelopment), devServer: isDevelopment && options.DevUrl is not null);
 
         if (sandbox == 0)
         {
