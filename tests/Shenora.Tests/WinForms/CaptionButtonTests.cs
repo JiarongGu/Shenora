@@ -167,6 +167,129 @@ public class CaptionButtonTests
         Assert.Equal(FormWindowState.Normal, form.WindowState);
     });
 
+    // ── A held press: the system's caption loop captures the mouse, and so does this window ─────────────
+    // Measured with a real cursor on a bare OptimizedForm before this existed: a press dragged onto another button lit
+    // that one, and a press dragged off and back was FORGOTTEN, so releasing on the button did nothing.
+
+    private const int WM_MOUSEMOVE = 0x0200, WM_LBUTTONUP = 0x0202, WM_CAPTURECHANGED = 0x0215, MK_LBUTTON = 1;
+
+    // A captured mouse message: client coordinates, as the capture delivers them wherever the pointer is.
+    private static void SendClient(OptimizedForm form, int msg, int x, int y, int keys = MK_LBUTTON) =>
+        SendMessage(form.Handle, msg, (IntPtr)keys, (IntPtr)(((y & 0xFFFF) << 16) | (x & 0xFFFF)));
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetCapture();
+
+    [Fact]
+    public void While_a_press_is_held_only_its_button_shows_and_only_while_the_pointer_is_on_it() => Sta.Run(() =>
+    {
+        using var form = CreateForm();
+        var states = new List<CaptionButtonState>();
+        form.CaptionButtonStateChanged = states.Add;
+
+        SendNc(form, WM_NCLBUTTONDOWN, HTMINBUTTON);
+        Assert.Equal(form.Handle, GetCapture());
+        SendClient(form, WM_MOUSEMOVE, 775, 10);   // over close: it does not light
+        SendClient(form, WM_MOUSEMOVE, 710, 10);   // back on minimize: pressed again
+
+        Assert.Equal(
+            [new CaptionButtonState(CaptionButtonKind.Minimize, CaptionButtonKind.Minimize), new CaptionButtonState(null, null),
+             new CaptionButtonState(CaptionButtonKind.Minimize, CaptionButtonKind.Minimize)],
+            states);
+    });
+
+    [Fact]
+    public void A_press_dragged_off_and_back_acts_on_its_release() => Sta.Run(() =>
+    {
+        using var form = CreateForm();
+
+        SendNc(form, WM_NCLBUTTONDOWN, HTMAXBUTTON);
+        SendClient(form, WM_MOUSEMOVE, 400, 300);   // into the page
+        SendClient(form, WM_MOUSEMOVE, 745, 10);    // back on maximize
+        SendClient(form, WM_LBUTTONUP, 745, 10, keys: 0);
+
+        Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
+        Assert.NotEqual(form.Handle, GetCapture());
+    });
+
+    [Fact]
+    public void A_release_off_every_button_ends_the_press_and_does_nothing() => Sta.Run(() =>
+    {
+        using var form = CreateForm();
+        var states = new List<CaptionButtonState>();
+        form.CaptionButtonStateChanged = states.Add;
+
+        SendNc(form, WM_NCLBUTTONDOWN, HTCLOSE);
+        SendClient(form, WM_LBUTTONUP, 400, 300, keys: 0);
+
+        Assert.False(form.IsDisposed);
+        Assert.Equal(new CaptionButtonState(null, null), states[^1]);
+        Assert.NotEqual(form.Handle, GetCapture());
+    });
+
+    [Fact]
+    public void A_move_with_the_button_already_up_is_the_release_that_never_arrived() => Sta.Run(() =>
+    {
+        using var form = CreateForm();
+
+        SendNc(form, WM_NCLBUTTONDOWN, HTMAXBUTTON);
+        SendClient(form, WM_MOUSEMOVE, 745, 10, keys: 0);
+
+        Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
+        Assert.NotEqual(form.Handle, GetCapture());
+    });
+
+    [Fact]
+    public void A_lost_capture_cancels_the_press() => Sta.Run(() =>
+    {
+        using var form = CreateForm();
+        var states = new List<CaptionButtonState>();
+        form.CaptionButtonStateChanged = states.Add;
+
+        SendNc(form, WM_NCLBUTTONDOWN, HTMAXBUTTON);
+        SendMessage(form.Handle, WM_CAPTURECHANGED, IntPtr.Zero, IntPtr.Zero);   // a menu, another window
+        SendNc(form, WM_NCLBUTTONUP, HTMAXBUTTON);
+
+        Assert.Equal(new CaptionButtonState(null, null), states[1]);
+        Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
+    });
+
+    [Fact]
+    public void Clearing_the_regions_during_a_press_ends_it_and_lets_the_capture_go() => Sta.Run(() =>
+    {
+        using var form = CreateForm();
+
+        SendNc(form, WM_NCLBUTTONDOWN, HTCLOSE);
+        form.SetCaptionButtons(null);
+
+        // At once, not at the release: WinForms would let a capture go on the button-up by itself.
+        Assert.NotEqual(form.Handle, GetCapture());
+        SendClient(form, WM_LBUTTONUP, 775, 10, keys: 0);
+        Assert.False(form.IsDisposed);
+    });
+
+    // A hook (or a derived WndProc) may consume WM_CAPTURECHANGED; the OS's capture, not the flag, says whether a
+    // press is still held.
+    [Fact]
+    public void A_press_whose_capture_went_unannounced_is_not_left_held() => Sta.Run(() =>
+    {
+        using var form = CreateForm();
+        var states = new List<CaptionButtonState>();
+        form.CaptionButtonStateChanged = states.Add;
+        form.WndProcHook = m => m.Msg == WM_CAPTURECHANGED ? IntPtr.Zero : null;
+
+        SendNc(form, WM_NCLBUTTONDOWN, HTMAXBUTTON);
+        ReleaseCapture();   // taken away, and the notice swallowed by the hook
+        SendClient(form, WM_MOUSEMOVE, 745, 10);
+
+        Assert.Equal(new CaptionButtonState(null, null), states[^1]);
+        SendNc(form, WM_NCMOUSEMOVE, HTCLOSE);
+        Assert.Equal(new CaptionButtonState(CaptionButtonKind.Close, null), states[^1]);   // plain hover again
+    });
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
     [Fact]
     public void Clearing_the_regions_clears_a_hover_the_app_is_painting() => Sta.Run(() =>
     {

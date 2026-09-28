@@ -77,7 +77,10 @@ public class OptimizedForm : Form, IAppMaximizable
     // page-drawn maximize button; a frameless window has no real caption for the OS to find.
     private const int HTMINBUTTON = 8, HTMAXBUTTON = 9, HTCLOSE = 20;
     private const int WM_NCMOUSEMOVE = 0x00A0, WM_NCMOUSELEAVE = 0x02A2,
-                      WM_NCLBUTTONDOWN = 0x00A1, WM_NCLBUTTONUP = 0x00A2;
+                      WM_NCLBUTTONDOWN = 0x00A1, WM_NCLBUTTONUP = 0x00A2, WM_NCLBUTTONDBLCLK = 0x00A3;
+    // A held press on a caption button captures the mouse, as the system's own caption loop does.
+    private const int WM_MOUSEMOVE = 0x0200, WM_LBUTTONUP = 0x0202, WM_RBUTTONDOWN = 0x0204, WM_MBUTTONDBLCLK = 0x0209,
+                      WM_XBUTTONDOWN = 0x020B, WM_XBUTTONDBLCLK = 0x020D, WM_CAPTURECHANGED = 0x0215, MK_LBUTTON = 0x0001;
     private const int SC_MAXIMIZE = 0xF030, SC_RESTORE = 0xF120;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_BORDER_COLOR = 34;
     // A frameless window (custom WM_NCCALCSIZE) can lose the AUTOMATIC Win11 rounding, so it is
@@ -93,6 +96,9 @@ public class OptimizedForm : Form, IAppMaximizable
     private CaptionButtonRegion[] _captionButtons = [];
     private CaptionButtonKind? _hotCaptionButton;
     private CaptionButtonKind? _pressedCaptionButton;
+    // The button a press STARTED on, held until its release; while it is, this form has the mouse capture.
+    private CaptionButtonKind? _heldCaptionButton;
+    private bool _captionCapture;
     // The cluster's bounding box: what gets cut out of the covering children and what this form
     // paints. Driven from the REPORTED rects, never guessed — see SetCaptionButtons.
     private Rectangle _captionUnion;
@@ -234,6 +240,12 @@ public class OptimizedForm : Form, IAppMaximizable
         _captionButtons = regions is { Count: > 0 } ? [.. regions] : [];
         _captionUnion = UnionOf(_captionButtons);
 
+        if (_captionButtons.Length == 0)
+        {
+            // A press held on a button that no longer exists ends here, capture and all.
+            _heldCaptionButton = null;
+            EndCaptionCapture();
+        }
         if (_captionButtons.Length == 0 && (_hotCaptionButton is not null || _pressedCaptionButton is not null))
         {
             // Clearing the regions clears the rendered state too, or whoever draws is left painting a
@@ -385,14 +397,40 @@ public class OptimizedForm : Form, IAppMaximizable
         Invalidate(_captionUnion);
     }
 
-    private CaptionButtonKind? CaptionButtonAt(Point screenPoint)
+    private CaptionButtonKind? CaptionButtonAt(Point screenPoint) =>
+        _captionButtons.Length == 0 ? null : CaptionButtonAtClient(PointToClient(screenPoint));
+
+    private CaptionButtonKind? CaptionButtonAtClient(Point client)
     {
-        if (_captionButtons.Length == 0) return null;
-        var client = PointToClient(screenPoint);
         foreach (var region in _captionButtons)
             if (region.Bounds.Contains(client))
                 return region.Kind;
         return null;
+    }
+
+    // Our own release changes the capture too, so the flag drops FIRST: the notice it causes is not a cancel.
+    private void EndCaptionCapture()
+    {
+        if (!_captionCapture) return;
+        _captionCapture = false;
+        if (IsHandleCreated) Capture = false;
+    }
+
+    // A held press whose capture is gone: nothing shows and nothing is clicked.
+    private void CancelHeldCaption()
+    {
+        _captionCapture = false;
+        _heldCaptionButton = null;
+        SetCaptionButtonState(null, null);
+    }
+
+    // The capture ended the system's leave tracking, and a click often moves the window from under the pointer
+    // (maximize, restore, minimize): without a fresh one, the button stayed hot (measured on the Chromium shell).
+    private void TrackNonClientLeave()
+    {
+        if (!IsHandleCreated) return;
+        var track = new TRACKMOUSEEVENT { cbSize = Marshal.SizeOf<TRACKMOUSEEVENT>(), dwFlags = TME_LEAVE | TME_NONCLIENT, hwndTrack = Handle };
+        TrackMouseEvent(ref track);
     }
 
     private void SetCaptionButtonState(CaptionButtonKind? hot, CaptionButtonKind? pressed)
@@ -759,6 +797,45 @@ public class OptimizedForm : Form, IAppMaximizable
             return;
         }
 
+        // ── A press held on a caption button ─────────────────────────────────────────────────────
+        // The press took the capture, as the OS's own caption loop does, so its moves and its release
+        // arrive here wherever the pointer is: only its button shows, pressed while the pointer is on it,
+        // and the release ends it anywhere. Swallowed, since the page never saw the press begin.
+        // The flag is checked against the OS: a hook that swallowed WM_CAPTURECHANGED, or a recreated handle,
+        // must not leave a press held that no capture backs.
+        if (_captionCapture && GetCapture() != Handle) CancelHeldCaption();
+        if (_captionCapture)
+        {
+            if (m.Msg is WM_MOUSEMOVE or WM_LBUTTONUP)
+            {
+                var lp = unchecked((int)(long)m.LParam);
+                var at = CaptionButtonAtClient(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
+                var held = _heldCaptionButton;
+                // A move with the button already up is a release that never arrived.
+                if (m.Msg == WM_MOUSEMOVE && ((int)m.WParam & MK_LBUTTON) != 0)
+                {
+                    SetCaptionButtonState(at == held ? held : null, at == held ? held : null);
+                }
+                else
+                {
+                    _heldCaptionButton = null;
+                    EndCaptionCapture();
+                    SetCaptionButtonState(at, null);
+                    TrackNonClientLeave();
+                    if (at is { } released && released == held) InvokeCaptionButton(released);
+                }
+                m.Result = IntPtr.Zero;
+                return;
+            }
+            if (m.Msg is (>= WM_RBUTTONDOWN and <= WM_MBUTTONDBLCLK) or (>= WM_XBUTTONDOWN and <= WM_XBUTTONDBLCLK))
+            {
+                m.Result = IntPtr.Zero;   // the other buttons, as the system's loop ignores them
+                return;
+            }
+            // Taken away (a menu, another window, Alt+Tab): the press is cancelled, nothing clicked.
+            if (m.Msg == WM_CAPTURECHANGED) CancelHeldCaption();
+        }
+
         // ── Page-drawn caption buttons ───────────────────────────────────────────────────────────
         // Claiming the hit-test buys Snap Layouts and COSTS the page every mouse event in those
         // rectangles (Windows now calls them non-client), so hover/press/release are handled here or
@@ -767,29 +844,39 @@ public class OptimizedForm : Form, IAppMaximizable
         {
             if (m.Msg == WM_NCMOUSEMOVE)
             {
-                SetCaptionButtonState(HitTestToKind((int)m.WParam), _pressedCaptionButton);
+                var kind = HitTestToKind((int)m.WParam);
+                if (_heldCaptionButton is { } held) SetCaptionButtonState(kind == held ? held : null, kind == held ? held : null);
+                else SetCaptionButtonState(kind, null);
                 // Do NOT return: DefWindowProc still owns tooltip/leave tracking for the caption.
             }
             else if (m.Msg == WM_NCMOUSELEAVE)
             {
-                // The pointer left the non-client area entirely — including into the page.
-                SetCaptionButtonState(null, null);
+                // The pointer left the non-client area entirely — including into the page. A held press
+                // ignores it: the capture reports where the pointer is.
+                if (_heldCaptionButton is null) SetCaptionButtonState(null, null);
             }
-            else if (m.Msg == WM_NCLBUTTONDOWN && HitTestToKind((int)m.WParam) is { } pressed)
+            else if (m.Msg is WM_NCLBUTTONDOWN or WM_NCLBUTTONDBLCLK && HitTestToKind((int)m.WParam) is { } pressed)
             {
                 // Swallow the press: DefWindowProc would run the OS's own caption-button loop against
-                // a caption this window does not have.
+                // a caption this window does not have. The capture stands in for that loop.
+                // The capture FIRST: the state change runs app code, which may pump messages (a dialog) and
+                // would let the release go elsewhere before this window had asked for it.
+                _heldCaptionButton = pressed;
+                Capture = true;
+                _captionCapture = true;
                 SetCaptionButtonState(pressed, pressed);
                 m.Result = IntPtr.Zero;
                 return;
             }
             else if (m.Msg == WM_NCLBUTTONUP && HitTestToKind((int)m.WParam) is { } released)
             {
-                var wasPressed = _pressedCaptionButton;
+                var held = _heldCaptionButton;
+                _heldCaptionButton = null;
+                EndCaptionCapture();
                 SetCaptionButtonState(released, null);
                 // Only act if the press STARTED on this button, matching every other button on the
                 // system.
-                if (wasPressed == released) InvokeCaptionButton(released);
+                if (held == released) InvokeCaptionButton(released);
                 m.Result = IntPtr.Zero;
                 return;
             }
@@ -854,6 +941,12 @@ public class OptimizedForm : Form, IAppMaximizable
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    private const uint TME_LEAVE = 0x2, TME_NONCLIENT = 0x10;
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TRACKMOUSEEVENT { public int cbSize; public uint dwFlags; public IntPtr hwndTrack; public uint dwHoverTime; }
+    [DllImport("user32.dll")] private static extern bool TrackMouseEvent(ref TRACKMOUSEEVENT track);
+    [DllImport("user32.dll")] private static extern IntPtr GetCapture();
 
     private const int MONITOR_DEFAULTTONEAREST = 2;
     private const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_FRAMECHANGED = 0x20;

@@ -162,6 +162,14 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **`OptimizedForm`'s caption buttons hold a press the way the system's do.** A press on a registered
+  button now takes the mouse capture until its release: while it is held only that button shows, pressed
+  while the pointer is on it, and the release acts only there. Measured with a real cursor on a bare
+  `OptimizedForm`, before: a press dragged onto another button lit that one, and **a press dragged off and
+  back was forgotten, so releasing on maximize did not maximize**. After: 24 of 24 checkpoints as a native
+  window. A double-click's second press is handled the same way; it used to go to the default window
+  procedure (read from the code, not measured).
+
 - **`WindowCommandModule`'s docs named the wrong error for an unwired opt-in route.** An unset
   `ApplyTheme` or `SetCaptionButtons` answers `NO_ROUTE` (the module exists, the type does not), never
   `NO_HANDLER` (no module at all). The behaviour is unchanged; a page branching on the documented code

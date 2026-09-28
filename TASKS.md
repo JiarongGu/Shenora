@@ -200,11 +200,6 @@ D37 and D51 are corrected in place to point at them.
    - ⚠ An app with both engines has ONE `WindowCommandModule`, bound to one form and one `CoordinateSpace`, so a
      `ChromiumView` in another window would command that one. Read from the source, unmeasured; the drop zones
      had the same shape and now answer each page by its own engine.
-   - ⚠ **`OptimizedForm`'s caption buttons have the press defect the Chromium shell had**, read from the
-     source and not measured: it swallows the non-client press without taking the capture. On the
-     Chromium shell that left a button pressed after a release on the drag bar, and another button lit
-     while one was held. The cases to measure are the ones that found it: release on the drag bar, drag
-     onto another button, and a click that moves the window from under the pointer.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).
