@@ -51,7 +51,8 @@ at the first list and missed five more breaking changes.
   out as `<App>.exe`, CEF's launcher, which gives Chromium its sandbox and starts `<App>.App.dll`. So
   **reference `Shenora.Chromium` from the app's own project**, with a `RuntimeIdentifier`: a reference that
   arrives only through `Shenora.Windows` brings the code, not CEF, and the engine says so as it starts.
-  Windows only today.
+  Started as `dotnet <App>.App.dll` instead, as an IDE may, the app still runs, with the sandbox off and every
+  CEF subprocess run through `<App>.exe`. Windows only today.
 
 - **`createChromiumTransport()` in `@shenora/react`, and `createHostTransport()` finds the Chromium shell**
   (**D83**). That shell marks each HTML document it serves with `window.__shenora_chromium`, naming a

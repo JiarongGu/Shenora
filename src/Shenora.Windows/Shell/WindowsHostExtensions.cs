@@ -189,8 +189,9 @@ internal sealed class WinFormsRunner : IShenoraRunner
     {
         var options = app.Services.GetRequiredService<WindowsHostOptions>();
 
-        // A Chromium engine (UseChromiumEngine) answers CEF's subprocesses before anything: without CEF's launcher
-        // this exe is every one of them, and one that went on would meet the single-instance gate and exit.
+        // A Chromium engine (UseChromiumEngine) answers CEF's subprocesses before anything: an app running an exe of
+        // its own with no launcher beside it is every one of them, and one that went on would meet the single-instance
+        // gate and exit. The build's layout never gets here as a subprocess: its subprocesses run through the launcher.
         var engine = app.Services.GetService<ChromiumEngine>();
         if (engine is not null && ChromiumEngine.RunIfSubprocess(out var subprocessExit))
         {

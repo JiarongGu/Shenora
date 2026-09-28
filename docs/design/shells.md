@@ -51,9 +51,11 @@ because the DPI and text-rendering settings reject a later call. 6 is before 7 b
 after a form is shown is a visible jump. 9 is explicit — not merely a closed handle — so a `--restarted`
 relaunch waiting on the mutex proceeds the moment shutdown work is done.
 
-The engine's subprocess check comes before the gate because, without CEF's launcher, the app's exe is
-every CEF subprocess too, and one that reached the gate would exit without rendering (derived: that path
-is unmeasured under WinForms, since the app build always lays out the launcher). `engine.Start` comes
+The engine's subprocess check comes before the gate because an app that runs an exe of its own with no
+launcher beside it is every CEF subprocess too, and one that reached the gate would exit without rendering
+(derived, since the build's layout never does it). Started without the launcher, as `dotnet <App>.App.dll`,
+CEF is pointed at the laid-out `<App>.exe` for its subprocesses, so none runs .NET (measured on both hosts;
+before that, each was `dotnet.exe --type=…` with no app to run, and the app crashed). `engine.Start` comes
 before any form because a `ChromiumView` opens its browser as its handle is created. And CEF must not shut
 down while a browser is open: a `SecondaryWindows` window outlives the main loop on its own thread, so the
 runner closes them, and `Stop` waits a few seconds at most for the browsers still closing.

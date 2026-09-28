@@ -182,9 +182,9 @@ D37 and D51 are corrected in place to point at them.
    - 🔴 **Every exe that hosts a CEF process needs Windows 10's `supportedOS` manifest.** Without it the
      GPU process crashed three times per run, and with it never (A/B, two runs each, binaries differing
      only in the manifest). The exe the kit's layout ships carries it: CEF 154's `bootstrap.exe` and
-     `bootstrapc.exe`, which become `<App>.exe`. So does `dotnet.exe`, should an app start without the
-     launcher (that path is unmeasured, below). A plain .NET apphost does not; the targets turn it off
-     anyway, since CEF's launcher is the app's exe.
+     `bootstrapc.exe`, which become `<App>.exe`. Started without it (`dotnet <App>.App.dll`) the browser
+     process is `dotnet.exe`, which carries it too, and every subprocess still runs as `<App>.exe`. A plain
+     .NET apphost does not carry it; the targets turn it off anyway, since CEF's launcher is the app's exe.
    - **Under Views, the page's drag bar becomes a real caption only when the shell forwards
      `on_draggable_regions_changed` to `set_draggable_regions`**: HTCAPTION with the forwarding, HTCLIENT
      without it, through real routing (`WindowFromPoint`).
@@ -193,7 +193,6 @@ D37 and D51 are corrected in place to point at them.
    `START_DRAG`, drops with real paths, `SecondaryWindows` pages on their own threads, and keyboard focus.
    - Tab navigation out of the page, back to WinForms controls, is unmeasured. WinForms' `Focused` stays
      false while the page has the focus, because it is in CEF's child window, which another thread owns.
-   - The path without CEF's launcher, where `RunIfSubprocess` matters, is unmeasured under WinForms.
    - Nothing acts on the page's `-webkit-app-region: drag` areas in an embedded browser (`START_DRAG`
      works). Under Views, CEF reports them through `on_draggable_regions_changed`; whether it does for a
      child browser is unmeasured.

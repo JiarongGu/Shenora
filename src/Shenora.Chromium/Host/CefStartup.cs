@@ -8,8 +8,9 @@ namespace Shenora.Chromium.Host;
 /// Starting CEF, which both of its hosts do the same way (D83): the Views shell on the main thread's loop, and a host
 /// that owns its UI thread (<see cref="ChromiumEngine"/>) on a loop of CEF's own.
 /// <list type="number">
-/// <item>The sandbox: from the shim when CEF's bootstrap started the app (D82), else none, and then THIS exe is every
-/// CEF subprocess too, which is what <see cref="ExecuteIfSubprocess"/> answers first.</item>
+/// <item>The sandbox: from the shim when CEF's bootstrap started the app (D82), else none. Then the subprocesses run
+/// through the launcher the build laid out beside the app, when there is one (<see cref="LauncherBesideApp"/>), and
+/// otherwise THIS exe is every CEF subprocess too, which is what <see cref="ExecuteIfSubprocess"/> answers first.</item>
 /// <item><c>cef_api_hash</c> is the FIRST CEF call, selecting the Stable API version the binding was built for.</item>
 /// <item>🔴 Outside development, command-line switches are disabled, so only the shell can open a debug port: a port on
 /// the app's own command line otherwise reaches the page holding the bridge (measured, CEF 152).</item>
@@ -30,8 +31,10 @@ internal static unsafe class CefStartup
     public static nint Sandbox => RuntimePointer("Shenora.Chromium.SandboxInfo");
 
     /// <summary>
-    /// CEF's first call, and a subprocess's whole life: when this process is one of CEF's (no shim, so this exe is
-    /// every subprocess too), it runs as that and returns its exit code, which the caller exits with. Otherwise -1.
+    /// CEF's first call, and a subprocess's whole life: when this process is one of CEF's, it runs as that and returns
+    /// its exit code, which the caller exits with. Otherwise -1. A process is one only when the app runs an exe of its
+    /// own with no launcher beside it: through the shim, or through the build's layout, CEF's subprocesses never run
+    /// .NET.
     /// </summary>
     public static int ExecuteIfSubprocess(ChromiumApp app, ILogger? log)
     {
@@ -54,6 +57,14 @@ internal static unsafe class CefStartup
         var logFile = Path.Combine(settings.Cache, "cef.log");
         var sandbox = Sandbox;
         var args = MainArgs(RuntimePointer("Shenora.Chromium.Instance"));
+        // Started without the launcher (`dotnet <App>.App.dll`, as an IDE may), CEF would start each subprocess as
+        // `dotnet.exe --type=…` with no app to run, and every one exits at once (measured: the GPU process and the
+        // network service died on every restart until the app crashed). The launcher the build laid out beside the
+        // app runs them natively instead. Unsandboxed, as the app itself is on this path.
+        var subprocess = sandbox == 0
+            ? LauncherBesideApp(System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name, AppContext.BaseDirectory, Environment.ProcessPath, File.Exists)
+            : null;
+        subprocess ??= "";
         var cef = new _cef_settings_t
         {
             size = (nuint)sizeof(_cef_settings_t),
@@ -69,15 +80,37 @@ internal static unsafe class CefStartup
         fixed (char* c = settings.Cache)
         fixed (char* p = profile)
         fixed (char* l = logFile)
+        fixed (char* s = subprocess)
         {
             cef.root_cache_path = CefStrings.View(c, settings.Cache.Length);
             cef.cache_path = CefStrings.View(p, profile.Length);
             cef.log_file = CefStrings.View(l, logFile.Length);
+            if (subprocess.Length > 0) cef.browser_subprocess_path = CefStrings.View(s, subprocess.Length);
             initialized = Cef.cef_initialize(&args, &cef, app.ForCef(), (void*)sandbox);
         }
         if (initialized == 0)
             throw new InvalidOperationException($"Chromium did not start (CEF exit code {Cef.cef_get_exit_code()}). Its log is {logFile}.");
     }
+
+    /// <summary>
+    /// The app's launcher, laid out by the build as <c>&lt;App&gt;.exe</c> beside the app's own <c>&lt;App&gt;.App</c>
+    /// assembly: CEF's bootstrap, which runs a subprocess natively through the kit's shim. Only when the running exe is
+    /// NOT in the app's folder, which is <c>dotnet.exe</c> running the app's dll: an app running an exe of its own there
+    /// is one CEF can start for each subprocess, and an unrelated <c>&lt;App&gt;.exe</c> beside it must not be. Null
+    /// otherwise, when the app is not laid out that way, or not on Windows.
+    /// </summary>
+    internal static string? LauncherBesideApp(string? entryAssembly, string baseDirectory, string? processPath, Func<string, bool> exists)
+    {
+        if (!OperatingSystem.IsWindows() || entryAssembly is not { Length: > 4 } name || !name.EndsWith(".App", StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (processPath is not null && SameFolder(Path.GetDirectoryName(processPath), baseDirectory)) return null;
+        var launcher = Path.Combine(baseDirectory, name[..^4] + ".exe");
+        return exists(launcher) ? launcher : null;
+    }
+
+    private static bool SameFolder(string? a, string b) =>
+        a is not null && string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
+            StringComparison.OrdinalIgnoreCase);
 
     private static int _apiVersionSelected;
 

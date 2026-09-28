@@ -88,9 +88,11 @@ public sealed class ChromiumEngine
     public Task Ready => _ready.Task;
 
     /// <summary>
-    /// When THIS process is one of CEF's subprocesses (the app was not started through CEF's launcher and the kit's
-    /// shim, so this exe is every subprocess too), run as that and return true: the caller exits at once. False in
-    /// the app itself, and always when the shim started it, which runs every subprocess without .NET.
+    /// When THIS process is one of CEF's subprocesses, run as that and return true: the caller exits at once. False in
+    /// the app itself. With the build's layout it is always false: started through CEF's launcher the kit's shim runs
+    /// every subprocess without .NET, and started without it (<c>dotnet &lt;App&gt;.App.dll</c>, as an IDE may) CEF
+    /// is pointed at that launcher for them. It matters for an app laid out some other way that runs an exe of its own
+    /// (an apphost), which CEF then starts for each subprocess.
     /// <para>
     /// ⚠ Call it before anything else the app does. A subprocess that went on to run the app would, among other
     /// things, meet the app's single-instance gate and exit without ever rendering.
@@ -127,6 +129,9 @@ public sealed class ChromiumEngine
             _ready.TrySetException(ex);
             throw;
         }
+        // RunIfSubprocess has no logger to say it, and an app started as `dotnet <App>.App.dll` should hear it.
+        if (CefStartup.Sandbox == 0)
+            AppCallback.Log(_log, () => "[Shenora.Chromium] Running without CEF's bootstrap launcher: Chromium's sandbox is OFF", LogLevel.Warning);
     }
 
     /// <summary>
