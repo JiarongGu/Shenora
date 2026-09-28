@@ -101,8 +101,6 @@ D37 and D51 are corrected in place to point at them.
    **Now tracked:** `node devtools/dev.mjs cef-binding` writes `src/Shenora.Chromium/Interop/Generated/`
    (285 files common to all three OSes and 12–13 per OS, since a build compiles Common plus one), and
    `CefObject` is the memory layer CEF's reference counts drive.
-   **What is left:** struct-layout tests (ClangSharp can generate them, and every per-OS difference is
-   pointer-sized, so all three layouts can be checked on x64 Windows).
    - 🔴 **Windows' sandbox exists only through CEF's launcher since CEF 150** (`cef_sandbox.lib` is no longer
      shipped): `bootstrap.exe`, renamed to `{app}.exe`, creates the sandbox and loads a NATIVE `{app}.dll`
      exporting `RunWinMain`, and every subprocess re-enters it. **The owner chose a native shim, sandboxed**:
