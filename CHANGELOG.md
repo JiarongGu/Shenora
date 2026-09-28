@@ -127,6 +127,11 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **`WindowCommandModule`'s docs named the wrong error for an unwired opt-in route.** An unset
+  `ApplyTheme` or `SetCaptionButtons` answers `NO_ROUTE` (the module exists, the type does not), never
+  `NO_HANDLER` (no module at all). The behaviour is unchanged; a page branching on the documented code
+  never matched. Measured through the Chromium shell, which answers the same way.
+
 - **`ResourcePackJournal.Open` no longer boots a staged client that a newer app build has overtaken.**
   The packaged version was compared against a **confirmed** pack and not against a **pending** one, so a
   device that staged a pack and then took an app update served the older staged client anyway — measured

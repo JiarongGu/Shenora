@@ -95,11 +95,11 @@ public sealed class WindowCommandModule : ModuleBase
     public const string StartResizeType = "START_RESIZE";
 
     /// <summary>Route: <c>{ dark }</c>. Opt-in — unset <see cref="WindowCommandOptions.ApplyTheme"/>
-    /// answers <c>NO_HANDLER</c>.</summary>
+    /// answers <c>NO_ROUTE</c>.</summary>
     public const string SetThemeType = "SET_THEME";
 
     /// <summary>Route: <c>{ buttons }</c>, the caption-button hit rectangles. Opt-in — unset
-    /// <see cref="WindowCommandOptions.SetCaptionButtons"/> answers <c>NO_HANDLER</c>.</summary>
+    /// <see cref="WindowCommandOptions.SetCaptionButtons"/> answers <c>NO_ROUTE</c>.</summary>
     public const string SetCaptionButtonsType = "SET_CAPTION_BUTTONS";
 
     // Borderless-window drag/resize: hand off to the OS window-move/-size loop — the page can't drive
@@ -110,7 +110,7 @@ public sealed class WindowCommandModule : ModuleBase
     private readonly WindowCommandOptions _options;
     private readonly Shenora.Core.Shell.IUiDispatcher _ui;
 
-    /// <summary>Window commands over IPC. Every route is opt-in: an unset callback answers NO_HANDLER.</summary>
+    /// <summary>Window commands over IPC. Every route is opt-in: an unset callback answers NO_ROUTE.</summary>
     public WindowCommandModule(WindowCommandOptions options, Microsoft.Extensions.Logging.ILogger<WindowCommandModule>? logger = null)
         : base(logger)
     {
