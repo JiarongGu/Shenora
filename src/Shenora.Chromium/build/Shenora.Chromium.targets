@@ -42,7 +42,9 @@
     <ShenoraCefRoot>$([System.IO.Path]::Combine('$(ShenoraCefCache)', '$(ShenoraCefBuild)', '$(ShenoraCefPlatform)'))</ShenoraCefRoot>
     <ShenoraCefDist>$([System.IO.Path]::Combine('$(ShenoraCefRoot)', 'dist'))</ShenoraCefDist>
 
-    <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == ''">$(MSBuildThisFileDirectory)..\runtimes\$(RuntimeIdentifier)\native\shenora_chromium_shim.dll</ShenoraChromiumShim>
+    <!-- The package's own shim; in this repo, where an app references the project, the one cef-native staged. -->
+    <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == '' and Exists('$(MSBuildThisFileDirectory)..\tools')">$(MSBuildThisFileDirectory)..\tools\$(RuntimeIdentifier)\native\shenora_chromium_shim.dll</ShenoraChromiumShim>
+    <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == ''">$(MSBuildThisFileDirectory)..\artifacts\runtimes\$(RuntimeIdentifier)\native\shenora_chromium_shim.dll</ShenoraChromiumShim>
   </PropertyGroup>
 
   <!-- GetFileHash has no SHA-1, and SHA-1 is what CEF's index publishes. -->
@@ -83,7 +85,7 @@
     <Error Condition="!$(ShenoraCefPlatform.StartsWith('windows'))" Text="The Chromium shell's app layout is Windows-only today (this build targets $(RuntimeIdentifier)); the macOS and Linux layouts are not built yet." />
     <Error Condition="!$(AssemblyName.EndsWith('.App'))"
            Text="A Shenora.Chromium app's own assembly must be named '&lt;App&gt;.App' (this one is '$(AssemblyName)'): CEF's launcher runs as &lt;App&gt;.exe and loads &lt;App&gt;.dll, the kit's shim, which starts &lt;App&gt;.App.dll. Set &lt;AssemblyName&gt;$(AssemblyName).App&lt;/AssemblyName&gt;." />
-    <Error Condition="!Exists('$(ShenoraChromiumShim)')" Text="The kit's shim is missing at $(ShenoraChromiumShim) (in this repo: node devtools/dev.mjs cef-native, then point ShenoraChromiumShim at its output)." />
+    <Error Condition="!Exists('$(ShenoraChromiumShim)')" Text="The kit's shim for $(RuntimeIdentifier) is missing at $(ShenoraChromiumShim). The package carries it for win-x64 only today; in this repo, `node devtools/dev.mjs cef-native` builds and stages it." />
   </Target>
 
   <Target Name="ShenoraChromiumFetchCef" DependsOnTargets="_ShenoraChromiumCheck" Condition="'$(ShenoraChromiumLayout)' == 'true'">

@@ -1,6 +1,9 @@
 // Build the Chromium shell's native shim (src/Shenora.Chromium/native) against the pinned CEF build.
 //
-//   node devtools/dev.mjs cef-native        → devtools/_build/cef-native/Release/shenora_chromium_shim.dll
+//   node devtools/dev.mjs cef-native        → src/Shenora.Chromium/artifacts/runtimes/win-x64/native/shenora_chromium_shim.dll
+//
+// That staging folder is what the package packs (gitignored, never committed, like the launcher's), and what
+// the app-build targets fall back to for an app in this repo that references the project rather than the package.
 //
 // Windows only today. It needs CMake (on PATH, or the copy Visual Studio ships), the pinned CEF build
 // (downloaded and SHA-1-checked by cef-cache.mjs), and the .NET SDK's static nethost for the SDK's own
@@ -48,5 +51,8 @@ await main('cef-native', async () => {
   if (compile.status !== 0) fail(`build failed:\n${compile.stdout}${compile.stderr}`);
   const dll = path.join(build, 'Release', 'shenora_chromium_shim.dll');
   if (!fs.existsSync(dll)) fail(`the build reported success but ${dll} is missing.`);
-  console.log(`cef-native: ${dll} (${(fs.statSync(dll).size / 1024).toFixed(0)} KB, CEF API ${pin.apiVersion})`);
+  const staged = path.join(project, 'artifacts', 'runtimes', 'win-x64', 'native');
+  fs.mkdirSync(staged, { recursive: true });
+  fs.copyFileSync(dll, path.join(staged, path.basename(dll)));
+  console.log(`cef-native: ${path.relative(repo, path.join(staged, path.basename(dll)))} (${(fs.statSync(dll).size / 1024).toFixed(0)} KB, CEF API ${pin.apiVersion})`);
 });

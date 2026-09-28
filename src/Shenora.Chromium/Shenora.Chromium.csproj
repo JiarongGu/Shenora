@@ -18,6 +18,7 @@
     <CefOs Condition="'$(CefOs)' == ''">Windows</CefOs>
     <!-- CEF_WINDOWS / CEF_MACOS / CEF_LINUX, for the few call sites whose C types differ (main args). -->
     <DefineConstants>$(DefineConstants);CEF_$(CefOs.ToUpperInvariant())</DefineConstants>
+    <ShimArtifacts Condition="'$(ShimArtifacts)' == ''">$(MSBuildThisFileDirectory)artifacts\</ShimArtifacts>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,7 +30,17 @@
          so an app gets the engine only by referencing this package itself, and a Shenora.Windows app, which
          depends on it (D83), does not. -->
     <None Include="build\*.targets" Pack="true" PackagePath="build\" />
+    <!-- The shim, staged by `dev.mjs cef-native` and never committed. Packed into tools/, not runtimes/, which NuGet
+         would copy into every app's output as a stray file beside the <App>.dll the targets copy it to; and not a
+         folder of its own, where NuGet refuses (NU5100) a .dll outside lib/. -->
+    <None Include="$(ShimArtifacts)runtimes\**\native\*" Pack="true" PackagePath="tools\" />
   </ItemGroup>
+
+  <!-- A package without the shim restores fine and fails at the consumer's build, so packing one fails here. -->
+  <Target Name="RequireShimArtifacts" BeforeTargets="GenerateNuspec">
+    <Error Condition="!Exists('$(ShimArtifacts)runtimes\win-x64\native\shenora_chromium_shim.dll')"
+           Text="Shenora.Chromium has no shim at $(ShimArtifacts)runtimes\win-x64\native\. Build it with `node devtools/dev.mjs cef-native`, which stages it there." />
+  </Target>
 
   <ItemGroup>
     <!-- The kit's portable core: IPC, the resource pipeline a shell implements (D45), the runner seam. -->

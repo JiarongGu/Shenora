@@ -116,9 +116,15 @@ D37 and D51 are corrected in place to point at them.
      the pinned build ONCE per machine, checks its SHA-1 against `cef.json` (all six platforms pinned), and
      extracts it. After Build and Publish it places `<App>.exe` (CEF's bootstrap) and `<App>.dll` (the shim)
      beside `<App>.App.dll`. The targets pack into `build/` ONLY, so a direct reference is the opt-in D83
-     requires. **Left:** the shim as a packed per-RID binary; the macOS and Linux layouts (the targets refuse
-     them by name); and, once step 3b makes `Shenora.Windows` depend on this package, proof that a WebView2
-     app does not receive the targets (derived from NuGet's default `PrivateAssets`, not yet exercised).
+     requires. The package carries the win-x64 shim in `tools/`, staged by `dev.mjs cef-native`, and packing
+     without it fails. An app with nothing but a `PackageReference` to it, from a local feed, built and ran.
+     **Left:**
+     - making the package packable: add it to `packableProjects` and `artifactPackableProjects`, and add a
+       `release.yml` job that runs `cef-native` and stages the shim the way the launcher's is staged;
+     - a win-arm64 shim (the targets accept the RID, and the package has no shim for it);
+     - the macOS and Linux layouts (the targets refuse them by name);
+     - once step 3b makes `Shenora.Windows` depend on this package, proof that a WebView2 app does not
+       receive the targets (derived from NuGet's default `PrivateAssets`, not yet exercised).
    - **The page bridge needs no renderer code, and the kit's IPC runs over it unchanged** (prototype,
      2026-09-28, sandboxed through the shim). The page `fetch`es `POST /__shenora/ipc` on its own origin,
      the browser process answers from the resource handler on CEF's IO thread, and the host pushes with

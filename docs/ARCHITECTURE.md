@@ -216,7 +216,9 @@ Shenora.slnx
 │   │                                          it fetches the pinned CEF build once per machine
 │   │                                          (SHA-1 against cef.json), then lays out CEF's
 │   │                                          bootstrap.exe as <App>.exe + the shim as <App>.dll
-│   │                                          beside the app's <App>.App.dll. native/ is the Windows shim
+│   │                                          beside the app's <App>.App.dll; the package
+│   │                                          carries the shim in tools/<rid>/native/.
+│   │                                          native/ is the Windows shim
 │   │                                          (`dev.mjs cef-native`): CEF's bootstrap.exe, renamed to
 │   │                                          the app, loads it, so Chromium's sandbox exists; renderers
 │   │                                          run CEF alone and only the browser process starts .NET.
