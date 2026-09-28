@@ -203,9 +203,10 @@ Shenora.slnx
 │   │                                          The Chromium shell of the kit's own, on CEF's Views
 │   │                                          framework, for Windows, macOS and Linux; each page an
 │   │                                          Alloy-style browser (D84). `UseChromium` runs the app on
-│   │                                          CEF's loop (Host/: the runner, windows, the UI
-│   │                                          dispatcher, the IPC bridge, window commands, drop zones,
-│   │                                          and the frame's hit-test);
+│   │                                          CEF's loop (Host/: the runner; each page's browser,
+│   │                                          with its IPC bridge, drops, dialogs and recovery, and
+│   │                                          the Views window hosting it, with its commands and the
+│   │                                          frame's hit-test; the UI dispatcher);
 │   │                                          Serving/ answers the app's origin (the bundle, marked,
 │   │                                          then the app's interceptor pipeline; the IPC route only
 │   │                                          for the app's own browser and origin). Interop/Generated/ is

@@ -13,16 +13,16 @@ namespace Shenora.Tests.Chromium;
 /// </summary>
 public class ChromiumDropZonesTests
 {
-    internal static ChromiumWindow Window(string name = "main")
+    /// <summary>A page's browser with no CEF behind it, and no window hosting it.</summary>
+    internal static ChromiumBrowser Window(string name = "main")
     {
         var origins = ChromiumOrigins.For("app.local", null, isDevelopment: false);
         var ui = new CefUiDispatcher(_ => true, () => true);
-        return new ChromiumWindow(name, new ChromiumWindowOptions(), new ChromiumServing(null, origins, new ChromiumInterceptor()), origins,
-            w => new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher() }, ui, _ => { }, (_, _) => true),
-            _ => { }, null);
+        return new ChromiumBrowser(name, new ChromiumServing(null, origins, new ChromiumInterceptor()), origins,
+            b => new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher() }, ui, _ => { }, (_, _) => true), null);
     }
 
-    private static (ChromiumDropZones Module, ChromiumWindow Window) Create()
+    private static (ChromiumDropZones Module, ChromiumBrowser Window) Create()
     {
         var window = Window();
         return (new ChromiumDropZones(() => window), window);
@@ -99,16 +99,16 @@ public class ChromiumDropZonesTests
     {
         var main = Window("main");
         var second = Window("second");
-        var module = new ChromiumDropZones(() => ChromiumWindowContext.Current);
+        var module = new ChromiumDropZones(() => ChromiumBrowserContext.Current);
 
-        using (ChromiumWindowContext.Enter(main)) await Send(module, "REGISTER", "z1");
+        using (ChromiumBrowserContext.Enter(main)) await Send(module, "REGISTER", "z1");
         main.FilesDraggedIn([@"C:\for-main.txt"]);
         second.FilesDraggedIn([@"C:\for-second.txt"]);
 
         // The second window never declared z1, so its drop gets nothing, and main's drag is untouched.
-        using (ChromiumWindowContext.Enter(second))
+        using (ChromiumBrowserContext.Enter(second))
             Assert.Equal("""{"files":[]}""", Json(await Send(module, "DROP", "z1")));
-        using (ChromiumWindowContext.Enter(main))
+        using (ChromiumBrowserContext.Enter(main))
             Assert.Equal("""{"files":["C:\\for-main.txt"]}""", Json(await Send(module, "DROP", "z1")));
     }
 

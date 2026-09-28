@@ -74,7 +74,7 @@ public sealed unsafe class ChromiumWindows
     {
         var owner = _open.TryGetValue(MainWindowName, out var main) ? main : _open.Values.FirstOrDefault();
         if (owner is null) return false;
-        owner.RunFileDialog(mode, title, defaultPath, filters, done);
+        owner.Browser.RunFileDialog(mode, title, defaultPath, filters, done);
         return true;
     }
 
@@ -87,10 +87,10 @@ public sealed unsafe class ChromiumWindows
         app.Pipeline.ApplyTo(interceptor);   // the app's UseFiles and routes reach every window (D64)
         _serving = new ChromiumServing(_options.ContentRoot, _origins, interceptor,
             isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log);
-        // Every window's commands and drop zones, mapped ONCE: each acts on the window whose page asked. An app
-        // that mapped its own module under one of these names wins.
-        _dispatcher.TryMapModule(new ChromiumWindowCommands(() => ChromiumWindowContext.Current));
-        _dispatcher.TryMapModule(new ChromiumDropZones(() => ChromiumWindowContext.Current));
+        // Every page's window commands and drop zones, mapped ONCE: each acts on the page that asked, and its
+        // window. An app that mapped its own module under one of these names wins.
+        _dispatcher.TryMapModule(new ChromiumWindowCommands(() => ChromiumBrowserContext.Current?.Host as ChromiumWindow));
+        _dispatcher.TryMapModule(new ChromiumDropZones(() => ChromiumBrowserContext.Current));
     }
 
     private void OpenOnUi(string name, ChromiumWindowOptions options)
@@ -112,13 +112,13 @@ public sealed unsafe class ChromiumWindows
         return options.Path is { } path ? new Uri(root, path) : root;
     }
 
-    private ChromiumIpcBridge NewBridge(ChromiumWindow window) =>
+    private ChromiumIpcBridge NewBridge(ChromiumBrowser browser) =>
         new(new ChromiumIpcBridgeOptions
             {
                 Dispatcher = _dispatcher, EventBus = _events, Shell = _options.Shell, Log = _log,
-                EnterWindow = () => ChromiumWindowContext.Enter(window),
+                EnterWindow = () => ChromiumBrowserContext.Enter(browser),
             },
-            _ui, window.Push, (delay, work) => CefTask.PostDelayed(cef_thread_id_t.TID_UI, delay, work));
+            _ui, browser.Push, (delay, work) => CefTask.PostDelayed(cef_thread_id_t.TID_UI, delay, work));
 
     private void Closed(ChromiumWindow window)
     {

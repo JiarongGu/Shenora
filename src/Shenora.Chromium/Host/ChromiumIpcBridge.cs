@@ -24,7 +24,7 @@ internal sealed class ChromiumIpcBridgeOptions
     public ILogger? Log { get; init; }
 
     /// <summary>Entered around each dispatch, so a module learns which window's page asked
-    /// (<see cref="ChromiumWindowContext"/>).</summary>
+    /// (<see cref="ChromiumBrowserContext"/>).</summary>
     public Func<IDisposable>? EnterWindow { get; init; }
 }
 

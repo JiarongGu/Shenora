@@ -12,7 +12,7 @@ namespace Shenora.Chromium.Host;
 /// the WebView2 module does for a route that is not wired.
 /// <para>
 /// ONE module for every window, mapped once: each command acts on the window whose page sent it
-/// (<see cref="ChromiumWindowContext"/>), so a secondary window's close closes that window, and a main window
+/// (<see cref="ChromiumBrowserContext"/>), so a secondary window's close closes that window, and a main window
 /// opened again is served like the first. Outside a window's dispatch every command is a no-op.
 /// </para>
 /// </summary>

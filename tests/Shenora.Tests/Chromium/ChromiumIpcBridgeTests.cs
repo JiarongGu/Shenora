@@ -105,19 +105,19 @@ public class ChromiumIpcBridgeTests
         var seen = new List<bool>();
         dispatcher.UseRoute("TEST", "WHO", async (request, _) =>
         {
-            seen.Add(ReferenceEquals(ChromiumWindowContext.Current, window));
+            seen.Add(ReferenceEquals(ChromiumBrowserContext.Current, window));
             await Task.Yield();
-            seen.Add(ReferenceEquals(ChromiumWindowContext.Current, window));
+            seen.Add(ReferenceEquals(ChromiumBrowserContext.Current, window));
             return IpcResponse.CreateSuccess(request.Id, null);
         });
-        var bridge = new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = dispatcher, EnterWindow = () => ChromiumWindowContext.Enter(window) },
+        var bridge = new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = dispatcher, EnterWindow = () => ChromiumBrowserContext.Enter(window) },
             host.Dispatcher, host.Pushed.Add, host.Schedule);
 
         bridge.Incoming(Request("TEST", "WHO"));
         await SettleAsync(host);
 
         Assert.Equal([true, true], seen);
-        Assert.Null(ChromiumWindowContext.Current);   // and nothing leaks out of the dispatch
+        Assert.Null(ChromiumBrowserContext.Current);   // and nothing leaks out of the dispatch
     }
 
     [Fact]
