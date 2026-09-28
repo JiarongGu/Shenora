@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Shenora.Chromium.Interop;
 using Shenora.Chromium.Serving;
+using Shenora.Core.Shell;
 using Shenora.Core.WebView;
 
 namespace Shenora.Chromium.Host;
@@ -33,11 +34,13 @@ internal sealed unsafe class ChromiumWindow
     private CaptionHitTest? _captionHitTest;
     private string[] _draggedFiles = [];
     private readonly RendererRecovery _recovery;
+    private readonly IUrlLauncher? _urls;
 
     public ChromiumWindow(string name, ChromiumWindowOptions options, ChromiumServing serving, ChromiumOrigins origins,
-        Func<ChromiumWindow, ChromiumIpcBridge> bridge, Action<ChromiumWindow> destroyed, ILogger? log)
+        Func<ChromiumWindow, ChromiumIpcBridge> bridge, Action<ChromiumWindow> destroyed, ILogger? log, IUrlLauncher? urls = null)
     {
         Name = name;
+        _urls = urls;
         _options = options;
         Serving = serving;
         Origins = origins;
@@ -555,6 +558,28 @@ internal sealed unsafe class ChromiumWindow
             _owner = owner;
             Struct->on_after_created = &AfterCreated;
             Struct->on_before_close = &BeforeClose;
+            Struct->on_before_popup = &BeforePopup;
+        }
+
+        // window.open and target=_blank: never a bare Chromium window onto whatever the page named. An http/https
+        // URL goes to the user's browser, as on the WebView2 shell; anything else is dropped. Returning 1 cancels.
+        [UnmanagedCallersOnly]
+        private static int BeforePopup(_cef_life_span_handler_t* self, _cef_browser_t* browser, _cef_frame_t* frame, int popupId,
+            _cef_string_utf16_t* targetUrl, _cef_string_utf16_t* targetFrameName, cef_window_open_disposition_t disposition, int userGesture,
+            _cef_popup_features_t* features, _cef_window_info_t* windowInfo, _cef_client_t** client, _cef_browser_settings_t* settings,
+            _cef_dictionary_value_t** extraInfo, int* noJavascriptAccess)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var f = new CefRef<_cef_frame_t>(frame);
+            var owner = From<LifeSpan>(self)._owner;
+            var url = CefStrings.Read(targetUrl);
+            AppCallback.Run(() =>
+            {
+                if (owner._urls is null) return;
+                try { owner._urls.OpenUrl(url); }
+                catch (ArgumentException) { AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': dropped a popup to a non-web URL"); }
+            });
+            return 1;
         }
 
         [UnmanagedCallersOnly]

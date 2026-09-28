@@ -5,6 +5,7 @@ using Shenora.Chromium.Interop;
 using Shenora.Chromium.Serving;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
+using Shenora.Core.Shell;
 
 namespace Shenora.Chromium;
 
@@ -23,19 +24,22 @@ public sealed unsafe class ChromiumWindows
     private readonly IMessageDispatcher _dispatcher;
     private readonly IEventBus? _events;
     private readonly ILogger? _log;
+    private readonly IUrlLauncher _urls;
     // Written on CEF's UI thread, read by IsOpen from any thread, so a concurrent collection, not a Dictionary.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ChromiumWindow> _open = new(StringComparer.Ordinal);
     private ChromiumServing? _serving;
     private ChromiumOrigins? _origins;
     private bool _isDevelopment;
 
-    internal ChromiumWindows(ChromiumHostOptions options, CefUiDispatcher ui, IMessageDispatcher dispatcher, IEventBus? events, ILogger? log)
+    internal ChromiumWindows(ChromiumHostOptions options, CefUiDispatcher ui, IMessageDispatcher dispatcher, IEventBus? events, ILogger? log,
+        IUrlLauncher urls)
     {
         _options = options;
         _ui = ui;
         _dispatcher = dispatcher;
         _events = events;
         _log = log;
+        _urls = urls;
     }
 
     /// <summary>True while the named window is open.</summary>
@@ -78,7 +82,7 @@ public sealed unsafe class ChromiumWindows
         if (_open.TryGetValue(name, out var existing)) { existing.Activate(); return; }
         if (_serving is null || _origins is null) throw new InvalidOperationException("The Chromium shell has not started.");
 
-        var window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log);
+        var window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls);
         _open[name] = window;
         // The main window's commands and drop zones, unless the app mapped its own module under a name (it wins).
         if (name == MainWindowName)

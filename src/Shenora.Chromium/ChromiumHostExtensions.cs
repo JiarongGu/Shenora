@@ -15,7 +15,8 @@ public static class ChromiumHostExtensions
     /// <summary>
     /// Run the app in the Chromium shell: CEF's own windows, the page served from the app's origin, and IPC over
     /// a transport with no code in the renderer (D83). The main window opens once CEF has started, and the app
-    /// ends when the last window closes.
+    /// ends when the last window closes. It registers the shell's <see cref="IUrlLauncher"/> (the user's browser,
+    /// http/https only) unless the app registered one first, and a page's popups go there.
     /// <para>
     /// ⚠ On Windows, Chromium's sandbox exists only when the app starts through CEF's <c>bootstrap.exe</c> and
     /// the kit's shim (D82). Started any other way it runs, and logs a warning that the sandbox is off.
@@ -34,8 +35,11 @@ public static class ChromiumHostExtensions
             () => Cef.cef_currently_on(cef_thread_id_t.TID_UI) == 1,
             sp.GetService<ILogger<CefUiDispatcher>>()));
         builder.Services.TryAddSingleton<IUiDispatcher>(sp => sp.GetRequiredService<CefUiDispatcher>());
+        // The native services, TryAdd so an app's own registration wins.
+        builder.Services.TryAddSingleton<IUrlLauncher, ChromiumUrlLauncher>();
         builder.Services.AddSingleton(sp => new ChromiumWindows(options, sp.GetRequiredService<CefUiDispatcher>(),
-            sp.GetRequiredService<IMessageDispatcher>(), sp.GetService<IEventBus>(), sp.GetService<ILogger<ChromiumWindows>>()));
+            sp.GetRequiredService<IMessageDispatcher>(), sp.GetService<IEventBus>(), sp.GetService<ILogger<ChromiumWindows>>(),
+            sp.GetRequiredService<IUrlLauncher>()));
         builder.Services.AddSingleton<IShenoraRunner, ChromiumRunner>();
         return builder;
     }
