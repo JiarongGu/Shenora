@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { ShenoraBridge } from './bridge.js';
 import { ShenoraEventBus } from './eventBus.js';
 import type { IpcRequest } from './types.js';
-import { WindowCommands, useWindowMaximized } from './windowCommands.js';
+import { WindowCommands, WindowEventTypes, useCaptionButtonState, useWindowMaximized } from './windowCommands.js';
 import { FakeTransport } from './testing/fakeTransport.js';
 
 function createCommands() {
@@ -89,5 +89,23 @@ describe('useWindowMaximized', () => {
     });
 
     expect(transport.posted).toHaveLength(1); // no re-query after unmount
+  });
+});
+
+describe('useCaptionButtonState', () => {
+  it('follows the host state, and an empty payload means no button', () => {
+    const bus = new ShenoraEventBus();
+    const { result, unmount } = renderHook(() => useCaptionButtonState({ bus }));
+    expect(result.current).toEqual({});
+
+    act(() => bus.emit({ module: 'SHENORA.WINDOW', type: WindowEventTypes.CaptionButtonState, payload: { hot: 'maximize', pressed: 'maximize' } }));
+    expect(result.current).toEqual({ hot: 'maximize', pressed: 'maximize' });
+
+    // The host omits null fields, and a state with neither is sent as `{}` or no payload at all.
+    act(() => bus.emit({ module: 'SHENORA.WINDOW', type: WindowEventTypes.CaptionButtonState }));
+    expect(result.current).toEqual({});
+
+    unmount();
+    expect(bus.getSubscriptionCount('SHENORA.WINDOW', WindowEventTypes.CaptionButtonState)).toBe(0);
   });
 });

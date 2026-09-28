@@ -15,6 +15,7 @@ import type {
   IpcResponse,
   CaptionButtonKind,
   CaptionButtonRect,
+  CaptionButtonState,
   DropZoneFileDrop,
   InvokeOptions,
   ClipboardContent,
@@ -117,6 +118,7 @@ const EXPECTED_EXPORTS = [
   'ShenoraError',
   'ShenoraEventBus',
   'WindowCommands',
+  'WindowEventTypes',
   'WindowOrientation',
   'bindSegmentStream',
   'codecsFromInitSegment',
@@ -141,6 +143,7 @@ const EXPECTED_EXPORTS = [
   'segmentMimeType',
   'useAppLifecycle',
   'useBackNavigation',
+  'useCaptionButtonState',
   'useClipboard',
   'useDropZone',
   'useFileDialogs',
@@ -171,7 +174,7 @@ const EXPECTED_EXPORTS = [
  */
 type ExportedTypeSurface = [
   EventMessage, IpcError, IpcNotification, IpcNotificationBatch, IpcRequest, IpcResponse,
-  CaptionButtonKind, CaptionButtonRect, DropZoneFileDrop, InvokeOptions,
+  CaptionButtonKind, CaptionButtonRect, CaptionButtonState, DropZoneFileDrop, InvokeOptions,
   ClipboardContent, ClipboardHandle,
   BackNavigationEvent, BackNavigationResult, BackNavigationHandle,
   AppLifecycleReport, AppLifecycleHandlers,

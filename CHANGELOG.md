@@ -39,6 +39,14 @@ at the first list and missed five more breaking changes.
   shell itself (`Shenora.Chromium`) is not a package yet; this is its client half, and a page on the default
   bridge will need no change to move onto it.
 
+- **`useCaptionButtonState()` in `@shenora/react`, with `CaptionButtonState` and `WindowEventTypes`.** Once a
+  page registers its caption buttons with `setCaptionButtons`, the host takes the hit-test there, so CSS
+  `:hover` no longer fires over them. The hook tells the page which button is hot or pressed, from the host's
+  `SHENORA.WINDOW` / `CAPTION_BUTTON_STATE` event. The Chromium shell sends that event to the window's own
+  page. The WebView2 shell does not send it: it paints its own caption buttons by default
+  (`NativeCaptionButtons`), and an app drawing them itself there can emit the event from
+  `OptimizedForm.CaptionButtonStateChanged`.
+
 - **The player's SECOND SURFACE — on a phone the shell draws the picture and the page keeps the UI**
   (**D80**). `IMediaSurface` (`Show(MediaSurfaceRegion)` / `Hide()`) takes the rectangle the page measured;
   the shell's own player fills it from underneath, through a transparent region the page leaves. The

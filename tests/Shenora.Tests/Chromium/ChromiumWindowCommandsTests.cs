@@ -22,14 +22,13 @@ public class ChromiumWindowCommandsTests
         Assert.Equal(WindowCommandModule.IsMaximizedType, ChromiumWindowCommands.IsMaximizedType);
         Assert.Equal(WindowCommandModule.StartDragType, ChromiumWindowCommands.StartDragType);
         Assert.Equal(WindowCommandModule.StartResizeType, ChromiumWindowCommands.StartResizeType);
+        Assert.Equal(WindowCommandModule.SetCaptionButtonsType, ChromiumWindowCommands.SetCaptionButtonsType);
     }
 
-    [Theory]
-    [InlineData("SET_THEME")]
-    [InlineData("SET_CAPTION_BUTTONS")]
-    public async Task An_unwired_opt_in_route_answers_NO_ROUTE_as_the_WebView2_module_does(string type)
+    [Fact]
+    public async Task An_unwired_opt_in_route_answers_NO_ROUTE_as_the_WebView2_module_does()
     {
-        var response = await Module().HandleMessageAsync(new IpcRequest { Id = "1", Module = ChromiumWindowCommands.Module, Type = type });
+        var response = await Module().HandleMessageAsync(new IpcRequest { Id = "1", Module = ChromiumWindowCommands.Module, Type = "SET_THEME" });
 
         Assert.False(response.Success);
         Assert.Equal(IpcErrorCodes.NoRoute, response.Error?.Code);
@@ -40,7 +39,8 @@ public class ChromiumWindowCommandsTests
     {
         var module = Module();
 
-        foreach (var type in new[] { "MINIMIZE", "TOGGLE_MAXIMIZE", "CLOSE", "START_DRAG", "START_RESIZE" })
+        // SET_CAPTION_BUTTONS is wired on Windows, the OS this suite runs on, since the shell owns the window.
+        foreach (var type in new[] { "MINIMIZE", "TOGGLE_MAXIMIZE", "CLOSE", "START_DRAG", "START_RESIZE", "SET_CAPTION_BUTTONS" })
             Assert.True((await module.HandleMessageAsync(new IpcRequest { Id = type, Module = ChromiumWindowCommands.Module, Type = type })).Success, type);
 
         var maximized = await module.HandleMessageAsync(new IpcRequest { Id = "m", Module = ChromiumWindowCommands.Module, Type = "IS_MAXIMIZED" });

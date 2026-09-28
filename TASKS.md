@@ -134,10 +134,7 @@ D37 and D51 are corrected in place to point at them.
      p95 1.7 ms. **The client half is built:** `createChromiumTransport()` in `createHostTransport()`'s
      chain, with `ChromiumTransport` (`MarkHtml`, `PushScript`) on the host side and the marker's names
      mirrored by `WireMirrorTests` (sabotage-verified both ways, which the TS `satisfies keyof` also catches
-     at compile time). **Left:** the shell calling `MarkHtml` on every document it serves, including a
-     proxied dev-server page; accepting IPC only from the APP's browser AND the app's origin (a page in
-     another browser sharing the handler could otherwise make a cross-origin, no-cors POST to the route);
-     and promoting the prototype into the shell.
+     at compile time). Slice 1 (step 3) promoted it into the shell.
 2. **Read the adopter's own probe evidence** when it lands: the debug port's reach across processes,
    CDP-opened tabs, session cookies, Playwright, the round trip, codecs, install size and licences. Do not
    repeat it.
@@ -148,17 +145,19 @@ D37 and D51 are corrected in place to point at them.
    end-to-end run through the public API in the shim layout: the real client's DEFAULT bridge found the
    shell by its marker, and a handshake, an echo, `IS_MAXIMIZED` and 100 `invoke`s (median 1.0 ms, p95
    3.6 ms) worked, with a clean exit when the window closed.
-   **Left:** the caption hit-test (Snap Layouts), file drops carrying the engine's own paths (owner: the
-   drop-zone overlay is likely unneeded), a renderer-crash reload, native services (dialogs, clipboard,
-   URL launch), secondary windows exercised end to end, and the app build's layout (step 3's MSBuild
-   half). **Constraints the kit's probe set** (CEF 152, Windows, 2026-09-28):
+   **Page-drawn caption buttons are real ones** (`SET_CAPTION_BUTTONS`, and `useCaptionButtonState` for hover
+   and press), Snap Layouts included, seen with a real cursor. ⚠ Maximized, CEF's frameless client is 2 px
+   narrower than the monitor, with or without the kit's style bits.
+   **Left:** file drops carrying the engine's own paths (owner: the drop-zone overlay is likely unneeded), a
+   renderer-crash reload, native services (dialogs, clipboard,
+   URL launch), secondary windows exercised end to end, and the dev-server proxy run against a real Vite
+   server (only unit-tested so far). **Constraints the kit's probe set** (CEF 152, Windows, 2026-09-28):
    - 🔴 **A `--remote-debugging-port` on the app's OWN command line opens the port onto the bridge page**,
      with nothing in the settings. `CommandLineArgsDisabled` closes that route, and a port set in the
      settings still works under it. So the shell disables command-line args in production and is the only
      thing that can set a port.
    - **Chromium's windows are in-process, on CEF's UI thread** (the reverse of WebView2's), and a subclass
-     installs from THAT thread only. The caption hit-test (Snap Layouts on page-drawn buttons) is answered
-     there.
+     installs from THAT thread only. It is where the caption hit-test lives.
    - CEF raises everything on its UI thread with no synchronization context, so dispatch needs one over
      CEF's UI task runner, or the context-preserving pipeline has no UI thread to preserve.
    - The renderers are a subprocess exe of the shell's choosing. Never let it be the app's exe behind the

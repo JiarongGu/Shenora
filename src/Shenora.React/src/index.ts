@@ -67,10 +67,13 @@ export {
 } from './requests.js';
 export {
   WindowCommands,
+  WindowEventTypes,
+  useCaptionButtonState,
   useWindowMaximized,
   type WindowResizeEdge,
   type CaptionButtonKind,
   type CaptionButtonRect,
+  type CaptionButtonState,
 } from './windowCommands.js';
 export {
   WindowOrientation,

@@ -28,6 +28,8 @@ internal sealed unsafe class ChromiumWindow
     private _cef_browser_t* _browser;
     // Written on the UI thread, read on CEF's IO thread by the IPC ownership check.
     private volatile int _browserId;
+    private readonly CaptionButtons _captions;
+    private CaptionHitTest? _captionHitTest;
 
     public ChromiumWindow(string name, ChromiumWindowOptions options, ChromiumServing serving, ChromiumOrigins origins,
         Func<ChromiumWindow, ChromiumIpcBridge> bridge, Action<ChromiumWindow> destroyed, ILogger? log)
@@ -41,6 +43,9 @@ internal sealed unsafe class ChromiumWindow
         Bridge = bridge(this);
         _delegate = new WindowDelegate(this);
         _client = new Client(this);
+        // The click runs AFTER the message that delivered it: closing the window from inside its own
+        // subclassed window procedure would destroy it mid-call.
+        _captions = new CaptionButtons(CaptionStateChanged, kind => CefTask.Post(cef_thread_id_t.TID_UI, () => InvokeCaptionButton(kind)));
     }
 
     public string Name { get; }
@@ -80,6 +85,47 @@ internal sealed unsafe class ChromiumWindow
 
     public void Activate() { if (_window != null) { _window->show(_window); _window->activate(_window); } }
 
+    /// <summary>True where the shell can make page-drawn caption buttons real ones: Windows, today.</summary>
+    public static bool SupportsCaptionButtons =>
+#if CEF_WINDOWS
+        true;
+#else
+        false;
+#endif
+
+    /// <summary>
+    /// <c>SET_CAPTION_BUTTONS</c>: the page's button rectangles in CSS px. UI thread. The window's subclasses are
+    /// installed on the first call, so a page that never draws caption buttons costs nothing.
+    /// </summary>
+    public void SetCaptionButtons(System.Text.Json.JsonElement? payload)
+    {
+        if (_window == null) return;
+#if CEF_WINDOWS
+        _captionHitTest ??= CaptionHitTest.Attach(_window->get_window_handle(_window), _captions, _log);
+#endif
+        _captions.Set(CaptionButtons.Parse(payload, _captionHitTest?.Scale ?? 1.0));
+        _captionHitTest?.Refresh();
+    }
+
+    private void CaptionStateChanged(CaptionButtonState state) => Bridge.Notify(new Shenora.Core.Ipc.IpcNotification
+    {
+        Module = ChromiumWindowCommands.Module,
+        Type = ChromiumWindowCommands.CaptionButtonStateEvent,
+        Payload = state,
+        // Each state is the whole state, so an undelivered one is superseded by the next.
+        CoalesceKey = ChromiumWindowCommands.CaptionButtonStateEvent,
+    });
+
+    private void InvokeCaptionButton(CaptionButtonKind kind)
+    {
+        switch (kind)
+        {
+            case CaptionButtonKind.Minimize: Minimize(); break;
+            case CaptionButtonKind.Maximize: ToggleMaximize(); break;
+            case CaptionButtonKind.Close: Close(); break;
+        }
+    }
+
     /// <summary>Run <see cref="ChromiumTransport.PushScript"/> in the page's main frame. UI thread.</summary>
     public void Push(string message)
     {
@@ -112,6 +158,8 @@ internal sealed unsafe class ChromiumWindow
 
     private void WindowDestroyed()
     {
+        _captionHitTest?.Dispose();
+        _captionHitTest = null;
         Bridge.Dispose();
         if (_window != null) { using var w = new CefRef<_cef_window_t>(_window); _window = null; }
         if (_browserView != null) { using var v = new CefRef<_cef_browser_view_t>(_browserView); _browserView = null; }
@@ -399,13 +447,18 @@ internal sealed unsafe class ChromiumWindow
             Struct->on_load_start = &LoadStart;
         }
 
-        // The main frame's new document: whoever handshook can no longer receive (ContentLoading's counterpart).
+        // The main frame's new document: whoever handshook can no longer receive (ContentLoading's counterpart),
+        // and the old page's caption buttons are gone with it, or their rectangles would keep stealing clicks
+        // from a page that never drew them. The new page sends its own.
         [UnmanagedCallersOnly]
         private static void LoadStart(_cef_load_handler_t* self, _cef_browser_t* browser, _cef_frame_t* frame, cef_transition_type_t transition)
         {
             using var b = new CefRef<_cef_browser_t>(browser);
             using var f = new CefRef<_cef_frame_t>(frame);
-            if (frame != null && frame->is_main(frame) == 1) AppCallback.Run(From<Load>(self)._owner.Bridge.DocumentReplaced);
+            if (frame == null || frame->is_main(frame) != 1) return;
+            var owner = From<Load>(self)._owner;
+            AppCallback.Run(owner.Bridge.DocumentReplaced);
+            AppCallback.Run(() => owner._captions.Set([]));
         }
     }
 

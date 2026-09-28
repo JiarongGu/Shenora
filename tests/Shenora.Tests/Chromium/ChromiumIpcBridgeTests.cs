@@ -97,6 +97,33 @@ public class ChromiumIpcBridgeTests
     }
 
     [Fact]
+    public async Task A_window_local_notification_reaches_this_page_and_never_the_bus()
+    {
+        var (bridge, host, bus) = Make();
+        // A second window on the SAME bus, as every window of the shell is: a bus event would reach it.
+        var otherHost = new FakeHost();
+        var other = new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher(), EventBus = bus },
+            otherHost.Dispatcher, otherHost.Pushed.Add, otherHost.Schedule);
+        other.Start();
+        var onBus = 0;
+        using var _ = bus.SubscribeToAll(_ => { onBus++; return Task.CompletedTask; });
+        foreach (var (b, h) in new[] { (bridge, host), (other, otherHost) })
+        {
+            b.Incoming(Request(IpcHostBridge.HandshakeModule, IpcHostBridge.HandshakeType));
+            await SettleAsync(h);
+            h.Pushed.Clear();
+        }
+
+        bridge.Notify(new IpcNotification { Module = "SHENORA.WINDOW", Type = "CAPTION_BUTTON_STATE", Payload = new { hot = "close" } });
+        host.Tick();
+        otherHost.Tick();
+
+        Assert.Contains("CAPTION_BUTTON_STATE", Assert.Single(host.Pushed));
+        Assert.Empty(otherHost.Pushed);
+        Assert.Equal(0, onBus);
+    }
+
+    [Fact]
     public async Task A_new_document_closes_the_gate_so_nothing_drains_into_a_page_that_left()
     {
         var (bridge, host, bus) = Make();

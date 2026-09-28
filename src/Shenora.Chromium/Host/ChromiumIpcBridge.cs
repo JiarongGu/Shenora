@@ -96,6 +96,13 @@ internal sealed class ChromiumIpcBridge : IDisposable
         if (response is not null && !_disposed) Push(response);
     }
 
+    /// <summary>Queue a notification for THIS window's page only. The bus cannot address one: its events reach
+    /// every window.</summary>
+    public void Notify(IpcNotification notification)
+    {
+        if (!_disposed) _pump.Enqueue(notification);
+    }
+
     /// <summary>The main frame started loading a new document: whoever handshook can no longer receive.</summary>
     public void DocumentReplaced() => CloseGate("a new document is loading");
 

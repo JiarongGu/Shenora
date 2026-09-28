@@ -871,6 +871,28 @@ public class WireMirrorTests
     }
 
     /// <summary>
+    /// The caption-button state the Chromium shell sends, which is how a page renders hover and press on buttons
+    /// whose mouse events the hit-test took. Its drift is silent too: the buttons keep working and stop
+    /// reacting. The event name, the module the hook subscribes to, and the payload's fields, from source.
+    /// </summary>
+    [Fact]
+    public void Caption_button_state_event_matches_the_host()
+    {
+        var source = ClientSource("windowCommands.ts");
+
+        var events = ParseConstObject(source, "WindowEventTypes");
+        Assert.NotEmpty(events);   // parser self-check
+        Assert.Equal(Shenora.Chromium.Host.ChromiumWindowCommands.CaptionButtonStateEvent, events["CaptionButtonState"]);
+        Assert.Single(events);
+
+        var subscription = Regex.Match(source, @"useShenoraEvent<[^>]*>\(\s*'(?<module>[A-Z_.]+)'");
+        Assert.True(subscription.Success, "could not find useCaptionButtonState's `useShenoraEvent<…>('MODULE'` call");
+        Assert.Equal(Shenora.Chromium.Host.ChromiumWindowCommands.Module, subscription.Groups["module"].Value);
+
+        AssertMirroredFields(typeof(Shenora.Chromium.Host.CaptionButtonState), "windowCommands.ts", "CaptionButtonState");
+    }
+
+    /// <summary>
     /// Drop zones, which are the one mechanism here whose whole VALUE is the wire: a page cannot learn a
     /// dropped file's path any other way, so a drifted <c>FILE_DROP</c> name is the feature disappearing.
     /// Both directions are pinned — the ROUTES the hook invokes and the EVENTS it subscribes to — because

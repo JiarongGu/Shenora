@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ShenoraBridge } from './bridge.js';
+import type { ShenoraEventBus } from './eventBus.js';
+import { useShenoraEvent } from './hooks.js';
 import { debounce } from './internal.js';
 import { BaseModuleService } from './moduleService.js';
 
@@ -11,8 +13,8 @@ export type WindowResizeEdge = 'top' | 'topLeft' | 'topRight';
 export type CaptionButtonKind = 'minimize' | 'maximize' | 'close';
 
 /**
- * Where the page drew one caption button, in CSS px relative to the WebView2 — i.e. straight out of
- * `getBoundingClientRect()`. The host converts to physical px using the control's DeviceDpi.
+ * Where the page drew one caption button, in CSS px relative to the page — i.e. straight out of
+ * `getBoundingClientRect()`. The host converts to physical px at the window's DPI.
  */
 export interface CaptionButtonRect {
   kind: CaptionButtonKind;
@@ -21,6 +23,21 @@ export interface CaptionButtonRect {
   width: number;
   height: number;
 }
+
+/**
+ * What the OS is doing to the page's caption buttons: the one the pointer is over, and the one being pressed.
+ * Absent means none.
+ */
+export interface CaptionButtonState {
+  hot?: CaptionButtonKind;
+  pressed?: CaptionButtonKind;
+}
+
+/** The host's `SHENORA.WINDOW` event names, pinned against it by `WireMirrorTests`. */
+export const WindowEventTypes = {
+  /** A {@link CaptionButtonState}, sent to the window's own page. See {@link useCaptionButtonState}. */
+  CaptionButtonState: 'CAPTION_BUTTON_STATE',
+} as const;
 
 // ⚠ A plain interface — NOT `extends Record<string, unknown>`, which widens `keyof TRequests & string`
 // back to `string`, so a mistyped route compiles and every payload collapses to `unknown`.
@@ -86,9 +103,11 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
    * chiefly so Windows 11 offers **Snap Layouts** on the maximize button.
    *
    * ⚠ The host then takes over CLICKS in those rects and performs minimize/maximize/close itself, so
-   * your `onClick` handlers stop firing there. CSS `:hover` stops firing too — subscribe to the host's
-   * caption-button state to render hot/pressed, which is also the only way to stay hot while the
-   * pointer is over the snap flyout, a different window.
+   * your `onClick` handlers stop firing there. CSS `:hover` stops firing too: render hot and pressed from
+   * {@link useCaptionButtonState}.
+   *
+   * ⚠ The Chromium shell forgets the rects when a new document loads, so send them from the page on
+   * every load as well as on every layout change.
    *
    * ⚠ Re-send on every layout change: the rectangles are a snapshot, and a stale one moves the
    * hit-test off the button the user can see. Pass an empty array to hand the pixels back to the page.
@@ -96,6 +115,24 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
   setCaptionButtons(buttons: CaptionButtonRect[]): Promise<void> {
     return this.send('SET_CAPTION_BUTTONS', { payload: { buttons } });
   }
+}
+
+/**
+ * Which caption button to render hot or pressed, for buttons registered with
+ * {@link WindowCommands.setCaptionButtons}, where CSS `:hover` no longer fires. The Chromium shell sends it to
+ * the window's own page. The WebView2 shell sends nothing by itself: by default it paints the caption buttons
+ * itself (`NativeCaptionButtons`), and an app drawing its own there can emit this event from
+ * `OptimizedForm.CaptionButtonStateChanged`.
+ */
+export function useCaptionButtonState(options: { bus?: ShenoraEventBus } = {}): CaptionButtonState {
+  const [state, setState] = useState<CaptionButtonState>({});
+  useShenoraEvent<CaptionButtonState | undefined>(
+    'SHENORA.WINDOW',
+    WindowEventTypes.CaptionButtonState,
+    (payload) => setState(payload ?? {}),
+    { bus: options.bus },
+  );
+  return state;
 }
 
 /**
