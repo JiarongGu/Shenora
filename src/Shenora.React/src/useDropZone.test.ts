@@ -401,6 +401,18 @@ describe('useDropZone on the Chromium shell (the host answers REGISTER with page
     expect(drops).toEqual([{ files: ['C:\a.txt', 'C:\b c.txt'], drop: { zoneId: 'z1', files: ['C:\a.txt', 'C:\b c.txt'], position: { x: 10, y: 4 } } }]);
   });
 
+  it("ignores the other engine's drag and drop events on the bus, even for a zone of the same id", async () => {
+    // A WebView2 page in the same app, with a zone of the same id: its host announces its drags and drops on the bus,
+    // which every page hears.
+    const drops: unknown[] = [];
+    const { bus, element } = await pageDropFixture((files) => drops.push(files));
+
+    act(() => bus.emit({ module: DROP_ZONE_MODULE, type: 'DRAG_ENTER', payload: { zoneId: 'z1' } }));
+    expect(element.classList.contains('hovering')).toBe(false);
+    act(() => bus.emit({ module: DROP_ZONE_MODULE, type: 'FILE_DROP', payload: { zoneId: 'z1', files: ['C:\\other.txt'], position: { x: 0, y: 0 } } }));
+    expect(drops).toEqual([]);
+  });
+
   it('does not call onDrop when the host has no paths for the drop', async () => {
     const drops: unknown[] = [];
     const { transport, element } = await pageDropFixture((files) => drops.push(files));

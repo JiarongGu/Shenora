@@ -89,7 +89,9 @@ public sealed unsafe class ChromiumWindows
         _serving = new ChromiumServing(_options.ContentRoot, _origins, interceptor,
             isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log);
         // Every page's window commands and drop zones, mapped ONCE: each acts on the page that asked, and its
-        // window. An app that mapped its own module under one of these names wins.
+        // window. An app that mapped its own SHENORA.WINDOW wins. The drop zones are under the engine's own name,
+        // where each page's requests are addressed, so they always answer this engine's pages: their protocol is
+        // not the WebView2 module's.
         _dispatcher.TryMapModule(new ChromiumWindowCommands(() => ChromiumBrowserContext.Current?.Host as ChromiumWindow));
         _dispatcher.TryMapModule(new ChromiumDropZones(() => ChromiumBrowserContext.Current));
     }

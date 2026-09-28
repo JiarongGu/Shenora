@@ -308,16 +308,18 @@ export function useDropZone(options: UseDropZoneOptions): void {
     };
   }, [enabled, element]);
 
-  // Drag-hover CSS feedback.
+  // Drag-hover CSS feedback, from the WebView2 shell's overlay. Where the page delivers drops itself, these bus events
+  // are some OTHER page's: an app with both engines has a WebView2 page announcing its drags to every page, and a zone
+  // of the same id there would otherwise light this one, or drop its files here.
   useEffect(() => {
     if (!enabled || !element) return;
     const dropClass = dropClassRef.current;
 
     const offEnter = bus.subscribe<{ zoneId: string }>(DROP_ZONE_MODULE, 'DRAG_ENTER', (event) => {
-      if (event.payload?.zoneId === zoneIdRef.current) element.classList.add(dropClass);
+      if (!pageDropRef.current && event.payload?.zoneId === zoneIdRef.current) element.classList.add(dropClass);
     });
     const offLeave = bus.subscribe<{ zoneId: string }>(DROP_ZONE_MODULE, 'DRAG_LEAVE', (event) => {
-      if (event.payload?.zoneId === zoneIdRef.current) element.classList.remove(dropClass);
+      if (!pageDropRef.current && event.payload?.zoneId === zoneIdRef.current) element.classList.remove(dropClass);
     });
     return () => {
       offEnter();
@@ -331,7 +333,7 @@ export function useDropZone(options: UseDropZoneOptions): void {
     if (!enabled) return;
     return bus.subscribe<DropZoneFileDrop>(DROP_ZONE_MODULE, 'FILE_DROP', (event) => {
       const drop = event.payload;
-      if (!drop || drop.zoneId !== zoneIdRef.current) return;
+      if (pageDropRef.current || !drop || drop.zoneId !== zoneIdRef.current) return;   // see the hover feedback above
       targetRef.current?.classList.remove(dropClassRef.current);
       onDropRef.current(drop.files, drop);
     });

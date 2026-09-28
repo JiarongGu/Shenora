@@ -12,11 +12,20 @@ namespace Shenora.Chromium.Host;
 /// ONE module for every page: the zones, and the drag, are those of the page that sent the request
 /// (<see cref="ChromiumBrowserContext"/>), which forgets its zones when a new document starts.
 /// </para>
+/// <para>
+/// Mapped under <see cref="EngineModule"/>, never the page's <see cref="Module"/>: each Chromium page's requests are
+/// addressed here (<see cref="PageModuleDispatcher"/>), so an app that also maps the WebView2 module, in either
+/// order, has each page answered by its own engine.
+/// </para>
 /// </summary>
 /// <param name="current">The page whose request is being handled.</param>
 internal sealed class ChromiumDropZones(Func<ChromiumBrowser?> current) : ModuleBase
 {
+    /// <summary>The module the page speaks: the WebView2 shell's.</summary>
     public const string Module = "SHENORA.DROPZONE";
+
+    /// <summary>The name this module is mapped under, which only a Chromium page's requests are addressed to.</summary>
+    public const string EngineModule = "SHENORA.CHROMIUM.DROPZONE";
     public const string RegisterType = "REGISTER";
     public const string UpdateType = "UPDATE";
     public const string UnregisterType = "UNREGISTER";
@@ -26,7 +35,7 @@ internal sealed class ChromiumDropZones(Func<ChromiumBrowser?> current) : Module
     /// <c>{ files }</c>, the real paths of the drag it ended.</summary>
     public const string DropType = "DROP";
 
-    public override string ModuleName => Module;
+    public override string ModuleName => EngineModule;
 
     // Dispatched where the page's IPC runs: CEF's UI thread under the Views shell, the host's for an embedded browser.
     protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)

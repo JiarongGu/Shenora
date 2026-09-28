@@ -194,12 +194,12 @@ D37 and D51 are corrected in place to point at them.
    - Tab navigation out of the page, back to WinForms controls, is unmeasured. WinForms' `Focused` stays
      false while the page has the focus, because it is in CEF's child window, which another thread owns.
    - The path without CEF's launcher, where `RunIfSubprocess` matters, is unmeasured under WinForms.
-   - ⚠ The WebView2 `DropZoneModule` has the same module name, `SHENORA.DROPZONE`, so an app mixing both
-     engines cannot have both drop protocols. The engine takes the name only if it is free. Derived and
-     unmeasured: a Chromium page would then get the WebView2 overlay protocol and no paths.
    - Nothing acts on the page's `-webkit-app-region: drag` areas in an embedded browser (`START_DRAG`
      works). Under Views, CEF reports them through `on_draggable_regions_changed`; whether it does for a
      child browser is unmeasured.
+   - ⚠ An app with both engines has ONE `WindowCommandModule`, bound to one form and one `CoordinateSpace`, so a
+     `ChromiumView` in another window would command that one. Read from the source, unmeasured; the drop zones
+     had the same shape and now answer each page by its own engine.
    - ⚠ **`OptimizedForm`'s caption buttons have the press defect the Chromium shell had**, read from the
      source and not measured: it swallows the non-client press without taking the capture. On the
      Chromium shell that left a button pressed after a release on the drag bar, and another button lit

@@ -289,9 +289,9 @@ opens in the system browser exactly once.
 3. **Swap the control:** `new ChromiumView(engine) { Dock = DockStyle.Fill, Path = … }`, with the engine
    resolved from the services. The view serves its page and bridges its IPC itself, so the `WebViewHost` and
    `WebViewIpcBridge` setup goes. Map `WindowCommandModule` as before, with `CoordinateSpace = view`.
-4. **Drops:** do not map the WebView2 `DropZoneModule`. The engine answers `SHENORA.DROPZONE` itself, with the
-   real paths, and `useDropZone()` needs no change. The two share that one module name, and the engine takes
-   it only if it is free as the first view opens.
+4. **Drops:** nothing to map for the view. The engine answers its pages' `useDropZone()` itself, with the real
+   paths, and the hook needs no change. A form that keeps a WebView2 page as well keeps its `DropZoneModule`:
+   each page's zones are answered by its own engine, whichever of the two you map first.
 
 The page needs no change on the default bridge: `createHostTransport()` finds this host. What differs:
 WinForms' `Focused` stays false while the page has the keyboard focus, and Tab navigation out of the page

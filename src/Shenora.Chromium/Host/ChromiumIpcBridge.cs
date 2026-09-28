@@ -70,7 +70,8 @@ internal sealed class ChromiumIpcBridge : IDisposable
         });
         _host = new IpcHostBridge(new IpcHostBridgeOptions
         {
-            Dispatcher = options.Dispatcher,
+            // The page's requests reach the app's dispatcher, addressed to this engine where its protocol differs.
+            Dispatcher = new PageModuleDispatcher(options.Dispatcher),
             Pump = _pump,
             Shell = options.Shell,
             OnClientReady = options.OnClientReady,

@@ -171,7 +171,8 @@ public sealed class ChromiumEngine
                 _isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log);
             var services = _app.Services;
             var dispatcher = services.GetRequiredService<IMessageDispatcher>();
-            // Mapped ONCE, acting on the page that asked. An app that mapped its own module under the name wins.
+            // Mapped ONCE, acting on the page that asked, under the engine's own name: the app's WebView2 module, if it
+            // maps one, keeps the page's name for the WebView2 pages.
             dispatcher.TryMapModule(new ChromiumDropZones(() => ChromiumBrowserContext.Current));
             var root = _isDevelopment && _options.DevUrl is not null ? new Uri(_options.DevUrl) : origins.App;
             return _pages = new ChromiumPages(origins, serving, root, dispatcher, services.GetRequiredService<IUiDispatcher>(),

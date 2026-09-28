@@ -170,6 +170,62 @@ public class ChromiumIpcBridgeTests
         Assert.Single(host.Pushed);   // and the tick has nothing left of it to send
     }
 
+    /// <summary>The WebView2 shell's drop-zone module, as an app maps it: under the page's own module name.</summary>
+    private sealed class WebView2DropZones : IIpcModule
+    {
+        public int Calls;
+        public string ModuleName => Shenora.Windows.DropZoneManager.Module;
+
+        public Task<IpcResponse> HandleMessageAsync(IpcRequest request, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(IpcResponse.CreateSuccess(request.Id));
+        }
+    }
+
+    // One app, both engines, one dispatcher: whichever was mapped first, a Chromium page's drop zones are the engine's
+    // and a WebView2 page's the WebView2 module's. Mapped to the SAME name, a Chromium page's REGISTER once reached the
+    // WebView2 module, which would have raised an overlay on the WebView2 form, and mapping it after the engine threw.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task In_an_app_with_both_engines_each_page_is_answered_by_its_own(bool webView2First)
+    {
+        var dispatcher = new MessageDispatcher();
+        var webView2 = new WebView2DropZones();
+        if (webView2First) dispatcher.MapModule(webView2);
+        Assert.True(dispatcher.TryMapModule(new ChromiumDropZones(() => ChromiumBrowserContext.Current)));
+        if (!webView2First) dispatcher.MapModule(webView2);   // never "already mapped"
+
+        var host = new FakeHost();
+        var page = ChromiumDropZonesTests.Window("chromium");
+        var bridge = new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = dispatcher, EnterWindow = () => ChromiumBrowserContext.Enter(page) },
+            host.Dispatcher, host.Pushed.Add, host.Schedule);
+        bridge.Incoming(Request(ChromiumDropZones.Module, ChromiumDropZones.RegisterType, new { zoneId = "z1" }));
+        await SettleAsync(host);
+
+        Assert.Contains("\"pageDrop\":true", Assert.Single(host.Pushed));
+        Assert.True(page.HasDropZone("z1"));
+        Assert.Equal(0, webView2.Calls);
+
+        // A WebView2 page's request reaches the dispatcher as it is.
+        var fromWebView2 = await dispatcher.DispatchAsync(new IpcRequest { Id = "w", Module = ChromiumDropZones.Module, Type = ChromiumDropZones.RegisterType });
+        Assert.True(fromWebView2.Success);
+        Assert.Equal(1, webView2.Calls);
+    }
+
+    // The JSON can say `"module": null`, whatever the C# type says: the page's view of the dispatcher passes it on to be
+    // refused, never throws on it.
+    [Fact]
+    public async Task A_request_with_no_module_is_refused_as_before_not_thrown_on()
+    {
+        var response = await new PageModuleDispatcher(new MessageDispatcher())
+            .DispatchAsync(new IpcRequest { Id = "n", Module = null!, Type = "REGISTER" });
+
+        Assert.False(response.Success);
+        Assert.Equal(IpcErrorCodes.NoHandler, response.Error?.Code);
+    }
+
     [Fact]
     public async Task A_new_document_closes_the_gate_so_nothing_drains_into_a_page_that_left()
     {
