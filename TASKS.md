@@ -183,11 +183,19 @@ D37 and D51 are corrected in place to point at them.
    - **Under Views, the page's drag bar becomes a real caption only when the shell forwards
      `on_draggable_regions_changed` to `set_draggable_regions`**: HTCAPTION with the forwarding, HTCLIENT
      without it, through real routing (`WindowFromPoint`).
-3b. **Chromium inside `Shenora.Windows` (D83):** a WinForms control in `WebViewHost`'s shape on CEF's
-   multi-threaded message loop, since WinForms owns the main thread, with IPC dispatched on the WinForms
-   UI thread as `WebViewIpcBridge` does. It is the adopter's direct path, since it keeps `OptimizedForm` and
-   `SecondaryWindows`. The kit's caption-button hole already works over CEF's child windows (measured, CEF
-   152). The same shim starts it.
+3b. **Chromium inside `Shenora.Windows` (D83):** a `ChromiumView` control and `UseChromiumEngine()` (owner),
+   on CEF's multi-threaded message loop, since WinForms owns the main thread, with IPC dispatched on the
+   WinForms UI thread as `WebViewIpcBridge` does. It is the adopter's direct path, since it keeps
+   `OptimizedForm` and `SecondaryWindows`. The kit's caption-button hole already works over CEF's child
+   windows (measured, CEF 152). The same shim starts it. The plan, in order:
+   1. extract the browser core (client, handlers, bridge, per-page state) out of the Views `ChromiumWindow`,
+      with no change in behaviour, the probes re-run;
+   2. start and stop the engine on CEF's multi-threaded message loop, for a host that owns its UI thread;
+   3. the public embedding API (D83): a browser in any parent window, serving and IPC included, its IPC
+      dispatched through the host's own `IUiDispatcher`;
+   4. `ChromiumView` in `Shenora.Windows` (and its `Shenora.Chromium` reference), proven in a WinForms
+      probe with `OptimizedForm`: window commands, the caption hole and Snap Layouts, drops, secondary
+      windows.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).
