@@ -153,6 +153,9 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     void IChromiumBrowserHost.BrowserClosed() { }
     bool IChromiumBrowserHost.CloseRequested() => false;
 
+    // The page is the window's only control: there is nowhere else for the focus to go, and it stays in the page.
+    void IChromiumBrowserHost.FocusLeaving(bool forward) { }
+
     // ── CEF's window callbacks, delegated here ────────────────────────────────────────────────────────
 
     private void WindowCreated(_cef_window_t* window)

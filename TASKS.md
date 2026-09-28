@@ -191,9 +191,13 @@ D37 and D51 are corrected in place to point at them.
      without it, through real routing (`WindowFromPoint`).
 3b. **`ChromiumView` in `Shenora.Windows` (D83), what is left.** The control and `UseChromiumEngine()` ship,
    proven in an `OptimizedForm` with the kit's window commands: the caption hole and Snap Layouts, a real
-   `START_DRAG`, drops with real paths, `SecondaryWindows` pages on their own threads, and keyboard focus.
-   - Tab navigation out of the page, back to WinForms controls, is unmeasured. WinForms' `Focused` stays
-     false while the page has the focus, because it is in CEF's child window, which another thread owns.
+   `START_DRAG`, drops with real paths, `SecondaryWindows` pages on their own threads, keyboard focus, and Tab
+   out of the page and back in (to its first element).
+   - Shift+Tab, out and in, is unmeasured: a posted key cannot carry Shift's live state, so it needs a real key.
+     Derived: out takes the same path backwards; in, the page likely starts from its first element, where a
+     native control would take its last.
+   - WinForms' `Focused` stays false while the page has the focus, because it is in CEF's child window, which
+     another thread owns.
    - Nothing acts on the page's `-webkit-app-region: drag` areas in an embedded browser (`START_DRAG`
      works). Under Views, CEF reports them through `on_draggable_regions_changed`; whether it does for a
      child browser is unmeasured.

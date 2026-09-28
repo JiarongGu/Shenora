@@ -293,10 +293,10 @@ opens in the system browser exactly once.
    paths, and the hook needs no change. A form that keeps a WebView2 page as well keeps its `DropZoneModule`:
    each page's zones are answered by its own engine, whichever of the two you map first.
 
-The page needs no change on the default bridge: `createHostTransport()` finds this host. What differs:
-WinForms' `Focused` stays false while the page has the keyboard focus, and Tab navigation out of the page
-back to WinForms controls is unmeasured. Started as `dotnet MyApp.App.dll` rather than `MyApp.exe`, as an IDE
-may, the app runs, with Chromium's sandbox off: the engine logs a warning saying so.
+The page needs no change on the default bridge: `createHostTransport()` finds this host, and Tab moves
+through the page and on to the form's next control as it does through any other. What differs: WinForms'
+`Focused` stays false while the page has the keyboard focus. Started as `dotnet MyApp.App.dll` rather than
+`MyApp.exe`, as an IDE may, the app runs, with Chromium's sandbox off: the engine logs a warning saying so.
 
 **Verify:** the app starts from `MyApp.exe`, the page loads from the dev server and from the bundle, and
 the caption buttons, a window drag and a file drop behave as they did on WebView2.

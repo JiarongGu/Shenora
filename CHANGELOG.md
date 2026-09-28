@@ -44,7 +44,8 @@ at the first list and missed five more breaking changes.
     dev-server hot reload;
   - **`ChromiumView`, a control in `Shenora.Windows`**, with `UseChromiumEngine()` running CEF beside the
     WinForms loop. It keeps `OptimizedForm`, the window commands (`CoordinateSpace` = the view) and
-    `SecondaryWindows`, whose pages dispatch on their own threads. Underneath it is a small public
+    `SecondaryWindows`, whose pages dispatch on their own threads, and Tab leaves the page for the form's next
+    control (`ChromiumChildBrowserOptions.FocusLeaving`). Underneath it is a small public
     embedding, `ChromiumEngine` + `ChromiumChildBrowser`, which puts a page in any native window.
 
   ⚠ **CEF itself is not in the package**, and that is D81's point: an app that chose WebView2 carries none of

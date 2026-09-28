@@ -24,6 +24,13 @@ public sealed class ChromiumChildBrowserOptions
     /// own (the kit's <c>SecondaryWindows</c>) passes a dispatcher over itself.
     /// </summary>
     public IUiDispatcher? UiDispatcher { get; init; }
+
+    /// <summary>
+    /// The keyboard focus is leaving the page, <c>true</c> for Tab past its last element and <c>false</c> for Shift+Tab
+    /// past its first: the host moves it to its next or previous control. Called on the thread of
+    /// <see cref="UiDispatcher"/>. Null leaves the focus in the page.
+    /// </summary>
+    public Action<bool>? FocusLeaving { get; init; }
 }
 
 /// <summary>
@@ -75,7 +82,7 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
         var ui = options.UiDispatcher ?? pages.Ui;
         _browser = new ChromiumBrowser(options.Name, pages.Serving, pages.Origins, browser => NewBridge(browser, pages, ui), pages.Log, pages.Urls)
         {
-            Host = new BrowserHost(this),
+            Host = new BrowserHost(this, options.FocusLeaving is { } leaving ? forward => ui.Post(() => AppCallback.Run(() => leaving(forward))) : null),
         };
         var url = options.Path is { } path ? new Uri(pages.Root, path) : pages.Root;
         var background = options.BackgroundColor;
@@ -239,8 +246,10 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
     }
 
     /// <summary>What the page's browser asks of its host. CEF's UI thread.</summary>
-    private sealed class BrowserHost(ChromiumChildBrowser owner) : IChromiumBrowserHost
+    private sealed class BrowserHost(ChromiumChildBrowser owner, Action<bool>? focusLeaving) : IChromiumBrowserHost
     {
+        // Posted to the host's thread, which owns its other controls.
+        public void FocusLeaving(bool forward) => focusLeaving?.Invoke(forward);
         public void DraggableRegionsChanged(nuint count, _cef_draggable_region_t* regions) { }
         public void TitleChanged(string title) { }
         public void DocumentStarted() { }

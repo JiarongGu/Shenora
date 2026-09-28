@@ -31,6 +31,10 @@ internal unsafe interface IChromiumBrowserHost
 
     /// <summary>The browser has closed. CEF's UI thread.</summary>
     void BrowserClosed();
+
+    /// <summary>The keyboard focus is leaving the page: Tab past its last element (<paramref name="forward"/>) or
+    /// Shift+Tab past its first. A host with other controls moves the focus to its next one. CEF's UI thread.</summary>
+    void FocusLeaving(bool forward);
 }
 
 /// <summary>
@@ -285,6 +289,7 @@ internal sealed unsafe class ChromiumBrowser
         private readonly Drag _drag;
         private readonly Display _display;
         private readonly Permissions _permissions;
+        private readonly FocusHandler _focus;
 
         public Client(ChromiumBrowser owner)
         {
@@ -294,12 +299,14 @@ internal sealed unsafe class ChromiumBrowser
             _drag = new Drag(owner);
             _display = new Display(owner);
             _permissions = new Permissions(owner);
+            _focus = new FocusHandler(owner);
             Struct->get_request_handler = &GetRequests;
             Struct->get_life_span_handler = &GetLifeSpan;
             Struct->get_load_handler = &GetLoad;
             Struct->get_drag_handler = &GetDrag;
             Struct->get_display_handler = &GetDisplay;
             Struct->get_permission_handler = &GetPermissions;
+            Struct->get_focus_handler = &GetFocus;
         }
 
         // A getter handing CEF one of our structs must add the reference CEF takes.
@@ -309,6 +316,28 @@ internal sealed unsafe class ChromiumBrowser
         [UnmanagedCallersOnly] private static _cef_drag_handler_t* GetDrag(_cef_client_t* self) => From<Client>(self)._drag.ForCef();
         [UnmanagedCallersOnly] private static _cef_display_handler_t* GetDisplay(_cef_client_t* self) => From<Client>(self)._display.ForCef();
         [UnmanagedCallersOnly] private static _cef_permission_handler_t* GetPermissions(_cef_client_t* self) => From<Client>(self)._permissions.ForCef();
+        [UnmanagedCallersOnly] private static _cef_focus_handler_t* GetFocus(_cef_client_t* self) => From<Client>(self)._focus.ForCef();
+    }
+
+    /// <summary>CEF hands the keyboard focus back to the host when Tab leaves the page; left unanswered, it stayed in
+    /// the page with nowhere to go.</summary>
+    private sealed class FocusHandler : CefObject<_cef_focus_handler_t>
+    {
+        private readonly ChromiumBrowser _owner;
+
+        public FocusHandler(ChromiumBrowser owner)
+        {
+            _owner = owner;
+            Struct->on_take_focus = &TakeFocus;
+        }
+
+        [UnmanagedCallersOnly]
+        private static void TakeFocus(_cef_focus_handler_t* self, _cef_browser_t* browser, int next)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            var owner = From<FocusHandler>(self)._owner;
+            AppCallback.Run(() => owner.Host?.FocusLeaving(next != 0));
+        }
     }
 
     /// <summary>Answers every permission prompt (<see cref="ChromiumRouting.AllowsPermission"/>). Media access has its

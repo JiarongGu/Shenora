@@ -17,6 +17,8 @@ namespace Shenora.Windows;
 /// <para>
 /// ⚠ WinForms' own <see cref="Control.Focused"/> stays false while the page has the keyboard focus, and
 /// <see cref="Control.Focus"/> returns false: the focus is in CEF's child window, which another thread owns.
+/// Tab past the page's last element moves the focus on to the form's next control, and Shift+Tab past its first to
+/// the previous one, as they do from any other control.
 /// </para>
 /// </summary>
 public sealed class ChromiumView : Control
@@ -65,6 +67,7 @@ public sealed class ChromiumView : Control
                 Path = Path,
                 BackgroundColor = BackColor,
                 UiDispatcher = new WinFormsUiDispatcher(this),
+                FocusLeaving = MoveFocusOut,
             });
         }
         catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException)
@@ -72,6 +75,14 @@ public sealed class ChromiumView : Control
             // Never out of handle creation, where WinForms answers an exception with a blocking modal dialog.
             _log?.LogError(ex, "The Chromium page '{Name}' could not open", Name);
         }
+    }
+
+    // Tab past the page's last element, or Shift+Tab past its first: on to the form's next or previous control, as a
+    // Tab from any other control goes. With no other control it wraps back here, and so into the page.
+    private void MoveFocusOut(bool forward)
+    {
+        if (IsDisposed) return;
+        (FindForm() ?? Parent)?.SelectNextControl(this, forward, tabStopOnly: true, nested: true, wrap: true);
     }
 
     /// <inheritdoc/>
