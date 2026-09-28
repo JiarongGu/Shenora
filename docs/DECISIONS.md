@@ -1172,10 +1172,11 @@ docs cite them — so the number is the column to scan.
   - 🔴 **Why: the client callbacks the kit's translation layer needs exist only there** (D54). Measured: in
     Chrome style CEF never called `on_drag_enter`, so a dropped file's real path was unreachable, which is the
     capability the drop-zone stack exists for.
-  - **What Chrome style did that becomes the shell's, and so the app's, to decide** (CEF's own headers):
-    downloads are cancelled without a download handler, permission requests are denied or ignored instead of
-    prompting, fullscreen must be triggered by the host, and an unresponsive renderer gets no dialog. An app
-    shell deciding its own policy is the point, but each is kit work until it is built.
+  - **Chrome's own UI goes with it** (CEF's headers): downloads are cancelled without a download handler,
+    permission requests are denied or ignored instead of prompting, fullscreen stays inside the page unless
+    the host triggers it, and an unresponsive renderer gets no dialog. That is the WebView2 shell's own
+    policy for downloads and permissions (it cancels downloads, and denies every permission outside
+    `PermittedPermissions`), save the clipboard reads that list allows by default.
   - ⚠ **Alloy changed the frame's hit-test**: Chromium's render widget answers HTCLIENT over the page's drag
     area, so the shell's child subclass defers every non-client answer to CEF's top-level window. Any other
     behaviour measured under Chrome style is re-measured before it is relied on.

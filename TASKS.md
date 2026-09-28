@@ -146,16 +146,15 @@ D37 and D51 are corrected in place to point at them.
    shell by its marker, and a handshake, an echo, `IS_MAXIMIZED` and 100 `invoke`s (median 1.0 ms, p95
    3.6 ms) worked, with a clean exit when the window closed.
    **Page-drawn caption buttons are real ones** (`SET_CAPTION_BUTTONS`, and `useCaptionButtonState` for hover
-   and press), Snap Layouts included, seen with a real cursor. ⚠ Maximized, CEF's frameless client is 2 px
-   narrower than the monitor, with or without the kit's style bits.
+   and press), Snap Layouts included, seen with a real cursor. The frameless window resizes from its edges.
+   ⚠ Maximized, its client overhangs the monitor's work area by 1 px on every side.
    **`useDropZone` gets real paths with no overlay** (the page is Alloy style, D84): the page's own drop names
    the zone, and the host answers with the paths CEF reported as the drag entered. A file dropped anywhere
    else no longer navigates the app away.
    **Left:**
-   - what Alloy style hands the shell (D84): downloads, permission requests, fullscreen;
-   - the frameless window's edges answer HTBORDER, so it cannot be resized with the pointer (measured
-     without the Snap Layouts style bits);
-   - a real pointer drag of the window by the page's drag area (its routing is measured, the move is not);
+   - the WebView2 shell's one permission allowance, clipboard reads (`PermittedPermissions`), which Alloy
+     ignores (D84); app hooks for downloads and permissions wait for an app that asks;
+   - a real pointer drag and resize of the window (their routing is measured, the move is not);
    - a renderer-crash reload, native services (dialogs, clipboard, URL launch), secondary windows exercised
      end to end, and the dev-server proxy run against a real Vite server (only unit-tested so far).
 

@@ -102,7 +102,6 @@ internal sealed unsafe class ChromiumWindow
     public void SetCaptionButtons(System.Text.Json.JsonElement? payload)
     {
         if (_window == null) return;
-        _captionHitTest?.EnableSnapLayouts();
         _captions.Set(CaptionButtons.Parse(payload, _captionHitTest?.Scale ?? 1.0));
         _captionHitTest?.Refresh();
     }
@@ -246,6 +245,12 @@ internal sealed unsafe class ChromiumWindow
             Struct->on_window_destroyed = &OnDestroyed;
             Struct->is_frameless = &IsFrameless;
             Struct->can_close = &CanClose;
+            // Left unanswered, CEF treats a frameless window as fixed: its edges answer HTBORDER and it gets
+            // none of WS_THICKFRAME / WS_MAXIMIZEBOX, without which Windows offers no Snap Layouts either.
+            // Answered, Chromium styles the window itself and the edges resize (both measured).
+            Struct->can_resize = &Yes;
+            Struct->can_maximize = &Yes;
+            Struct->can_minimize = &Yes;
             Struct->@base.@base.get_preferred_size = &PreferredSize;
         }
 
@@ -265,6 +270,13 @@ internal sealed unsafe class ChromiumWindow
         {
             using var w = new CefRef<_cef_window_t>(window);
             return From<WindowDelegate>(self)._owner._options.Frameless ? 1 : 0;
+        }
+
+        [UnmanagedCallersOnly]
+        private static int Yes(_cef_window_delegate_t* self, _cef_window_t* window)
+        {
+            using var w = new CefRef<_cef_window_t>(window);
+            return 1;
         }
 
         [UnmanagedCallersOnly]

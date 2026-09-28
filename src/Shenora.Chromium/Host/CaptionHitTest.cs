@@ -37,7 +37,6 @@ internal sealed unsafe class CaptionHitTest : IDisposable
     private readonly GCHandle _self;
     private readonly HashSet<nint> _children = [];
     private bool _disposed;
-    private bool _snapLayouts;
 
     private CaptionHitTest(nint top, CaptionButtons buttons, ILogger? log)
     {
@@ -63,20 +62,6 @@ internal sealed unsafe class CaptionHitTest : IDisposable
         return null;
     }
 
-    /// <summary>
-    /// Style the window so Windows offers Snap Layouts on the page's maximize button. Once, when the page first
-    /// registers caption buttons. Measured against a control window that shows the flyout: CEF's frameless
-    /// style never got it, WS_MAXIMIZEBOX alone never did, and exactly these two bits did in every trial.
-    /// (Adding WS_CAPTION as well lost it again.) Neither bit adds a frame: the client area stays the whole
-    /// window (measured), though Windows 11 now rounds the window's corners.
-    /// </summary>
-    public void EnableSnapLayouts()
-    {
-        if (_disposed || _snapLayouts) return;
-        _snapLayouts = true;
-        SetWindowLongPtrW(_top, GWL_STYLE, GetWindowLongPtrW(_top, GWL_STYLE) | WS_THICKFRAME | WS_MAXIMIZEBOX);
-        SetWindowPos(_top, 0, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-    }
 
     /// <summary>Physical pixels per CSS pixel, from the window's own DPI (per monitor).</summary>
     public double Scale
@@ -236,12 +221,6 @@ internal sealed unsafe class CaptionHitTest : IDisposable
     [DllImport("comctl32")]
     private static extern int RemoveWindowSubclass(nint hwnd, delegate* unmanaged<nint, uint, nint, nint, nuint, nuint, nint> proc, nuint id);
     [DllImport("comctl32")] private static extern nint DefSubclassProc(nint hwnd, uint msg, nint wParam, nint lParam);
-    private const int GWL_STYLE = -16;
-    private const long WS_THICKFRAME = 0x00040000, WS_MAXIMIZEBOX = 0x00010000;
-    private const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_FRAMECHANGED = 0x20;
-    [DllImport("user32")] private static extern long GetWindowLongPtrW(nint hwnd, int index);
-    [DllImport("user32")] private static extern long SetWindowLongPtrW(nint hwnd, int index, long value);
-    [DllImport("user32")] private static extern int SetWindowPos(nint hwnd, nint after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32")] private static extern int EnumChildWindows(nint parent, delegate* unmanaged<nint, nint, int> proc, nint lParam);
     [DllImport("user32")] private static extern uint GetWindowThreadProcessId(nint hwnd, uint* processId);
     [DllImport("user32")] private static extern int GetClassNameW(nint hwnd, char* name, int max);
@@ -256,7 +235,6 @@ internal sealed class CaptionHitTest : IDisposable
 {
     public static CaptionHitTest? Attach(nint top, CaptionButtons buttons, ILogger? log) => null;
     public double Scale => 1.0;
-    public void EnableSnapLayouts() { }
     public void Refresh() { }
     public void Dispose() { }
 }
