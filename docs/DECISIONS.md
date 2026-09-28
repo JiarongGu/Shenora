@@ -1137,6 +1137,8 @@ docs cite them — so the number is the column to scan.
     runtime, and only apps that reference this package pay.
   - ⚠ **The engine's security updates become the app's.** The failure mode is a binding that cannot
     follow CEF's release cadence, not the size.
+  - **Building CEF from source is allowed once a gap needs a Chromium patch** (owner: *"its okay to build CEF
+    too"*); until then, published builds. ⚠ A CEF the kit builds is bytes it conveys, which reopens D51.
 
 - **D82 — THE DESKTOP REACHES MACOS AND LINUX THROUGH ONE CHROMIUM SHELL OF THE KIT'S OWN, ON CEF'S VIEWS
   FRAMEWORK, BUILT AHEAD OF A CONSUMER.** Owner: *"its not really about we have consumer rn or not, we need

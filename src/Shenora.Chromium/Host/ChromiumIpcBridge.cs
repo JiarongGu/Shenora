@@ -36,7 +36,9 @@ internal sealed class ChromiumIpcBridgeOptions
 /// does a dead renderer; disposing cancels in-flight dispatch FIRST.
 /// <para>
 /// CEF's two primitives are injected, pushing a message into the page and scheduling the flush tick, so
-/// the bridge is tested without CEF. Everything here runs on CEF's UI thread.
+/// the bridge is tested without CEF. Its state lives on ONE thread, the <see cref="IUiDispatcher"/> it is given:
+/// CEF's UI thread under the Views shell, the host's own for an embedded browser. What CEF reports on its own
+/// thread (the browser's start, a new document, a dead renderer, the close) is posted there.
 /// </para>
 /// </summary>
 internal sealed class ChromiumIpcBridge : IDisposable
@@ -47,12 +49,12 @@ internal sealed class ChromiumIpcBridge : IDisposable
     private readonly Func<TimeSpan, Action, bool> _schedule;
     private readonly NotificationPump _pump;
     private readonly IpcHostBridge _host;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     /// <param name="options">The dispatcher, the bus and the handshake's shell description.</param>
-    /// <param name="ui">CEF's UI thread, where every message is dispatched.</param>
-    /// <param name="push">Deliver one serialized message to the page's main frame. UI thread.</param>
-    /// <param name="schedule">Run the action on the UI thread after the delay; false once CEF is gone.</param>
+    /// <param name="ui">The bridge's thread, where every message is dispatched.</param>
+    /// <param name="push">Deliver one serialized message to the page's main frame. Called on the bridge's thread.</param>
+    /// <param name="schedule">Run the action on the bridge's thread after the delay; false once that thread is gone.</param>
     public ChromiumIpcBridge(ChromiumIpcBridgeOptions options, IUiDispatcher ui, Action<string> push, Func<TimeSpan, Action, bool> schedule)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -80,11 +82,11 @@ internal sealed class ChromiumIpcBridge : IDisposable
 
     public NotificationPumpReport NotificationReport => _pump.Report();
 
-    /// <summary>Start the flush tick. UI thread, once the page's browser exists.</summary>
-    public void Start() => Tick();
+    /// <summary>Start the flush tick, once the page's browser exists. Any thread.</summary>
+    public void Start() => OnOwnThread(Tick);
 
     /// <summary>
-    /// A page's envelope, from any thread (CEF delivers it on its IO thread). Dispatched on the UI thread,
+    /// A page's envelope, from any thread (CEF delivers it on its IO thread). Dispatched on the bridge's thread,
     /// where a route's awaits resume, which is the kit's context-preserving model.
     /// </summary>
     public void Incoming(string json)
@@ -109,11 +111,17 @@ internal sealed class ChromiumIpcBridge : IDisposable
         if (!_disposed) _pump.Enqueue(notification);
     }
 
-    /// <summary>The main frame started loading a new document: whoever handshook can no longer receive.</summary>
-    public void DocumentReplaced() => CloseGate("a new document is loading");
+    /// <summary>The main frame started loading a new document: whoever handshook can no longer receive. Any thread.</summary>
+    public void DocumentReplaced() => OnOwnThread(() => CloseGate("a new document is loading"));
 
-    /// <summary>The renderer died: a flush now would drain the queue into nothing.</summary>
-    public void RendererGone() => CloseGate("the renderer process terminated");
+    /// <summary>The renderer died: a flush now would drain the queue into nothing. Any thread.</summary>
+    public void RendererGone() => OnOwnThread(() => CloseGate("the renderer process terminated"));
+
+    // Inline when already there. Once the thread is gone nothing else can touch the state, so it runs here instead.
+    private void OnOwnThread(Action work)
+    {
+        if (!_ui.Post(work)) work();
+    }
 
     private void CloseGate(string reason)
     {
@@ -140,12 +148,17 @@ internal sealed class ChromiumIpcBridge : IDisposable
     private void Push(string json) =>
         AppCallback.Run(() => _push(json), ex => AppCallback.Log(_options.Log, () => "[Shenora.Chromium] Pushing to the page failed", LogLevel.Warning, ex));
 
+    /// <summary>The page's browser has closed. Any thread: nothing is dispatched or pushed from here on, and the
+    /// teardown runs on the bridge's thread.</summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        // FIRST: an in-flight handler learns the page is gone while its await can still act on it.
-        _host.Dispose();
-        _pump.Dispose();
+        OnOwnThread(() =>
+        {
+            // FIRST: an in-flight handler learns the page is gone while its await can still act on it.
+            _host.Dispose();
+            _pump.Dispose();
+        });
     }
 }

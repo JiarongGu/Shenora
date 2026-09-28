@@ -121,6 +121,12 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     // that never drew them.
     void IChromiumBrowserHost.DocumentStarted() => _captions.Set([]);
 
+    // The window's own callbacks carry its lifetime (WindowCreated, WindowDestroyed), and CEF's own close request
+    // reaches it through can_close.
+    void IChromiumBrowserHost.BrowserCreated() { }
+    void IChromiumBrowserHost.BrowserClosed() { }
+    bool IChromiumBrowserHost.CloseRequested() => false;
+
     // ── CEF's window callbacks, delegated here ────────────────────────────────────────────────────────
 
     private void WindowCreated(_cef_window_t* window)

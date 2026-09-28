@@ -187,15 +187,19 @@ D37 and D51 are corrected in place to point at them.
    on CEF's multi-threaded message loop, since WinForms owns the main thread, with IPC dispatched on the
    WinForms UI thread as `WebViewIpcBridge` does. It is the adopter's direct path, since it keeps
    `OptimizedForm` and `SecondaryWindows`. The kit's caption-button hole already works over CEF's child
-   windows (measured, CEF 152). The same shim starts it. The plan, in order:
-   1. extract the browser core (client, handlers, bridge, per-page state) out of the Views `ChromiumWindow`,
-      with no change in behaviour, the probes re-run;
-   2. start and stop the engine on CEF's multi-threaded message loop, for a host that owns its UI thread;
-   3. the public embedding API (D83): a browser in any parent window, serving and IPC included, its IPC
-      dispatched through the host's own `IUiDispatcher`;
-   4. `ChromiumView` in `Shenora.Windows` (and its `Shenora.Chromium` reference), proven in a WinForms
-      probe with `OptimizedForm`: window commands, the caption hole and Snap Layouts, drops, secondary
-      windows.
+   windows (measured, CEF 152). The same shim starts it. The embedding it stands on exists:
+   `ChromiumEngine` + `ChromiumChildBrowser`, proven in a plain WinForms form. What is left is
+   `ChromiumView` in `Shenora.Windows` (and its `Shenora.Chromium` reference), proven in a WinForms probe with
+   `OptimizedForm`: window commands, the caption hole and Snap Layouts, drops, secondary windows. Also:
+   - `UseChromiumEngine()` calls `RunIfSubprocess` before the runner, `Start` before the first form and
+     `Stop` after the loop. The path without the shim, where `RunIfSubprocess` matters, is unmeasured
+     under WinForms.
+   - ⚠ The WebView2 `DropZoneModule` has the same module name, `SHENORA.DROPZONE`. In an app that maps it
+     first, the engine's `TryMapModule` loses the name. Derived and unmeasured: a Chromium page's drops
+     would then get the WebView2 overlay protocol and no paths.
+   - Nothing acts on the page's `-webkit-app-region: drag` areas in an embedded browser yet. Under Views,
+     CEF reports them through `on_draggable_regions_changed`; whether it does for a child browser is
+     unmeasured.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).

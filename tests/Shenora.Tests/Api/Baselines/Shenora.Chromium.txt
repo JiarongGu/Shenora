@@ -1,3 +1,32 @@
+sealed class Shenora.Chromium.ChromiumChildBrowser : System.IDisposable
+  public .ctor(Shenora.Chromium.ChromiumEngine engine, System.IntPtr parentWindow, Shenora.Chromium.ChromiumChildBrowserOptions? options = null)
+  public System.IntPtr WindowHandle { get; }
+  public System.Threading.Tasks.Task Closed { get; }
+  public System.Threading.Tasks.Task Created { get; }
+  public void Dispose()
+  public void Focus()
+  public void SetBounds(System.Drawing.Rectangle bounds)
+sealed class Shenora.Chromium.ChromiumChildBrowserOptions
+  public .ctor()
+  public System.Drawing.Color? BackgroundColor { get; init; }
+  public string Name { get; init; }
+  public string? Path { get; init; }
+sealed class Shenora.Chromium.ChromiumEngine
+  public .ctor(Shenora.Chromium.ChromiumEngineOptions? options = null, Microsoft.Extensions.Logging.ILogger<Shenora.Chromium.ChromiumEngine>? log = null)
+  public System.Threading.Tasks.Task Ready { get; }
+  public bool IsRunning { get; }
+  public static bool RunIfSubprocess(out int exitCode)
+  public void Start(Shenora.ShenoraApplication app)
+  public void Stop()
+sealed class Shenora.Chromium.ChromiumEngineOptions
+  public .ctor()
+  public Shenora.Core.Ipc.ShellInfo? Shell { get; init; }
+  public bool? IsDevelopment { get; init; }
+  public int DevToolsPort { get; init; }
+  public string VirtualHost { get; init; }
+  public string? CachePath { get; init; }
+  public string? ContentRoot { get; init; }
+  public string? DevUrl { get; init; }
 static class Shenora.Chromium.ChromiumHostExtensions
   public static Shenora.ShenoraApplicationBuilder UseChromium(Shenora.ShenoraApplicationBuilder builder, Shenora.Chromium.ChromiumHostOptions options)
 sealed class Shenora.Chromium.ChromiumHostOptions

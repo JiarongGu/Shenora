@@ -28,23 +28,23 @@ internal sealed class ChromiumDropZones(Func<ChromiumBrowser?> current) : Module
 
     public override string ModuleName => Module;
 
-    // Dispatched on CEF's UI thread, where the window's drag state lives.
+    // Dispatched where the page's IPC runs: CEF's UI thread under the Views shell, the host's for an embedded browser.
     protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
     {
         var page = current();
         switch (request.Type.ToUpperInvariant())
         {
             case RegisterType or UpdateType:
-                page?.DropZones.Add(ZoneId(request));
+                page?.AddDropZone(ZoneId(request));
                 return Task.FromResult<object?>(new { PageDrop = true });
             case UnregisterType:
-                page?.DropZones.Remove(ZoneId(request));
+                page?.RemoveDropZone(ZoneId(request));
                 return Done();
             case ShowType:
                 return Done();   // an overlay to raise is the WebView2 shell's protocol
             case DropType:
                 // Only for a zone this page declared: a drop anywhere else is not the kit's to deliver.
-                var files = page is not null && page.DropZones.Contains(ZoneId(request)) ? page.TakeDraggedFiles() : [];
+                var files = page is not null && page.HasDropZone(ZoneId(request)) ? page.TakeDraggedFiles() : [];
                 return Task.FromResult<object?>(new { Files = files });
             default:
                 throw UnknownType(request);

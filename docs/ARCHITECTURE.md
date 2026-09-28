@@ -206,7 +206,13 @@ Shenora.slnx
 │   │                                          CEF's loop (Host/: the runner; each page's browser,
 │   │                                          with its IPC bridge, drops, dialogs and recovery, and
 │   │                                          the Views window hosting it, with its commands and the
-│   │                                          frame's hit-test; the UI dispatcher);
+│   │                                          frame's hit-test; the UI dispatcher;
+│   │                                          CefStartup, shared with the engine below).
+│   │                                          ChromiumEngine + ChromiumChildBrowser are
+│   │                                          the embedding for a host that owns its UI
+│   │                                          thread (D83): CEF's loop on a thread of its
+│   │                                          own, a page as a child of any native window,
+│   │                                          its IPC dispatched on the host's thread.
 │   │                                          Serving/ answers the app's origin (the bundle, marked,
 │   │                                          then the app's interceptor pipeline; the IPC route only
 │   │                                          for the app's own browser and origin). Interop/Generated/ is

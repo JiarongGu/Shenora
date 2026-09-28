@@ -18,6 +18,19 @@ internal unsafe interface IChromiumBrowserHost
 
     /// <summary>The main frame started a new document, after the browser's own per-page resets. UI thread.</summary>
     void DocumentStarted();
+
+    /// <summary>The browser exists. CEF's UI thread.</summary>
+    void BrowserCreated();
+
+    /// <summary>
+    /// CEF is ready to close the browser (<c>do_close</c>). True when the host closes the browser's window itself;
+    /// false has CEF ask the browser's top-level window to close (<c>WM_CLOSE</c>), which a window CEF owns answers.
+    /// CEF's UI thread.
+    /// </summary>
+    bool CloseRequested();
+
+    /// <summary>The browser has closed. CEF's UI thread.</summary>
+    void BrowserClosed();
 }
 
 /// <summary>
@@ -25,7 +38,8 @@ internal unsafe interface IChromiumBrowserHost
 /// its serving and routing, drops, file dialogs, permissions, popups and crash recovery. A host window
 /// (<see cref="ChromiumWindow"/> on CEF's Views) creates the browser from <see cref="ClientForCef"/> and answers
 /// <see cref="IChromiumBrowserHost"/>. Everything here runs on CEF's UI thread except the resource callbacks, which
-/// CEF raises on its IO thread.
+/// CEF raises on its IO thread, and what is marked "any thread": a host that owns its UI thread dispatches the
+/// page's IPC there.
 /// <para>
 /// Lifetime follows CEF's C API rules: a struct CEF returns or passes into a callback carries a reference that is
 /// released (or kept, deliberately, as the browser is), and every struct handed TO CEF is handed with a reference
@@ -71,8 +85,36 @@ internal sealed unsafe class ChromiumBrowser
     /// <summary>The window hosting this browser, which answers what only a window can.</summary>
     public IChromiumBrowserHost? Host { get; set; }
 
-    /// <summary>The page's drop zones (<see cref="ChromiumDropZones"/>). UI thread.</summary>
-    public HashSet<string> DropZones { get; } = new(StringComparer.Ordinal);
+    // The page's drop zones (ChromiumDropZones), any thread: the page's requests run where the IPC dispatches, and
+    // a new document clears them on CEF's.
+    private readonly HashSet<string> _dropZones = new(StringComparer.Ordinal);
+
+    public void AddDropZone(string zoneId) { lock (_dropZones) _dropZones.Add(zoneId); }
+    public void RemoveDropZone(string zoneId) { lock (_dropZones) _dropZones.Remove(zoneId); }
+    public bool HasDropZone(string zoneId) { lock (_dropZones) return _dropZones.Contains(zoneId); }
+
+    /// <summary>The browser's own window while the browser exists, else 0: a child of the host's window, for a host
+    /// that places it. Any thread.</summary>
+    public nint WindowHandle => Volatile.Read(ref _windowHandle);
+
+    private nint _windowHandle;
+
+    /// <summary>Close the browser; <see cref="IChromiumBrowserHost.BrowserClosed"/> follows. Any thread: it runs on
+    /// CEF's UI thread, where the browser is only ever touched. False when CEF is gone.</summary>
+    /// <param name="force">Skip the page's <c>beforeunload</c>.</param>
+    public bool CloseBrowser(bool force) => OnBrowserHost(host => host->close_browser(host, force ? 1 : 0));
+
+    /// <summary>Give the page the keyboard focus. Any thread.</summary>
+    public bool Focus() => OnBrowserHost(host => host->set_focus(host, 1));
+
+    private bool OnBrowserHost(BrowserHostAction work) => CefTask.Post(cef_thread_id_t.TID_UI, () =>
+    {
+        if (_browser == null) return;
+        using var host = new CefRef<_cef_browser_host_t>(_browser->get_host(_browser));
+        if (!host.IsNull) work(host.Ptr);
+    });
+
+    private delegate void BrowserHostAction(_cef_browser_host_t* host);
 
     /// <summary>The client to create this browser with, with the reference CEF takes added.</summary>
     public _cef_client_t* ClientForCef() => _client.ForCef();
@@ -86,8 +128,8 @@ internal sealed unsafe class ChromiumBrowser
     public void DocumentStarted()
     {
         Bridge.DocumentReplaced();
-        _draggedFiles = [];
-        DropZones.Clear();
+        Interlocked.Exchange(ref _draggedFiles, []);
+        lock (_dropZones) _dropZones.Clear();
         Host?.DocumentStarted();
     }
 
@@ -96,17 +138,12 @@ internal sealed unsafe class ChromiumBrowser
 
     /// <summary>
     /// The paths of the files in the drag that last entered this page, handed out ONCE: the page's drop asks for
-    /// them, and a later drop with no new drag must not receive them again. UI thread.
+    /// them, and a later drop with no new drag must not receive them again. Any thread.
     /// </summary>
-    public string[] TakeDraggedFiles()
-    {
-        var files = _draggedFiles;
-        _draggedFiles = [];
-        return files;
-    }
+    public string[] TakeDraggedFiles() => Interlocked.Exchange(ref _draggedFiles, []);
 
-    /// <summary>A drag carrying these files entered the page. UI thread.</summary>
-    public void FilesDraggedIn(string[] files) => _draggedFiles = files;
+    /// <summary>A drag carrying these files entered the page. Any thread.</summary>
+    public void FilesDraggedIn(string[] files) => Interlocked.Exchange(ref _draggedFiles, files);
 
     /// <summary>Run <see cref="ChromiumTransport.PushScript"/> in the page's main frame. UI thread.</summary>
     public void Push(string message)
@@ -161,15 +198,22 @@ internal sealed unsafe class ChromiumBrowser
     {
         _browser = browser;   // kept until the browser closes
         _browserId = browser->get_identifier(browser);
+        using (var host = new CefRef<_cef_browser_host_t>(browser->get_host(browser)))
+            if (!host.IsNull) Volatile.Write(ref _windowHandle, (nint)host.Ptr->get_window_handle(host.Ptr));   // per OS: HWND, X11 id, NSView*
         Bridge.Start();
+        Host?.BrowserCreated();
     }
 
     private void BrowserClosing()
     {
         if (_browser == null) return;
-        using var b = new CefRef<_cef_browser_t>(_browser);
-        _browser = null;
-        _browserId = 0;
+        using (new CefRef<_cef_browser_t>(_browser))
+        {
+            _browser = null;
+            _browserId = 0;
+            Volatile.Write(ref _windowHandle, 0);
+        }
+        Host?.BrowserClosed();
     }
 
     // From the renderer-terminated callback. The reload is posted, so it runs after CEF has finished reporting
@@ -185,7 +229,7 @@ internal sealed unsafe class ChromiumBrowser
     // event carries `File` objects with none.
     private void DragEntered(_cef_browser_t* browser, _cef_drag_data_t* data)
     {
-        _draggedFiles = [];
+        Interlocked.Exchange(ref _draggedFiles, []);
         if (!IsOwnBrowser(browser) || data == null || data->is_file(data) != 1) return;
         var list = Cef.cef_string_list_alloc();
         try
@@ -468,8 +512,19 @@ internal sealed unsafe class ChromiumBrowser
         {
             _owner = owner;
             Struct->on_after_created = &AfterCreated;
+            Struct->do_close = &DoClose;
             Struct->on_before_close = &BeforeClose;
             Struct->on_before_popup = &BeforePopup;
+        }
+
+        // Answering 1 says the host closes the browser's window itself; 0, CEF's default, sends the top-level window
+        // a close request.
+        [UnmanagedCallersOnly]
+        private static int DoClose(_cef_life_span_handler_t* self, _cef_browser_t* browser)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            var host = From<LifeSpan>(self)._owner.Host;
+            return AppCallback.RunOrDefault(() => host?.CloseRequested() == true, fallback: false) ? 1 : 0;
         }
 
         // window.open and target=_blank: never a bare Chromium window onto whatever the page named. An http/https

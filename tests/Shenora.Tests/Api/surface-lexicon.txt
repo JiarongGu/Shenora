@@ -144,6 +144,9 @@ Tray
 Viewport
 Maximizable
 Secondary
+# `ChromiumChildBrowser` (D83) — a browser created as a CHILD WINDOW of one the host owns: the platform's word
+# for the mechanism (Win32's `WS_CHILD`, CEF's own `SetAsChild`).
+Child
 Single
 Instance
 

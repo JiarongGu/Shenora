@@ -51,6 +51,7 @@ public class ChromiumIpcBridgeTests
         var bridge = new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = dispatcher, EventBus = bus },
             host.Dispatcher, host.Pushed.Add, host.Schedule);
         bridge.Start();
+        host.RunUi();   // the tick starts on the bridge's thread
         return (bridge, host, bus);
     }
 
@@ -155,6 +156,7 @@ public class ChromiumIpcBridgeTests
         await SettleAsync(host);
 
         bridge.DocumentReplaced();
+        host.RunUi();
         bus.Emit(new EventMessage { Module = "TEST", Type = "LATE" });
         host.Pushed.Clear();
         host.Tick();
@@ -164,12 +166,28 @@ public class ChromiumIpcBridgeTests
     }
 
     [Fact]
+    public async Task What_CEF_reports_on_its_own_thread_runs_on_the_bridges()
+    {
+        // An embedded browser: the bridge lives on the host's thread and CEF reports a new document on its own.
+        var (bridge, host, _) = Make();
+        bridge.Incoming(Request(IpcHostBridge.HandshakeModule, IpcHostBridge.HandshakeType));
+        await SettleAsync(host);
+
+        bridge.DocumentReplaced();   // off the bridge's thread
+        Assert.True(bridge.IsClientReady);   // not touched from CEF's
+        host.RunUi();
+
+        Assert.False(bridge.IsClientReady);
+    }
+
+    [Fact]
     public void A_throwing_push_neither_escapes_nor_stops_the_tick()
     {
         var host = new FakeHost();
         var bridge = new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher() },
             host.Dispatcher, _ => throw new InvalidOperationException("frame gone"), host.Schedule);
         bridge.Start();
+        host.RunUi();
 
         host.Tick();
 
@@ -181,9 +199,10 @@ public class ChromiumIpcBridgeTests
     {
         var (bridge, host, _) = Make();
         bridge.Dispose();
+        bridge.Incoming(Request("TEST", "ECHO"));   // dropped at once, before the teardown has run
+        host.RunUi();
 
         host.Tick();
-        bridge.Incoming(Request("TEST", "ECHO"));
 
         Assert.Empty(host.Ticks);
         Assert.Empty(host.Ui);
