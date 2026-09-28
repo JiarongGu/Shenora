@@ -17,13 +17,20 @@ public sealed class ChromiumChildBrowserOptions
 
     /// <summary>The browser's name, in the log.</summary>
     public string Name { get; init; } = "browser";
+
+    /// <summary>
+    /// The thread the page's IPC is dispatched on, which is the one that owns the parent window. Null means the
+    /// app's own <see cref="IUiDispatcher"/>, which is right for the main window only: a window on a thread of its
+    /// own (the kit's <c>SecondaryWindows</c>) passes a dispatcher over itself.
+    /// </summary>
+    public IUiDispatcher? UiDispatcher { get; init; }
 }
 
 /// <summary>
 /// A page in a window the host owns (D83): a Chromium browser as a child of a native window, served from the
-/// <see cref="ChromiumEngine"/>'s origin, with its IPC dispatched on the host's UI thread (the app's
-/// <see cref="IUiDispatcher"/>). The browser's own window belongs to CEF's UI thread; the host places it with
-/// <see cref="SetBounds"/>. Windows only, today.
+/// <see cref="ChromiumEngine"/>'s origin, with its IPC dispatched on the thread owning the parent window
+/// (<see cref="ChromiumChildBrowserOptions.UiDispatcher"/>). The browser's own window belongs to CEF's UI thread;
+/// the host places it with <see cref="SetBounds"/>. Windows only, today.
 /// <para>
 /// <see cref="Dispose"/> closes the browser and leaves its parent open; destroying the parent closes it too.
 /// ⚠ Either way, stop the engine only once <see cref="Closed"/> has completed.
@@ -65,7 +72,8 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
         var pages = engine.Pages();
         _engine = engine;
         _parent = parentWindow;
-        _browser = new ChromiumBrowser(options.Name, pages.Serving, pages.Origins, browser => NewBridge(browser, pages), pages.Log, pages.Urls)
+        var ui = options.UiDispatcher ?? pages.Ui;
+        _browser = new ChromiumBrowser(options.Name, pages.Serving, pages.Origins, browser => NewBridge(browser, pages, ui), pages.Log, pages.Urls)
         {
             Host = new BrowserHost(this),
         };
@@ -211,16 +219,16 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
 #endif
     }
 
-    private static ChromiumIpcBridge NewBridge(ChromiumBrowser browser, ChromiumPages pages) =>
+    private static ChromiumIpcBridge NewBridge(ChromiumBrowser browser, ChromiumPages pages, IUiDispatcher ui) =>
         new(new ChromiumIpcBridgeOptions
             {
                 Dispatcher = pages.Dispatcher, EventBus = pages.Events, Shell = pages.Shell, Log = pages.Log,
                 EnterWindow = () => ChromiumBrowserContext.Enter(browser),
             },
-            pages.Ui,
+            ui,
             // The bridge runs on the host's thread and the page's browser on CEF's: posted in order, pushed in order.
             message => CefTask.Post(cef_thread_id_t.TID_UI, () => browser.Push(message)),
-            (delay, work) => After(pages.Ui, delay, work));
+            (delay, work) => After(ui, delay, work));
 
     // The flush tick, on the host's thread. A refused post, once that thread is gone, schedules nothing further.
     private static bool After(IUiDispatcher ui, TimeSpan delay, Action work)

@@ -188,9 +188,18 @@ D37 and D51 are corrected in place to point at them.
    WinForms UI thread as `WebViewIpcBridge` does. It is the adopter's direct path, since it keeps
    `OptimizedForm` and `SecondaryWindows`. The kit's caption-button hole already works over CEF's child
    windows (measured, CEF 152). The same shim starts it. The embedding it stands on exists:
-   `ChromiumEngine` + `ChromiumChildBrowser`, proven in a plain WinForms form. What is left is
-   `ChromiumView` in `Shenora.Windows` (and its `Shenora.Chromium` reference), proven in a WinForms probe with
-   `OptimizedForm`: window commands, the caption hole and Snap Layouts, drops, secondary windows. Also:
+   `ChromiumEngine` + `ChromiumChildBrowser`. `ChromiumView` and `UseChromiumEngine()` are proven as untracked
+   probe code over the public APIs, in an `OptimizedForm` with the kit's `WindowCommandModule`:
+   - the caption hole: at the page's buttons the form answers HTMINBUTTON, HTMAXBUTTON and HTCLOSE;
+   - maximize and restore;
+   - drops with real paths;
+   - a `SecondaryWindows` window whose page dispatches on its own thread.
+
+   What is left is moving them into `Shenora.Windows`, in the change that makes `Shenora.Chromium` packable
+   (owner). Until then `Shenora.Windows` cannot reference it, since its package would depend on one the
+   feed lacks. Also:
+   - Unmeasured: a real-pointer window drag (`START_DRAG`), the Snap Layouts flyout on a real hover, and
+     keyboard focus into the page.
    - `UseChromiumEngine()` calls `RunIfSubprocess` before the runner, `Start` before the first form and
      `Stop` after the loop. The path without the shim, where `RunIfSubprocess` matters, is unmeasured
      under WinForms.
