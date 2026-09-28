@@ -190,7 +190,9 @@ D37 and D51 are corrected in place to point at them.
    windows (measured, CEF 152). The same shim starts it. The embedding it stands on exists:
    `ChromiumEngine` + `ChromiumChildBrowser`. `ChromiumView` and `UseChromiumEngine()` are proven as untracked
    probe code over the public APIs, in an `OptimizedForm` with the kit's `WindowCommandModule`:
-   - the caption hole: at the page's buttons the form answers HTMINBUTTON, HTMAXBUTTON and HTCLOSE;
+   - the caption hole: at the page's buttons the form answers HTMINBUTTON, HTMAXBUTTON and HTCLOSE, and a
+     real hover on maximize opens the Snap Layouts flyout;
+   - a real press on the page's drag bar moves the window through `START_DRAG`, exactly with the cursor;
    - maximize and restore;
    - drops with real paths;
    - a `SecondaryWindows` window whose page dispatches on its own thread.
@@ -198,8 +200,7 @@ D37 and D51 are corrected in place to point at them.
    What is left is moving them into `Shenora.Windows`, in the change that makes `Shenora.Chromium` packable
    (owner). Until then `Shenora.Windows` cannot reference it, since its package would depend on one the
    feed lacks. Also:
-   - Unmeasured: a real-pointer window drag (`START_DRAG`), the Snap Layouts flyout on a real hover, and
-     keyboard focus into the page.
+   - Unmeasured: keyboard focus into the page.
    - `UseChromiumEngine()` calls `RunIfSubprocess` before the runner, `Start` before the first form and
      `Stop` after the loop. The path without the shim, where `RunIfSubprocess` matters, is unmeasured
      under WinForms.
