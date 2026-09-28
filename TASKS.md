@@ -153,13 +153,13 @@ D37 and D51 are corrected in place to point at them.
    else no longer navigates the app away. A crashed renderer is reloaded on the WebView2 shell's policy.
    `window.open` and `target=_blank` go to the user's browser through `IUrlLauncher` (http/https only), never to
    a Chromium window. ⚠ On BOTH shells a popup to the app's own origin goes there too, and the browser cannot
-   load the app's virtual host.
+   load the app's virtual host. `IFileDialogs` and the page's dialog route are CEF's native dialogs (no
+   file-or-folder mode, so `AllowFileSelection` is a folder pick).
    **Left:**
    - app hooks for downloads, permissions and renderer failure, which wait for an app that asks (the defaults
      are the WebView2 shell's, D84);
    - a real pointer drag and resize of the window (their routing is measured, the move is not);
-   - native services: file dialogs (CEF's own `run_file_dialog` is native on all three OSes) and the
-     clipboard (Win32; CEF has no host clipboard API);
+   - the clipboard service (Win32; CEF has no host clipboard API);
    - secondary windows exercised end to end, and the dev-server proxy run against a real Vite server (only
      unit-tested so far).
 

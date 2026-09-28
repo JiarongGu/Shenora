@@ -164,6 +164,64 @@ internal sealed unsafe class ChromiumWindow
         finally { Cef.cef_string_list_free(list); }
     }
 
+    /// <summary>
+    /// Show CEF's own file dialog, native on each OS, over this window. UI thread. <paramref name="done"/> gets
+    /// the picked paths, none when the user cancelled or the page's browser is gone.
+    /// </summary>
+    public void RunFileDialog(cef_file_dialog_mode_t mode, string title, string defaultPath, IReadOnlyList<string> filters, Action<string[]> done)
+    {
+        if (_browser == null) { done([]); return; }
+        using var host = new CefRef<_cef_browser_host_t>(_browser->get_host(_browser));
+        if (host.IsNull) { done([]); return; }
+        var list = Cef.cef_string_list_alloc();
+        try
+        {
+            foreach (var filter in filters)
+                fixed (char* f = filter)
+                {
+                    var s = CefStrings.View(f, filter.Length);
+                    Cef.cef_string_list_append(list, &s);
+                }
+            var callback = new FileDialogCallback(done);
+            var given = callback.ForCef();
+            callback.Release();
+            fixed (char* t = title)
+            fixed (char* p = defaultPath)
+            {
+                var titleString = CefStrings.View(t, title.Length);
+                var pathString = CefStrings.View(p, defaultPath.Length);
+                host.Ptr->run_file_dialog(host.Ptr, mode, &titleString, &pathString, list, given);
+            }
+        }
+        finally { Cef.cef_string_list_free(list); }
+    }
+
+    private sealed class FileDialogCallback : CefObject<_cef_run_file_dialog_callback_t>
+    {
+        private readonly Action<string[]> _done;
+
+        public FileDialogCallback(Action<string[]> done)
+        {
+            _done = done;
+            Struct->on_file_dialog_dismissed = &Dismissed;
+        }
+
+        [UnmanagedCallersOnly]
+        private static void Dismissed(_cef_run_file_dialog_callback_t* self, _cef_string_list_t* paths)
+        {
+            var files = new string[paths == null ? 0 : (int)Cef.cef_string_list_size(paths)];
+            for (var i = 0; i < files.Length; i++)
+            {
+                var value = default(_cef_string_utf16_t);
+                Cef.cef_string_list_value(paths, (nuint)i, &value);
+                files[i] = CefStrings.Read(&value);
+                Cef.cef_string_utf16_clear(&value);
+            }
+            var done = From<FileDialogCallback>(self)._done;
+            AppCallback.Run(() => done(files));
+        }
+    }
+
     /// <summary>A drag carrying these files entered the page. UI thread.</summary>
     public void FilesDraggedIn(string[] files) => _draggedFiles = files;
 

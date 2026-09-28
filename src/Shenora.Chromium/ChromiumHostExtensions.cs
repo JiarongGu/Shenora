@@ -6,6 +6,7 @@ using Shenora.Chromium.Interop;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
 using Shenora.Core.Shell;
+using Shenora.Modules.FileDialog;
 
 namespace Shenora.Chromium;
 
@@ -15,8 +16,9 @@ public static class ChromiumHostExtensions
     /// <summary>
     /// Run the app in the Chromium shell: CEF's own windows, the page served from the app's origin, and IPC over
     /// a transport with no code in the renderer (D83). The main window opens once CEF has started, and the app
-    /// ends when the last window closes. It registers the shell's <see cref="IUrlLauncher"/> (the user's browser,
-    /// http/https only) unless the app registered one first, and a page's popups go there.
+    /// ends when the last window closes. Unless the app registered its own first, it registers the shell's
+    /// <see cref="IUrlLauncher"/> (the user's browser, http/https only; a page's popups go there) and
+    /// <see cref="IFileDialogs"/> (CEF's native dialogs over the main window), with the page's route to the dialogs.
     /// <para>
     /// ⚠ On Windows, Chromium's sandbox exists only when the app starts through CEF's <c>bootstrap.exe</c> and
     /// the kit's shim (D82). Started any other way it runs, and logs a warning that the sandbox is off.
@@ -41,6 +43,10 @@ public static class ChromiumHostExtensions
             sp.GetRequiredService<IMessageDispatcher>(), sp.GetService<IEventBus>(), sp.GetService<ILogger<ChromiumWindows>>(),
             sp.GetRequiredService<IUrlLauncher>()));
         builder.Services.AddSingleton<IShenoraRunner, ChromiumRunner>();
+        builder.Services.TryAddSingleton<IFileDialogs>(sp => new ChromiumFileDialogs(sp.GetRequiredService<ChromiumWindows>(),
+            sp.GetRequiredService<CefUiDispatcher>(), sp.GetService<IFileDialogPathStore>(), sp.GetService<ILogger<ChromiumFileDialogs>>()));
+        // The page's route to them, registered where the implementation exists (D64), as UseWindows does.
+        builder.Services.AddShenoraFileDialogs();
         return builder;
     }
 }

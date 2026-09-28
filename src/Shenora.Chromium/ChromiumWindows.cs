@@ -66,6 +66,18 @@ public sealed unsafe class ChromiumWindows
     /// <param name="name">The window's name.</param>
     public bool Activate(string name) => _ui.Post(() => { if (_open.TryGetValue(name, out var w)) w.Activate(); });
 
+    /// <summary>
+    /// Show a file dialog over the main window, or over any open window when the main one is not. UI thread.
+    /// False when no window is open to own it.
+    /// </summary>
+    internal bool RunFileDialog(cef_file_dialog_mode_t mode, string title, string defaultPath, IReadOnlyList<string> filters, Action<string[]> done)
+    {
+        var owner = _open.TryGetValue(MainWindowName, out var main) ? main : _open.Values.FirstOrDefault();
+        if (owner is null) return false;
+        owner.RunFileDialog(mode, title, defaultPath, filters, done);
+        return true;
+    }
+
     /// <summary>The origins and the serving every window shares. UI thread, before the first window.</summary>
     internal void Initialize(ShenoraApplication app, bool isDevelopment)
     {
