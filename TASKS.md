@@ -195,12 +195,15 @@ D37 and D51 are corrected in place to point at them.
    - a real press on the page's drag bar moves the window through `START_DRAG`, exactly with the cursor;
    - maximize and restore;
    - drops with real paths;
-   - a `SecondaryWindows` window whose page dispatches on its own thread.
+   - a `SecondaryWindows` window whose page dispatches on its own thread;
+   - keyboard focus: focusing the view gives the page focus, and a real keystroke reaches its input.
 
    What is left is moving them into `Shenora.Windows`, in the change that makes `Shenora.Chromium` packable
    (owner). Until then `Shenora.Windows` cannot reference it, since its package would depend on one the
    feed lacks. Also:
-   - Unmeasured: keyboard focus into the page.
+   - ⚠ WinForms' `Focus()` on the view returns false and its `Focused` stays false, because Win32 focus
+     lands in CEF's child window, which another thread owns. Tab navigation out of the page, back to
+     WinForms controls, is unmeasured.
    - `UseChromiumEngine()` calls `RunIfSubprocess` before the runner, `Start` before the first form and
      `Stop` after the loop. The path without the shim, where `RunIfSubprocess` matters, is unmeasured
      under WinForms.
