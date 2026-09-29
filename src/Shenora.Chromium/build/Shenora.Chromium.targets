@@ -14,9 +14,11 @@
     So the app's assembly is named <App>.App, and the build refuses otherwise rather than lay out an app that
     cannot start. Set ShenoraChromiumLayout=false to build without the engine (a compile-only CI step).
 
-      ShenoraChromiumMacLayout  after Build on macOS: bundle/<App>.app, whose Contents/MacOS holds the app with the .NET
-                                apphost as <App>, and whose Contents/Frameworks holds CEF's framework and the five
-                                helper apps CEF starts its subprocesses from, each the kit's helper.
+      ShenoraChromiumMacLayout  after Build (and Publish) on macOS: bundle/<App>.app beside the output, whose
+                                Contents/MacOS holds the app with the .NET apphost as <App>, and whose
+                                Contents/Frameworks holds CEF's framework and the five helper apps CEF starts its
+                                subprocesses from, each the kit's helper. A self-contained publish carries the
+                                runtime inside it, so the app starts from Finder with no .NET installed.
 
     The Linux layout is not built yet.
   -->
@@ -192,14 +194,27 @@
     </Task>
   </UsingTask>
 
-  <!-- macOS: <App>.app. CEF finds its framework and helpers by the bundle's shape, so the shape is the contract. -->
-  <Target Name="ShenoraChromiumMacLayout" AfterTargets="Build" DependsOnTargets="ShenoraChromiumFetchCef"
+  <!-- macOS: <App>.app, after Build from the build output, and after Publish from the publish folder, which for a
+       self-contained publish holds the runtime too, so the app starts from Finder with no .NET installed. -->
+  <Target Name="ShenoraChromiumMacLayout" AfterTargets="Build" DependsOnTargets="_ShenoraChromiumMacBundle"
+          Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('macos'))" />
+
+  <!-- A target runs once per build and Build ran first, so the publish layout re-enters the project for the one
+       target, naming its source. -->
+  <Target Name="ShenoraChromiumMacPublishLayout" AfterTargets="Publish"
           Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('macos'))">
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="_ShenoraChromiumMacBundle" Properties="_ShenoraMacFrom=$(PublishDir)" />
+  </Target>
+
+  <!-- CEF finds its framework and helpers by the bundle's shape, so the shape is the contract. -->
+  <Target Name="_ShenoraChromiumMacBundle" DependsOnTargets="ShenoraChromiumFetchCef">
     <PropertyGroup>
+      <!-- Set by the publish layout; the build output otherwise. -->
+      <_ShenoraMacFrom Condition="'$(_ShenoraMacFrom)' == ''">$(OutDir)</_ShenoraMacFrom>
       <_ShenoraAppExe>$(AssemblyName.Substring(0, $([MSBuild]::Subtract($(AssemblyName.Length), 4))))</_ShenoraAppExe>
       <!-- In a folder of its own: macOS's file system ignores case, so <App>.app beside the <App>.App apphost is the
            same name (measured: the bundle's folders could not be created). -->
-      <_ShenoraBundleDir>$(OutDir)bundle/</_ShenoraBundleDir>
+      <_ShenoraBundleDir>$(_ShenoraMacFrom)bundle/</_ShenoraBundleDir>
       <_ShenoraBundle>$(_ShenoraBundleDir)$(_ShenoraAppExe).app</_ShenoraBundle>
       <_ShenoraContents>$(_ShenoraBundle)/Contents</_ShenoraContents>
       <!-- Letters, digits, dots and hyphens only, which is all a bundle identifier may hold. -->
@@ -208,8 +223,8 @@
       <_ShenoraBundleVersion Condition="'$(_ShenoraBundleVersion)' == ''">1.0.0</_ShenoraBundleVersion>
     </PropertyGroup>
     <ItemGroup>
-      <!-- The app's build output, except the bundle this target makes inside it. -->
-      <_ShenoraAppFiles Include="$(OutDir)**/*" Exclude="$(_ShenoraBundleDir)**" />
+      <!-- The app's output, except the bundle this target makes inside it. -->
+      <_ShenoraAppFiles Include="$(_ShenoraMacFrom)**/*" Exclude="$(_ShenoraBundleDir)**" />
       <_ShenoraCefFramework Include="$(ShenoraCefDist)/Release/Chromium Embedded Framework.framework/**/*" />
       <!-- The five helpers Chromium starts its subprocess types from, all the same binary. -->
       <_ShenoraHelper Include="helper" Variant="" />
@@ -219,7 +234,7 @@
       <_ShenoraHelper Include="helper.alerts" Variant=" (Alerts)" />
     </ItemGroup>
     <Copy SourceFiles="@(_ShenoraAppFiles)" DestinationFolder="$(_ShenoraContents)/MacOS/%(RecursiveDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(OutDir)$(AssemblyName)" DestinationFiles="$(_ShenoraContents)/MacOS/$(_ShenoraAppExe)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(_ShenoraMacFrom)$(AssemblyName)" DestinationFiles="$(_ShenoraContents)/MacOS/$(_ShenoraAppExe)" SkipUnchangedFiles="true" />
     <ShenoraMacPlist File="$(_ShenoraContents)/Info.plist" Executable="$(_ShenoraAppExe)" Identifier="$(ShenoraChromiumBundleId)" Version="$(_ShenoraBundleVersion)" />
     <Copy SourceFiles="@(_ShenoraCefFramework)" DestinationFolder="$(_ShenoraContents)/Frameworks/Chromium Embedded Framework.framework/%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(_ShenoraContents)/Frameworks/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant).app/Contents/MacOS/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant)" SkipUnchangedFiles="true" />

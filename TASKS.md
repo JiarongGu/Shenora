@@ -205,9 +205,11 @@ D37 and D51 are corrected in place to point at them.
    app on the Mac stalled behind a login-password prompt.
    **Left:**
    - The release's macOS job has not run; nor has osx-arm64 (no Apple Silicon Mac here).
-   - **.NET installed per user is not found** when the app starts from Finder or `open`, whose environment has no
-     `DOTNET_ROOT` ("You must install .NET"). A self-contained publish avoids it; there is no macOS publish layout
-     yet (the targets lay out Build only).
+   - A framework-dependent app needs .NET installed for every user: a per-user install is not found when the app
+     starts from Finder or `open`, whose environment has no `DOTNET_ROOT` ("You must install .NET"). The publish
+     layout is the answer for distribution: `dotnet publish -r osx-x64 --self-contained` makes
+     `publish/bundle/<App>.app` with the runtime inside, and it started through `open` with no `DOTNET_ROOT`
+     (measured). Not yet: signing and notarizing that bundle, which Gatekeeper needs from a download.
    - Frameless chrome, drag regions and the caption on macOS (the Windows ones are Win32); the per-OS services
      (clipboard, dialogs, tray); code signing; osx-arm64 (no Apple Silicon Mac here).
    - Whether the app comes to the front when started from Finder: from `open` over ssh it stayed behind the

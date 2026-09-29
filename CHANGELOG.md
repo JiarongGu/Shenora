@@ -68,8 +68,9 @@ at the first list and missed five more breaking changes.
   and win-arm64. ⚠ win-arm64 is built and laid out (an ARM64 launcher, shim and CEF), but has not yet run on
   ARM64 hardware. **macOS too, osx-x64 and osx-arm64**: the build lays out `bundle/<App>.app`, CEF's framework and
   five helper apps inside it, and the package carries the macOS binding and helper. Run from a local-feed package
-  on an Intel Mac. ⚠ osx-arm64 has not run (no Apple Silicon Mac). ⚠ A .NET installed per user is not found when
-  the app starts from Finder, whose environment has no `DOTNET_ROOT`. ⚠ **On macOS the cookie key is Chromium's
+  on an Intel Mac. A self-contained publish makes `publish/bundle/<App>.app` with the runtime inside, which starts
+  from Finder with no .NET installed; a framework-dependent build needs .NET installed for every user, since a
+  per-user install is not found from Finder. ⚠ osx-arm64 has not run (no Apple Silicon Mac). ⚠ **On macOS the cookie key is Chromium's
   mock keychain's**, so cookies at rest are encrypted with a fixed key: the real keychain keeps it in an item every
   CEF app shares ("Chromium Safe Storage"), where a second kit app on a Mac stalled behind a login-password prompt.
 
