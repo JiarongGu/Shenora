@@ -131,10 +131,11 @@ jobs:
   # The Chromium engine's native shim (D82): CEF's launcher loads it, so Chromium's sandbox exists. It is
   # the launcher's case again, for the same reasons and with the same shape: it needs MSVC and the pinned
   # CEF build, which `verify` deliberately has not; it is built only here, during a release, and `publish`
-  # depends on it. Locally, `dev.mjs cef-native` is the same build. Windows only today.
+  # depends on it. Locally, `dev.mjs cef-native [--rid win-arm64]` is the same build. Windows only today, and
+  # win-arm64 is cross-compiled here on x64 with Visual Studio's ARM64 build tools.
   chromium-shim:
     runs-on: windows-latest
-    name: chromium shim (win-x64)
+    name: chromium shim (win-x64, win-arm64)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -146,8 +147,11 @@ jobs:
 
       # Downloads the CEF build cef.json pins (SHA-1-checked), then builds the shim against its headers and
       # the SDK's static nethost, into the folder the package packs.
-      - name: Build the shim
+      - name: Build the win-x64 shim
         run: node devtools/dev.mjs cef-native
+
+      - name: Build the win-arm64 shim
+        run: node devtools/dev.mjs cef-native --rid win-arm64
 
       - uses: actions/upload-artifact@v4
         with:
@@ -304,12 +308,14 @@ jobs:
           name: chromium-shim
           path: src/Shenora.Chromium/artifacts
 
-      - name: Assert the Chromium shim is present
+      - name: Assert both Chromium shims are present
         shell: pwsh
         run: |
-          $shim = 'src/Shenora.Chromium/artifacts/runtimes/win-x64/native/shenora_chromium_shim.dll'
-          if (-not (Test-Path $shim)) { throw "Chromium shim missing at $shim — the chromium-shim job did not deliver it" }
-          Write-Host ("  ok  win-x64: shenora_chromium_shim.dll ({0:N0} bytes)" -f (Get-Item $shim).Length)
+          foreach ($rid in @('win-x64', 'win-arm64')) {
+            $shim = "src/Shenora.Chromium/artifacts/runtimes/$rid/native/shenora_chromium_shim.dll"
+            if (-not (Test-Path $shim)) { throw "Chromium shim missing at $shim — the chromium-shim job did not deliver it" }
+            Write-Host ("  ok  {0}: shenora_chromium_shim.dll ({1:N0} bytes)" -f $rid, (Get-Item $shim).Length)
+          }
 
       - name: Pack
         run: node devtools/dev.mjs pack

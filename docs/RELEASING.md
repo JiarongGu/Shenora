@@ -263,9 +263,9 @@ So (owner, 2026-08-02):
   real risk solved in the wrong place — a build output in git, carrying only the ONE rid this machine
   builds, going stale the moment someone edited the C++ without rebuilding.
 - **The Chromium shim is BUILT BY THE RELEASE too, and never committed.** The `chromium-shim` job downloads
-  the CEF build `cef.json` pins (SHA-1-checked), builds `shenora_chromium_shim.dll` for win-x64 against its
-  headers and the SDK's static nethost, and `publish` `needs:` it; packing `Shenora.Chromium` without the
-  shim fails. ⚠ It first runs in CI on the release that first ships the package, so rehearse with
+  the CEF builds `cef.json` pins (SHA-1-checked), builds `shenora_chromium_shim.dll` for win-x64 and, cross-
+  compiled, win-arm64 against their headers and the SDK's static nethost, and `publish` `needs:` it; packing
+  `Shenora.Chromium` without both shims fails. ⚠ It first runs in CI on the release that first ships the package, so rehearse with
   `dry_run: true`.
 - **A one-platform build proves one platform.** The launcher's POSIX half went uncompiled until the 0.10.0
   release tried it and failed on two missing includes. Before a release that touches C++, run

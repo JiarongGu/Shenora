@@ -67,7 +67,7 @@ middle; D65 removed that level.)
                          ↑              (the IPC stack is Shenora.Core.Ipc, a NAMESPACE)
             ┌────────────┼────────────┬───────────────┐
             │            │            │               │
-   Shenora.Windows  Shenora.Android  Shenora.iOS   Shenora.Chromium   net10.0, win-x64 today
+   Shenora.Windows  Shenora.Android  Shenora.iOS   Shenora.Chromium   net10.0, win-x64 + win-arm64
    net10.0-windows  net10.0-android  net10.0-ios      ↑   (D81)
             └─────────────────────────────────────────┘   ChromiumView (D83)
 ```
@@ -282,7 +282,8 @@ opens in the system browser exactly once.
 `ChromiumView` takes the WebView2 control's place in the same form, and the rest of the WinForms shell stays
 (D83): `OptimizedForm`, the window commands, native caption buttons with Snap Layouts, `SecondaryWindows`.
 
-1. **Reference `Shenora.Chromium` from the app's own project** with `<RuntimeIdentifier>win-x64</RuntimeIdentifier>`,
+1. **Reference `Shenora.Chromium` from the app's own project** with `<RuntimeIdentifier>win-x64</RuntimeIdentifier>`
+   (or `win-arm64`, which is built but not yet run on ARM64 hardware),
    and name the app's assembly `<App>.App` (`<AssemblyName>MyApp.App</AssemblyName>`). The build fetches the pinned
    CEF build and lays the app out as `MyApp.exe`, which is CEF's launcher, starting `MyApp.App.dll`. A reference
    through `Shenora.Windows` alone brings the code and not CEF, and the engine says so as it starts.

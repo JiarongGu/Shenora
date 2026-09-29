@@ -33,18 +33,23 @@ export function commit() {
   return c;
 }
 
-/** The Windows x64 minimal distribution: `<returned>/cef/{include,Release,Resources}`. */
-export async function distribution() {
-  const marker = path.join(cache, 'extracted.sha1');
-  const root = path.join(cache, 'dist');
+/**
+ * A CEF platform's minimal distribution (`windows64` unless named — CEF's own platform names, as cef.json
+ * pins them): `<returned>/cef/{include,Release,Resources}`. Each platform has a folder of its own in the cache.
+ */
+export async function distribution(platform = 'windows64') {
+  if (!pin.distributions?.[platform]) fail(`cef.json pins no ${platform} distribution.`);
+  const dir = path.join(cache, platform);
+  const marker = path.join(dir, 'extracted.sha1');
+  const root = path.join(dir, 'dist');
   if (fs.existsSync(marker)) return root;
 
   const index = await (await fetch('https://cef-builds.spotifycdn.com/index.json')).json();
-  const build = index.windows64?.versions?.find((v) => v.cef_version === pin.cef);
-  if (!build) fail(`CEF's index has no windows64 build ${pin.cef}.`);
+  const build = index[platform]?.versions?.find((v) => v.cef_version === pin.cef);
+  if (!build) fail(`CEF's index has no ${platform} build ${pin.cef}.`);
   const file = build.files.find((f) => f.type === 'minimal');
-  fs.mkdirSync(cache, { recursive: true });
-  const archive = path.join(cache, file.name);
+  fs.mkdirSync(dir, { recursive: true });
+  const archive = path.join(dir, file.name);
 
   if (!fs.existsSync(archive)) {
     console.log(`cef: downloading ${file.name} (${(file.size / 1048576).toFixed(0)} MB)`);
@@ -62,9 +67,9 @@ export async function distribution() {
   console.log('cef: extracting (the archive is bzip2, which is most of the time spent)');
   fs.rmSync(root, { recursive: true, force: true });
   fs.mkdirSync(root, { recursive: true });
-  // RELATIVE paths from inside the cache: Git's GNU tar reads `D:\…` as a remote host named "D"
+  // RELATIVE paths from inside the platform's folder: Git's GNU tar reads `D:\…` as a remote host named "D"
   // ("Cannot connect to D: resolve failed"), and Windows' own bsdtar accepts the relative form too.
-  const tar = run('tar', ['-xjf', path.basename(archive), '-C', path.basename(root)], { cwd: cache });
+  const tar = run('tar', ['-xjf', path.basename(archive), '-C', path.basename(root)], { cwd: dir });
   if (tar.status !== 0) fail(`tar failed: ${tar.stderr}`);
   const top = fs.readdirSync(root).find((d) => d.startsWith('cef_binary_'));
   if (!top) fail('the archive held no cef_binary_* folder.');

@@ -59,7 +59,8 @@ at the first list and missed five more breaking changes.
   `<App>.App`** — the build refuses any other name. A reference that arrives only through `Shenora.Windows`
   brings the code, not CEF, and the engine says so as it starts. Started as `dotnet <App>.App.dll` instead, as an
   IDE may, the app still runs, with the sandbox off and every CEF subprocess run through `<App>.exe`. win-x64
-  only today.
+  and win-arm64. ⚠ win-arm64 is built and laid out (an ARM64 launcher, shim and CEF), but has not yet run on
+  ARM64 hardware.
 
 - **`createChromiumTransport()` in `@shenora/react`, and `createHostTransport()` finds the Chromium hosts**
   (**D83**). They mark each HTML document they serve, the app's own routes' included, with

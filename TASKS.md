@@ -100,13 +100,15 @@ D37 and D51 are corrected in place to point at them.
      the pinned build ONCE per machine, checks its SHA-1 against `cef.json` (all six platforms pinned), and
      extracts it. After Build and Publish it places `<App>.exe` (CEF's bootstrap) and `<App>.dll` (the shim)
      beside `<App>.App.dll`. The targets pack into `build/` ONLY, so a direct reference is the opt-in D83
-     requires. The package carries the win-x64 shim in `tools/`, staged by `dev.mjs cef-native`, and packing
-     without it fails. An app with nothing but a `PackageReference` to it, from a local feed, built and ran.
+     requires. The package carries the win-x64 and win-arm64 shims in `tools/`, staged by `dev.mjs cef-native
+     [--rid win-arm64]`, and packing without either fails. An app with nothing but a `PackageReference` to it, from a local feed, built and ran.
      The package ships, its shim built by `release.yml`'s `chromium-shim` job. A WebView2 app that
      references only `Shenora.Windows` gets its managed code and none of its targets (the dependency
      excludes `Build`, measured from a local feed), and the engine names the package to add.
      **Left:**
-     - a win-arm64 shim (the targets accept the RID, and the package has no shim for it);
+     - 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles here (the PE header says ARM64), and an app built
+       with `-r win-arm64` lays out an ARM64 launcher, shim and `libcef.dll`. Running it needs ARM64 hardware or
+       a `windows-11-arm` CI runner. ⚠ The release job's cross-compile on `windows-latest` is untried until it runs.
      - the macOS and Linux layouts (the targets refuse them by name).
    - **The page bridge needs no renderer code, and the kit's IPC runs over it unchanged** (prototype,
      2026-09-28, sandboxed through the shim). The page `fetch`es `POST /__shenora/ipc` on its own origin,
