@@ -12,7 +12,8 @@
                                 sandbox and loads <App>.dll, which starts the app's own <App>.App.dll.
 
     So the app's assembly is named <App>.App, and the build refuses otherwise rather than lay out an app that
-    cannot start. Set ShenoraChromiumLayout=false to build without the engine (a compile-only CI step).
+    cannot start. Set ShenoraChromiumLayout=false to build without the engine (a compile-only CI step), and
+    ShenoraChromiumLocales (such as "zh-CN;fr") to lay out only those of CEF's locales, and en-US.
 
       ShenoraChromiumMacLayout  after Build (and Publish) on macOS: bundle/<App>.app beside the output, whose
                                 Contents/MacOS holds the app with the .NET apphost as <App>, and whose
@@ -89,6 +90,54 @@
     </Task>
   </UsingTask>
 
+  <!-- ShenoraChromiumLocales ("zh-CN;fr"): the locales to lay out, where CEF carries 220 (49 MB). Each keeps its
+       gendered variants, and en-US, Chromium's fallback, always stays. Windows names a locale's file <name>.pak;
+       macOS names its folder <name>.lproj with '_' for '-', and en-US plain "en". It returns the locale files to DROP,
+       which the caller removes from its own items so the rest keep their metadata (RecursiveDir places them), and any
+       name the build has no locale for, so the build can warn. -->
+  <UsingTask TaskName="ShenoraChromiumLocaleFilter" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Files ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <Locales ParameterType="System.String" Required="true" />
+      <Dropped ParameterType="Microsoft.Build.Framework.ITaskItem[]" Output="true" />
+      <Missing ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var keep = new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase) { "en-US" };
+        foreach (var name in Locales.Split(new[] { ';', ',' }, System.StringSplitOptions.RemoveEmptyEntries)) keep.Add(name.Trim());
+        var found = new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        var dropped = new System.Collections.Generic.List<Microsoft.Build.Framework.ITaskItem>();
+        foreach (var file in Files)
+        {
+            var path = file.ItemSpec.Replace('\\', '/');
+            string locale = null;
+            var lproj = path.IndexOf(".lproj/", System.StringComparison.OrdinalIgnoreCase);
+            if (lproj > 0)
+            {
+                var folder = path.Substring(0, lproj);
+                locale = folder.Substring(folder.LastIndexOf('/') + 1);
+            }
+            else if (path.IndexOf("/locales/", System.StringComparison.OrdinalIgnoreCase) >= 0 && path.EndsWith(".pak", System.StringComparison.OrdinalIgnoreCase))
+            {
+                locale = System.IO.Path.GetFileNameWithoutExtension(path);
+            }
+            if (locale == null) continue;
+            foreach (var gender in new[] { "_FEMININE", "_MASCULINE", "_NEUTER" })
+                if (locale.EndsWith(gender, System.StringComparison.OrdinalIgnoreCase)) { locale = locale.Substring(0, locale.Length - gender.Length); break; }
+            locale = locale.Replace('_', '-');
+            if (string.Equals(locale, "en", System.StringComparison.OrdinalIgnoreCase)) locale = "en-US";
+            found.Add(locale);
+            if (!keep.Contains(locale)) dropped.Add(file);
+        }
+        Dropped = dropped.ToArray();
+        var missing = new System.Collections.Generic.List<string>();
+        foreach (var name in keep) if (!found.Contains(name)) missing.Add(name);
+        Missing = string.Join(", ", missing);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
   <!-- Every refusal runs BEFORE the fetch, so a build that cannot be laid out never downloads 165 MB first. -->
   <Target Name="_ShenoraChromiumCheck">
     <Error Condition="'$(ShenoraCefPlatform)' == ''"
@@ -147,6 +196,15 @@
       <_ShenoraCefRuntime Include="$(ShenoraCefDist)\Release\*.dll;$(ShenoraCefDist)\Release\*.bin;$(ShenoraCefDist)\Release\*.json" />
       <_ShenoraCefResources Include="$(ShenoraCefDist)\Resources\**\*" />
     </ItemGroup>
+    <ShenoraChromiumLocaleFilter Condition="'$(ShenoraChromiumLocales)' != ''" Files="@(_ShenoraCefResources)" Locales="$(ShenoraChromiumLocales)">
+      <Output TaskParameter="Dropped" ItemName="_ShenoraCefDroppedLocale" />
+      <Output TaskParameter="Missing" PropertyName="_ShenoraMissingLocales" />
+    </ShenoraChromiumLocaleFilter>
+    <ItemGroup>
+      <_ShenoraCefResources Remove="@(_ShenoraCefDroppedLocale)" />
+    </ItemGroup>
+    <Warning Condition="'$(_ShenoraMissingLocales)' != ''"
+             Text="ShenoraChromiumLocales names $(_ShenoraMissingLocales), for which CEF $(ShenoraCefBuild) has no locale: CEF's names are like en-GB, zh-CN, pt-BR and fr." />
   </Target>
 
   <Target Name="ShenoraChromiumLayout" AfterTargets="Build" DependsOnTargets="_ShenoraChromiumLayoutInputs" Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
@@ -233,6 +291,15 @@
       <_ShenoraHelper Include="helper.plugin" Variant=" (Plugin)" />
       <_ShenoraHelper Include="helper.alerts" Variant=" (Alerts)" />
     </ItemGroup>
+    <ShenoraChromiumLocaleFilter Condition="'$(ShenoraChromiumLocales)' != ''" Files="@(_ShenoraCefFramework)" Locales="$(ShenoraChromiumLocales)">
+      <Output TaskParameter="Dropped" ItemName="_ShenoraCefDroppedLocale" />
+      <Output TaskParameter="Missing" PropertyName="_ShenoraMissingLocales" />
+    </ShenoraChromiumLocaleFilter>
+    <ItemGroup>
+      <_ShenoraCefFramework Remove="@(_ShenoraCefDroppedLocale)" />
+    </ItemGroup>
+    <Warning Condition="'$(_ShenoraMissingLocales)' != ''"
+             Text="ShenoraChromiumLocales names $(_ShenoraMissingLocales), for which CEF $(ShenoraCefBuild) has no locale: CEF's names are like en-GB, zh-CN, pt-BR and fr." />
     <Copy SourceFiles="@(_ShenoraAppFiles)" DestinationFolder="$(_ShenoraContents)/MacOS/%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(_ShenoraMacFrom)$(AssemblyName)" DestinationFiles="$(_ShenoraContents)/MacOS/$(_ShenoraAppExe)" SkipUnchangedFiles="true" />
     <ShenoraMacPlist File="$(_ShenoraContents)/Info.plist" Executable="$(_ShenoraAppExe)" Identifier="$(ShenoraChromiumBundleId)" Version="$(_ShenoraBundleVersion)" />

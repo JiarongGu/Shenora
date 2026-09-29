@@ -42,6 +42,12 @@ at the first list and missed five more breaking changes.
   `UserDataFolder`'s `Default` folder, which must not be another Chromium process's. So an install carries one CEF,
   and on Windows CEF's launcher sandboxes the browser as it does the app. Unlike the app's pages, its pages keep
   Chromium's local-network checks. Measured on Windows and on an Intel Mac.
+- **`ShenoraChromiumLocales`: lay out only the locales an app speaks.** CEF carries 220 locale files, 49 MB of a
+  ~400 MB runtime. `<ShenoraChromiumLocales>zh-CN;fr</ShenoraChromiumLocales>` in the app's project keeps those
+  (with their gendered variants) and en-US, Chromium's fallback, on Windows and in the macOS bundle alike; the
+  Windows locales went from 49 MB to 2 MB. A locale left out falls back to en-US, and a name CEF has no locale for
+  is a build warning. The layout removes nothing, so a folder an earlier build laid out keeps its locales until
+  it is cleaned.
 
 ### Changed
 

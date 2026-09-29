@@ -310,7 +310,9 @@ there stays the page's. What differs: WinForms'
 `MyApp.exe`, as an IDE may, the app runs, with Chromium's sandbox off: the engine logs a warning saying so.
 
 **What the engine costs, and what ships with it.** The laid-out CEF runtime is about 400 MB on disk
-(`libcef.dll` 276 MB and 220 locale files 49 MB, at CEF 154). Its pages play no H.264, AAC or HEVC, where
+(`libcef.dll` 276 MB and 220 locale files 49 MB, at CEF 154). `<ShenoraChromiumLocales>zh-CN;fr</ShenoraChromiumLocales>`
+in the app's project lays out only those locales and en-US (2 MB on Windows); a locale left out falls back to
+en-US, and a name CEF has no locale for is a build warning. Its pages play no H.264, AAC or HEVC, where
 WebView2's do (the media guide). And the app now redistributes Chromium: CEF's `LICENSE.txt` and Chromium's
 third-party notices (`CREDITS.html`, in the same CEF build) are the app's to ship, and the layout does not copy
 them.
