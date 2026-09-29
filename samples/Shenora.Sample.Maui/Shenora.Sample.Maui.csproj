@@ -222,6 +222,10 @@
   -->
   <PropertyGroup Condition="$(TargetFramework.Contains('ios'))">
     <ShenoraLiveActivity>true</ShenoraLiveActivity>
+    <!-- `mac device` passes SampleIosBindings when local/mac.json pins the bindings to the Mac's Xcode band (see
+         device() in devtools/scripts/mac.mjs). A property of this project's own, because TargetPlatformVersion
+         passed globally reaches the plain net10.0 projects too, where it does not evaluate. -->
+    <TargetPlatformVersion Condition="'$(SampleIosBindings)' != ''">$(SampleIosBindings)</TargetPlatformVersion>
   </PropertyGroup>
 
   <!--

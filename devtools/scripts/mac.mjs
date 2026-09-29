@@ -1501,12 +1501,20 @@ async function device(cfg, args) {
       + '     simulator one: full trimming is off and the Xcode/workload pair is mismatched. Fine for a\n'
       + '     dev loop and a measurement; NOT a shipping configuration.');
   }
+  // `iosTargetPlatformVersion` (local/mac.json) pins the iOS BINDINGS. On a Mac whose Xcode matches no .NET-for-iOS
+  // band, a device build's ManagedRegistrar walks every binding and fails MT4162 on the ones newer than the Xcode's
+  // SDK (measured: Xcode 26.3 / iOS SDK 26.2 against the 26.5 bindings, 27 errors in CarPlay, AVKit and CoreNFC),
+  // while older bindings build, since their APIs all exist in a newer SDK. A simulator build does not walk them.
+  // The sample applies it to its iOS target only: TargetPlatformVersion passed globally reaches every net10.0
+  // project in the build, where `GetPlatformSDKLocation('', 26.0)` does not evaluate (MSB4184, measured).
+  const pin = cfg.iosTargetPlatformVersion ? ` -p:SampleIosBindings=${q(cfg.iosTargetPlatformVersion)}` : '';
+  if (pin) console.log(`mac: ⚠ pinning the iOS bindings to ${cfg.iosTargetPlatformVersion} (local/mac.json).`);
 
   // 🔴 Through guiRun, because this is the step that SIGNS. An ssh session cannot use a login-keychain key.
   console.log(`\nmac: dotnet build ${cfg.tfm} (${rid}), signing in the GUI session…`);
   const build = await guiRun(cfg, `set -o pipefail
 cd ~/${cfg.work}
-dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)}${skipXcode} \\
+dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)}${skipXcode}${pin} \\
   -p:CodesignProvision=Automatic -p:CodesignKey=${q('Apple Development')} 2>&1 | tail -60`,
     { tag: 'device-build', timeoutMs: 30 * 60_000 });
 
