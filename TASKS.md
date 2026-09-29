@@ -215,8 +215,12 @@ D37 and D51 are corrected in place to point at them.
      `MINIMIZE` do what they say (the page grew to 1680×951 and back to 900×600; the window read back minimized),
      and `SET_CAPTION_BUTTONS` answers `NO_ROUTE`. **Unmeasured, because it needs a real pointer:** that the page's
      drag bar moves the window (CEF gets the regions on every OS), and the traffic lights' position over it.
-   - The per-OS services: the clipboard and the tray have no macOS implementation; the file dialogs are CEF's own
-     and should work, but a dialog needs a person to answer it. Code signing; osx-arm64 (no Apple Silicon Mac here).
+   - The clipboard is `NSPasteboard`, measured on a PRIVATE pasteboard so the owner's was never touched: text, two
+     files, HTML, PNG, an app's own type and `application/json` round-tripped in one write; `SetText` replaced
+     everything; a write the pasteboard could not take threw and left the previous content; `Clear` emptied it. The
+     system pasteboard is the same code, unexercised (writing the owner's clipboard needs their yes).
+   - The tray has no macOS implementation. The file dialogs are CEF's own and should work, but a dialog needs a
+     person to answer it. Code signing; osx-arm64 (no Apple Silicon Mac here).
    - Whether the app comes to the front when started from Finder: from `open` over ssh it stayed behind the
      active app, which macOS 15's cooperative activation explains and does not settle.
 5. **Linux:** the per-OS services are the hard part: a tray over D-Bus (StatusNotifierItem) and file dialogs
