@@ -40,6 +40,10 @@ public sealed class ChromiumHostOptions
     /// area.</summary>
     public string? UserDataFolder { get; init; }
 
+    /// <summary>The language of the page (<c>navigator.language</c>, and <c>Intl</c>'s default) and of Chromium's own
+    /// menus and dialogs, such as <c>zh-CN</c>. Null means the OS's UI language, as WebView2 follows it.</summary>
+    public string? Locale { get; init; }
+
     /// <summary>What the ready handshake tells the page this shell is and can do (D36).</summary>
     public ShellInfo? Shell { get; init; }
 

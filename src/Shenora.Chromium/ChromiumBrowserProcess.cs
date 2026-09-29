@@ -29,8 +29,8 @@ public sealed class ChromiumBrowserProcessOptions
     /// <summary>Keep cookies that have no expiry across a restart, which is how a site's sign-in usually survives one.</summary>
     public bool PersistSessionCookies { get; init; }
 
-    /// <summary>The language of Chromium's own windows and the pages' default, such as <c>en-US</c>. Null is CEF's
-    /// default: <c>en-US</c> on Windows and macOS, the environment's on Linux.</summary>
+    /// <summary>The language of Chromium's own windows and the pages' default, such as <c>zh-CN</c>. Null is the OS's UI
+    /// language (on Linux, CEF reads the environment's).</summary>
     public string? Locale { get; init; }
 
     /// <summary>A page to open a window on as the process starts. Null opens none, and windows come from the debugging

@@ -34,7 +34,8 @@ internal static unsafe class CefStartup
         /// <summary>Keep cookies that have no expiry across a restart.</summary>
         public bool PersistSessionCookies { get; init; }
 
-        /// <summary>The locale; null is CEF's own default.</summary>
+        /// <summary>The locale; null is the OS's UI language, as WebView2 follows it (CEF's own default is en-US on
+        /// Windows and macOS whatever the OS speaks).</summary>
         public string? Locale { get; init; }
 
         /// <summary>The profile's folder under <see cref="Cache"/>. Chrome's own windows always use <c>Default</c>
@@ -110,7 +111,9 @@ internal static unsafe class CefStartup
             log_severity = cef_log_severity_t.LOGSEVERITY_WARNING,
         };
         if (settings.BackgroundColor is { } color) cef.background_color = color;
-        var locale = settings.Locale ?? "";
+        // A .NET culture name as it stands: CEF resolves it to the nearest locale it carries (zh-Hans-CN to zh-CN, en-AU
+        // to en-GB, es-MX to es-419, measured), and to en-US when that one's locale files were not laid out.
+        var locale = settings.Locale ?? System.Globalization.CultureInfo.CurrentUICulture.Name;
 
         int initialized;
         fixed (char* c = settings.Cache)

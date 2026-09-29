@@ -23,7 +23,7 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
 
         CefStartup.Initialize(cefApp, new CefStartup.Settings(
             options.UserDataFolder ?? app.Paths.DataArea("chromium"), isDevelopment, options.DevToolsPort,
-            options.Window.BackgroundColor is { } color ? (uint)color.ToArgb() : null, MultiThreadedLoop: false));
+            options.Window.BackgroundColor is { } color ? (uint)color.ToArgb() : null, MultiThreadedLoop: false) { Locale = options.Locale });
 
         SynchronizationContext.SetSynchronizationContext(new CefUiContext(ui, log));
         try

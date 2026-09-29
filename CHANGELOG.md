@@ -70,6 +70,14 @@ at the first list and missed five more breaking changes.
 
 ### Changed
 
+- **The Chromium engine speaks the OS's language, as WebView2 does.** CEF's own default is en-US on Windows and
+  macOS whatever the OS speaks, so a page moved from WebView2 to Chromium changed its `navigator.language`, its
+  `Intl` formats and Chromium's own menus: on an en-GB machine WebView2 reported `["en-GB","en","en-US"]` and the
+  Chromium page `["en-US","en"]`. The shell, `ChromiumView` and `ChromiumBrowserProcess` now pass the OS's UI
+  culture, which CEF resolves to the nearest locale it carries (zh-Hans-CN to zh-CN, en-AU to en-GB, es-MX to
+  es-419, measured), and the same page reported `["en-GB","en-US","en"]`. `Locale` on `ChromiumHostOptions` and
+  `ChromiumEngineOptions` (new) and on `ChromiumBrowserProcessOptions` names another; a locale whose files
+  `ShenoraChromiumLocales` left out falls back to en-US.
 - **The Chromium engine's first document is served with warm code.** Chromium takes about 140 ms after navigation
   starts to route the first request to the kit, and the kit then spent 45–54 ms on first calls serving it, half
   of that System.Text.Json's first use in the transport marker. The shell and `ChromiumView` now serve the root

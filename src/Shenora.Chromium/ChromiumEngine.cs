@@ -38,6 +38,10 @@ public sealed class ChromiumEngineOptions
     /// <summary>Where CEF keeps its profile, cache and log. Null = the app's data area <c>chromium</c>.</summary>
     public string? UserDataFolder { get; init; }
 
+    /// <summary>The language of the pages (<c>navigator.language</c>, and <c>Intl</c>'s default) and of Chromium's own
+    /// menus and dialogs, such as <c>zh-CN</c>. Null = the OS's UI language, as WebView2 follows it.</summary>
+    public string? Locale { get; init; }
+
     /// <summary>What the ready handshake tells each page this host is and can do (D36).</summary>
     public ShellInfo? Shell { get; init; }
 }
@@ -119,7 +123,7 @@ public sealed class ChromiumEngine
         {
             CefStartup.Initialize(_cefApp, new CefStartup.Settings(
                 _options.UserDataFolder ?? app.Paths.DataArea("chromium"), _isDevelopment, _options.DevToolsPort, BackgroundColor: null,
-                MultiThreadedLoop: true));
+                MultiThreadedLoop: true) { Locale = _options.Locale });
         }
         catch (Exception ex)
         {

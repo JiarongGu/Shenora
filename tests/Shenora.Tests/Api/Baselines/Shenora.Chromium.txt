@@ -53,6 +53,7 @@ sealed class Shenora.Chromium.ChromiumEngineOptions
   public string VirtualHost { get; init; }
   public string? ContentRoot { get; init; }
   public string? DevUrl { get; init; }
+  public string? Locale { get; init; }
   public string? UserDataFolder { get; init; }
 static class Shenora.Chromium.ChromiumHostExtensions
   public static Shenora.ShenoraApplicationBuilder UseChromium(Shenora.ShenoraApplicationBuilder builder, Shenora.Chromium.ChromiumHostOptions options)
@@ -66,6 +67,7 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public string VirtualHost { get; init; }
   public string? ContentRoot { get; init; }
   public string? DevUrl { get; init; }
+  public string? Locale { get; init; }
   public string? UserDataFolder { get; init; }
 sealed class Shenora.Chromium.ChromiumTray
   public void ExitApplication()
