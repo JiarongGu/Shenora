@@ -193,10 +193,10 @@ D37 and D51 are corrected in place to point at them.
    of the page and back in (to its first element), Shift+Tab out and back in (to its last, as a native control
    takes it; real keys), and the page's `-webkit-app-region: drag` bar with the real pointer: a drag of (200, 120)
    moved the window by exactly that, a still click held the form's thread 16 ms at most, and a double click
-   maximized and restored. The bar keeps working after a renderer crash (posted presses).
+   maximized and restored. The areas keep working after a renderer crash, a scroll, a CSS zoom and a browser zoom
+   (posted presses).
    - WinForms' `Focused` stays false while the page has the focus, because it is in CEF's child window, which
      another thread owns.
-   - The drag areas under a page's zoom or scroll are unmeasured.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).

@@ -51,8 +51,8 @@ at the first list and missed five more breaking changes.
     OS move loop, a still click does nothing, and a double click maximizes or restores the window
     (`ChromiumChildBrowserOptions.DragAreaPressed`, `ChromiumDragAreaPress`). Measured with the real pointer: a
     drag of (200, 120) moved the window by exactly that, a still click held the form's thread 16 ms at most, and a
-    double click maximized and restored; a `no-drag` button inside the bar still clicks, and the bar keeps working
-    after a renderer crash (both with posted presses). Unlike the Chromium shell's caption, a touch, a pen or a right
+    double click maximized and restored; a `no-drag` button inside the bar still clicks, and the areas keep working
+    after a renderer crash, a scroll, a CSS zoom and a browser zoom (all with posted presses). Unlike the Chromium shell's caption, a touch, a pen or a right
     click there is the page's, and a frameless window maximized its own way is not moved. Underneath it is a small public
     embedding, `ChromiumEngine` + `ChromiumChildBrowser`, which puts a page in any native window.
 
