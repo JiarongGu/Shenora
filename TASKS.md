@@ -198,9 +198,10 @@ D37 and D51 are corrected in place to point at them.
    (posted presses).
    - WinForms' `Focused` stays false while the page has the focus, because it is in CEF's child window, which
      another thread owns.
-3c. **The system menu, what is left: the taskbar's window menu on a Chromium window.** The message the taskbar
-   sends (`WM_POPUPSYSTEMMENU`, posted) opened nothing there, where it opens the `OptimizedForm`'s. Unmeasured with
-   the real taskbar.
+3c. **The system menu, what is left: the real taskbar.** Its window menu opens on a frameless `OptimizedForm` and a
+   Chromium window, measured only with the message the taskbar sends (`WM_POPUPSYSTEMMENU`, posted); CEF's window
+   ignored it until the shell's subclass answered it. A person Shift+right-clicking the app's taskbar button is
+   the check, since a probe must not act on the taskbar, another app's window.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).

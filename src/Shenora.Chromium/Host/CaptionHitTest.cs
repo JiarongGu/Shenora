@@ -34,7 +34,7 @@ namespace Shenora.Chromium.Host;
 /// </summary>
 internal sealed unsafe class CaptionHitTest : IDisposable
 {
-    private const uint WM_CREATE = 0x0001, WM_NCCALCSIZE = 0x0083, WM_NCDESTROY = 0x0082, WM_NCHITTEST = 0x0084, WM_NCMOUSEMOVE = 0x00A0,
+    private const uint WM_POPUPSYSTEMMENU = 0x0313, WM_CREATE = 0x0001, WM_NCCALCSIZE = 0x0083, WM_NCDESTROY = 0x0082, WM_NCHITTEST = 0x0084, WM_NCMOUSEMOVE = 0x00A0,
         WM_NCLBUTTONDOWN = 0x00A1, WM_NCLBUTTONUP = 0x00A2, WM_NCLBUTTONDBLCLK = 0x00A3, WM_MOUSEMOVE = 0x0200,
         WM_LBUTTONUP = 0x0202, WM_RBUTTONDOWN = 0x0204, WM_MBUTTONDBLCLK = 0x0209, WM_XBUTTONDOWN = 0x020B,
         WM_XBUTTONDBLCLK = 0x020D, WM_PARENTNOTIFY = 0x0210, WM_MOVING = 0x0216, WM_CAPTURECHANGED = 0x0215,
@@ -284,6 +284,12 @@ internal sealed unsafe class CaptionHitTest : IDisposable
                 // Chromium's client for a maximized frameless window overhangs the monitor's work area (measured, CEF 154
                 // at 200 %: (-1,-1)-(3839,2305) over (0,0)-(3840,2304)), a column of it on the next monitor. It is the
                 // work area exactly, except beside an auto-hide taskbar, whose reveal edge Chromium keeps clear itself.
+                // The taskbar asks for the window's menu with this undocumented message, at a screen point, and CEF's
+                // window shows nothing for it (measured, posted). Queued, as SHOW_SYSTEM_MENU is.
+                case WM_POPUPSYSTEMMENU:
+                    int menuX = (short)(lParam & 0xFFFF), menuY = (short)((lParam >> 16) & 0xFFFF);
+                    CefTask.Post(Interop.cef_thread_id_t.TID_UI, () => SystemMenu.ShowAt(hwnd, menuX, menuY));
+                    return 0;
                 case WM_NCCALCSIZE when wParam != 0 && me._frameless && IsZoomed(hwnd) != 0:
                     var calculated = DefSubclassProc(hwnd, msg, wParam, lParam);
                     var client = (RECT*)lParam;   // NCCALCSIZE_PARAMS.rgrc[0], the client it will have

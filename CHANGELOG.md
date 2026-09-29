@@ -101,8 +101,9 @@ at the first list and missed five more breaking changes.
   from the title bar's `onContextMenu`. It answers as the menu opens, not when it closes. A Chromium page's
   `-webkit-app-region: drag` area opens it on a right click by itself, in the Chromium shell and in a
   `ChromiumView`. The system's own ways in open it too: Alt+Space with the page focused, on a WebView2 page, a
-  `ChromiumView` page and the Chromium shell, and the taskbar's window menu on a frameless `OptimizedForm`. On a
-  window maximized its own way, the menu offers Restore, and not Maximize, Move or Size.
+  `ChromiumView` page and the Chromium shell, and the taskbar's window menu, on a frameless `OptimizedForm` and a
+  Chromium window (measured with the message the taskbar sends, not the taskbar itself). On a window maximized
+  its own way, the menu offers Restore, and not Maximize, Move or Size.
 
 - **The player's SECOND SURFACE — on a phone the shell draws the picture and the page keeps the UI**
   (**D80**). `IMediaSurface` (`Show(MediaSurfaceRegion)` / `Hide()`) takes the rectangle the page measured;

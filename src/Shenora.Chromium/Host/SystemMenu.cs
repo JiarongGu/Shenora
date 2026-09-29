@@ -26,12 +26,15 @@ internal static class SystemMenu
     /// something waiting on it. On the thread that owns <paramref name="hwnd"/>. False, and nothing shown, when the
     /// window has no system menu.
     /// </summary>
-    public static bool ShowAtPointer(nint hwnd)
+    public static bool ShowAtPointer(nint hwnd) => GetCursorPos(out var at) != 0 && ShowAt(hwnd, at.X, at.Y);
+
+    /// <summary>Show it at a screen point; otherwise as <see cref="ShowAtPointer"/>.</summary>
+    public static bool ShowAt(nint hwnd, int x, int y)
     {
         var menu = GetSystemMenu(hwnd, 0);
         // A window without WS_SYSMENU has no menu to show.
-        if (menu == 0 || GetMenuItemCount(menu) <= 0 || GetCursorPos(out var at) == 0) return false;
-        var command = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD, at.X, at.Y, 0, hwnd, 0);
+        if (menu == 0 || GetMenuItemCount(menu) <= 0) return false;
+        var command = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD, x, y, 0, hwnd, 0);
         // Posted, as the system's own menu hands its choice to the window after it closes.
         if (command != 0) PostMessage(hwnd, WM_SYSCOMMAND, command, 0);
         return true;
