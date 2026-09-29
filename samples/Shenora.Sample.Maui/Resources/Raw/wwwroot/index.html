@@ -388,7 +388,11 @@ document.getElementById('ui').onclick    = () => post('SAMPLE_LOGIC', 'UI_STATE'
 // THE HELD-ORIENTATION CHECK — what the automatic orientation probe cannot answer, because only a person can
 // turn the phone: a PORTRAIT lock must survive a physical rotation, and UNLOCK must turn to the way the phone
 // is HELD. Press, turn the phone to landscape within the 15 s, and keep holding it so through the unlock.
+let orientHeldRunning = false;
 document.getElementById('oheld').onclick = () => {
+  // One run at a time: a second press overlapped the first, whose UNLOCK then read as the second's failure.
+  if (orientHeldRunning) return;
+  orientHeldRunning = true;
   const shape = () => `${window.innerWidth}x${window.innerHeight}`;
   const portrait = () => window.innerHeight >= window.innerWidth;
   log('t', `ORIENT-HELD: locking PORTRAIT for 15 s — turn the phone to landscape now (viewport ${shape()})`);
@@ -403,8 +407,11 @@ document.getElementById('oheld').onclick = () => {
     log('t', `ORIENT-HELD: lock held=${notPortrait === 0 ? 'PASS' : `FAIL (${notPortrait} of 15 readings not portrait)`}; `
       + 'UNLOCKING — keep holding the phone landscape');
     post('SHENORA.ORIENTATION', 'UNLOCK');
-    window.setTimeout(() => log('t', `ORIENT-HELD: 4 s after unlock, viewport ${shape()} — held landscape expects `
-      + `landscape: ${portrait() ? 'FAIL (still portrait)' : 'PASS'}`), 4000);
+    window.setTimeout(() => {
+      log('t', `ORIENT-HELD: 4 s after unlock, viewport ${shape()} — held landscape expects `
+        + `landscape: ${portrait() ? 'FAIL (still portrait)' : 'PASS'}`);
+      orientHeldRunning = false;
+    }, 4000);
   }, 1000);
 };
 document.getElementById('sched').onclick = () => post('SAMPLE_LOGIC', 'SCHEDULE_DEMO');

@@ -220,8 +220,10 @@ D37 and D51 are corrected in place to point at them.
      files, HTML, PNG, an app's own type and `application/json` round-tripped in one write; `SetText` replaced
      everything; a write the pasteboard could not take threw and left the previous content; `Clear` emptied it. The
      system pasteboard is the same code, unexercised (writing the owner's clipboard needs their yes).
-   - The tray (`ChromiumHostOptions.Tray`) is built on Windows and macOS; a person has not yet opened its menu with a
-     real click on either, or chosen an item. The file dialogs are CEF's own and should work, but a dialog needs a
+   - The tray (`ChromiumHostOptions.Tray`) is built on Windows and macOS. On Windows a person has opened its menu
+     with a real click and chosen two items, one toggling its state; whether a checkmark and a disabled item render
+     as they should is not yet seen, and on macOS nobody has clicked the status item. The file dialogs are CEF's own
+     and should work, but a dialog needs a
      person to answer it. Code signing; osx-arm64 (no Apple Silicon Mac here).
    - Whether the app comes to the front when started from Finder: from `open` over ssh it stayed behind the
      active app, which macOS 15's cooperative activation explains and does not settle.
@@ -281,20 +283,3 @@ mpeg4.
   this is per-encoder, not settled. Dropping is safe and lossy; buffering and sorting is neither. **An
   owner call**, and it needs the phone number re-measured first.
 
-### 🔴 ORIENTATION ON iOS IS A REGRESSION THE KIT CAUSED, NOT AN ENHANCEMENT
-
-**Why this is urgent rather than nice-to-have:** the adopter took 0.16.0's orientation, DELETED their own
-working `LockPortrait`/`UnlockOrientation`, and now guard everything on
-`MobileWindowOrientation.IsSupported` — which was `false` on iOS. Their `Info.plist` permits portrait and
-both landscapes, so **their iPhone build lost its portrait lock and nobody has looked.** The fix is built
-(`SupportedInterfaceOrientations` + an exported app-delegate method) and ran on the simulator: the
-capability is advertised, `Lock` turns the window, `Unlock` turns it back.
-
-- [ ] **Prove it on an iPhone.** Two things the simulator cannot answer: **the lock SURVIVES a device
-  rotation** (the failure the old `requestGeometryUpdate` path had, and the reason the delegate mask
-  exists), and `Unlock` turns to the way the device is HELD — the simulator reports no device
-  orientation, so only the fall-back to the pre-lock orientation has run.
-
-⚠ **Resume deliberately does NOT duplicate `document.visibilitychange`**, which already fires on both shells
-— it reports the one thing a throttled, possibly frozen page cannot measure: **how long it was away**. If a
-future session is tempted to add a visibility event, that is the reason not to.
