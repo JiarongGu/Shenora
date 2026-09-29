@@ -220,10 +220,9 @@ D37 and D51 are corrected in place to point at them.
      files, HTML, PNG, an app's own type and `application/json` round-tripped in one write; `SetText` replaced
      everything; a write the pasteboard could not take threw and left the previous content; `Clear` emptied it. The
      system pasteboard is the same code, unexercised (writing the owner's clipboard needs their yes).
-   - The tray (`ChromiumHostOptions.Tray`) is built on Windows and macOS. On Windows a person has opened its menu
-     with a real click, chosen items, seen a toggled item's state reach each next open and Exit end the app; a
-     disabled item never ran. Whether the checkmark and the grey item LOOK right is the owner's to confirm, and on
-     macOS nobody has clicked the status item. The file dialogs are CEF's own
+   - The tray (`ChromiumHostOptions.Tray`) is built on Windows and macOS. Windows is done by real clicks: items
+     run, a toggled item shows its checkmark on each next open, a disabled item is grey and never runs, and Exit
+     ends the app. On macOS nobody has clicked the status item yet. The file dialogs are CEF's own
      and should work, but a dialog needs a
      person to answer it. Code signing; osx-arm64 (no Apple Silicon Mac here).
    - Whether the app comes to the front when started from Finder: from `open` over ssh it stayed behind the
