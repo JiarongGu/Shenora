@@ -29,38 +29,17 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 📦 NO WAY TO SHIP AN IPA TO A DEVICE THE BUILD MAC CANNOT SEE — and the obvious OTA workaround is a wall
+### 📦 RE-SIGNING AN EXPIRED iOS BUILD — the install path is documented, the re-sign is not built
 
-`ios deploy --device` requires the phone attached to the build Mac. With the developer AWAY (phone in
-hand, Mac at home behind a VPN) there is no supported path at all — and the first thing an adopter
-reaches for does not work, which is the part worth the kit's ink.
+`ios deploy` installs only to a phone attached to the build Mac. An adopter measured the way around it
+(2026-09-11), and `docs/guides/mobile.md` ("Installing when the phone is with you…") now carries it: the OTA
+dead end, the network-vs-USB trap, and the Windows USB install of a re-signed `.ipa`.
 
-**Measured by an adopter, 2026-09-11.** `ios provision <bundle>` already mints a fresh 7-day profile
-remotely over ssh, so the signing half is solved; what is missing is everything after it.
-
-- 🔴 **IP reachability is not deployability.** The Mac pinged the handset (0% loss) while every debug
-  port was closed — `62078`, `58783`, `62087`, `49152` — and `devicectl` stayed `transportType: None`
-  with `pairingState: paired`. iOS does not expose lockdownd on a network interface until one USB
-  session arms "Connect via network". A SERVICE-layer block that reads exactly like a network fault.
-- 🔴 **`itms-services` OTA is a wall for a free personal-team DEVELOPMENT build.** With a schema-valid
-  manifest (`software-package` + `display-image` + `full-size-image`), bundle id and version matching
-  the app, a trusted TLS chain and the payload serving `200`, `com.apple.appstored` fetched the manifest
-  **six times and never once requested the .ipa**. Policy, not a manifest defect — and the generic
-  *"Unable to install"* names nothing, so it invites an evening of manifest tuning that cannot work.
-- **The route that carried it:** re-sign the built `.app` with the fresh profile (nested frameworks
-  inside-out, entitlements extracted from the profile, `codesign --verify --deep --strict` clean) →
-  `Payload/<app>.app` → zip → `.ipa` → `pymobiledevice3 apps install` over USB **from a Windows host**.
-  No Mac in the room, no Apple ID, no third-party signing service.
-
-**Asks:** (1) **`shenora ios package`** — emit a signed installable `.ipa` from the device build rather
-than only installing to an attached device; the framework signing ORDER is the trap, since getting it
-wrong fails at launch, not at build. (2) Document the non-Mac install path (usbmuxd +
-`pymobiledevice3`/`ideviceinstaller`) in `docs/guides/mobile.md`, **including the OTA dead end**.
-
-⚠ The re-sign needs a **GUI session** on the Mac (codesign cannot use a login keychain over ssh), so this
-belongs beside the existing provisioning stub, not in the CLI's portable half.
-⚠ D15: one consumer — but the weekly free-tier expiry is what makes it bite. A profile that dies while
-the developer is travelling currently means the app is gone until they are home.
+- [ ] **Re-sign an existing build with a fresh profile in `@shenora/cli`.** `ios build` builds a new `.ipa`
+  rather than refreshing one whose profile expired, and the framework signing ORDER is the trap: getting it
+  wrong fails at launch, not at build. ⚠ It needs a **GUI session** on the Mac (`codesign` cannot use a login
+  keychain over ssh), so it belongs beside `ios provision`, not in the CLI's portable half, and needs the Mac
+  to build and verify. ⚠ D15: one consumer, but the weekly free-tier expiry is what makes it bite.
 
 ### 🌐 A CHROMIUM SHELL OF THE KIT'S OWN — Windows, macOS and Linux, on CEF's own windows
 

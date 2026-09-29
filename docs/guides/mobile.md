@@ -757,6 +757,34 @@ override after `--` (`npx shenora ios deploy --simulator -- -p:ValidateXcodeVers
 *(This repo's own loop is `node devtools/dev.mjs mac` — see `devtools/README.md`. That is a maintainer
 tool and is not shipped; `@shenora/cli` is the adopter-facing half of the same work.)*
 
+#### Installing when the phone is with you and the build Mac is not
+
+`ios deploy` installs to a phone attached to the build Mac, and nothing else. Away from it (the phone in hand,
+the Mac at home behind a VPN), an adopter measured the following on 2026-09-11. `ios provision` already mints
+a fresh profile over ssh, so signing is solved; the rest is here.
+
+- 🔴 **The OTA route is a wall for a free personal-team development build. Do not tune your manifest.** With a
+  schema-valid `itms-services` manifest, a bundle id and version matching the app, a trusted TLS chain and the
+  `.ipa` answering `200`, the phone fetched the manifest six times and never requested the `.ipa`. That is
+  policy, not a manifest defect. *"Unable to install"* names nothing, which invites an evening that cannot work.
+- 🔴 **The Mac reaching the phone over the network is not the Mac deploying to it.** The Mac pinged the phone
+  with no loss while every debug port was closed, and `devicectl` reported the phone paired with no transport.
+  iOS exposes its device services on the network only after one USB session has armed "Connect via network".
+  It is a service-layer block that reads exactly like a network fault.
+- **The route that installed it, from a Windows machine, with no Mac in the room:**
+  1. Re-sign the built `.app` with the fresh profile. Sign nested frameworks inside-out, take the entitlements
+     from the profile, and check with `codesign --verify --deep --strict`. ⚠ The signing ORDER is the trap:
+     getting it wrong fails at launch, not at build. ⚠ This needs a GUI session on the Mac, since `codesign`
+     cannot use a login keychain over ssh.
+  2. Zip it as `Payload/<app>.app` into an `.ipa`.
+  3. Install over USB from Windows with [`pymobiledevice3`](https://github.com/doronz88/pymobiledevice3)
+     (`pymobiledevice3 apps install <app>.ipa`), or `ideviceinstaller` from libimobiledevice. Both talk to the
+     phone through usbmuxd, which Apple's device driver on Windows provides. No Apple ID, and no third-party
+     signing service.
+
+⚠ The 7-day expiry is what makes this bite: a profile that dies while you travel means the app is gone until
+you reach the Mac, or a machine with a USB port and a re-signed `.ipa`.
+
 Two things that only showed up here, and both are about your PAGE rather than the kit:
 
 - **Write the page for the SUPERSET of shells.** Markup that looked right on an Android emulator for
