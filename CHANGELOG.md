@@ -45,7 +45,15 @@ at the first list and missed five more breaking changes.
   - **`ChromiumView`, a control in `Shenora.Windows`**, with `UseChromiumEngine()` running CEF beside the
     WinForms loop. It keeps `OptimizedForm`, the window commands (`CoordinateSpace` = the view) and
     `SecondaryWindows`, whose pages dispatch on their own threads, and Tab leaves the page for the form's next
-    control (`ChromiumChildBrowserOptions.FocusLeaving`). Underneath it is a small public
+    control (`ChromiumChildBrowserOptions.FocusLeaving`). The page's `-webkit-app-region: drag` area moves the
+    window: a mouse press there is held until the pointer passes the system's drag threshold and then starts the
+    OS move loop, a still click does nothing, and a double click maximizes or restores the window
+    (`ChromiumChildBrowserOptions.DragAreaPressed`, `ChromiumDragAreaPress`). Measured with mouse messages
+    posted to Chromium's window, where the button is never really down: a still click asks nothing, a drag asks a
+    move (which the view then declines, the button being up), a `no-drag` button inside the bar still clicks, a
+    double click maximizes and restores, and all of it still works after a renderer crash. A real drag is not
+    measured. Unlike the Chromium shell's caption, a touch, a pen or a right click there is the page's, and a
+    frameless window maximized its own way is not moved. Underneath it is a small public
     embedding, `ChromiumEngine` + `ChromiumChildBrowser`, which puts a page in any native window.
 
   ⚠ **CEF itself is not in the package**, and that is D81's point: an app that chose WebView2 carries none of

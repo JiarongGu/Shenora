@@ -33,7 +33,24 @@ public sealed class ChromiumChildBrowserOptions
     /// <see cref="UiDispatcher"/>. Null leaves the focus in the page.
     /// </summary>
     public Action<bool>? FocusLeaving { get; init; }
+
+    /// <summary>
+    /// The page's <c>-webkit-app-region: drag</c> area asks the host to move its window, or to maximize or restore it,
+    /// as a caption would. A mouse press there is held until the pointer passes the system's drag threshold, so a still
+    /// click asks nothing; it does not reach the page, and a touch or a pen does. Called on the thread of
+    /// <see cref="UiDispatcher"/>, after the press: ⚠ the button may be up by then, so check it before starting a move
+    /// loop, which would otherwise follow the pointer until the next click. Null leaves every press to the page.
+    /// </summary>
+    public Action<ChromiumDragAreaPress>? DragAreaPressed { get; init; }
 }
+
+/// <summary>What a page's <c>-webkit-app-region: drag</c> area asks of its window
+/// (<see cref="ChromiumChildBrowserOptions.DragAreaPressed"/>).</summary>
+/// <param name="DoubleClick">True for a double click: maximize or restore the window. False for a press that has moved
+/// past the system's drag threshold with the button down: move it.</param>
+/// <param name="Press">Where the press began, in screen pixels. A move loop started now should place the window by the
+/// pointer's travel since then, as a caption's does, or the window trails the pointer by the threshold.</param>
+public readonly record struct ChromiumDragAreaPress(bool DoubleClick, Point Press);
 
 /// <summary>
 /// A page in a window the host owns (D83): a Chromium browser as a child of a native window, served from the
@@ -84,7 +101,11 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
         var ui = options.UiDispatcher ?? pages.Ui;
         _browser = new ChromiumBrowser(options.Name, pages.Serving, pages.Origins, browser => NewBridge(browser, pages, ui), pages.Log, pages.Urls)
         {
-            Host = new BrowserHost(this, options.FocusLeaving is { } leaving ? forward => ui.Post(() => AppCallback.Run(() => leaving(forward))) : null),
+            Host = new BrowserHost(this, options.FocusLeaving is { } leaving ? forward => ui.Post(() => AppCallback.Run(() => leaving(forward))) : null,
+                options.DragAreaPressed is { } pressed
+                    ? new ChildDragArea(press => ui.Post(() => AppCallback.Run(() => pressed(press),
+                        ex => AppCallback.Log(pages.Log, () => "[Shenora.Chromium] The host's drag-area callback failed", Microsoft.Extensions.Logging.LogLevel.Warning, ex))), pages.Log)
+                    : null),
         };
         var url = options.Path is { } path ? new Uri(pages.Root, path) : pages.Root;
         var background = options.BackgroundColor;
@@ -248,15 +269,22 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
     }
 
     /// <summary>What the page's browser asks of its host. CEF's UI thread.</summary>
-    private sealed class BrowserHost(ChromiumChildBrowser owner, Action<bool>? focusLeaving) : IChromiumBrowserHost
+    private sealed class BrowserHost(ChromiumChildBrowser owner, Action<bool>? focusLeaving, ChildDragArea? dragArea) : IChromiumBrowserHost
     {
         // Posted to the host's thread, which owns its other controls.
         public void FocusLeaving(bool forward) => focusLeaving?.Invoke(forward);
-        public void DraggableRegionsChanged(nuint count, _cef_draggable_region_t* regions) { }
+        public void DraggableRegionsChanged(nuint count, _cef_draggable_region_t* regions) => dragArea?.Update(owner.WindowHandle, count, regions);
         public void TitleChanged(string title) { }
-        public void DocumentStarted() { }
-        public void BrowserCreated() => owner.BrowserCreated();
-        public void BrowserClosed() => owner.Finish(null);
+        public void DocumentStarted() => dragArea?.DocumentStarted(owner.WindowHandle);
+        public void BrowserCreated()
+        {
+            owner.BrowserCreated();
+        }
+        public void BrowserClosed()
+        {
+            dragArea?.Dispose();
+            owner.Finish(null);
+        }
         public bool CloseRequested() => owner.CloseRequested();
     }
 }

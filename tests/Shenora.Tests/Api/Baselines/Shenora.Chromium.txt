@@ -9,10 +9,22 @@ sealed class Shenora.Chromium.ChromiumChildBrowser : System.IDisposable
 sealed class Shenora.Chromium.ChromiumChildBrowserOptions
   public .ctor()
   public Shenora.Core.Shell.IUiDispatcher? UiDispatcher { get; init; }
+  public System.Action<Shenora.Chromium.ChromiumDragAreaPress>? DragAreaPressed { get; init; }
   public System.Action<bool>? FocusLeaving { get; init; }
   public System.Drawing.Color? BackgroundColor { get; init; }
   public string Name { get; init; }
   public string? Path { get; init; }
+struct Shenora.Chromium.ChromiumDragAreaPress : System.IEquatable<Shenora.Chromium.ChromiumDragAreaPress>
+  public .ctor(bool DoubleClick, System.Drawing.Point Press)
+  public System.Drawing.Point Press { get; init; }
+  public bool DoubleClick { get; init; }
+  public bool Equals(Shenora.Chromium.ChromiumDragAreaPress other)
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Chromium.ChromiumDragAreaPress left, Shenora.Chromium.ChromiumDragAreaPress right)
+  public static bool op_Inequality(Shenora.Chromium.ChromiumDragAreaPress left, Shenora.Chromium.ChromiumDragAreaPress right)
+  public void Deconstruct(out bool DoubleClick, out System.Drawing.Point Press)
 sealed class Shenora.Chromium.ChromiumEngine
   public .ctor(Shenora.Chromium.ChromiumEngineOptions? options = null, Microsoft.Extensions.Logging.ILogger<Shenora.Chromium.ChromiumEngine>? log = null)
   public System.Threading.Tasks.Task Ready { get; }

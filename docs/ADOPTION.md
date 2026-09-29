@@ -295,7 +295,10 @@ opens in the system browser exactly once.
    each page's zones are answered by its own engine, whichever of the two you map first.
 
 The page needs no change on the default bridge: `createHostTransport()` finds this host, and Tab moves
-through the page and on to the form's next control as it does through any other. What differs: WinForms'
+through the page and on to the form's next control as it does through any other. A `-webkit-app-region: drag`
+title bar moves the window on a mouse drag and maximizes it on a double click, so the page's `START_DRAG` call is
+not needed; unlike the shell's, a touch or a right click there stays the page's. A real drag is unmeasured
+(`TASKS.md`). What differs: WinForms'
 `Focused` stays false while the page has the keyboard focus. Started as `dotnet MyApp.App.dll` rather than
 `MyApp.exe`, as an IDE may, the app runs, with Chromium's sandbox off: the engine logs a warning saying so.
 

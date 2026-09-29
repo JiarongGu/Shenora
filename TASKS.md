@@ -196,9 +196,12 @@ D37 and D51 are corrected in place to point at them.
      native control would take its last.
    - WinForms' `Focused` stays false while the page has the focus, because it is in CEF's child window, which
      another thread owns.
-   - Nothing acts on the page's `-webkit-app-region: drag` areas in an embedded browser (`START_DRAG`
-     works). Under Views, CEF reports them through `on_draggable_regions_changed`; whether it does for a
-     child browser is unmeasured.
+   - The page's `-webkit-app-region: drag` area is measured with mouse messages POSTED to Chromium's render
+     widget, the button never really down: a still click asks nothing, a drag past the threshold asks a move (the
+     view declines it, the button being up), a `no-drag` button inside the bar still clicks, a double click
+     maximizes and restores, and a renderer crash leaves it working. Needs a real mouse: the move loop following the
+     pointer, and the window not trailing it (the first-placement correction is the Chromium shell's, measured
+     there, not here). Unmeasured too: the areas under a page's zoom or scroll.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).

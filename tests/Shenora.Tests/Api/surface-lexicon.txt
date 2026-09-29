@@ -829,3 +829,7 @@ System
 # ⚠ It carries a real constraint rather than a location: a remote source cannot be contained against
 # `AllowedRoots`, cannot be `stat`ed, and its url may be a credential. `Remote` is what says so.
 Remote
+# `Drag`, `Press` (2026-09-29) — for `ChromiumDragAreaPress`: what a page's `-webkit-app-region: drag` area asks
+# of its window. Both are pointer mechanics (a drag, a press), the CSS property's own word and the input event's.
+Drag
+Press

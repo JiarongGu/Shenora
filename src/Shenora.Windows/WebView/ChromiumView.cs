@@ -20,6 +20,13 @@ namespace Shenora.Windows;
 /// Tab past the page's last element moves the focus on to the form's next control, and Shift+Tab past its first to
 /// the previous one, as they do from any other control.
 /// </para>
+/// <para>
+/// The page's <c>-webkit-app-region: drag</c> area is its window's caption: a mouse drag there moves the window, a
+/// still click does nothing, and a double click maximizes or restores it (an <see cref="OptimizedForm"/> its own way).
+/// A touch or a pen there is the page's, and does not move the window. A frameless window maximized its own way is not
+/// moved, as the <c>START_DRAG</c> window command does not move it; a window the system maximized or snapped is left
+/// to the system's own drag, as a caption's is.
+/// </para>
 /// </summary>
 public sealed class ChromiumView : Control
 {
@@ -79,7 +86,18 @@ public sealed class ChromiumView : Control
         BackgroundColor = BackColor,
         UiDispatcher = new PageUiDispatcher(this),
         FocusLeaving = MoveFocusOut,
+        DragAreaPressed = PressDragArea,
     };
+
+    // The page's -webkit-app-region: drag area is the window's caption: a drag moves the window, and a double click
+    // maximizes or restores it. The window is the view's top-level form, as the window commands' is.
+    private void PressDragArea(ChromiumDragAreaPress press)
+    {
+        if (IsDisposed || TopLevelControl is not Form form) return;
+        if (press.DoubleClick) FormCaption.ToggleMaximize(form);
+        // Refused when the button is up by now, or the window is maximized its own way.
+        else if (!FormCaption.Move(form, press.Press)) _log?.LogDebug("The page's drag area asked to move its window, which did not start");
+    }
 
     // Tab past the page's last element, or Shift+Tab past its first: on to the form's next or previous control, as a
     // Tab from any other control goes. With no other control it wraps back here, and so into the page.

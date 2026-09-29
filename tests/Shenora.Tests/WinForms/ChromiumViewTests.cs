@@ -70,6 +70,59 @@ public class ChromiumViewTests
         });
     }
 
+    // The page's drag area is the window's caption. Moving is not tested here: it enters the OS move loop, which the
+    // WinForms probe measures instead.
+    [Fact]
+    public void A_double_click_on_the_drag_area_maximizes_and_restores()
+    {
+        Sta.Run(() =>
+        {
+            using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true })
+            {
+                StartPosition = FormStartPosition.Manual,
+                Bounds = new Rectangle(0, 0, 800, 600),
+                ShowInTaskbar = false,
+            };
+            var view = new ChromiumView(new ChromiumEngine()) { Dock = DockStyle.Fill };
+            form.Controls.Add(view);
+            _ = form.Handle;
+            _ = view.Handle;
+            var pressed = view.BrowserOptions().DragAreaPressed!;
+
+            pressed(new ChromiumDragAreaPress(true, default));
+            Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
+            pressed(new ChromiumDragAreaPress(true, default));
+            Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
+        });
+    }
+
+    // Never with a real button: a loop started here would follow the pointer. Each refusal returns before it.
+    [Fact]
+    public void A_drag_is_refused_with_the_button_up_or_the_window_maximized_its_own_way()
+    {
+        Sta.Run(() =>
+        {
+            using var frameless = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true })
+            {
+                StartPosition = FormStartPosition.Manual,
+                Bounds = new Rectangle(0, 0, 800, 600),
+                ShowInTaskbar = false,
+            };
+            _ = frameless.Handle;
+
+            Assert.False(FormCaption.Move(frameless, new Point(10, 10), buttonDown: () => false));
+
+            frameless.ToggleMaximize();
+            Assert.True(FormCaption.ManuallyMaximized(frameless));
+            Assert.False(FormCaption.Move(frameless, new Point(10, 10), buttonDown: () => true));
+
+            // A window the system maximized has true restore bounds: the system's own drag restores it.
+            using var framed = new Form { WindowState = FormWindowState.Maximized, ShowInTaskbar = false };
+            _ = framed.Handle;
+            Assert.False(FormCaption.ManuallyMaximized(framed));
+        });
+    }
+
     // Posted from the view's own thread, the work runs inline, in the caller's context: the mark must end with it.
     [Fact]
     public void Work_posted_from_the_views_own_thread_runs_as_its_page_and_leaves_no_mark()
