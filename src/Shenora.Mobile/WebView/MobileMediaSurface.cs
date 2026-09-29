@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Dispatching;
 using Microsoft.Maui.Graphics;
+using Shenora.Core.Shell;
 using Shenora.Modules.Media;
 
 namespace Shenora.Mobile;
@@ -21,23 +22,17 @@ namespace Shenora.Mobile;
 public sealed class MediaSurfaceView : View
 {
     /// <summary>
-    /// The rendezvous, which is ALL of this class's behaviour and none of its MAUI-ness.
-    /// <para>
-    /// 🔴 <b>It lives in <c>Shenora</c> so that a test can reach it.</b> This assembly compiles only for
-    /// the android/ios TFMs while the suite is <c>net10.0</c>, so nothing in the gate can construct a
-    /// <see cref="MediaSurfaceView"/> — and that is not a hypothetical: the pairing shipped BROKEN (a
-    /// handle arriving before the player was dropped for good) while the XML here claimed it worked, and
-    /// only a device found it.
-    /// </para>
+    /// The rendezvous, which is ALL of this class's behaviour and none of its MAUI-ness. It lives in
+    /// <c>Shenora</c> so that a test can reach it: this assembly compiles only for the android/ios TFMs, and the
+    /// suite is <c>net10.0</c>.
     /// </summary>
     private readonly MediaSurfaceHolder _holder = new();
 
     /// <summary>
     /// The player that draws here — the shell's own, not the page-backed one.
     /// <para>
-    /// 🔴 <b>ORDER DOES NOT MATTER, and making that true took a device run.</b> Whichever of the platform
-    /// surface and this assignment arrives second completes the pair — see
-    /// <see cref="MediaSurfaceHolder"/>, which owns that rule and is tested on it.
+    /// <b>Order does not matter:</b> whichever of the platform surface and this assignment arrives second
+    /// completes the pair (<see cref="MediaSurfaceHolder"/>, which owns that rule and is tested on it).
     /// </para>
     /// <para>
     /// ⚠ Assigning it does real work, so set it on the UI thread. The outgoing player is detached first —
@@ -78,11 +73,12 @@ public sealed class MobileMediaSurface : IMediaSurface
 
     private MediaSurfaceView? _surface;
     private VisualElement? _webView;
-    private IDispatcher? _dispatcher;
+    private IUiDispatcher? _dispatcher;
     private bool _warned;
 
-    /// <param name="log">Diagnostics. A visibility CHANGE is logged; a reposition is not.</param>
-    public MobileMediaSurface(ILogger? log = null) => _log = log;
+    /// <param name="log">Diagnostics, which DI supplies. A visibility CHANGE is logged; a reposition is not; the two
+    /// misconfigurations that look like a player that never started are warned about once.</param>
+    public MobileMediaSurface(ILogger<MobileMediaSurface>? log = null) => _log = log;
 
     /// <summary>
     /// Give the surface the views it moves. Call it when the page is built, and again on every page the
@@ -98,7 +94,8 @@ public sealed class MobileMediaSurface : IMediaSurface
     /// <see cref="MediaSurfaceRegion.OnTop"/> — both elements are set explicitly, because leaving one at
     /// its default makes the order depend on child order instead.
     /// </param>
-    /// <param name="dispatcher">The UI dispatcher. Every property this touches is a layout property.</param>
+    /// <param name="dispatcher">The UI dispatcher. Every property this touches is a layout property; the work goes
+    /// through the kit's guarded <see cref="MobileUiDispatcher"/> over it, so a layout throw is logged.</param>
     public void Attach(MediaSurfaceView surface, VisualElement webView, IDispatcher dispatcher)
     {
         ArgumentNullException.ThrowIfNull(surface);
@@ -106,7 +103,8 @@ public sealed class MobileMediaSurface : IMediaSurface
         ArgumentNullException.ThrowIfNull(dispatcher);
         _surface = surface;
         _webView = webView;
-        _dispatcher = dispatcher;
+        _dispatcher = new MobileUiDispatcher(dispatcher,
+            ex => AppCallback.Log(_log, () => "media surface: moving the picture failed", LogLevel.Warning, ex));
         _warned = false;
     }
 
@@ -194,17 +192,17 @@ public sealed class MobileMediaSurface : IMediaSurface
                 + "until you have");
         }
 
-        dispatcher.Dispatch(() => work(surface, webView));
+        dispatcher.Post(() => work(surface, webView));
     }
 
     private void Log(Func<string> message) => AppCallback.Log(_log, message);
 
-    /// <summary>Say it ONCE. The page repositions on every scroll frame, so a per-call warning is how a
-    /// device log becomes unreadable — and it would bury the line that names the fault.</summary>
+    /// <summary>Say it ONCE, as a warning. The page repositions on every scroll frame, so a per-call warning is how
+    /// a device log becomes unreadable — and it would bury the line that names the fault.</summary>
     private void Warn(Func<string> message)
     {
         if (_warned) return;
         _warned = true;
-        Log(message);
+        AppCallback.Log(_log, message, LogLevel.Warning);
     }
 }

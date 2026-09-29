@@ -15,10 +15,9 @@ namespace Shenora.Android;
 /// (D42: an engine is the APP's reach, through the seam below). The state machine is
 /// <see cref="MediaPlayerBase"/>'s; this is the platform half.
 /// <para>
-/// ⚠ <b>Not a D51 question, which is what this said before.</b> D51 bounds the bytes the kit SHIPS —
-/// copyleft and codec payloads — and Media3 is Apache-2.0 and carries no codecs, driving the same
-/// <c>MediaCodec</c> decoders as the class below. The reason is dependency weight, and it is why the
-/// seam exists rather than a ban.
+/// ⚠ <b>Not a D51 question:</b> D51 bounds the bytes the kit SHIPS (copyleft and codec payloads), and Media3 is
+/// Apache-2.0 and carries no codecs, driving the same <c>MediaCodec</c> decoders as the class below. The reason is
+/// dependency weight, and it is why the seam exists rather than a ban.
 /// </para>
 /// <para>
 /// The contract promises no adaptive streaming (DASH, smooth HLS switching), which is where ExoPlayer is
@@ -100,9 +99,8 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
     protected override void AttachSurfaceCore(object? surface)
     {
         _holder = surface as global::Android.Views.ISurfaceHolder;
-        // 🔴 LOGGED, because a surface that never arrives and one that works are the same black rectangle.
-        // A device run spent two screenshots on that: the clock advanced (this player decodes audio with
-        // no display), the SurfaceView layer existed, and nothing anywhere said the two were not joined.
+        // Logged, because a surface that never arrives and one that works are the same black rectangle: the clock
+        // advances either way (this player decodes audio with no display).
         Log(() => surface is null
             ? "MediaPlayer: display detached"
             : $"MediaPlayer: display attached ({(_holder is null ? "NOT a SurfaceHolder — wrong handle type" : "SurfaceHolder")})");

@@ -10,18 +10,14 @@ namespace Shenora.Mobile;
 /// player work rescues it — and the failure is indistinguishable from a player that never started.
 /// </para>
 /// <para>
-/// ✅ <b>DEMONSTRATED ON ANDROID</b> (2026-09-04, API 36 / WebView 133.0.6943.137): with this mapping
-/// applied and the page in a stage of its own, the shell's clip is composited under the document and
-/// photographed there. <c>samples/Shenora.Sample.Maui</c> walks it a layer at a time; the numbers are in
-/// <c>docs/design/media.md</c>.
+/// ✅ <b>Demonstrated on Android</b>: with this mapping applied and the page in a stage of its own, the shell's
+/// clip is composited under the document. <c>samples/Shenora.Sample.Maui</c> walks it a layer at a time; the
+/// numbers are in <c>docs/design/media.md</c>.
 /// </para>
 /// <para>
-/// 🔴 <b>THIS AND THE DOCUMENT ARE THE WHOLE CHAIN — the page's and the activity's backgrounds are NOT in
-/// it.</b> Measured in the same run: the picture is visible with the MAUI page's background left fully
-/// OPAQUE, because a <c>SurfaceView</c> punches its hole through everything the window drew before it.
-/// An earlier remark here counted four layers and had a sample clearing all of them; two of those changes
-/// did nothing and one of them cannot be made at all (a transparent <c>ColorDrawable</c> does not repaint
-/// an already-drawn window).
+/// 🔴 <b>This and the document are the whole chain — the page's and the activity's backgrounds are NOT in
+/// it.</b> The picture is visible with the MAUI page's background left fully opaque, because a
+/// <c>SurfaceView</c> punches its hole through everything the window drew before it.
 /// </para>
 /// <para>
 /// ⚠ <b>The PAGE's own background is the layer this cannot reach.</b> A transparent webview in front of an
@@ -47,8 +43,7 @@ internal static class MobileWebViewTransparency
     /// <param name="log">
     /// Diagnostics, and this one earns its place. ⚠ <b>A mapper that never runs and one that runs
     /// perfectly produce the same screen</b> — an opaque webview — so without a line here the first
-    /// question a missing picture raises is unanswerable. Measured: three device screenshots were spent
-    /// before a control proved the occluder was above the picture rather than the picture missing.
+    /// question a missing picture raises is unanswerable.
     /// </param>
     public static void Enable(Action<string>? log = null)
     {

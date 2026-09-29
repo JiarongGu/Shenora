@@ -255,11 +255,9 @@ public sealed partial class ResourcePackJournal
 
         if (state.Pending is { } pending)
         {
-            // 🔴 THE SAME QUESTION AS THE ACTIVE BRANCH BELOW, ONE STEP EARLIER — and it was missing, so a
-            // device that staged a pack and THEN took an app update booted the older staged client anyway
-            // (measured on a real iPhone: packaged 1.0.19, pending 1.0.18, served the 1.0.18). The failure
-            // is the worst shape there is: a fix demonstrably inside the installed app does not appear, so
-            // the app looks broken AND the fix looks wrong.
+            // The same question as the active branch below, one step earlier: a device that staged a pack and then
+            // took an app update must boot the newer packaged client, not the older staged one, or a fix inside
+            // the installed app never appears.
             //
             // ⚠ BEFORE the attempt is spent, or the superseded pack is served exactly once — which is the
             // whole bug, not a smaller version of it.

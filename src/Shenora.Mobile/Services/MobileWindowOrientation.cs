@@ -23,9 +23,7 @@ namespace Shenora.Mobile;
 /// </code>
 /// <b>That override IS the opt-in</b> — <see cref="IsSupported"/> goes true once UIKit has asked, so an
 /// app that has not wired it advertises the capability as absent rather than accepting a lock it cannot
-/// hold (D39/D36). ⚠ An earlier version of this type refused iOS outright and said so here; that was
-/// honest but it cost an adopter their portrait lock, because they deleted a working implementation to
-/// take a capability that is absent on one of their two shells.
+/// hold (D39/D36).
 /// </para>
 /// <para>
 /// ⚠ <b><c>Info.plist</c> is still the ceiling.</b> UIKit intersects this mask with
@@ -198,20 +196,15 @@ public sealed class MobileWindowOrientation : IWindowOrientation
 
         if (window?.WindowScene is { } windowScene)
         {
-            // ⚠ The error callback is REQUIRED reading, not optional: a refused geometry request is
-            // reported here and nowhere else, so swallowing it is how "the lock did nothing" becomes
-            // undiagnosable. It is not thrown — this runs after the mask is already in force, and the
-            // system may legitimately refuse the immediate rotation while still honouring the lock.
-            // 🔴 THROUGH `ILogger`, NOT `Debug.WriteLine`. `Debug.WriteLine` is `[Conditional("DEBUG")]`,
-            // so the compiler REMOVES the call from a Release build — which is every build an adopter
-            // ships. The one report this path has would have existed only on the configuration where the
-            // problem is easiest to see anyway, while the comment above claimed it was reported.
+            // ⚠ The error callback is the only report of a refused geometry request, so it is logged, not
+            // thrown: this runs after the mask is already in force, and the system may refuse the immediate
+            // rotation while still honouring the lock. Logged, not Debug.WriteLine, which Release builds
+            // compile out; guarded, since the logger is app code inside a UIKit callback.
             windowScene.RequestGeometryUpdate(
                 new UIKit.UIWindowSceneGeometryPreferencesIOS(mask),
-                error => log?.LogWarning(
-                    "The window scene refused the orientation request: {Reason}. The lock is still in "
-                    + "force — the app will take the orientation at the next rotation.",
-                    error.LocalizedDescription));
+                error => AppCallback.Log(log, () =>
+                    $"The window scene refused the orientation request: {error.LocalizedDescription}. The lock is "
+                    + "still in force — the app will take the orientation at the next rotation.", LogLevel.Warning));
         }
     }
 #endif

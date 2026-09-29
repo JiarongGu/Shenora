@@ -138,6 +138,20 @@ public class MediaSurfaceTests
         Assert.Equal(new object?[] { handle, null }, player.Attached);
     }
 
+    // The platform's teardown detaches after an app has disposed and replaced its player: that detach is a no-op,
+    // since a throw there has nothing to catch it. Attaching to a disposed player is still a caller's mistake.
+    [Fact]
+    public void A_disposed_player_ignores_a_detach_and_refuses_an_attach()
+    {
+        var player = new SurfacePlayer();
+        player.Dispose();
+
+        player.AttachSurface(null);
+
+        Assert.Empty(player.Attached);
+        Assert.Throws<ObjectDisposedException>(() => player.AttachSurface(new object()));
+    }
+
     /// <summary>A player that does not draw pictures ignores the seam, so an audio-only shell pays nothing
     /// for having it — the default must not throw.</summary>
     [Fact]

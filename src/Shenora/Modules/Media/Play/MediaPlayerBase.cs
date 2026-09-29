@@ -252,6 +252,9 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     /// <param name="surface">The platform handle, or <c>null</c> to detach.</param>
     public void AttachSurface(object? surface)
     {
+        // A detach reaches a disposed player from the platform's teardown (a surface destroyed after the app
+        // replaced its player): nothing to let go of, and nothing there to catch a throw.
+        if (surface is null && _disposed) return;
         ObjectDisposedException.ThrowIf(_disposed, this);
         Try(() => AttachSurfaceCore(surface), nameof(AttachSurface));
     }

@@ -123,7 +123,6 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     /// <inheritdoc />
     public event Action<MediaPlayerStatus>? StateChanged;
 
-    /// <inheritdoc />
     /// <summary>
     /// <inheritdoc />
     /// <para>
