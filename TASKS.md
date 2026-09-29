@@ -197,16 +197,9 @@ D37 and D51 are corrected in place to point at them.
    (posted presses).
    - WinForms' `Focused` stays false while the page has the focus, because it is in CEF's child window, which
      another thread owns.
-3c. **The system menu, what is left: the real input.** It is built for both engines (`docs/design/shells.md`),
-   and measured with posted messages only: every way in opens it, with the right items, normal and maximized. Unmeasured:
-   - A real right click on a drag area, in a `ChromiumView` and in the Chromium shell. The shell's routing is the
-     left button's, which was measured with the real pointer.
-   - A real Alt+Space with the PAGE focused, on a WebView2 page, a `ChromiumView` page and the Chromium shell.
-     The key goes to the browser's window, not the form's, so whether it reaches the window's menu is the
-     question. If it does not, the page's engine needs to hand it on (WebView2's `AcceleratorKeyPressed`, a CEF
-     key handler).
-   - The taskbar's window menu on a Chromium window: the message it sends (`WM_POPUPSYSTEMMENU`, posted) opened
-     nothing there, where it opens the `OptimizedForm`'s.
+3c. **The system menu, what is left: the taskbar's window menu on a Chromium window.** The message the taskbar
+   sends (`WM_POPUPSYSTEMMENU`, posted) opened nothing there, where it opens the `OptimizedForm`'s. Unmeasured with
+   the real taskbar.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).

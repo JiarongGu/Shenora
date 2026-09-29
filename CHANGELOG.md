@@ -87,10 +87,9 @@ at the first list and missed five more breaking changes.
   `@shenora/react` (`SHOW_SYSTEM_MENU`, `WindowCommandModule.ShowSystemMenuType`) opens it at the pointer: call it
   from the title bar's `onContextMenu`. It answers as the menu opens, not when it closes. A Chromium page's
   `-webkit-app-region: drag` area opens it on a right click by itself, in the Chromium shell and in a
-  `ChromiumView`. The system's own ways in open it too: the keyboard's system-menu command on a frameless
-  `OptimizedForm` and a Chromium window, and the taskbar's window menu on the `OptimizedForm`. ⚠ Whether a real
-  Alt+Space reaches it while the page has the focus is not measured yet. On a window maximized its own way, the
-  menu offers Restore, and not Maximize, Move or Size.
+  `ChromiumView`. The system's own ways in open it too: Alt+Space with the page focused, on a WebView2 page, a
+  `ChromiumView` page and the Chromium shell, and the taskbar's window menu on a frameless `OptimizedForm`. On a
+  window maximized its own way, the menu offers Restore, and not Maximize, Move or Size.
 
 - **The player's SECOND SURFACE — on a phone the shell draws the picture and the page keeps the UI**
   (**D80**). `IMediaSurface` (`Show(MediaSurfaceRegion)` / `Hide()`) takes the rectangle the page measured;
@@ -153,8 +152,8 @@ at the first list and missed five more breaking changes.
   managed assembly (about 300 KB), never CEF, whose bytes arrive only through a direct reference.
 
 - **A frameless `OptimizedForm` has a system menu now** (`WS_SYSMENU`), which WinForms gives a borderless form
-  none of. So the keyboard's system-menu command and the taskbar's window menu open it, where before they did
-  nothing. Nothing is drawn for it.
+  none of. So Alt+Space and the taskbar's window menu open it, where before they did nothing. Nothing is drawn
+  for it.
 
 - **`MediaPlayerModule`'s constructor takes an optional `IMediaSurface?`.** Source-compatible — existing calls
   compile unchanged — but the signature moved, so **recompile if you construct it yourself**. The kit's own
