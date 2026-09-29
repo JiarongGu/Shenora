@@ -197,10 +197,17 @@ D37 and D51 are corrected in place to point at them.
    runtime from C#. CEF's Views works there: the probe's Views window showed its page, visible and painting 60
    frames a second, and it handshook and echoed (100 `invoke`s: median 1.1 ms) and exited cleanly when its window
    closed. Every subprocess ran sandboxed (`sandbox_check`), the network service included; the .NET process does not.
+   **The package carries it**: the macOS binding as `runtimes/osx-*/lib/net10.0/` (compiled on Windows by `dev.mjs
+   pack`), the helpers in `tools/osx-*/native/` (a macOS release job builds both with clang), and the layout marks
+   each helper executable, since a package keeps no Unix permissions. From a local feed, on the Mac, with nothing
+   but a `PackageReference`: the macOS binding reached the app, and the page echoed and exited cleanly.
    **Left:**
-   - 🔴 **The package carries nothing for macOS.** Its `lib/` is the Windows binding; a macOS app needs the
-     macOS one as `runtimes/osx-*/lib/net10.0/` (it compiles on Windows) and the helper in `tools/osx-*/`, built
-     on a Mac, so the release needs a macOS job.
+   - 🔴 **A SECOND kit app stalls behind a keychain password prompt — an owner call.** The Chrome runtime keeps its
+     cookie-encryption key in a login-keychain item named "Chromium Safe Storage", shared by every CEF app, so the
+     first app to run owns it and every other one asks for the login password; the page load waits until it is
+     answered (measured: stalled with no switch, worked with `--use-mock-keychain`, same app). The mock keychain
+     avoids the prompt at the cost of encrypting cookies at rest with a fixed key.
+   - The release's macOS job has not run; nor has osx-arm64 (no Apple Silicon Mac here).
    - **.NET installed per user is not found** when the app starts from Finder or `open`, whose environment has no
      `DOTNET_ROOT` ("You must install .NET"). A self-contained publish avoids it; there is no macOS publish layout
      yet (the targets lay out Build only).

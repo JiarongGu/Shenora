@@ -159,8 +159,31 @@ jobs:
           path: src/Shenora.Chromium/artifacts/
           if-no-files-found: error
 
+  # The Chromium engine's macOS helper, the executable every CEF subprocess runs there. One C file with no CEF
+  # headers, so clang on one Mac builds both architectures; `cef-native` checks each binary's Mach-O CPU type.
+  chromium-helper-macos:
+    runs-on: macos-latest
+    name: chromium helper (osx-x64, osx-arm64)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the osx-x64 helper
+        run: node devtools/dev.mjs cef-native --rid osx-x64
+
+      - name: Build the osx-arm64 helper
+        run: node devtools/dev.mjs cef-native --rid osx-arm64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chromium-helper-macos
+          path: src/Shenora.Chromium/artifacts/
+          if-no-files-found: error
+
   publish:
-    needs: [launcher, chromium-shim]
+    needs: [launcher, chromium-shim, chromium-helper-macos]
     runs-on: windows-latest   # net10.0-windows targets need Windows to build
     env:
       # This job IS the release, so the bump it makes is authorised. `doctor`'s version-authorship
@@ -308,13 +331,21 @@ jobs:
           name: chromium-shim
           path: src/Shenora.Chromium/artifacts
 
-      - name: Assert both Chromium shims are present
+      - name: Download the Chromium macOS helper
+        uses: actions/download-artifact@v4
+        with:
+          name: chromium-helper-macos
+          path: src/Shenora.Chromium/artifacts
+
+      - name: Assert every Chromium native half is present
         shell: pwsh
         run: |
-          foreach ($rid in @('win-x64', 'win-arm64')) {
-            $shim = "src/Shenora.Chromium/artifacts/runtimes/$rid/native/shenora_chromium_shim.dll"
-            if (-not (Test-Path $shim)) { throw "Chromium shim missing at $shim — the chromium-shim job did not deliver it" }
-            Write-Host ("  ok  {0}: shenora_chromium_shim.dll ({1:N0} bytes)" -f $rid, (Get-Item $shim).Length)
+          $native = @{ 'win-x64' = 'shenora_chromium_shim.dll'; 'win-arm64' = 'shenora_chromium_shim.dll';
+                       'osx-x64' = 'shenora_chromium_helper'; 'osx-arm64' = 'shenora_chromium_helper' }
+          foreach ($rid in $native.Keys) {
+            $file = "src/Shenora.Chromium/artifacts/runtimes/$rid/native/$($native[$rid])"
+            if (-not (Test-Path $file)) { throw "Chromium native half missing at $file — its job did not deliver it" }
+            Write-Host ("  ok  {0}: {1} ({2:N0} bytes)" -f $rid, $native[$rid], (Get-Item $file).Length)
           }
 
       - name: Pack

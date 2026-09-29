@@ -223,6 +223,8 @@
     <ShenoraMacPlist File="$(_ShenoraContents)/Info.plist" Executable="$(_ShenoraAppExe)" Identifier="$(ShenoraChromiumBundleId)" Version="$(_ShenoraBundleVersion)" />
     <Copy SourceFiles="@(_ShenoraCefFramework)" DestinationFolder="$(_ShenoraContents)/Frameworks/Chromium Embedded Framework.framework/%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(_ShenoraContents)/Frameworks/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant).app/Contents/MacOS/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant)" SkipUnchangedFiles="true" />
+    <!-- A NuGet package keeps no Unix permissions, so the helper arrives from one without its executable bit. -->
+    <Exec Command="chmod 755 &quot;$(_ShenoraContents)/Frameworks/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant).app/Contents/MacOS/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant)&quot;" />
     <ShenoraMacPlist File="$(_ShenoraContents)/Frameworks/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant).app/Contents/Info.plist"
                      Executable="$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant)" Identifier="$(ShenoraChromiumBundleId).%(_ShenoraHelper.Identity)"
                      Version="$(_ShenoraBundleVersion)" Helper="true" />

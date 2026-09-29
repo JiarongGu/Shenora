@@ -365,6 +365,29 @@ function zipEntryNames(file) {
  * The referenced paths come from the SOURCE targets rather than the packed copy, so no inflate is needed;
  * what is asserted is that the package CARRIES them.
  */
+/**
+ * Compile the Chromium engine as another OS (`CefOs`) and stage the assembly where its csproj packs it:
+ * `artifacts/runtimes/<rid>/lib/net10.0/`, which NuGet gives an app built for that RID over `lib/`.
+ */
+function stageChromiumBinding(os, rids) {
+  const project = path.join(repo, 'src', 'Shenora.Chromium');
+  const artifacts = path.join(repo, 'devtools', '_build', `chromium-${os.toLowerCase()}-release`);
+  if (!run('dotnet', ['build', path.join(project, 'Shenora.Chromium.csproj'), '-c', 'Release', `-p:CefOs=${os}`,
+    `-p:Version=${config.version}`, '-v', 'minimal', '-clp:ErrorsOnly', '--artifacts-path', artifacts])) return false;
+  const dll = path.join(artifacts, 'bin', 'Shenora.Chromium', 'release', 'Shenora.Chromium.dll');
+  if (!fs.existsSync(dll)) {
+    console.error(`  the ${os} build reported success but ${dll} is missing`);
+    return false;
+  }
+  for (const rid of rids) {
+    const staged = path.join(project, 'artifacts', 'runtimes', rid, 'lib', 'net10.0');
+    fs.mkdirSync(staged, { recursive: true });
+    fs.copyFileSync(dll, path.join(staged, 'Shenora.Chromium.dll'));
+    console.log(`  staged ${path.relative(repo, path.join(staged, 'Shenora.Chromium.dll'))}`);
+  }
+  return true;
+}
+
 function checkPackagedBuildAssets(outDir) {
   const packages = fs.readdirSync(outDir).filter((f) => f.endsWith('.nupkg'));
   let checked = 0;
@@ -1326,6 +1349,11 @@ switch (cmd) {
     }
 
     let ok = true;
+    // The Chromium engine's macOS binding, which the package carries as runtimes/osx-*/lib because NuGet gives an
+    // app built for a RID those over lib/, the Windows binding. Managed code, so it compiles here, into an
+    // artifacts path of its own as in verify; the macOS helper beside it is built on a Mac.
+    if (selected.includes('src/Shenora.Chromium'))
+      ok = step("stage the Chromium engine's macOS binding", () => stageChromiumBinding('MacOS', ['osx-x64', 'osx-arm64']));
     for (const proj of selected) {
       ok = step(`pack ${proj}`, () => run('dotnet', ['pack', proj, '-c', 'Release', '-o', out,
         `-p:Version=${config.version}`, '-v', 'minimal', '-clp:ErrorsOnly'], { env: packEnv })) && ok;
