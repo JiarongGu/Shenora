@@ -17,7 +17,12 @@ public sealed class ChromiumBrowserProcessOptions
     /// <summary>
     /// Chrome DevTools' port, open in production (D86): this process holds no app page, so the port reaches only the
     /// browser's own windows. Windows can be made over it (<c>Target.createTarget</c> with <c>newWindow</c>), and a
-    /// target made so opens in Chromium's own window. 0 = none.
+    /// target made so opens in Chromium's own window. Loopback only. 0 = none.
+    /// <para>
+    /// It is a relay onto Chromium's own endpoint that passes everything through, except that a new tab is announced as
+    /// a <c>page</c> from the start: Chromium says <c>other</c> first, which a client waiting for a page (Playwright's
+    /// MCP server, Chrome DevTools') never takes up.
+    /// </para>
     /// </summary>
     public int RemoteDebuggingPort { get; init; }
 
@@ -60,7 +65,8 @@ public static class ChromiumBrowserProcess
     /// <param name="log">Diagnostics.</param>
     /// <returns>The code to exit with: 0, a CEF subprocess's own when this process was one, and 1 when the window at
     /// <see cref="ChromiumBrowserProcessOptions.StartUrl"/> could not be made.</returns>
-    /// <exception cref="InvalidOperationException">Chromium would not start (the message names its log).</exception>
+    /// <exception cref="InvalidOperationException">Chromium would not start (the message names its log), or the
+    /// debugging port is taken.</exception>
     public static int Run(ChromiumBrowserProcessOptions options, CancellationToken stop = default, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -87,14 +93,37 @@ public static class ChromiumBrowserProcess
         var code = CefStartup.ExecuteIfSubprocess(cefApp, log);
         if (code >= 0) return code;
 
-        CefStartup.Initialize(cefApp, new CefStartup.Settings(options.UserDataFolder, IsDevelopment: false, DevToolsPort: 0,
-            BackgroundColor: null, MultiThreadedLoop: false)
+        // The port clients are given is a relay's, onto the engine's own on a free loopback port: the relay calls a new
+        // tab a page from the start, which the engine does only later (CdpRelay). Started first, so a port already in
+        // use fails here rather than after Chromium is up.
+        CdpRelay? relay = null;
+        var enginePort = 0;
+        if (options.RemoteDebuggingPort > 0)
         {
-            PagelessDebugPort = options.RemoteDebuggingPort,
-            PersistSessionCookies = options.PersistSessionCookies,
-            Locale = options.Locale,
-            Profile = "Default",
-        });
+            enginePort = FreePort();
+            try { relay = CdpRelay.Start(options.RemoteDebuggingPort, enginePort); }
+            catch (System.Net.Sockets.SocketException ex)
+            {
+                throw new InvalidOperationException($"The debugging port {options.RemoteDebuggingPort} is not free.", ex);
+            }
+        }
+
+        try
+        {
+            CefStartup.Initialize(cefApp, new CefStartup.Settings(options.UserDataFolder, IsDevelopment: false, DevToolsPort: 0,
+                BackgroundColor: null, MultiThreadedLoop: false)
+            {
+                PagelessDebugPort = enginePort,
+                PersistSessionCookies = options.PersistSessionCookies,
+                Locale = options.Locale,
+                Profile = "Default",
+            });
+        }
+        catch
+        {
+            relay?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            throw;
+        }
 
         // Registered once CEF can take a task, which then waits for the loop: a stop that came first closes nothing
         // and quits as the loop starts. Unregistered before CEF shuts down, so no stop posts to a CEF that has gone.
@@ -106,9 +135,18 @@ public static class ChromiumBrowserProcess
         finally
         {
             registration.Dispose();
+            relay?.DisposeAsync().AsTask().GetAwaiter().GetResult();
             Cef.cef_shutdown();
         }
         return exitCode;
+    }
+
+    private static int FreePort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        try { return ((System.Net.IPEndPoint)listener.LocalEndpoint).Port; }
+        finally { listener.Stop(); }
     }
 
     // Chrome style with no parent: Chromium's own window, as a tab of it. CEF's UI thread.

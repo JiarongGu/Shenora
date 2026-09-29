@@ -226,7 +226,8 @@ Shenora.slnx
 │   │                                          ChromiumBrowserProcess is Chromium as a
 │   │                                          browser in a second process of the app's
 │   │                                          exe, holding no app page (D86): Chrome's own
-│   │                                          windows, a debugging port in production.
+│   │                                          windows, a debugging port in production,
+│   │                                          relayed (Host/CdpRelay) so a tab is a page.
 │   │                                          Serving/ answers the app's origin (the bundle, marked,
 │   │                                          then the app's interceptor pipeline; the IPC route only
 │   │                                          for the app's own browser and origin). Interop/Generated/ is

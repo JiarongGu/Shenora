@@ -348,9 +348,9 @@ static int Main(string[] args)
 
 `Environment.ProcessPath` is `MyApp.exe`, CEF's launcher, so the browser is sandboxed as the app is. Its windows come
 from `StartUrl` or over the port (`Target.createTarget`), and it exits when its last window closes, or when `stop`
-fires, after closing them. ⚠ A target made over the port is announced as `other` and becomes a `page` a moment later
-(`Target.targetInfoChanged`), so a client that waits for a `page`, as Playwright's MCP server does, needs it
-re-typed on the way through.
+fires, after closing them. The port relays Chromium's own and announces a new tab as a `page` from the start, where
+Chromium says `other` first: a client that waits for a `page`, as Playwright's MCP server does, opens tabs through it
+with no relay of the app's own.
 
 ---
 
