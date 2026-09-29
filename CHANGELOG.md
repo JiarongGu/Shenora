@@ -201,13 +201,6 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
-- **A page in a `SecondaryWindows` window commanded the app's main window.** `WindowCommandModule` is mapped
-  once, bound to the main form, and it acted there whoever sent the command: a WebView2 page's close button in
-  a second window closed the main window, which ended the app. Each command now acts on the window whose page
-  sent it, as its top-level form (an MDI child's commands still reach the main window): `MINIMIZE`, `CLOSE`,
-  maximize and drag act on that window, an `OptimizedForm` there maximizes its own way and takes its caption
-  buttons, and its `SET_THEME` answers `NO_ROUTE`, since `ApplyTheme` is the main window's. A command sent from
-  no page still acts on the main window. In the main window too, a page's caption rectangles are read against
 - **Android: a status read, seek, play or pause while a source was opening FAILED the open.** The status
   snapshot asked Android's `MediaPlayer` for its duration while it was preparing, which it answers with an error
   (-38), and the open then failed with "The media source could not be played" — so a page that sent `SEEK` or
@@ -218,6 +211,13 @@ at the first list and missed five more breaking changes.
   frames after a seek into a loading item, which they saw on a device; the simulator's position was right
   either way, so that picture is unmeasured here.
 
+- **A page in a `SecondaryWindows` window commanded the app's main window.** `WindowCommandModule` is mapped
+  once, bound to the main form, and it acted there whoever sent the command: a WebView2 page's close button in
+  a second window closed the main window, which ended the app. Each command now acts on the window whose page
+  sent it, as its top-level form (an MDI child's commands still reach the main window): `MINIMIZE`, `CLOSE`,
+  maximize and drag act on that window, an `OptimizedForm` there maximizes its own way and takes its caption
+  buttons, and its `SET_THEME` answers `NO_ROUTE`, since `ApplyTheme` is the main window's. A command sent from
+  no page still acts on the main window. In the main window too, a page's caption rectangles are read against
   the control that shows it rather than `CoordinateSpace`, which matters in a form with two pages.
 
 - **A WebView2 page in a second web view registered its drop zones over the MAIN window.** `DropZoneModule` is
