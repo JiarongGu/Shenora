@@ -1168,10 +1168,12 @@ docs cite them — so the number is the column to scan.
   - **Two threading models, one engine.** The Views shell runs CEF's loop on the main thread; the WinForms
     host needs CEF's multi-threaded loop, because WinForms owns that thread.
   - **The page finds the transport because the shell MARKS THE HTML it serves** (D36: the host advertises).
-    In development the shell proxies the dev server's document to mark it too. ⚠ **A proxied document is not
-    local to Chromium**, so its WebSocket back to the dev server, the hot-reload socket, is refused by the
-    local-network check with no prompt (measured). In development against a dev server the Chromium shell
-    turns that one check off for WebSockets; production keeps it.
+    In development the shell proxies the dev server's document to mark it too.
+  - 🔴 **Chromium's local-network checks are OFF in both hosts, for every page.** The pages are the app's own, and
+    the checks refused what the WebView2 shell allows, with no prompt the permission handler could answer
+    (measured, CEF 154): a page's fetch to a loopback server of the app's own (the server-backed profile) failed
+    where WebView2 answered it, and a proxied dev-server document's WebSocket back to its dev server, the
+    hot-reload socket, was refused.
   - ⚠ On Windows both hosts start through CEF's `bootstrap.exe` and the kit's shim, or there is no sandbox.
   - **The WinForms engine option is a `ChromiumView` control, beside the WebView2 control and not inside
     `WebViewHost`** (owner), whose options are full of WebView2 types that would mean nothing under Chromium.

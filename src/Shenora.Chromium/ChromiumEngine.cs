@@ -22,10 +22,7 @@ public sealed class ChromiumEngineOptions
     /// </summary>
     public string? ContentRoot { get; init; }
 
-    /// <summary>
-    /// The pages in development (a dev server such as Vite). Set, it also turns off Chromium's local-network check on
-    /// WebSockets, which would otherwise refuse the dev server's hot-reload socket (D83). Ignored outside development.
-    /// </summary>
+    /// <summary>The pages in development (a dev server such as Vite). Ignored outside development.</summary>
     public string? DevUrl { get; init; }
 
     /// <summary>The host of the app's own origin. The pages are served from <c>https://{VirtualHost}/</c>.</summary>
@@ -117,7 +114,7 @@ public sealed class ChromiumEngine
         if (Interlocked.CompareExchange(ref _state, 1, 0) != 0) throw new InvalidOperationException("The Chromium engine has already been started.");
         _app = app;
         _isDevelopment = _options.IsDevelopment ?? app.Environment.IsDevelopment;
-        _cefApp = new ChromiumApp(() => _ready.TrySetResult(), devServer: _isDevelopment && _options.DevUrl is not null);
+        _cefApp = new ChromiumApp(() => _ready.TrySetResult());
         try
         {
             CefStartup.Initialize(_cefApp, new CefStartup.Settings(

@@ -3,19 +3,27 @@ using Shenora.Chromium.Host;
 namespace Shenora.Tests.Chromium;
 
 /// <summary>
-/// The feature the shell turns off against a dev server is ADDED to whatever the app's own command line turns off,
-/// never written over it. The switch reaching Chromium was measured in the shell (the dev server's socket opened).
+/// The features the Chromium hosts turn off are ADDED to whatever the app's own command line turns off, never written
+/// over it. The switch reaching Chromium was measured in the shell: a loopback fetch and the dev server's socket both
+/// opened.
 /// </summary>
 public class ChromiumAppTests
 {
-    private const string Feature = ChromiumApp.DevServerDisabledFeature;
+    private static readonly string Ours = string.Join(',', ChromiumApp.DisabledFeatures);
 
     [Theory]
-    [InlineData(null, Feature)]
-    [InlineData("", Feature)]
-    [InlineData("AppOwn", "AppOwn," + Feature)]
-    [InlineData(" AppOwn , Other ", "AppOwn,Other," + Feature)]
-    [InlineData("AppOwn," + Feature, "AppOwn," + Feature)]   // already there: not twice
-    public void The_dev_server_feature_joins_the_apps_own(string? existing, string expected) =>
-        Assert.Equal(expected, ChromiumApp.WithDisabledFeature(existing, Feature));
+    [InlineData(null, "")]
+    [InlineData("", "")]
+    [InlineData("AppOwn", "AppOwn,")]
+    [InlineData(" AppOwn , Other ", "AppOwn,Other,")]
+    public void The_hosts_features_join_the_apps_own(string? existing, string prefix) =>
+        Assert.Equal(prefix + Ours, ChromiumApp.WithDisabledFeatures(existing, ChromiumApp.DisabledFeatures));
+
+    [Fact]
+    public void A_feature_already_there_is_not_added_twice() =>
+        Assert.Equal("AppOwn," + Ours, ChromiumApp.WithDisabledFeatures("AppOwn," + ChromiumApp.DisabledFeatures[0], ChromiumApp.DisabledFeatures));
+
+    [Fact]
+    public void Both_local_network_checks_are_off() =>
+        Assert.Equal(["LocalNetworkAccessChecks", "LocalNetworkAccessChecksWebSockets"], ChromiumApp.DisabledFeatures);
 }

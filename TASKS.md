@@ -109,7 +109,9 @@ D37 and D51 are corrected in place to point at them.
      and instance travel as runtime properties that no child inherits. **Measured through it (A/B, same
      binaries):** sandboxed, the children ran 3× untrusted + 1× low + 1× high integrity; with `no_sandbox`,
      all five ran at the parent's level; `coreclr.dll` loaded in the browser process and in no child either
-     way. ⚠ One child stays high when sandboxed and is unidentified.
+     way. ⚠ One child runs at the parent's level when sandboxed: the network service, which CEF starts with
+     `--service-sandbox-type=none` on Windows. Chromium's `NetworkServiceSandbox` feature, switched on, did not
+     change that (measured).
      **The app build does the layout** (`src/Shenora.Chromium/build/Shenora.Chromium.targets`). It fetches
      the pinned build ONCE per machine, checks its SHA-1 against `cef.json` (all six platforms pinned), and
      extracts it. After Build and Publish it places `<App>.exe` (CEF's bootstrap) and `<App>.dll` (the shim)
@@ -162,7 +164,7 @@ D37 and D51 are corrected in place to point at them.
    images in full. Secondary windows run their own pages, and each page's window commands and drop zones
    act on its own window, a main window opened again included. Development against a real Vite server works
    end to end: the proxied document is marked, IPC runs on the dev origin, and an edit hot-reloads the page
-   (D83 has the one Chromium check that needed turning off).
+   (D83 has the Chromium checks that are off, and why).
    **Left:** app hooks for downloads, permissions and renderer failure, which wait for an app that asks (the
    defaults are the WebView2 shell's, D84).
 

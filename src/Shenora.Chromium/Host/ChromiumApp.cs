@@ -7,32 +7,32 @@ namespace Shenora.Chromium.Host;
 internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
 {
     /// <summary>
-    /// Chromium's local-network check on WebSockets, off while the page comes from a dev server. The shell proxies
-    /// the dev server's document to mark it (D83), so Chromium does not see that page as local, and refuses its
-    /// WebSocket back to the dev server (<c>ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS</c>, with no prompt): the
-    /// dev server's hot-reload socket (measured). Only in development, and only the WebSocket check.
+    /// Chromium's local-network checks, off for every page (D83). The pages are the app's own, and the checks refused
+    /// what the WebView2 shell allows, with no prompt the permission handler could answer (measured, CEF 154):
+    /// <list type="bullet">
+    /// <item>a page's fetch to a loopback server of the app's own failed, where WebView2 answered it;</item>
+    /// <item>the dev server's hot-reload socket, from the dev server's document the shell proxies to mark it.</item>
+    /// </list>
     /// </summary>
-    internal const string DevServerDisabledFeature = "LocalNetworkAccessChecksWebSockets";
+    internal static readonly string[] DisabledFeatures = ["LocalNetworkAccessChecks", "LocalNetworkAccessChecksWebSockets"];
 
     private readonly ProcessHandler _process;
-    private readonly bool _devServer;
 
     /// <param name="contextInitialized">Runs on CEF's UI thread once CEF's context exists.</param>
-    /// <param name="devServer">The page comes from a dev server (development with a dev URL).</param>
-    public ChromiumApp(Action contextInitialized, bool devServer = false)
+    public ChromiumApp(Action contextInitialized)
     {
         _process = new ProcessHandler(contextInitialized);
-        _devServer = devServer;
         Struct->get_browser_process_handler = &GetProcessHandler;
         Struct->on_before_command_line_processing = &BeforeCommandLine;
     }
 
-    /// <summary><c>--disable-features</c> with <paramref name="feature"/> added to whatever the app already disables.</summary>
-    internal static string WithDisabledFeature(string? existing, string feature)
+    /// <summary><c>--disable-features</c> with <paramref name="features"/> added to whatever the app already disables.</summary>
+    internal static string WithDisabledFeatures(string? existing, IEnumerable<string> features)
     {
-        var features = (existing ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        if (!features.Contains(feature, StringComparer.Ordinal)) features.Add(feature);
-        return string.Join(',', features);
+        var all = (existing ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        foreach (var feature in features)
+            if (!all.Contains(feature, StringComparer.Ordinal)) all.Add(feature);
+        return string.Join(',', all);
     }
 
     [UnmanagedCallersOnly]
@@ -43,7 +43,7 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
     private static void BeforeCommandLine(_cef_app_t* self, _cef_string_utf16_t* processType, _cef_command_line_t* commandLine)
     {
         using var line = new CefRef<_cef_command_line_t>(commandLine);
-        if (!From<ChromiumApp>(self)._devServer || !string.IsNullOrEmpty(CefStrings.Read(processType))) return;
+        if (!string.IsNullOrEmpty(CefStrings.Read(processType))) return;
         AppCallback.Run(() =>
         {
             const string name = "disable-features";
@@ -53,7 +53,7 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
                 var existing = commandLine->has_switch(commandLine, &switchName) == 1
                     ? CefStrings.TakeUserFree(commandLine->get_switch_value(commandLine, &switchName))
                     : null;
-                var value = WithDisabledFeature(existing, DevServerDisabledFeature);
+                var value = WithDisabledFeatures(existing, DisabledFeatures);
                 commandLine->remove_switch(commandLine, &switchName);
                 fixed (char* v = value)
                 {

@@ -15,7 +15,7 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
     {
         ArgumentNullException.ThrowIfNull(app);
         var isDevelopment = options.IsDevelopment ?? app.Environment.IsDevelopment;
-        var cefApp = new ChromiumApp(() => Started(app, isDevelopment), devServer: isDevelopment && options.DevUrl is not null);
+        var cefApp = new ChromiumApp(() => Started(app, isDevelopment));
 
         var code = CefStartup.ExecuteIfSubprocess(cefApp, log);
         if (code >= 0) { Environment.Exit(code); return; }

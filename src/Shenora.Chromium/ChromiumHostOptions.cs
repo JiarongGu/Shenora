@@ -20,9 +20,7 @@ public sealed class ChromiumHostOptions
     /// </summary>
     public string? ContentRoot { get; init; }
 
-    /// <summary>The page in development (a dev server such as Vite). Set, it also turns off Chromium's local-network
-    /// check on WebSockets, which would otherwise refuse the dev server's hot-reload socket (D83). Ignored outside
-    /// development.</summary>
+    /// <summary>The page in development (a dev server such as Vite). Ignored outside development.</summary>
     public string? DevUrl { get; init; }
 
     /// <summary>The host of the app's own origin. The page is served from <c>https://{VirtualHost}/</c>.</summary>
