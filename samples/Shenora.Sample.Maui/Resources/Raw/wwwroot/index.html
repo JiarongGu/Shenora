@@ -165,6 +165,9 @@
   <button id="save">SAVE_TEXT</button>
   <button id="bad">unknown route</button>
 </div>
+<div class="row">
+  <button id="oheld">ORIENT HELD (turn the phone)</button>
+</div>
 <!--
   DM1 — the media probe. `/media?<payload>` (built by the SHIPPED mediaUrl) is answered by the shell's
   interceptor plus Shenora.Core's file middleware — no media package involved.
@@ -382,6 +385,28 @@ document.getElementById('echo').onclick  = () => post('SAMPLE_LOGIC', 'ECHO', { 
 document.getElementById('copy').onclick  = () => post('SAMPLE_LOGIC', 'COPY_TEXT', { text: 'copied on the mobile shell' });
 document.getElementById('read').onclick  = () => post('SAMPLE_LOGIC', 'READ_CLIPBOARD');
 document.getElementById('ui').onclick    = () => post('SAMPLE_LOGIC', 'UI_STATE');
+// THE HELD-ORIENTATION CHECK — what the automatic orientation probe cannot answer, because only a person can
+// turn the phone: a PORTRAIT lock must survive a physical rotation, and UNLOCK must turn to the way the phone
+// is HELD. Press, turn the phone to landscape within the 15 s, and keep holding it so through the unlock.
+document.getElementById('oheld').onclick = () => {
+  const shape = () => `${window.innerWidth}x${window.innerHeight}`;
+  const portrait = () => window.innerHeight >= window.innerWidth;
+  log('t', `ORIENT-HELD: locking PORTRAIT for 15 s — turn the phone to landscape now (viewport ${shape()})`);
+  post('SHENORA.ORIENTATION', 'LOCK', { orientation: 'portrait' });
+  let seconds = 0, notPortrait = 0;
+  const tick = window.setInterval(() => {
+    seconds++;
+    if (!portrait()) notPortrait++;
+    log('t', `ORIENT-HELD: ${seconds}s locked, viewport ${shape()}${portrait() ? '' : ' — NOT PORTRAIT'}`);
+    if (seconds < 15) return;
+    window.clearInterval(tick);
+    log('t', `ORIENT-HELD: lock held=${notPortrait === 0 ? 'PASS' : `FAIL (${notPortrait} of 15 readings not portrait)`}; `
+      + 'UNLOCKING — keep holding the phone landscape');
+    post('SHENORA.ORIENTATION', 'UNLOCK');
+    window.setTimeout(() => log('t', `ORIENT-HELD: 4 s after unlock, viewport ${shape()} — held landscape expects `
+      + `landscape: ${portrait() ? 'FAIL (still portrait)' : 'PASS'}`), 4000);
+  }, 1000);
+};
 document.getElementById('sched').onclick = () => post('SAMPLE_LOGIC', 'SCHEDULE_DEMO');
 document.getElementById('pick').onclick  = () => post('SAMPLE_LOGIC', 'PICK_FILE');
 // SAVE_TEXT is the same route the desktop calls. Success with a NULL filePath is the correct mobile
