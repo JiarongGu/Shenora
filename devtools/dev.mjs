@@ -1054,6 +1054,12 @@ switch (cmd) {
       // standardisation and the first compiler to see it was CI's, mid-release.
       && step('dotnet build (update-probe)', () => run('dotnet',
         ['build', path.join('devtools', 'update-probe', 'update-probe.csproj'), '-c', 'Release', '-v', 'minimal']))
+      // The Chromium engine's macOS and Linux code compiles only under its own CefOs, which the solution never
+      // builds, so a change to shared startup code could break the Mac with every Windows build green. An
+      // artifacts path of their own keeps them out of the real build's obj/.
+      && ['MacOS', 'Linux'].every((os) => step(`dotnet build (Shenora.Chromium as ${os})`, () => run('dotnet',
+        ['build', path.join('src', 'Shenora.Chromium', 'Shenora.Chromium.csproj'), `-p:CefOs=${os}`, '-v', 'minimal',
+          '--artifacts-path', path.join('devtools', '_build', `chromium-${os.toLowerCase()}`)])))
       // EVERY npm package, from the config — see `pack` for the release this shape cost.
       && config.npmPackages.every((dir) => {
         const abs = path.join(repo, ...dir.split('/'));
