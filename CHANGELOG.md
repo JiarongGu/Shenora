@@ -201,6 +201,16 @@ at the first list and missed five more breaking changes.
   maximize and drag act on that window, an `OptimizedForm` there maximizes its own way and takes its caption
   buttons, and its `SET_THEME` answers `NO_ROUTE`, since `ApplyTheme` is the main window's. A command sent from
   no page still acts on the main window. In the main window too, a page's caption rectangles are read against
+- **Android: a status read, seek, play or pause while a source was opening FAILED the open.** The status
+  snapshot asked Android's `MediaPlayer` for its duration while it was preparing, which it answers with an error
+  (-38), and the open then failed with "The media source could not be played" — so a page that sent `SEEK` or
+  `STATUS` with its `LOAD` lost the video. `MediaPlayerBase` now asks the platform nothing while a source
+  opens, on every shell: the status reports no position or duration yet, a seek is held and applied once the
+  source is open (after `StartAt`, and `SeekAsync` completes when it lands; a later seek replaces a held one),
+  and a play or pause is remembered and applied then. On iOS the held seek is also an adopter's fix for green
+  frames after a seek into a loading item, which they saw on a device; the simulator's position was right
+  either way, so that picture is unmeasured here.
+
   the control that shows it rather than `CoordinateSpace`, which matters in a form with two pages.
 
 - **A WebView2 page in a second web view registered its drop zones over the MAIN window.** `DropZoneModule` is

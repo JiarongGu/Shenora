@@ -6,7 +6,7 @@ namespace Shenora.Modules.Media;
 /// The <see cref="IMediaPlayer"/> STATE MACHINE, with the platform left abstract. A shell supplies the
 /// platform handle, four transport verbs, position/duration, and the callbacks <see cref="OnOpened"/> /
 /// <see cref="OnEnded"/> / <see cref="OnFailed"/> / <see cref="OnPlatformState"/>.
-/// <para>🔴 <b>Four invariants live here, and each is invisible when broken:</b></para>
+/// <para>🔴 <b>Five invariants live here, and each is invisible when broken:</b></para>
 /// <list type="number">
 ///   <item><b>A terminal state is never overwritten by a platform transition.</b> Platforms drive a session
 ///   to "paused" once it ends or fails, erasing <see cref="MediaPlayerState.Ended"/> and
@@ -17,6 +17,10 @@ namespace Shenora.Modules.Media;
 ///   so a retry does not inherit the previous attempt's source.</item>
 ///   <item><b>An abandoned open completes EXCEPTIONALLY.</b> Re-opening or closing while an open is in
 ///   flight otherwise leaves its caller awaiting forever — no exception, no log.</item>
+///   <item><b>Nothing reaches the platform while it is OPENING.</b> A seek is held and applied once the
+///   source is open (after <see cref="MediaSource.StartAt"/>), a play or pause is remembered and applied then,
+///   and <see cref="Status"/> asks for no position or duration. Android's <c>MediaPlayer</c> errors on
+///   <c>getDuration</c> or <c>seekTo</c> while preparing and the open fails (measured, API 36).</item>
 /// </list>
 /// <para>
 /// ⚠ Not the page-backed <see cref="MediaPlayer"/>'s base — that one's "platform" is a webview element
@@ -36,6 +40,12 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     private bool _hasSource;
     private bool _disposed;
 
+    /// <summary>Invariant 5: a seek sent while opening, and the task its caller awaits. A later one replaces it.</summary>
+    private (TimeSpan Position, TaskCompletionSource Landed)? _heldSeek;
+
+    /// <summary>Invariant 5: the last of play or pause sent while opening.</summary>
+    private bool _playWhenOpened;
+
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a platform callback.</param>
     protected MediaPlayerBase(ILogger? log = null) => _log = log;
 
@@ -49,12 +59,14 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         {
             lock (_gate)
             {
+                // A released handle answers with whatever it last held — a position outliving CloseAsync — and
+                // an opening one may not be asked at all (invariant 5).
+                var ask = _hasSource && _state != MediaPlayerState.Opening;
                 return new MediaPlayerStatus
                 {
                     State = _state,
-                    // A released handle answers with whatever it last held — a position outliving CloseAsync.
-                    Position = _hasSource ? Try(() => PositionCore, TimeSpan.Zero, nameof(PositionCore)) : TimeSpan.Zero,
-                    Duration = _hasSource ? Try(() => DurationCore, null, nameof(DurationCore)) : null,
+                    Position = ask ? Try(() => PositionCore, TimeSpan.Zero, nameof(PositionCore)) : TimeSpan.Zero,
+                    Duration = ask ? Try(() => DurationCore, null, nameof(DurationCore)) : null,
                     Rate = _rate,
                     Error = _error,
                     Engine = EngineName,
@@ -165,6 +177,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         {
             if (!_hasSource) throw new MediaPlayerException("No media source is open.");
             if (_state == MediaPlayerState.Playing) return Task.CompletedTask;
+            if (_state == MediaPlayerState.Opening) { _playWhenOpened = true; return Task.CompletedTask; }
             rate = _rate;
             _state = MediaPlayerState.Playing;
         }
@@ -185,6 +198,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         {
             if (!_hasSource) throw new MediaPlayerException("No media source is open.");
             if (_state is MediaPlayerState.Paused or MediaPlayerState.Empty) return Task.CompletedTask;
+            if (_state == MediaPlayerState.Opening) { _playWhenOpened = false; return Task.CompletedTask; }
             _state = MediaPlayerState.Paused;
         }
 
@@ -200,11 +214,32 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (position < TimeSpan.Zero) position = TimeSpan.Zero;
 
+        TaskCompletionSource? held = null;
+        TaskCompletionSource? replaced = null;
         lock (_gate)
         {
             if (!_hasSource) throw new MediaPlayerException("No media source is open.");
             // Left Ended, a UI that seeks back from the end still shows "finished".
             if (_state == MediaPlayerState.Ended) _state = MediaPlayerState.Paused;
+            if (_state == MediaPlayerState.Opening)
+            {
+                held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                replaced = _heldSeek?.Landed;
+                _heldSeek = (position, held);
+            }
+        }
+
+        if (held is not null)
+        {
+            // Invariant 5: applied by OnOpened. The one it replaced is settled, not orphaned.
+            replaced?.TrySetResult();
+            using var withdraw = cancellationToken.Register(() =>
+            {
+                lock (_gate) { if (_heldSeek?.Landed == held) _heldSeek = null; }
+                held.TrySetCanceled(cancellationToken);
+            });
+            await held.Task.ConfigureAwait(false);
+            return;
         }
 
         Raise();
@@ -276,19 +311,62 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     {
         TaskCompletionSource? completion;
         TimeSpan startAt;
+        (TimeSpan Position, TaskCompletionSource Landed)? seek;
+        bool play;
+        double rate;
         lock (_gate)
         {
             completion = _opening;
             _opening = null;
             startAt = _startAt;
-            _state = MediaPlayerState.Paused;
+            seek = _heldSeek;
+            _heldSeek = null;
+            play = _playWhenOpened;
+            _playWhenOpened = false;
+            rate = _rate;
+            _state = play ? MediaPlayerState.Playing : MediaPlayerState.Paused;
         }
 
         // Part of OPENING, not a seek afterwards: a resumed item otherwise starts at zero and jumps.
         if (startAt > TimeSpan.Zero) Try(() => ApplyStartAt(startAt), nameof(ApplyStartAt));
+        // Then what the caller asked for while it opened: the seek after StartAt, so the caller's position
+        // stands, and the play after the seek, so it starts there.
+        if (seek is { } held) _ = LandHeldSeekAsync(held.Position, held.Landed);
+        if (play) Try(() => PlayCore(rate), nameof(PlayAsync));
 
         Raise();
         completion?.TrySetResult();
+    }
+
+    /// <summary>Apply a seek held through the open, settling its caller whatever the platform does.</summary>
+    private async Task LandHeldSeekAsync(TimeSpan position, TaskCompletionSource landed)
+    {
+        try
+        {
+            await SeekCore(position).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // As for any seek: a failed seek is not a failed player.
+            Log(() => "MediaPlayer.SeekAsync failed.", ex);
+        }
+        finally
+        {
+            landed.TrySetResult();
+        }
+    }
+
+    /// <summary>Settle what was held for an open that will not complete, so no caller waits on it.</summary>
+    private void DropHeld()
+    {
+        TaskCompletionSource? seek;
+        lock (_gate)
+        {
+            seek = _heldSeek?.Landed;
+            _heldSeek = null;
+            _playWhenOpened = false;
+        }
+        seek?.TrySetResult();
     }
 
     /// <summary>The source played to its end. The position stays at the end so a UI can show it.</summary>
@@ -327,11 +405,11 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
 
     // ---- What a platform must provide.
 
-    /// <summary>Where the platform has got to. Only asked while a source is open.</summary>
+    /// <summary>Where the platform has got to. Only asked once a source is open, never while it opens.</summary>
     protected abstract TimeSpan PositionCore { get; }
 
     /// <summary>How long the source is, or null when the platform does not know (a live stream, a source
-    /// still resolving). Only asked while a source is open.</summary>
+    /// still resolving). Only asked once a source is open, never while it opens.</summary>
     protected abstract TimeSpan? DurationCore { get; }
 
     /// <summary>Begin opening. Returns once the platform has accepted the source; readiness is signalled
@@ -352,6 +430,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     /// <summary>
     /// Move to <paramref name="position"/>. The returned task completes when the platform has finished
     /// seeking, where the platform says so — <see cref="Task.CompletedTask"/> where it is synchronous.
+    /// Never called while the source is opening: a seek sent then arrives after <see cref="OnOpened"/>.
     /// </summary>
     protected abstract Task SeekCore(TimeSpan position);
 
@@ -386,6 +465,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     {
         if (inner is not null) Log(() => $"MediaPlayer: {inner.GetType().Name}: {inner.Message}.");
         lock (_gate) { _state = MediaPlayerState.Failed; _error = reason; }
+        DropHeld();
         Raise();
     }
 
@@ -401,6 +481,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         }
 
         opening?.TrySetException(new MediaPlayerException("The open was abandoned before it completed."));
+        DropHeld();
         Try(TeardownCore, nameof(TeardownCore));
     }
 

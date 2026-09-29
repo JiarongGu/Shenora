@@ -221,22 +221,16 @@ no counters"* comment was false.
   ⚠ **-1 means "no figure" and must never be 0**, which claims a clean play; confirmed on their side too
   (`Stalls` stays -1 deliberately — LibVLC has no stall counter).
 
-### 🟡 D80 MAKES A LATENT iOS DEFECT VISIBLE — a seek before the item is ready
+### 🅿️ PARKED: the held seek on an iPhone — the picture is the only witness
 
-`IosMediaPlayer.SeekCore` seeks unconditionally, and `SeekAsync` only requires a source, not a READY one —
-so a `SEEK` arriving while a load is in flight seeks an unprepared `AVPlayerItem`. The adopter paid for
-this one: the decoder emits frames before it holds the references they depend on, and **green** is what a
-YUV buffer with no luma written looks like, until the next keyframe. Codec-dependent by GOP length, so it
-reads as "one file type is broken".
+`MediaPlayerBase` now holds a seek sent while a source opens and applies it once it is open, after
+`StartAt` — on iOS that is the adopter's own fix for **green** frames after a seek into a loading item, which
+they measured on a device (codec-dependent by GOP length, so it reads as "one file type is broken").
+⚠ **The simulator cannot tell the two apart**: the sample's `SEEK-EARLY` probe sends a seek during the open
+and it landed at 20.00 s both before and after the change. Position is not the symptom; the picture is.
 
-⚠ **It was harmless until now**, which is why it is filed rather than fixed blind: with no surface the
-picture was never composited, so the green frames had nowhere to appear.
-⚠ **The common case is already safe by design** — `MediaSource.StartAt` is applied from `OnOpened`, i.e.
-after `ReadyToPlay`, which is exactly their fix. Only an explicit page seek during `Opening` reaches it.
-
-- [ ] **Defer a seek issued before the item is ready**, and apply it on `OnOpened` like `StartAt` already
-  is. Needs a Mac to verify, and the fix belongs in `IosMediaPlayer` rather than the shared state machine
-  (Android's `MediaPlayer` queues a seek during prepare itself).
+- [ ] **On a device, with a long-GOP file**: seek during the open with the picture surface up, and look for
+  green until the next keyframe — before the change (the commit's parent) and after.
 
 ### 📱 WHAT IS LEFT ON ANDROID NEEDS A PHONE'S ENCODER, NOT AN EMULATOR'S
 

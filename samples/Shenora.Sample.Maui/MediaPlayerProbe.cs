@@ -93,5 +93,76 @@ public static class MediaPlayerProbe
         {
             try { await player.CloseAsync(); } catch { /* teardown must not mask the result above */ }
         }
+
+        await WhileOpeningAsync(player, clip, log);
+    }
+
+    /// <summary>
+    /// A seek or a play sent while the source is still OPENING must take effect once it is ready — a page that
+    /// resumes or autoplays a video sends them with the load, not after it. Each also reads the status while
+    /// opening, which on Android used to fail the open.
+    /// <para>
+    /// ⚠ <b>The window is short for a local file</b>, which can be ready before the command is sent; the
+    /// probe says INCONCLUSIVE then rather than passing a case it never reached.
+    /// </para>
+    /// </summary>
+    private static async Task WhileOpeningAsync(IMediaPlayer player, string clip, Action<string> log)
+    {
+        var target = TimeSpan.FromSeconds(20);
+        try
+        {
+            // Not awaited: the seek has to go out while the open is in flight.
+            var opening = player.OpenAsync(new MediaSource { Uri = clip });
+            var stateAtSeek = player.Status.State;
+            var seeking = player.SeekAsync(target);
+            await opening;
+            var landed = await Task.WhenAny(seeking, Task.Delay(TimeSpan.FromSeconds(5))) == seeking;
+            var at = player.Status.Position;
+
+            log($"SEEK-EARLY: sent while {stateAtSeek}; landed={landed} position={at.TotalSeconds:F2}s "
+                + $"(asked {target.TotalSeconds:F0}s)");
+            log(stateAtSeek != MediaPlayerState.Opening
+                ? "SEEK-EARLY: INCONCLUSIVE — the source was ready before the seek went out"
+                : landed && Math.Abs((at - target).TotalSeconds) < 1
+                    ? "SEEK-EARLY: PASS — a seek sent during the open landed where it asked"
+                    : "SEEK-EARLY: FAIL — a seek sent during the open did not land");
+        }
+        catch (Exception ex)
+        {
+            log($"SEEK-EARLY: FAIL — {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            try { await player.CloseAsync(); } catch { /* teardown must not mask the result above */ }
+        }
+
+        // The same window for PLAY: a page that autoplays sends it with the load.
+        try
+        {
+            var opening = player.OpenAsync(new MediaSource { Uri = clip });
+            var stateAtPlay = player.Status.State;
+            await player.PlayAsync();
+            await opening;
+            await Task.Delay(1500);
+            var first = player.Status.Position;
+            await Task.Delay(1500);
+            var second = player.Status.Position;
+
+            log($"PLAY-EARLY: sent while {stateAtPlay}; {first.TotalSeconds:F2}s -> {second.TotalSeconds:F2}s "
+                + $"state={player.Status.State}");
+            log(stateAtPlay != MediaPlayerState.Opening
+                ? "PLAY-EARLY: INCONCLUSIVE — the source was ready before the play went out"
+                : second > first && player.Status.State == MediaPlayerState.Playing
+                    ? "PLAY-EARLY: PASS — a play sent during the open started the player once it opened"
+                    : "PLAY-EARLY: FAIL — a play sent during the open did not start the player");
+        }
+        catch (Exception ex)
+        {
+            log($"PLAY-EARLY: FAIL — {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            try { await player.CloseAsync(); } catch { /* teardown must not mask the result above */ }
+        }
     }
 }

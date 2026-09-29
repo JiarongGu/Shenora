@@ -4,7 +4,7 @@ using Shenora;
 namespace Shenora.Tests.Media;
 
 /// <summary>
-/// 🔴 <b>The four invariants <see cref="MediaPlayerBase"/> exists to hold — none of which had a test until
+/// 🔴 <b>The invariants <see cref="MediaPlayerBase"/> exists to hold — none of which had a test until
 /// 2026-08-14, when a coverage run reported the whole type at 0 of 340 lines.</b>
 ///
 /// <para>
@@ -29,9 +29,10 @@ public class MediaPlayerBaseTests
         public TimeSpan Position;
         public TimeSpan? DurationValue = TimeSpan.FromSeconds(60);
         public TaskCompletionSource? SeekGate;
+        public int PlatformReads;
 
-        protected override TimeSpan PositionCore => Position;
-        protected override TimeSpan? DurationCore => DurationValue;
+        protected override TimeSpan PositionCore { get { PlatformReads++; return Position; } }
+        protected override TimeSpan? DurationCore { get { PlatformReads++; return DurationValue; } }
         protected override void OpenCore(MediaSource source, Uri uri) => Calls.Add($"open:{uri}");
         protected override void ApplyStartAt(TimeSpan position) => Calls.Add($"startAt:{position}");
         protected override void PlayCore(double rate) => Calls.Add($"play:{rate}");
@@ -241,7 +242,138 @@ public class MediaPlayerBaseTests
         Assert.Equal(MediaPlayerState.Empty, player.Status.State);
     }
 
-    // ── The surrounding contract these four sit inside ────────────────────────────────────────────
+    // ── Invariant 5 — nothing reaches the platform while it is OPENING ────────────────────────────
+
+    /// <summary>
+    /// 🔴 Measured on Android (API 36): <c>getDuration</c> while the player prepares is an error (-38), and
+    /// the open then FAILS. A page's STATUS request, or the snapshot a SEEK raises, was enough to trigger it.
+    /// </summary>
+    [Fact]
+    public void Status_asks_the_platform_for_nothing_while_the_source_is_OPENING()
+    {
+        var player = new FakePlayer();
+        _ = player.OpenAsync(Source());
+
+        var status = player.Status;
+
+        Assert.Equal(MediaPlayerState.Opening, status.State);
+        Assert.Equal(0, player.PlatformReads);
+        Assert.Null(status.Duration);
+
+        player.Opened();
+        Assert.Equal(TimeSpan.FromSeconds(60), player.Status.Duration);
+    }
+
+    [Fact]
+    public async Task A_seek_sent_while_OPENING_is_held_and_lands_after_StartAt()
+    {
+        var player = new FakePlayer();
+        var opening = player.OpenAsync(Source(startAt: TimeSpan.FromSeconds(30)));
+
+        var seeking = player.SeekAsync(TimeSpan.FromSeconds(20));
+
+        Assert.DoesNotContain(player.Calls, c => c.StartsWith("seek:", StringComparison.Ordinal));
+        Assert.False(seeking.IsCompleted);
+
+        player.Opened();
+        await opening;
+        await seeking.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // The caller's seek stands: it goes to the platform AFTER the start position.
+        Assert.Equal(["teardown", "open:https://example.test/clip.mp4", "startAt:00:00:30", "seek:00:00:20"], player.Calls);
+    }
+
+    [Fact]
+    public async Task A_later_seek_sent_while_OPENING_replaces_the_held_one()
+    {
+        var player = new FakePlayer();
+        var opening = player.OpenAsync(Source());
+
+        var first = player.SeekAsync(TimeSpan.FromSeconds(10));
+        var second = player.SeekAsync(TimeSpan.FromSeconds(40));
+
+        // Settled, not orphaned — a caller awaiting a replaced seek must not wait for ever.
+        await first.WaitAsync(TimeSpan.FromSeconds(5));
+
+        player.Opened();
+        await opening;
+        await second.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(["seek:00:00:40"], player.Calls.Where(c => c.StartsWith("seek:", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task A_held_seek_is_settled_when_the_open_FAILS_or_is_CLOSED()
+    {
+        var failing = new FakePlayer();
+        var failedOpen = failing.OpenAsync(Source());
+        var heldThroughFailure = failing.SeekAsync(TimeSpan.FromSeconds(5));
+        failing.Failed("could not decode");
+        await Assert.ThrowsAsync<MediaPlayerException>(() => failedOpen);
+        await heldThroughFailure.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var closing = new FakePlayer();
+        var closedOpen = closing.OpenAsync(Source());
+        var heldThroughClose = closing.SeekAsync(TimeSpan.FromSeconds(5));
+        await closing.CloseAsync();
+        await Assert.ThrowsAsync<MediaPlayerException>(() => closedOpen);
+        await heldThroughClose.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.DoesNotContain(failing.Calls.Concat(closing.Calls), c => c.StartsWith("seek:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_CANCELLED_held_seek_is_not_applied()
+    {
+        var player = new FakePlayer();
+        var opening = player.OpenAsync(Source());
+        using var cts = new CancellationTokenSource();
+
+        var seeking = player.SeekAsync(TimeSpan.FromSeconds(20), cts.Token);
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => seeking);
+
+        player.Opened();
+        await opening;
+
+        Assert.DoesNotContain(player.Calls, c => c.StartsWith("seek:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Play_sent_while_OPENING_starts_the_player_when_it_opens()
+    {
+        var player = new FakePlayer();
+        var opening = player.OpenAsync(Source());
+        await player.SetRateAsync(1.5);
+
+        await player.PlayAsync();
+
+        Assert.DoesNotContain(player.Calls, c => c.StartsWith("play:", StringComparison.Ordinal));
+        Assert.Equal(MediaPlayerState.Opening, player.Status.State);
+
+        player.Opened();
+        await opening;
+
+        Assert.Contains("play:1.5", player.Calls);
+        Assert.Equal(MediaPlayerState.Playing, player.Status.State);
+    }
+
+    [Fact]
+    public async Task Pause_after_play_while_OPENING_leaves_it_paused_and_touches_nothing()
+    {
+        var player = new FakePlayer();
+        var opening = player.OpenAsync(Source());
+
+        await player.PlayAsync();
+        await player.PauseAsync();
+        player.Opened();
+        await opening;
+
+        Assert.Equal(MediaPlayerState.Paused, player.Status.State);
+        Assert.DoesNotContain(player.Calls, c => c is "pause" || c.StartsWith("play:", StringComparison.Ordinal));
+    }
+
+    // ── The surrounding contract these five sit inside ────────────────────────────────────────────
 
     /// <summary>`StateChanged` is a TRANSITION, not a tick — a repeated platform state raises nothing.</summary>
     [Fact]
