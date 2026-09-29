@@ -57,7 +57,8 @@ internal sealed class ChromiumWindowCommands(Func<ChromiumWindow?> current) : Mo
                 window?.SetCaptionButtons(request.Payload);
                 return Done();
             case SetThemeType when window is { PaintsCaptionButtons: true }:
-                window.SetTheme(PayloadHelper.GetRequiredValue<bool>(request.Payload, "dark"));
+                // As the WebView2 shell's: `dark` optional, default true, so the same page works on either engine.
+                window.SetTheme(PayloadHelper.GetOptionalValue<bool?>(request.Payload, "dark") ?? true);
                 return Done();
             default: throw UnknownType(request);
         }

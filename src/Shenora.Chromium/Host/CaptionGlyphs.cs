@@ -5,7 +5,7 @@ namespace Shenora.Chromium.Host;
 /// <summary>
 /// The system's caption glyphs as pixels, drawn from its own icon font. A Views label cannot show them as text: it
 /// draws a private-use code point, which is where the icon font keeps them, as U+FFFD, whatever its font list
-/// (measured, CEF 154, where plain text in the same label drew).
+/// (measured: plain text in the same label draws).
 /// </summary>
 internal static unsafe class CaptionGlyphs
 {

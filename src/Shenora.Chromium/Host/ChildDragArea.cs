@@ -15,7 +15,7 @@ namespace Shenora.Chromium.Host;
 /// </summary>
 internal sealed class DragAreas
 {
-    private volatile (int X, int Y, int Width, int Height, bool Drag)[] _areas = [];
+    private (int X, int Y, int Width, int Height, bool Drag)[] _areas = [];
 
     public unsafe void Set(nuint count, _cef_draggable_region_t* regions)
     {

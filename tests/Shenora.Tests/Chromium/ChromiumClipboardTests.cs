@@ -24,6 +24,31 @@ public class ChromiumClipboardFormatTests
         Assert.Equal(paths, ClipboardFormats.ParseDropFiles(bytes));
     }
 
+    // An older app's list is ANSI: the system's code page, which Encoding.Default is not on .NET (it is UTF-8), so
+    // a non-ASCII path came out garbled. The expected text is the path as the system's code page holds it.
+    [Fact]
+    public void An_ANSI_file_list_is_read_in_the_systems_code_page()
+    {
+        var path = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi(@"C:café日本.txt");
+        string asTheSystemHoldsIt;
+        byte[] encoded;
+        try
+        {
+            asTheSystemHoldsIt = System.Runtime.InteropServices.Marshal.PtrToStringAnsi(path)!;
+            var length = 0;
+            while (System.Runtime.InteropServices.Marshal.ReadByte(path, length) != 0) length++;
+            encoded = new byte[length];
+            System.Runtime.InteropServices.Marshal.Copy(path, encoded, 0, length);
+        }
+        finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(path); }
+
+        var bytes = new byte[20 + encoded.Length + 2];
+        BitConverter.GetBytes(20).CopyTo(bytes, 0);   // the list follows the header; fWide stays 0
+        encoded.CopyTo(bytes, 20);
+
+        Assert.Equal([asTheSystemHoldsIt], ClipboardFormats.ParseDropFiles(bytes));
+    }
+
     [Theory]
     [InlineData(new byte[0])]
     [InlineData(new byte[] { 1, 2, 3 })]

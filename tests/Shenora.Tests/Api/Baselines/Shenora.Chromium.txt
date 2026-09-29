@@ -53,14 +53,6 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public string? CachePath { get; init; }
   public string? ContentRoot { get; init; }
   public string? DevUrl { get; init; }
-static class Shenora.Chromium.ChromiumTransport
-  public const string DefaultIpcPath = "/__shenora/ipc"
-  public const string HostGlobal = "__shenora_chromium"
-  public const string IpcMember = "ipc"
-  public const string ReceiveMember = "receive"
-  public static string MarkHtml(string html, string ipcPath = "/__shenora/ipc")
-  public static string MarkerScript(string ipcPath = "/__shenora/ipc")
-  public static string PushScript(string message)
 sealed class Shenora.Chromium.ChromiumWindowOptions
   public .ctor()
   public System.Drawing.Color? BackgroundColor { get; init; }

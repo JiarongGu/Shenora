@@ -85,8 +85,8 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
     /// <param name="engine">The started engine.</param>
     /// <param name="parentWindow">The native window to create the browser in: an <c>HWND</c>.</param>
     /// <param name="options">Its page, and what shows before the page paints.</param>
-    /// <exception cref="InvalidOperationException">The engine has not been started.</exception>
-    /// <exception cref="PlatformNotSupportedException">Not on Windows.</exception>
+    /// <exception cref="InvalidOperationException">The engine has not been started, which off Windows it never is: the
+    /// package is the Windows build today, and the engine refuses to start elsewhere.</exception>
     public ChromiumChildBrowser(ChromiumEngine engine, nint parentWindow, ChromiumChildBrowserOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(engine);
@@ -235,10 +235,9 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
         if (bounds is { } b && WindowHandle is var window and not 0) Place(window, b);
     }
 
-    // CEF's default asks the TOP-LEVEL window to close, which is the host's, not the browser's to close: a form
-    // waiting for its browser before closing cancelled that request, and both waited until the probe was killed
-    // (measured). The browser's own
-    // window goes instead, on CEF's UI thread, which owns it. Posted, so CEF has returned from do_close first.
+    // CEF's default asks the TOP-LEVEL window to close, which is the host's, not the browser's to close: a form that
+    // waits for its browser before closing cancels that request, and the two then wait on each other. The browser's
+    // own window goes instead, on CEF's UI thread, which owns it. Posted, so CEF has returned from do_close first.
     private bool CloseRequested()
     {
 #if CEF_WINDOWS

@@ -30,7 +30,7 @@ internal sealed record CaptionButtonState(CaptionButtonKind? Hot, CaptionButtonK
 /// <para>
 /// A press behaves as a native caption button's, which captures the mouse until the release: while it is held,
 /// only its button shows, pressed while the pointer is on it and plain while it is off, and the release ends it
-/// wherever it happens. Without that, a release on the drag bar left the button pressed (measured, real input).
+/// wherever it happens, so a release on the drag bar cannot leave a button pressed.
 /// </para>
 /// </summary>
 /// <param name="changed">The state changed. Called on the thread that fed the change.</param>

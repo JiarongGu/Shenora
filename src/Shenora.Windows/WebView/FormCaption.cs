@@ -81,8 +81,7 @@ internal static class FormCaption
 
     /// <summary>
     /// The loop's first proposal, placed where the window is moved by the pointer's travel since the press. Once: the
-    /// loop builds each later proposal from where the window is by then, so correcting every one accumulates (the
-    /// Chromium shell measured 517 px for a 200 px drag doing that).
+    /// loop builds each later proposal from where the window is by then, so correcting every one accumulates.
     /// </summary>
     private sealed class FirstPlacement : NativeWindow
     {

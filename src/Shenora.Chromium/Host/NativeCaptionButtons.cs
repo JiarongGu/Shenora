@@ -16,9 +16,9 @@ internal sealed unsafe class NativeCaptionButtons : IDisposable
 
     /// <summary>A hover fades in over this and out over <see cref="FadeOut"/>: the system's own timings, measured on a
     /// real caption (about 85 ms and 150 ms). A press is instant.</summary>
-    internal static readonly TimeSpan FadeIn = TimeSpan.FromMilliseconds(85);
+    private static readonly TimeSpan FadeIn = TimeSpan.FromMilliseconds(85);
 
-    internal static readonly TimeSpan FadeOut = TimeSpan.FromMilliseconds(150);
+    private static readonly TimeSpan FadeOut = TimeSpan.FromMilliseconds(150);
 
     private static readonly TimeSpan Frame = TimeSpan.FromMilliseconds(16);
 

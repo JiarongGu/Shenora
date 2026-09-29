@@ -205,11 +205,9 @@ internal sealed unsafe class CaptionHitTest : IDisposable
                     break;
                 // ── A press on the page's drag area ─────────────────────────────────────────────────────────────
                 // Held with the capture until the pointer passes the system's drag threshold, and only then handed to
-                // the system's move loop. Each way of doing it otherwise was measured worse:
-                // - straight to the loop at the press, a STILL press stalled this thread, and the page's IPC, ~500 ms;
-                // - left to Chromium, the loop began only a step or two along, so the window trailed the pointer (5/6
-                //   of a 200 px drag), and on a maximized window a pointer leaving the bar fast was lost altogether,
-                //   so dragging it down did not restore it (3 of 8).
+                // the system's move loop. Not at the press: a still press would stall this thread and the page's IPC.
+                // Not left to Chromium: it starts the loop late, so the window trails the pointer, and a fast exit from
+                // a maximized window's bar is lost.
                 // The page's drag area of a frameless window, pressed with a mouse: what was measured. A framed window's
                 // own caption, and a press synthesized from touch or pen, stay Chromium's.
                 case WM_NCLBUTTONDOWN when (int)wParam == HTCAPTION && me._frameless && !FromTouchOrPen():
@@ -238,7 +236,7 @@ internal sealed unsafe class CaptionHitTest : IDisposable
                     break;
                 // The loop's first proposal is placed as the system's caption would have placed it: where the window
                 // is, moved by the pointer's travel since the PRESS. Once: the loop builds each later proposal from where
-                // the window is by then (added to every one, it accumulated: 517 px for a 200 px drag, measured).
+                // the window is by then, so correcting every one would accumulate.
                 case WM_MOVING when me._movePress is { } from && GetWindowRect(hwnd, out var now) != 0:
                     var proposed = (RECT*)lParam;
                     var pointer = GetMessagePos();
@@ -345,7 +343,6 @@ internal sealed unsafe class CaptionHitTest : IDisposable
 /// <summary>No caption hit-test on this OS yet: the macOS and Linux shells are not built.</summary>
 internal sealed class CaptionHitTest : IDisposable
 {
-    public static CaptionHitTest? Attach(nint top, CaptionButtons buttons, bool frameless, ILogger? log) => null;
     public double Scale => 1.0;
     public void Refresh() { }
     public void Dispose() { }

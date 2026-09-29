@@ -146,8 +146,8 @@ public sealed class ChromiumEngine
     public void Stop()
     {
         if (Interlocked.CompareExchange(ref _state, 2, 1) != 1) return;
-        // Not closed here, by design rather than measurement: a child window's destruction notifies its parent
-        // (WM_PARENTNOTIFY), whose thread is very likely the one blocked in this call.
+        // Not closed here: a child window's destruction notifies its parent (WM_PARENTNOTIFY), whose thread is very
+        // likely the one blocked in this call.
         Task[] closing;
         lock (_lock) closing = [.. _browsers.Select(browser => browser.Closed)];
         if (closing.Length > 0 && !Task.WaitAll(closing, CloseWait))

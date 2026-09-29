@@ -425,7 +425,7 @@ public class OptimizedForm : Form, IAppMaximizable
     }
 
     // The capture ended the system's leave tracking, and a click often moves the window from under the pointer
-    // (maximize, restore, minimize): without a fresh one, the button stayed hot (measured on the Chromium shell).
+    // (maximize, restore, minimize): without a fresh one, the button stays hot.
     private void TrackNonClientLeave()
     {
         if (!IsHandleCreated) return;

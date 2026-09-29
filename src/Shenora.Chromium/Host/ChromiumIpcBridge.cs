@@ -15,8 +15,6 @@ internal sealed class ChromiumIpcBridgeOptions
 
     public ShellInfo? Shell { get; init; }
 
-    public Action<IpcRequest>? OnClientReady { get; init; }
-
     public TimeSpan NotificationInterval { get; init; } = TimeSpan.FromMilliseconds(50);
 
     public int MaxQueuedNotifications { get; init; } = 10_000;
@@ -74,14 +72,11 @@ internal sealed class ChromiumIpcBridge : IDisposable
             Dispatcher = new PageModuleDispatcher(options.Dispatcher),
             Pump = _pump,
             Shell = options.Shell,
-            OnClientReady = options.OnClientReady,
             Log = options.Log,
         });
     }
 
     public bool IsClientReady => _pump.IsOpen;
-
-    public NotificationPumpReport NotificationReport => _pump.Report();
 
     /// <summary>Start the flush tick, once the page's browser exists. Any thread.</summary>
     public void Start() => OnOwnThread(Tick);
@@ -123,7 +118,8 @@ internal sealed class ChromiumIpcBridge : IDisposable
     /// <summary>The renderer died: a flush now would drain the queue into nothing. Any thread.</summary>
     public void RendererGone() => OnOwnThread(() => CloseGate("the renderer process terminated"));
 
-    // Inline when already there. Once the thread is gone nothing else can touch the state, so it runs here instead.
+    // Inline when already there, or when the thread will not take it (not running yet, or gone): nothing else can
+    // touch the state then, so it runs here instead.
     private void OnOwnThread(Action work)
     {
         if (!_ui.Post(work)) work();
@@ -141,7 +137,7 @@ internal sealed class ChromiumIpcBridge : IDisposable
         if (_disposed) return;
         Flush();
         if (!_schedule(_options.NotificationInterval, Tick))
-            AppCallback.Log(_options.Log, () => "[Shenora.Chromium] The flush tick stopped: CEF's UI thread is gone", LogLevel.Debug);
+            AppCallback.Log(_options.Log, () => "[Shenora.Chromium] The flush tick stopped: the page's UI thread is gone", LogLevel.Debug);
     }
 
     // Everything queued, in order: an immediate flush takes whatever the tick would have sent before it.

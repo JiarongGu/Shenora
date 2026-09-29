@@ -33,9 +33,15 @@ internal static class ClipboardFormats
         var offset = BitConverter.ToInt32(bytes[..4]);
         var wide = BitConverter.ToInt32(bytes.Slice(16, 4)) != 0;
         if (offset < 20 || offset >= bytes.Length) return [];
-        var text = wide ? Encoding.Unicode.GetString(bytes[offset..]) : Encoding.Default.GetString(bytes[offset..]);
+        // ANSI is the system's code page, which Encoding.Default is not on .NET (it is UTF-8).
+        var text = wide ? Encoding.Unicode.GetString(bytes[offset..]) : Ansi(bytes[offset..]);
         var end = text.IndexOf("\0\0", StringComparison.Ordinal);
         return [.. (end < 0 ? text : text[..end]).Split('\0', StringSplitOptions.RemoveEmptyEntries)];
+    }
+
+    private static unsafe string Ansi(ReadOnlySpan<byte> bytes)
+    {
+        fixed (byte* p = bytes) return Marshal.PtrToStringAnsi((nint)p, bytes.Length) ?? "";
     }
 
     // CF_HTML's header, which Windows requires and no other platform has: BYTE offsets, into the final
@@ -89,8 +95,8 @@ internal static class ClipboardFormats
 /// </para>
 /// <para>
 /// Every operation opens the clipboard, does ALL of its work, and closes it, on one thread-pool thread with a
-/// message-only window as the owner (a copy with no owner is refused), so a write is atomic and a read is one
-/// snapshot. The clipboard is one resource every process shares, so opening it is retried.
+/// message-only window as the owner (a copy with no owner is refused), so no other process sees a write half
+/// done and a read is one snapshot; a format that fails leaves the ones already written. The clipboard is one resource every process shares, so opening it is retried.
 /// </para>
 /// </summary>
 internal sealed class Win32Clipboard : IClipboardService
@@ -187,6 +193,11 @@ internal sealed class Win32Clipboard : IClipboardService
         var memory = GlobalAlloc(GMEM_MOVEABLE, (nuint)bytes.Length);
         if (memory == 0) throw new OutOfMemoryException("The clipboard could not be given memory.");
         var target = GlobalLock(memory);
+        if (target == 0)
+        {
+            GlobalFree(memory);
+            throw new OutOfMemoryException("The clipboard's memory could not be locked.");
+        }
         Marshal.Copy(bytes, 0, target, bytes.Length);
         GlobalUnlock(memory);
         // On success the clipboard owns the block; only a refusal leaves it ours to free.

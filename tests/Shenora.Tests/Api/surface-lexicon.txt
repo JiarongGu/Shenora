@@ -137,9 +137,6 @@ Panel
 # that could not grow to say FULL SCREEN.
 Placement
 Splash
-# `ChromiumTransport` (D83) — the kit's own word for the channel the IPC envelope rides (D16), already the
-# client's (`ShenoraTransport`, `createHostTransport`), so the host half of one takes the same name.
-Transport
 Tray
 Viewport
 Maximizable

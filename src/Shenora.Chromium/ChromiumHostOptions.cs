@@ -19,7 +19,9 @@ public sealed class ChromiumHostOptions
     /// </summary>
     public string? ContentRoot { get; init; }
 
-    /// <summary>The page in development (a dev server such as Vite). Ignored outside development.</summary>
+    /// <summary>The page in development (a dev server such as Vite). Set, it also turns off Chromium's local-network
+    /// check on WebSockets, which would otherwise refuse the dev server's hot-reload socket (D83). Ignored outside
+    /// development.</summary>
     public string? DevUrl { get; init; }
 
     /// <summary>The host of the app's own origin. The page is served from <c>https://{VirtualHost}/</c>.</summary>
@@ -29,9 +31,9 @@ public sealed class ChromiumHostOptions
     public bool? IsDevelopment { get; init; }
 
     /// <summary>
-    /// A remote-debugging port, honoured in DEVELOPMENT only. 🔴 Outside it the shell also disables command-line
+    /// A remote-debugging port, honoured in development only. Outside it the shell also disables command-line
     /// switches, because a port on the app's own command line would otherwise reach the page holding the
-    /// bridge (measured on CEF 152).
+    /// bridge (measured).
     /// </summary>
     public int DevToolsPort { get; init; }
 

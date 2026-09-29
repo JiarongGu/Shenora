@@ -7,20 +7,22 @@ namespace Shenora.Chromium.Host;
 /// </summary>
 internal static class ChromiumBrowserContext
 {
-    private static readonly AsyncLocal<ChromiumBrowser?> CurrentBrowser = new();
+    // Weak: the mark flows into work a request starts, which must not keep a closed browser alive.
+    private static readonly AsyncLocal<WeakReference<ChromiumBrowser>?> CurrentBrowser = new();
 
-    /// <summary>The browser whose page sent this request; null outside a Chromium page's dispatch.</summary>
-    public static ChromiumBrowser? Current => CurrentBrowser.Value;
+    /// <summary>The browser whose page sent this request; null outside a Chromium page's dispatch, or once that
+    /// browser has been collected.</summary>
+    public static ChromiumBrowser? Current => CurrentBrowser.Value is { } weak && weak.TryGetTarget(out var browser) ? browser : null;
 
     /// <summary>Mark what runs until disposal as <paramref name="browser"/>'s.</summary>
     public static IDisposable Enter(ChromiumBrowser browser)
     {
         var previous = CurrentBrowser.Value;
-        CurrentBrowser.Value = browser;
+        CurrentBrowser.Value = new WeakReference<ChromiumBrowser>(browser);
         return new Scope(previous);
     }
 
-    private sealed class Scope(ChromiumBrowser? previous) : IDisposable
+    private sealed class Scope(WeakReference<ChromiumBrowser>? previous) : IDisposable
     {
         public void Dispose() => CurrentBrowser.Value = previous;
     }

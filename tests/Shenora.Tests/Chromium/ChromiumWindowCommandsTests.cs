@@ -52,8 +52,10 @@ public class ChromiumWindowCommandsTests
         Assert.True((await module.HandleMessageAsync(Theme(dark: false))).Success);
         Assert.Same(CaptionButtonPalette.Light, window.Theme);
 
+        // As the WebView2 shell answers it: `dark` is optional and defaults to true, so the same page works on both.
         var missing = await module.HandleMessageAsync(new IpcRequest { Id = "m", Module = ChromiumWindowCommands.Module, Type = "SET_THEME" });
-        Assert.False(missing.Success);   // `dark` is required
+        Assert.True(missing.Success);
+        Assert.Same(CaptionButtonPalette.Dark, window.Theme);
     }
 
     [Fact]

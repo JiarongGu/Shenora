@@ -7,9 +7,10 @@ namespace Shenora.Chromium;
 /// shell marks every HTML document it serves with a global naming a same-origin route; the page's
 /// <c>createChromiumTransport</c> posts each envelope there with <c>fetch</c>, and the shell pushes by
 /// calling the global's <c>receive</c>. The names are mirrored by the client's <c>transport.ts</c>, and
-/// <c>WireMirrorTests</c> keeps the two sides equal.
+/// <c>WireMirrorTests</c> keeps the two sides equal. Internal: the hosts mark every HTML document they serve, the
+/// app's own routes' included, so an app has nothing to call here.
 /// </summary>
-public static class ChromiumTransport
+internal static class ChromiumTransport
 {
     /// <summary>The global a marked document carries: its presence is the shell advertising itself (D36).</summary>
     public const string HostGlobal = "__shenora_chromium";
