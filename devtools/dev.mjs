@@ -26,6 +26,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inflateRawSync } from 'node:zlib';
 import config from './project.config.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -318,14 +319,13 @@ function missingWorkloads() {
 // these exact ids stale by definition, evicting them here removes the trap instead of documenting
 // it. Scoped strictly to the ids this repo produces.
 /**
- * Entry NAMES inside a zip, without inflating anything — enough to ask "is this file in the package?".
+ * The entries of a zip, read from its central directory: each one's name, and where its bytes are.
  *
- * Hand-rolled because devtools has no dependencies and listing names needs no decompression: walk the
- * central directory and read each header's file name. ⚠ Zip64 is not handled; it announces itself with
+ * Hand-rolled because devtools has no dependencies. ⚠ Zip64 is not handled; it announces itself with
  * 0xffff entries and we say so rather than silently reporting a short list, because a check that quietly
- * inspects less than it claims is the failure mode this whole gate exists to prevent.
+ * inspects less than it claims is the failure mode these gates exist to prevent.
  */
-function zipEntryNames(file) {
+function zipEntries(file) {
   const buf = fs.readFileSync(file);
   let eocd = -1;
   for (let i = buf.length - 22; i >= 0 && i > buf.length - 66_000; i--) {
@@ -335,17 +335,40 @@ function zipEntryNames(file) {
   const count = buf.readUInt16LE(eocd + 10);
   if (count === 0xffff) throw new Error(`${path.basename(file)}: Zip64, which this reader does not handle`);
 
-  const names = [];
+  const entries = [];
   let at = buf.readUInt32LE(eocd + 16);
   for (let i = 0; i < count; i++) {
     if (buf.readUInt32LE(at) !== 0x02014b50) throw new Error(`${path.basename(file)}: bad central header at ${at}`);
     const nameLen = buf.readUInt16LE(at + 28);
     const extraLen = buf.readUInt16LE(at + 30);
     const commentLen = buf.readUInt16LE(at + 32);
-    names.push(buf.toString('utf8', at + 46, at + 46 + nameLen).replace(/\\/g, '/'));
+    entries.push({
+      name: buf.toString('utf8', at + 46, at + 46 + nameLen).replace(/\\/g, '/'),
+      method: buf.readUInt16LE(at + 10),
+      size: buf.readUInt32LE(at + 20),
+      local: buf.readUInt32LE(at + 42),
+    });
     at += 46 + nameLen + extraLen + commentLen;
   }
-  return names;
+  return { buf, entries };
+}
+
+/** Entry NAMES inside a zip, without inflating anything — enough to ask "is this file in the package?". */
+function zipEntryNames(file) {
+  return zipEntries(file).entries.map((e) => e.name);
+}
+
+/** The text of the first entry whose name matches, inflated; null when none does. Stored and deflated only. */
+function zipEntryText(file, match) {
+  const { buf, entries } = zipEntries(file);
+  const entry = entries.find((e) => match(e.name));
+  if (!entry) return null;
+  if (buf.readUInt32LE(entry.local) !== 0x04034b50) throw new Error(`${path.basename(file)}: bad local header for ${entry.name}`);
+  const start = entry.local + 30 + buf.readUInt16LE(entry.local + 26) + buf.readUInt16LE(entry.local + 28);
+  const bytes = buf.subarray(start, start + entry.size);
+  if (entry.method === 0) return bytes.toString('utf8');
+  if (entry.method === 8) return inflateRawSync(bytes).toString('utf8');
+  throw new Error(`${path.basename(file)}: ${entry.name} uses compression method ${entry.method}`);
 }
 
 /**
@@ -427,6 +450,44 @@ function checkPackagedBuildAssets(outDir) {
   }
 
   if (checked === 0) console.log('  ok  no package ships a buildTransitive/ targets file — nothing to check');
+  return ok;
+}
+
+/**
+ * Every dependency floor a package ships is the one the tree DECLARES: a literal in src/Directory.Packages.props,
+ * or this release's version for a Shenora.* package.
+ *
+ * A floor declared through a property is the PACKING machine's, not the kit's. `$(MauiVersion)` is the installed
+ * workload's, so Shenora.Android and Shenora.iOS 0.17.0 required MAUI 10.0.110 because the release runner had just
+ * installed it, where 0.16.0 required 10.0.20 — and an app on a 10.0.20 workload stopped restoring (NU1605).
+ */
+function checkPackedDependencyFloors(outDir) {
+  const declared = new Map();
+  const props = fs.readFileSync(path.join(repo, 'src', 'Directory.Packages.props'), 'utf8');
+  for (const m of props.matchAll(/<PackageVersion\s+Include="([^"]+)"\s+Version="([^"]+)"/g)) declared.set(m[1], m[2]);
+
+  let ok = true;
+  for (const pkg of fs.readdirSync(outDir).filter((f) => f.endsWith('.nupkg')).sort()) {
+    const nuspec = zipEntryText(path.join(outDir, pkg), (name) => name.endsWith('.nuspec') && !name.includes('/'));
+    if (nuspec === null) { ok = false; console.error(`  ✖ ${pkg} has no .nuspec at its root`); continue; }
+    const wrong = [];
+    let count = 0;
+    for (const m of nuspec.matchAll(/<dependency\s+id="([^"]+)"\s+version="([^"]+)"/g)) {
+      const [, id, version] = m;
+      count++;
+      const want = id === 'Shenora' || id.startsWith('Shenora.') ? config.version : declared.get(id);
+      if (want === undefined) wrong.push(`${id} ${version}: not declared in src/Directory.Packages.props`);
+      else if (want.includes('$(')) wrong.push(`${id} ${version}: declared as ${want}, which is the packing machine's value, not the kit's — declare a literal`);
+      else if (version !== want) wrong.push(`${id} ${version}: the tree declares ${want}`);
+    }
+    if (wrong.length > 0) {
+      ok = false;
+      console.error(`  ✖ ${pkg} ships a dependency floor the tree does not declare:`);
+      for (const line of wrong) console.error(`      ${line}`);
+    } else {
+      console.log(`  ok  ${pkg}: ${count} dependency floor(s), each the declared one`);
+    }
+  }
   return ok;
 }
 
@@ -1377,6 +1438,7 @@ switch (cmd) {
       }
     }
     if (ok) ok = step('build assets the targets NAME are inside the package', () => checkPackagedBuildAssets(out));
+    if (ok) ok = step('every dependency floor is the declared one', () => checkPackedDependencyFloors(out));
     if (ok) ok = step('evict stale Shenora.* from the NuGet global cache', () => evictGlobalCache());
     if (ok) {
       console.log('\npacked:');

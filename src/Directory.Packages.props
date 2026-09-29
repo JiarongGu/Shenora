@@ -11,10 +11,11 @@
     <!-- WebView2 (version proven across the sibling apps) -->
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.3800.47" />
 
-    <!-- MAUI. $(MauiVersion) is set by the installed workload, so this tracks the SDK rather than
-         pinning a number that would drift out of step with it — the one place in this list where a
-         literal version would be wrong. -->
-    <PackageVersion Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+    <!-- MAUI: the OLDEST version the mobile shells support, because this is the floor Shenora.Android and
+         Shenora.iOS ship, and the one the kit compiles against, so nothing newer can creep in. Never
+         $(MauiVersion): that is the packing machine's workload, and 0.17.0 shipped requiring the 10.0.110
+         the release runner had just installed. An app on a newer workload still gets its own version. -->
+    <PackageVersion Include="Microsoft.Maui.Controls" Version="10.0.20" />
 
     <!-- Tests -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

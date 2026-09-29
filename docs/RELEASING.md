@@ -105,7 +105,9 @@ burns no version:
    — that half is `retired-names.txt`'s, which step 2b already covers.
 3. **Pack**: `node devtools/dev.mjs pack` → `publish/packages/*.nupkg` + **two** npm tarballs
    (`@shenora/react` and the build-time `@shenora/cli`, D67 — both `package.json` versions and the README
-   headline synced from `VersionPrefix`), each with its sha256 printed.
+   headline synced from `VersionPrefix`), each with its sha256 printed. It fails, before anything
+   publishes, if a package lacks a file its own targets name, or would ship a dependency floor other than
+   the one `src/Directory.Packages.props` declares (0.17.0 required the MAUI its runner had installed).
 4. **Publish NuGet** — Trusted Publishing (OIDC): `NuGet/login@v1` mints a short-lived key; no
    stored secret. One-time setup on nuget.org: Account → Trusted Publishing → policy for the
    repo + `release.yml`, scoped to the `Shenora.*` package glob. `--skip-duplicate` makes a re-run safe.

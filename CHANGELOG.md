@@ -28,6 +28,19 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Fixed
+
+- **`Shenora.Android` and `Shenora.iOS` 0.17.0 required `Microsoft.Maui.Controls` 10.0.110, so an app on an
+  older MAUI workload could not restore them.** 0.16.0 required 10.0.20, and nothing in the kit needs the newer
+  one: the packages took their MAUI floor from the workload on the machine that packed them, and the release
+  runner had just installed 10.0.110. An app referencing `Microsoft.Maui.Controls` as `$(MauiVersion)`, as the
+  MAUI template writes it, failed restore with `NU1605` on a 10.0.20 workload. The floor is 10.0.20 again, now
+  declared rather than inherited, and a release fails before publishing if a package would ship any floor other
+  than the declared one. On 0.17.0, reference `Microsoft.Maui.Controls` 10.0.110 from the app, or update the
+  MAUI workload. The Windows, Chromium and npm packages were not affected.
+
 ## 0.17.0 — 2026-09-29
 
 ### Added
