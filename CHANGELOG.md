@@ -69,9 +69,9 @@ at the first list and missed five more breaking changes.
   ARM64 hardware. **macOS too, osx-x64 and osx-arm64**: the build lays out `bundle/<App>.app`, CEF's framework and
   five helper apps inside it, and the package carries the macOS binding and helper. Run from a local-feed package
   on an Intel Mac. ⚠ osx-arm64 has not run (no Apple Silicon Mac). ⚠ A .NET installed per user is not found when
-  the app starts from Finder, whose environment has no `DOTNET_ROOT`. 🔴 ⚠ **A second kit app on the same Mac
-  stalls behind a keychain password prompt**: CEF keeps its cookie key in a login-keychain item every CEF app
-  shares ("Chromium Safe Storage"), so the first app to run owns it.
+  the app starts from Finder, whose environment has no `DOTNET_ROOT`. ⚠ **On macOS the cookie key is Chromium's
+  mock keychain's**, so cookies at rest are encrypted with a fixed key: the real keychain keeps it in an item every
+  CEF app shares ("Chromium Safe Storage"), where a second kit app on a Mac stalled behind a login-password prompt.
 
 - **`createChromiumTransport()` in `@shenora/react`, and `createHostTransport()` finds the Chromium hosts**
   (**D83**). They mark each HTML document they serve, the app's own routes' included, with

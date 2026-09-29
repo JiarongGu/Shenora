@@ -141,6 +141,7 @@ docs cite them — so the number is the column to scan.
 | **D82** | THE DESKTOP REACHES MACOS AND LINUX THROUGH ONE CHROMIUM SHELL OF THE KIT'S OWN, ON CEF'S VIEWS FRAMEWORK, BUILT AHEAD OF A CONSUMER. |
 | **D83** | THE CHROMIUM ENGINE HAS TWO HOSTS, AND THE WINDOWS SHELL DEPENDS ON IT. |
 | **D84** | THE CHROMIUM SHELL'S PAGE IS AN ALLOY-STYLE BROWSER. |
+| **D85** | ON MACOS THE CHROMIUM SHELL USES CHROMIUM'S MOCK KEYCHAIN. |
 
 <!-- decisions-index:end -->
 
@@ -1197,6 +1198,18 @@ docs cite them — so the number is the column to scan.
   - ⚠ **Alloy changed the frame's hit-test**: Chromium's render widget answers HTCLIENT over the page's drag
     area, so the shell's child subclass defers every non-client answer to CEF's top-level window. Any other
     behaviour measured under Chrome style is re-measured before it is relied on.
+
+- **D85 — ON MACOS THE CHROMIUM SHELL USES CHROMIUM'S MOCK KEYCHAIN.** The shell passes `--use-mock-keychain` to
+  its browser process on macOS. Owner, 2026-09-30, choosing it over the real keychain and over an opt-in.
+  - 🔴 **Why: with the real keychain, a second kit app on a Mac stalls behind a password prompt.** Chromium keeps
+    its cookie-encryption key in a login-keychain item every CEF app shares ("Chromium Safe Storage"), so the
+    first app to run owns it, and every other app's page load waits on SecurityAgent for the login password.
+    Measured: the same app stalled without the switch and ran with it.
+  - **The constraint it imposes:** cookies and saved logins at rest are encrypted with a fixed key, the
+    protection Chromium gives on Linux without a keyring. An app that must protect them at rest keeps them out
+    of the page. Windows is unaffected (DPAPI).
+  - Reopened by a per-app keychain item, which CEF does not offer, or by an adopter who needs real protection
+    and accepts the prompt (D15).
 
 ## Anti-goals — deliberately NOT built
 

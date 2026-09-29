@@ -16,6 +16,14 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
     /// </summary>
     internal static readonly string[] DisabledFeatures = ["LocalNetworkAccessChecks", "LocalNetworkAccessChecksWebSockets"];
 
+    /// <summary>
+    /// macOS: Chromium's mock keychain for its cookie-encryption key (D85). The real one keeps it in
+    /// a login-keychain item every CEF app shares ("Chromium Safe Storage"), so the first app to run owns it and any
+    /// other waits on a login-password prompt before its page loads (measured: the same app stalled without the switch
+    /// and ran with it). The cost is that cookies at rest are encrypted with a fixed key.
+    /// </summary>
+    internal const string MockKeychain = "use-mock-keychain";
+
     private readonly ProcessHandler _process;
 
     /// <param name="contextInitialized">Runs on CEF's UI thread once CEF's context exists.</param>
@@ -61,6 +69,13 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
                     commandLine->append_switch_with_value(commandLine, &switchName, &switchValue);
                 }
             }
+#if CEF_MACOS
+            fixed (char* k = MockKeychain)
+            {
+                var keychain = CefStrings.View(k, MockKeychain.Length);
+                commandLine->append_switch(commandLine, &keychain);
+            }
+#endif
         });
     }
 
