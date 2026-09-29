@@ -24,12 +24,23 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
     /// </summary>
     internal const string MockKeychain = "use-mock-keychain";
 
+    /// <summary>
+    /// A process that is only Chromium's browser (D86): no first-run page, and no offer to become the system's default
+    /// browser, which is the user's browser to make and not an app's.
+    /// </summary>
+    internal static readonly string[] BrowserSwitches = ["no-first-run", "no-default-browser-check"];
+
     private readonly ProcessHandler _process;
+    private readonly bool _appPages;
 
     /// <param name="contextInitialized">Runs on CEF's UI thread once CEF's context exists.</param>
-    public ChromiumApp(Action contextInitialized)
+    /// <param name="browser">This process holds no app page, only Chromium's own windows onto the web (D86): the
+    /// local-network checks stay on, and <paramref name="browser"/> is the client of every window Chrome's UI opens.
+    /// Null for the app's own pages.</param>
+    public ChromiumApp(Action contextInitialized, CefObject<_cef_client_t>? browser = null)
     {
-        _process = new ProcessHandler(contextInitialized);
+        _process = new ProcessHandler(contextInitialized, browser);
+        _appPages = browser is null;
         Struct->get_browser_process_handler = &GetProcessHandler;
         Struct->on_before_command_line_processing = &BeforeCommandLine;
     }
@@ -52,44 +63,66 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
     {
         using var line = new CefRef<_cef_command_line_t>(commandLine);
         if (!string.IsNullOrEmpty(CefStrings.Read(processType))) return;
+        var appPages = From<ChromiumApp>(self)._appPages;
         AppCallback.Run(() =>
         {
-            const string name = "disable-features";
-            fixed (char* n = name)
+            if (appPages)
             {
-                var switchName = CefStrings.View(n, name.Length);
-                var existing = commandLine->has_switch(commandLine, &switchName) == 1
-                    ? CefStrings.TakeUserFree(commandLine->get_switch_value(commandLine, &switchName))
-                    : null;
-                var value = WithDisabledFeatures(existing, DisabledFeatures);
-                commandLine->remove_switch(commandLine, &switchName);
-                fixed (char* v = value)
+                const string name = "disable-features";
+                fixed (char* n = name)
                 {
-                    var switchValue = CefStrings.View(v, value.Length);
-                    commandLine->append_switch_with_value(commandLine, &switchName, &switchValue);
+                    var switchName = CefStrings.View(n, name.Length);
+                    var existing = commandLine->has_switch(commandLine, &switchName) == 1
+                        ? CefStrings.TakeUserFree(commandLine->get_switch_value(commandLine, &switchName))
+                        : null;
+                    var value = WithDisabledFeatures(existing, DisabledFeatures);
+                    commandLine->remove_switch(commandLine, &switchName);
+                    fixed (char* v = value)
+                    {
+                        var switchValue = CefStrings.View(v, value.Length);
+                        commandLine->append_switch_with_value(commandLine, &switchName, &switchValue);
+                    }
                 }
             }
-#if CEF_MACOS
-            fixed (char* k = MockKeychain)
+            else
             {
-                var keychain = CefStrings.View(k, MockKeychain.Length);
-                commandLine->append_switch(commandLine, &keychain);
+                foreach (var browserSwitch in BrowserSwitches) AppendSwitch(commandLine, browserSwitch);
             }
+#if CEF_MACOS
+            AppendSwitch(commandLine, MockKeychain);
 #endif
         });
+    }
+
+    private static void AppendSwitch(_cef_command_line_t* commandLine, string name)
+    {
+        fixed (char* n = name)
+        {
+            var switchName = CefStrings.View(n, name.Length);
+            commandLine->append_switch(commandLine, &switchName);
+        }
     }
 
     private sealed class ProcessHandler : CefObject<_cef_browser_process_handler_t>
     {
         private readonly Action _contextInitialized;
+        private readonly CefObject<_cef_client_t>? _defaultClient;
 
-        public ProcessHandler(Action contextInitialized)
+        public ProcessHandler(Action contextInitialized, CefObject<_cef_client_t>? defaultClient)
         {
             _contextInitialized = contextInitialized;
+            _defaultClient = defaultClient;
             Struct->on_context_initialized = &ContextInitialized;
+            // Chrome's UI makes a window's browsers itself (a CDP target, a new tab, a window.open), and without a
+            // client CEF knows nothing of them: no callback runs, and shutdown waits for them to be closed by hand.
+            if (defaultClient is not null) Struct->get_default_client = &DefaultClient;
         }
 
         [UnmanagedCallersOnly]
         private static void ContextInitialized(_cef_browser_process_handler_t* self) => AppCallback.Run(From<ProcessHandler>(self)._contextInitialized);
+
+        [UnmanagedCallersOnly]
+        private static _cef_client_t* DefaultClient(_cef_browser_process_handler_t* self) =>
+            From<ProcessHandler>(self)._defaultClient is { } client ? client.ForCef() : null;
     }
 }

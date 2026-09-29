@@ -25,7 +25,22 @@ internal static unsafe class CefStartup
     /// <param name="BackgroundColor">The browsers' background before a page paints, as ARGB.</param>
     /// <param name="MultiThreadedLoop">CEF runs its message loop on a thread of its own, for a host that owns its UI
     /// thread; false runs it on the caller's (the Views shell's main thread).</param>
-    internal sealed record Settings(string Cache, bool IsDevelopment, int DevToolsPort, uint? BackgroundColor, bool MultiThreadedLoop);
+    internal sealed record Settings(string Cache, bool IsDevelopment, int DevToolsPort, uint? BackgroundColor, bool MultiThreadedLoop)
+    {
+        /// <summary>A debug port open in production too. Only for a process that holds no app page (D86): the port
+        /// reaches every page in its process, the bridge's included.</summary>
+        public int PagelessDebugPort { get; init; }
+
+        /// <summary>Keep cookies that have no expiry across a restart.</summary>
+        public bool PersistSessionCookies { get; init; }
+
+        /// <summary>The locale; null is CEF's own default.</summary>
+        public string? Locale { get; init; }
+
+        /// <summary>The profile's folder under <see cref="Cache"/>. Chrome's own windows always use <c>Default</c>
+        /// (measured by an adopter, CEF 152), so a process whose windows are Chrome's names it so.</summary>
+        public string Profile { get; init; } = "default";
+    }
 
     /// <summary>The sandbox the shim created, or 0 when the app was not started through CEF's launcher.</summary>
     public static nint Sandbox => RuntimePointer("Shenora.Chromium.SandboxInfo");
@@ -60,7 +75,7 @@ internal static unsafe class CefStartup
         // (0x80000003, measured).
         SelectApiVersion();
         Directory.CreateDirectory(settings.Cache);
-        var profile = Path.Combine(settings.Cache, "default");
+        var profile = Path.Combine(settings.Cache, settings.Profile);
         var logFile = Path.Combine(settings.Cache, "cef.log");
         var sandbox = Sandbox;
         var args = MainArgs(RuntimePointer("Shenora.Chromium.Instance"));
@@ -89,10 +104,13 @@ internal static unsafe class CefStartup
             no_sandbox = noSandbox,
             multi_threaded_message_loop = settings.MultiThreadedLoop ? 1 : 0,
             command_line_args_disabled = settings.IsDevelopment ? 0 : 1,
-            remote_debugging_port = settings.IsDevelopment ? settings.DevToolsPort : 0,
+            remote_debugging_port = settings.PagelessDebugPort > 0 ? settings.PagelessDebugPort
+                : settings.IsDevelopment ? settings.DevToolsPort : 0,
+            persist_session_cookies = settings.PersistSessionCookies ? 1 : 0,
             log_severity = cef_log_severity_t.LOGSEVERITY_WARNING,
         };
         if (settings.BackgroundColor is { } color) cef.background_color = color;
+        var locale = settings.Locale ?? "";
 
         int initialized;
         fixed (char* c = settings.Cache)
@@ -101,10 +119,12 @@ internal static unsafe class CefStartup
         fixed (char* s = subprocess)
         fixed (char* f = framework)
         fixed (char* b = bundle)
+        fixed (char* lc = locale)
         {
             cef.root_cache_path = CefStrings.View(c, settings.Cache.Length);
             cef.cache_path = CefStrings.View(p, profile.Length);
             cef.log_file = CefStrings.View(l, logFile.Length);
+            if (locale.Length > 0) cef.locale = CefStrings.View(lc, locale.Length);
             if (subprocess.Length > 0) cef.browser_subprocess_path = CefStrings.View(s, subprocess.Length);
             if (framework.Length > 0) cef.framework_dir_path = CefStrings.View(f, framework.Length);
             if (bundle.Length > 0) cef.main_bundle_path = CefStrings.View(b, bundle.Length);

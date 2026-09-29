@@ -235,27 +235,11 @@ transport })` works today.
 A tab a CDP client opens has no window and raises no event, where Edge 154 on its own profile shows it; a
 session cookie ends with the process, with no setting to keep it.
 
-**Filed by the adopter, 2026-09-30, at its owner's say-so: one Chromium for its page and its browser.** It takes
-`ChromiumView` (0.17) for its page now. Its in-app browser is a process of its own on CefSharp 152: the engine's
-own Chrome-style window, made over CDP, so an agent's tabs land beside the person's. It cannot move onto the
-kit's engine, so an install carries two CEF builds, about 350 MB each on disk, until it can. What the browser
-takes from CefSharp that the kit's engine does not offer:
-- [ ] **A browser-only engine.** CEF started with no app page, no bridge and no content root, whose windows are
-  Chrome style (tabs, history, find, devtools, downloads) and made over CDP (`Target.createTarget`,
-  `newWindow`). The kit's pages are Alloy style, and `ChromiumEngineOptions` asks for a `ContentRoot` or a
-  `DevUrl`.
-- [ ] **A remote-debugging port in production, for that process only.** An agent's browser MCP attaches there.
-  The kit opens `DevToolsPort` only in development and disables command-line switches outside it: right for a
-  process that holds a bridge (the constraint above), and a block for one that holds none. A composition that
-  makes the port impossible where a bridge page exists, and possible where none does, keeps the kit's rule.
-- [ ] **The engine settings it sets today:** `persist_session_cookies` (measured as the one setting that keeps a
-  sign-in across a restart), the root cache and cache paths under the app's own home, a log file and its
-  severity, the locale, and `no-first-run` and `no-default-browser-check`.
-- [ ] **One copy on disk:** the browser process started from the same CEF layout as the app (a second launcher
-  beside `<App>.exe`, or the app's exe in a browser mode), so one install carries one CEF.
-
-Its probe (CEF 152 through CefSharp, 2026-09-28) measured the port's reach across a process, CDP-made
-windows and the cookie setting; read it rather than repeat it.
+**The adopter's in-app browser on the kit's engine is built: `ChromiumBrowserProcess` (D86)**, in a second process
+of the app's own exe, so an install carries one CEF. Measured on Windows (the commit has the runs); it needed CEF
+154.0.32, since 154.0.28 crashed when a debugging client opened a tab. CEF's log is `cef.log` in the profile's
+folder at warning level, where the adopter chose the name.
+- [ ] **macOS: the browser process is unmeasured** there (it compiles), and so is the 154.0.32 pin.
 
 ### 🎬 THE PICTURE SURFACE (D80) — answered on Android and the iOS simulator
 

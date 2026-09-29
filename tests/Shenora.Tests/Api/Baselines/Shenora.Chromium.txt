@@ -1,3 +1,11 @@
+static class Shenora.Chromium.ChromiumBrowserProcess
+  public static int Run(Shenora.Chromium.ChromiumBrowserProcessOptions options, System.Threading.CancellationToken stop = default, Microsoft.Extensions.Logging.ILogger? log = null)
+sealed class Shenora.Chromium.ChromiumBrowserProcessOptions
+  public System.Uri? StartUrl { get; init; }
+  public bool PersistSessionCookies { get; init; }
+  public int RemoteDebuggingPort { get; init; }
+  public required string UserDataFolder { get; init; }
+  public string? Locale { get; init; }
 sealed class Shenora.Chromium.ChromiumChildBrowser : System.IDisposable
   public .ctor(Shenora.Chromium.ChromiumEngine engine, System.IntPtr parentWindow, Shenora.Chromium.ChromiumChildBrowserOptions? options = null)
   public System.IntPtr WindowHandle { get; }

@@ -312,6 +312,35 @@ there stays the page's. What differs: WinForms'
 **Verify:** the app starts from `MyApp.exe`, the page loads from the dev server and from the bundle, and
 the caption buttons, a window drag and a file drop behave as they did on WebView2.
 
+**A browser beside the app, from the same CEF** (D86). Chromium's own windows (tabs, address bar, devtools), with
+a debugging port an agent's tools can drive in production, run in a SECOND process of the app's own exe, because
+the port reaches every page in its process and the app's page holds the bridge. The app's `Main` routes an
+argument of its own before anything else:
+
+```csharp
+[STAThread]
+static int Main(string[] args)
+{
+    if (args is ["--browser", var profile, var parent])
+    {
+        using var stop = new CancellationTokenSource();
+        Process.GetProcessById(int.Parse(parent)).WaitForExitAsync().ContinueWith(_ => stop.Cancel());
+        return ChromiumBrowserProcess.Run(new ChromiumBrowserProcessOptions
+        {
+            UserDataFolder = profile,           // not the app engine's own folder
+            RemoteDebuggingPort = 9333,
+            PersistSessionCookies = true,       // a sign-in survives a restart
+        }, stop.Token);
+    }
+    // … the app as before; to open the browser:
+    // Process.Start(Environment.ProcessPath!, ["--browser", profileFolder, Environment.ProcessId.ToString()]);
+}
+```
+
+`Environment.ProcessPath` is `MyApp.exe`, CEF's launcher, so the browser is sandboxed as the app is. Its windows come
+from `StartUrl` or over the port (`Target.createTarget`), and it exits when its last window closes, or when `stop`
+fires, after closing them.
+
 ---
 
 ## Stage 3 — the IPC substrate

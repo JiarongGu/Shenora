@@ -30,6 +30,19 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Added
+
+- **`ChromiumBrowserProcess`: Chromium as a browser, in a second process of the app's own executable** (D86). The
+  app's `Main` sees an argument of its own and calls `ChromiumBrowserProcess.Run`, which starts CEF with no app page:
+  Chromium's own windows, with their tabs, address bar, history, find, downloads and devtools, and a
+  `RemoteDebuggingPort` that is open in production, because no bridge is in that process. Windows come from
+  `StartUrl` or over the port (`Target.createTarget`), and an agent's new tab joins the person's window. The
+  process ends when its last window closes, or when the `stop` token fires, which closes every window first.
+  `PersistSessionCookies` keeps a sign-in across a restart, `Locale` sets the UI's language, and the profile is
+  `UserDataFolder`'s `Default` folder, which must not be another Chromium process's. So an install carries one CEF,
+  and on Windows CEF's launcher sandboxes the browser as it does the app. Unlike the app's pages, its pages keep
+  Chromium's local-network checks. Measured on Windows.
+
 ### Changed
 
 - **`Shenora.Chromium` pins CEF 154.0.32** (was 154.0.28), the same Chromium 154.0.8037.58 and the same API

@@ -142,6 +142,7 @@ docs cite them — so the number is the column to scan.
 | **D83** | THE CHROMIUM ENGINE HAS TWO HOSTS, AND THE WINDOWS SHELL DEPENDS ON IT. |
 | **D84** | THE CHROMIUM SHELL'S PAGE IS AN ALLOY-STYLE BROWSER. |
 | **D85** | ON MACOS THE CHROMIUM SHELL USES CHROMIUM'S MOCK KEYCHAIN. |
+| **D86** | CHROMIUM ALSO RUNS AS A BROWSER, IN A PROCESS THAT HOLDS NONE OF THE APP. |
 
 <!-- decisions-index:end -->
 
@@ -1210,6 +1211,23 @@ docs cite them — so the number is the column to scan.
     of the page. Windows is unaffected (DPAPI).
   - Reopened by a per-app keychain item, which CEF does not offer, or by an adopter who needs real protection
     and accepts the prompt (D15).
+
+- **D86 — CHROMIUM ALSO RUNS AS A BROWSER, IN A PROCESS THAT HOLDS NONE OF THE APP.** `ChromiumBrowserProcess`
+  starts CEF with no app page, no bridge and no content root: Chromium's own windows, and a debugging port that is
+  open in production. The app runs it as a second process of its OWN executable, so an install carries one CEF and
+  CEF's launcher sandboxes it as it does the app. Owner, 2026-09-30, on an adopter's request: its in-app browser,
+  where an agent's tabs open beside the person's, otherwise ships a second CEF build.
+  - 🔴 **Why a process of its own: a debugging port reaches every page in its process** (an adopter measured the
+    page's bridge callable over it). So the port opens only where no app page can be, and a process that holds one
+    keeps D83's rule: no port, and no command-line switch read, in production.
+  - **Its windows are Chrome style, with Chrome's own UI** (tabs, address bar, history, find, downloads, devtools),
+    not D84's Alloy: none of the kit's translation layer runs there, and Chrome's UI answers the downloads and
+    permission prompts that D84's page has the shell answer.
+  - **Chromium's local-network checks stay ON there**: its pages are the open web, where D83 turns them off because
+    the pages are the app's own. On macOS, D85's mock keychain applies to its sign-ins too.
+  - ⚠ **It needs CEF 154.0.32 or later.** On 154.0.28 a debugging client that opened a TAB in an existing window
+    crashed the browser process, in the kit and in CEF's own sample client alike, which is exactly what an agent's
+    "new tab" does.
 
 ## Anti-goals — deliberately NOT built
 
