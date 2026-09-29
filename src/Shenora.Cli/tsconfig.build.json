@@ -9,5 +9,6 @@
   // No `.d.ts`: this package is a BINARY, not a library. Nothing imports it, so declarations would be
   // shipped weight with no consumer — `generic-library.md`'s "every public type earns its keep" applied
   // to a package's output rather than to its types.
-  "exclude": ["src/**/*.test.ts"]
+  // The tests, and the fake build machine only they use: nothing the binary runs.
+  "exclude": ["src/**/*.test.ts", "src/remote/fake-target.ts"]
 }

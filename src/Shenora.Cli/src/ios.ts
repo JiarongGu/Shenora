@@ -1272,21 +1272,12 @@ export function cmdPush(cfg: DeployConfig, args: string[]): void {
 }
 
 /**
- * `shenora ios provision` — mint the profiles a device build needs.
- *
- * ⚠ **Extensions are included by DEFAULT.** An app extension is provisioned separately from its
- * container and forgetting it fails at the very END of a device install, with an error naming the app.
- * Extra ids can be named as arguments; `cfg.bundleId` is always first.
- */
-/**
  * The line `provision` opens with.
  *
  * 🔴 **IDENTITY IS OPT-IN, and the default leaves it out.** The Apple TEAM ID names a developer account
  * and the ssh target names a machine and often a home network. Neither is a credential, and both are
  * exactly the class of value that must not reach a public repo, a CI log or an assistant transcript —
- * none of which this command can see it is writing to. Reported by an adopter, 2026-09-04, who had
- * already been careful enough downstream to pipe `application-identifier` through `cut` for the sole
- * purpose of stripping the same team id before printing it.
+ * none of which this command can see it is writing to.
  *
  * ⚠ **The count and the RESULT are what an operator needs**, and the per-id `ok`/`MISSING` lines below
  * carry the result already. `--verbose` adds the identity back for the case it genuinely diagnoses: a
@@ -1303,6 +1294,13 @@ export function provisionBanner(
   return verbose ? `${head} for team ${team} on ${targetLabel}` : head;
 }
 
+/**
+ * `shenora ios provision` — mint the profiles a device build needs.
+ *
+ * ⚠ **Extensions are included by DEFAULT.** An app extension is provisioned separately from its
+ * container and forgetting it fails at the very END of a device install, with an error naming the app.
+ * Extra ids can be named as arguments; `cfg.bundleId` is always first.
+ */
 export function cmdProvision(cfg: DeployConfig, args: string[]): void {
   const target = resolveTarget(cfg, args);
   if (!target) return;

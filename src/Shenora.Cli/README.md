@@ -116,10 +116,11 @@ npx shenora ios provision com.example.app.widget   # …and every extension it e
 npx shenora ios provision --verbose                # …and say which team and which Mac
 ```
 
-⚠ **It does not print your Apple team id or the Mac's address unless you ask.** Both identify you rather
-than the build, and this command cannot see whether its output is going to a terminal, a CI log or a
-shared transcript. `--verbose` adds them back for the one case they diagnose: a profile minted against
-the wrong account.
+⚠ **Its opening line does not name your Apple team id or the Mac's address unless you ask.** Both identify
+you rather than the build, and this command cannot see whether its output is going to a terminal, a CI log
+or a shared transcript. `--verbose` adds them back for the one case they diagnose: a profile minted against
+the wrong account. ⚠ A FAILURE still says where it ran and prints the tail of `xcodebuild`'s output, whose
+signing errors can name the team: that is the evidence the failure needs, so read it before pasting it.
 
 ⚠ **Extensions need their own profiles.** An extension is provisioned separately from its container, and
 forgetting one fails at the very end of a device install with an error naming the *app*.
