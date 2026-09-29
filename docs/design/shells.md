@@ -115,6 +115,19 @@ options' callbacks. The Chromium shell's windows also act on the sending page's 
 (`ChromiumWindowCommands`), but a send from no page does nothing there, and a window that paints its caption
 buttons has `SET_THEME`.
 
+**The system menu** is the window's own, whichever way it opens: a page's `SHOW_SYSTEM_MENU`, a right click on a
+Chromium page's drag area, Alt+Space, the taskbar. Three things make that true:
+- **A frameless window needs `WS_SYSMENU`, and neither shell's has it by default.** WinForms gives a borderless
+  form none, and CEF creates a frameless window without it (style `0x16C70000`, measured). Without it there is
+  no menu to open, and `GetSystemMenu` can answer with a menu missing its items, so both helpers refuse a menu with
+  none.
+- **The items follow the placement the kit keeps.** A manual maximize looks Normal to the system, which would
+  offer Maximize, Move and Size. So `FormCaption.UpdateSystemMenu` sets the items before the kit's own menu opens,
+  and `OptimizedForm` sets them again on `WM_INITMENUPOPUP` when the system opens it. A Chromium window
+  maximizes the system's way, so the system's items are right.
+- **It opens queued, never inline**, unlike `START_DRAG`, whose loop must start while the button is down. The
+  menu is a modal loop, and inline it would hold the route's answer until the menu closed.
+
 ## Window state, and the DPI rule
 
 The process is PerMonitorV2, where a form's OUTER size set in code is device px and is not auto-scaled.

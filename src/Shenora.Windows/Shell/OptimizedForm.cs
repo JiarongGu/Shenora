@@ -68,7 +68,7 @@ public sealed class OptimizedFormOptions
 /// </summary>
 public class OptimizedForm : Form, IAppMaximizable
 {
-    private const int WS_THICKFRAME = 0x00040000, WS_MINIMIZEBOX = 0x00020000, WS_MAXIMIZEBOX = 0x00010000;
+    private const int WS_THICKFRAME = 0x00040000, WS_MINIMIZEBOX = 0x00020000, WS_MAXIMIZEBOX = 0x00010000, WS_SYSMENU = 0x00080000;
     private const int WM_NCCALCSIZE = 0x0083, WM_SYSCOMMAND = 0x0112, WM_NCACTIVATE = 0x0086, WM_NCHITTEST = 0x0084;
     // Sent when the window moves to a monitor with a different scale factor (PerMonitorV2).
     private const int WM_DPICHANGED = 0x02E0;
@@ -81,7 +81,7 @@ public class OptimizedForm : Form, IAppMaximizable
     // A held press on a caption button captures the mouse, as the system's own caption loop does.
     private const int WM_MOUSEMOVE = 0x0200, WM_LBUTTONUP = 0x0202, WM_RBUTTONDOWN = 0x0204, WM_MBUTTONDBLCLK = 0x0209,
                       WM_XBUTTONDOWN = 0x020B, WM_XBUTTONDBLCLK = 0x020D, WM_CAPTURECHANGED = 0x0215, MK_LBUTTON = 0x0001;
-    private const int SC_MAXIMIZE = 0xF030, SC_RESTORE = 0xF120;
+    private const int SC_MAXIMIZE = 0xF030, SC_RESTORE = 0xF120, WM_INITMENUPOPUP = 0x0117;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_BORDER_COLOR = 34;
     // A frameless window (custom WM_NCCALCSIZE) can lose the AUTOMATIC Win11 rounding, so it is
     // requested explicitly. 33 = DWMWA_WINDOW_CORNER_PREFERENCE.
@@ -680,10 +680,11 @@ public class OptimizedForm : Form, IAppMaximizable
         get
         {
             var cp = base.CreateParams;
-            // Keep Aero snap / edge resize / taskbar min-max without the caption. Null-guarded: the
+            // Keep Aero snap / edge resize / taskbar min-max without the caption, and the system menu, which Alt+Space
+            // and the taskbar open (WinForms gives a borderless form none). Null-guarded: the
             // BASE Form constructor evaluates this before our ctor assigns _options, and that early
             // read is bookkeeping only — the value that matters is re-read at handle creation.
-            if (_options is { FramelessChrome: true }) cp.Style |= WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+            if (_options is { FramelessChrome: true }) cp.Style |= WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
             return cp;
         }
     }
@@ -766,6 +767,15 @@ public class OptimizedForm : Form, IAppMaximizable
                 RestoreFromMax();
                 return;
             }
+        }
+
+        // The system menu, as Alt+Space or the taskbar opens it: the system sets its items from the window's own state,
+        // where a manual maximize looks Normal, so they are set again from the placement.
+        if (m.Msg == WM_INITMENUPOPUP && (((long)m.LParam >> 16) & 0xFFFF) != 0)
+        {
+            base.WndProc(ref m);
+            FormCaption.UpdateSystemMenu(m.WParam, this);
+            return;
         }
 
         // On focus change Windows repaints the (removed) caption in the inactive colour → a grey strip

@@ -21,15 +21,18 @@ describe('WindowCommands', () => {
     void commands.startDrag();
     void commands.startResize('topLeft');
     void commands.setTheme(false);
+    void commands.showSystemMenu();
 
     expect(transport.posted.map((r) => `${r.module}.${r.type}`)).toEqual([
       'SHENORA.WINDOW.MINIMIZE',
       'SHENORA.WINDOW.START_DRAG',
       'SHENORA.WINDOW.START_RESIZE',
       'SHENORA.WINDOW.SET_THEME',
+      'SHENORA.WINDOW.SHOW_SYSTEM_MENU',
     ]);
     expect(transport.posted[2]?.payload).toEqual({ edge: 'topLeft' });
     expect(transport.posted[3]?.payload).toEqual({ dark: false });
+    expect(transport.posted[4]?.payload).toBeUndefined();
   });
 
   it('isMaximized unwraps the host answer', async () => {

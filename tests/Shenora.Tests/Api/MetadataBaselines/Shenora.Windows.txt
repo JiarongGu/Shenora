@@ -782,6 +782,7 @@ Shenora.Windows.WindowCommandModule
   field Module
   field SetCaptionButtonsType
   field SetThemeType
+  field ShowSystemMenuType
   field StartDragType
   field StartResizeType
   field ToggleMaximizeType

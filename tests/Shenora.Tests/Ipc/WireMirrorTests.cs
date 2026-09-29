@@ -887,6 +887,7 @@ public class WireMirrorTests
             WindowCommandModule.IsMaximizedType,
             WindowCommandModule.StartDragType,
             WindowCommandModule.StartResizeType,
+            WindowCommandModule.ShowSystemMenuType,
             WindowCommandModule.SetThemeType,
             WindowCommandModule.SetCaptionButtonsType,
         };

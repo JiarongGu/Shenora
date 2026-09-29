@@ -11,6 +11,7 @@ namespace Shenora.Windows;
 public sealed class WinFormsUiDispatcher : UiDispatcherBase
 {
     private readonly Control _owner;
+    private readonly Action<Exception>? _onPostFailure;
 
     /// <param name="owner">The control whose UI thread work is marshalled to.</param>
     /// <param name="onPostFailure">
@@ -22,6 +23,18 @@ public sealed class WinFormsUiDispatcher : UiDispatcherBase
     {
         ArgumentNullException.ThrowIfNull(owner);
         _owner = owner;
+        _onPostFailure = onPostFailure;
+    }
+
+    /// <summary>
+    /// Queue work behind what the UI thread is doing, guarded, even when called ON it: unlike
+    /// <see cref="UiDispatcherBase.Post(Action)"/>, which runs there inline. For a modal loop the caller must not wait
+    /// on. False once the control is not ready.
+    /// </summary>
+    internal bool Queue(Action work)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+        return State == UiTargetState.Ready && TryPost(() => AppCallback.Run(work, _onPostFailure), out _);
     }
 
     /// <inheritdoc />

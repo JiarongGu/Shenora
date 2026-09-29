@@ -197,31 +197,16 @@ D37 and D51 are corrected in place to point at them.
    (posted presses).
    - WinForms' `Focused` stays false while the page has the focus, because it is in CEF's child window, which
      another thread owns.
-3c. **The system menu from a page's caption — a PLAN, to settle with the owner before building.** A real
-   caption opens the window's system menu (Restore, Move, Size, Minimize, Maximize, Close) on a right click, and
-   Alt+Space opens it from the keyboard. Where the kit is today:
-   - `ChromiumView`: the drag area takes the left button only, so a right click there is the page's.
-   - The Chromium shell: the drag area answers `HTCAPTION`, so a right click should reach the system's own menu.
-     Unmeasured.
-   - The WebView2 shell: the page's caption is the page's, and no route opens the menu.
-
-   The shape proposed, one mechanism for all three:
-   1. **Measure the Chromium shell first** (real input): the right click, Alt+Space, and whether the menu's
-      items match the window's state.
-   2. **One helper in `Shenora.Windows`** shows a form's system menu at a screen point: the item states from the
-      kit's own placement, since an `OptimizedForm` maximized its own way looks Normal to the system; then the
-      choice as a `WM_SYSCOMMAND`, which `OptimizedForm` already routes through its manual maximize and restore.
-      Move and Size are disabled while it is maximized its own way.
-   3. **`ChromiumView`:** a right click released in the drag area reports a third action,
-      `ChromiumDragAreaAction.ShowSystemMenu`, at the release point. The press is held as the left one is, so
-      the page sees neither half.
-   4. **WebView2 pages:** a window command, `SHOW_SYSTEM_MENU` at a CSS point (converted like the caption
-      rectangles), and a `showSystemMenu` beside the other window commands in `@shenora/react`, which a page
-      calls from its caption's `contextmenu` event.
-
-   **Open questions:** Alt+Space too? With the page focused the key goes to CEF's window rather than the form's,
-   so taking it probably needs a CEF key handler (unmeasured). And the WebView2 route: build it, or `ChromiumView`
-   only?
+3c. **The system menu, what is left: the real input.** It is built for both engines (`docs/design/shells.md`),
+   and measured with posted messages only: every way in opens it, with the right items, normal and maximized. Unmeasured:
+   - A real right click on a drag area, in a `ChromiumView` and in the Chromium shell. The shell's routing is the
+     left button's, which was measured with the real pointer.
+   - A real Alt+Space with the PAGE focused, on a WebView2 page, a `ChromiumView` page and the Chromium shell.
+     The key goes to the browser's window, not the form's, so whether it reaches the window's menu is the
+     question. If it does not, the page's engine needs to hand it on (WebView2's `AcceleratorKeyPressed`, a CEF
+     key handler).
+   - The taskbar's window menu on a Chromium window: the message it sends (`WM_POPUPSYSTEMMENU`, posted) opened
+     nothing there, where it opens the `OptimizedForm`'s.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).

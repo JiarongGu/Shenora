@@ -187,6 +187,7 @@ Frameless chrome drives the real window through these.
 | `WindowCommandModule.IsMaximizedType` | `IS_MAXIMIZED` | Route: is it maximized? Answers { maximized } — authoritative for the chrome's glyph, since a manual work-area maximize never shows in WindowState. |
 | `WindowCommandModule.StartDragType` | `START_DRAG` | Route: begin an OS window-move loop (the page's header on mousedown). |
 | `WindowCommandModule.StartResizeType` | `START_RESIZE` | Route: begin an OS resize loop: { edge } — top, topLeft or topRight. |
+| `WindowCommandModule.ShowSystemMenuType` | `SHOW_SYSTEM_MENU` | Route: open the window's system menu at the pointer, as a right click on a caption does (the page's caption, on its contextmenu event). |
 | `WindowCommandModule.SetThemeType` | `SET_THEME` | Route: { dark }. |
 | `WindowCommandModule.SetCaptionButtonsType` | `SET_CAPTION_BUTTONS` | Route: { buttons }, the caption-button hit rectangles. |
 | `WindowCommandModule.CaptionButtonStateEvent` | `CAPTION_BUTTON_STATE` | Event, under Module: { hot?, pressed? }, which caption button the OS is hovering or pressing, for a page that draws its buttons and lost their mouse events to the hit-test (the client's useCaptionButtonState). |
@@ -227,6 +228,7 @@ The Windows shell's routes by the same names, plus the caption-button state even
 | `ChromiumWindowCommands.StartDragType` | `START_DRAG` |  |
 | `ChromiumWindowCommands.StartResizeType` | `START_RESIZE` |  |
 | `ChromiumWindowCommands.SetCaptionButtonsType` | `SET_CAPTION_BUTTONS` |  |
+| `ChromiumWindowCommands.ShowSystemMenuType` | `SHOW_SYSTEM_MENU` |  |
 | `ChromiumWindowCommands.SetThemeType` | `SET_THEME` | Route: { dark }, the page's theme, for a window that paints its caption buttons. |
 | `ChromiumWindowCommands.CaptionButtonStateEvent` | `CAPTION_BUTTON_STATE` | The event this window's page receives when the OS changes what it is doing to a caption button: { hot?, pressed? }, each a button kind or absent. |
 

@@ -108,6 +108,10 @@ public sealed class WindowCommandModule : ModuleBase
     /// <c>topRight</c>.</summary>
     public const string StartResizeType = "START_RESIZE";
 
+    /// <summary>Route: open the window's system menu at the pointer, as a right click on a caption does (the page's
+    /// caption, on its <c>contextmenu</c> event). It answers before the menu opens. No payload.</summary>
+    public const string ShowSystemMenuType = "SHOW_SYSTEM_MENU";
+
     /// <summary>Route: <c>{ dark }</c>. Opt-in — unset <see cref="WindowCommandOptions.ApplyTheme"/>
     /// answers <c>NO_ROUTE</c>.</summary>
     public const string SetThemeType = "SET_THEME";
@@ -195,6 +199,13 @@ public sealed class WindowCommandModule : ModuleBase
                 window.Post(() => FormCaption.Resize(form, hitTest));
                 return Done();
 
+            case ShowSystemMenuType:
+                // Queued, where the drag's handoff runs inline: the menu is a modal loop, which inline would hold the
+                // answer until it closed.
+                var at = Cursor.Position;
+                window.Queue(() => FormCaption.ShowSystemMenu(form, at));
+                return Done();
+
             case SetThemeType when window.ApplyTheme is { } applyTheme:
                 var dark = PayloadHelper.GetOptionalValue<bool?>(request.Payload, "dark") ?? true;
                 window.Post(() => applyTheme(dark));
@@ -242,7 +253,7 @@ public sealed class WindowCommandModule : ModuleBase
     private Task<object?> Gone(IpcRequest request) => request.Type.ToUpperInvariant() switch
     {
         IsMaximizedType => Task.FromResult<object?>(new { Maximized = false }),
-        MinimizeType or ToggleMaximizeType or CloseType or StartDragType or StartResizeType => Done(),
+        MinimizeType or ToggleMaximizeType or CloseType or StartDragType or StartResizeType or ShowSystemMenuType => Done(),
         _ => throw UnknownType(request),
     };
 
@@ -278,6 +289,9 @@ public sealed class WindowCommandModule : ModuleBase
         /// </para>
         /// </summary>
         public void Post(Action action) => _ui.Post(action);
+
+        /// <summary>Queued behind the request, never inline, for a modal loop the route must not wait on.</summary>
+        public void Queue(Action action) => _ui.Queue(action);
     }
 
     /// <summary>

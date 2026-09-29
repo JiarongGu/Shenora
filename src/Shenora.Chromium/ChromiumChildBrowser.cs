@@ -35,11 +35,12 @@ public sealed class ChromiumChildBrowserOptions
     public Action<bool>? MoveFocusRequested { get; init; }
 
     /// <summary>
-    /// The page's <c>-webkit-app-region: drag</c> area asks the host to move its window, or to maximize or restore it,
-    /// as a caption would. A mouse press there is held until the pointer passes the system's drag threshold, so a still
-    /// click asks nothing; it does not reach the page, and a touch or a pen does. Called on the thread of
-    /// <see cref="UiDispatcher"/>, after the press: ⚠ the button may be up by then, so check it before starting a move
-    /// loop, which would otherwise follow the pointer until the next click. Null leaves every press to the page.
+    /// The page's <c>-webkit-app-region: drag</c> area asks the host to move its window, to maximize or restore it, or to
+    /// open its system menu, as a caption would. A mouse press there is held until the pointer passes the system's drag
+    /// threshold, so a still click asks nothing, and a right click asks for the menu as it is released. Neither reaches
+    /// the page; a touch or a pen does. Called on the thread of <see cref="UiDispatcher"/>, after the press: ⚠ the button
+    /// may be up by then, so check it before starting a move loop, which would otherwise follow the pointer until the
+    /// next click. Null leaves every press to the page.
     /// </summary>
     public Action<ChromiumDragAreaPress>? DragAreaPressed { get; init; }
 }
@@ -60,6 +61,9 @@ public enum ChromiumDragAreaAction
 
     /// <summary>A double click: maximize the window, or restore it.</summary>
     ToggleMaximize,
+
+    /// <summary>A right click, released in the area: open the window's system menu at the release.</summary>
+    ShowSystemMenu,
 }
 
 /// <summary>

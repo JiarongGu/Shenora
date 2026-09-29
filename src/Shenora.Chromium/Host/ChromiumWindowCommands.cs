@@ -6,10 +6,10 @@ namespace Shenora.Chromium.Host;
 /// The page's window commands on a Chromium window: the SAME module and routes as the WebView2 shell's
 /// <c>WindowCommandModule</c>, so a page's title bar works unchanged on either engine (a test pins the names).
 /// A drag or a resize is a no-op here: Chromium moves the window natively from the page's
-/// <c>-webkit-app-region</c>. <c>SET_CAPTION_BUTTONS</c> is always wired on Windows, because the shell owns the
-/// window, and the page learns hover and press from <see cref="CaptionButtonStateEvent"/>. <c>SET_THEME</c> is wired
-/// for a window that paints its caption buttons, which follow it. Otherwise it, and <c>SET_CAPTION_BUTTONS</c> on
-/// another OS, answer <c>NO_ROUTE</c> (the module exists, the type does not), as the WebView2 module does for a
+/// <c>-webkit-app-region</c>. <c>SET_CAPTION_BUTTONS</c> and <c>SHOW_SYSTEM_MENU</c> are always wired on Windows,
+/// because the shell owns the window, and the page learns hover and press from <see cref="CaptionButtonStateEvent"/>.
+/// <c>SET_THEME</c> is wired for a window that paints its caption buttons, which follow it. Otherwise it, and the other
+/// two on another OS, answer <c>NO_ROUTE</c> (the module exists, the type does not), as the WebView2 module does for a
 /// route that is not wired.
 /// <para>
 /// ONE module for every window, mapped once: each command acts on the window whose page sent it
@@ -28,6 +28,7 @@ internal sealed class ChromiumWindowCommands(Func<ChromiumWindow?> current) : Mo
     public const string StartDragType = "START_DRAG";
     public const string StartResizeType = "START_RESIZE";
     public const string SetCaptionButtonsType = "SET_CAPTION_BUTTONS";
+    public const string ShowSystemMenuType = "SHOW_SYSTEM_MENU";
 
     /// <summary>Route: <c>{ dark }</c>, the page's theme, for a window that paints its caption buttons.</summary>
     public const string SetThemeType = "SET_THEME";
@@ -53,6 +54,9 @@ internal sealed class ChromiumWindowCommands(Func<ChromiumWindow?> current) : Mo
             case CloseType: window?.Close(); return Done();
             case IsMaximizedType: return Task.FromResult<object?>(new { Maximized = window?.IsMaximized ?? false });
             case StartDragType or StartResizeType: return Done();
+            case ShowSystemMenuType when ChromiumWindow.SupportsSystemMenu:
+                window?.ShowSystemMenu();
+                return Done();
             case SetCaptionButtonsType when ChromiumWindow.SupportsCaptionButtons:
                 window?.SetCaptionButtons(request.Payload);
                 return Done();

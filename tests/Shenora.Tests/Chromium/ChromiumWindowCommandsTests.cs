@@ -24,6 +24,7 @@ public class ChromiumWindowCommandsTests
         Assert.Equal(WindowCommandModule.StartResizeType, ChromiumWindowCommands.StartResizeType);
         Assert.Equal(WindowCommandModule.SetCaptionButtonsType, ChromiumWindowCommands.SetCaptionButtonsType);
         Assert.Equal(WindowCommandModule.SetThemeType, ChromiumWindowCommands.SetThemeType);
+        Assert.Equal(WindowCommandModule.ShowSystemMenuType, ChromiumWindowCommands.ShowSystemMenuType);
     }
 
     [Fact]
@@ -73,8 +74,9 @@ public class ChromiumWindowCommandsTests
     {
         var module = Module();
 
-        // SET_CAPTION_BUTTONS is wired on Windows, the OS this suite runs on, since the shell owns the window.
-        foreach (var type in new[] { "MINIMIZE", "TOGGLE_MAXIMIZE", "CLOSE", "START_DRAG", "START_RESIZE", "SET_CAPTION_BUTTONS" })
+        // SET_CAPTION_BUTTONS and SHOW_SYSTEM_MENU are wired on Windows, the OS this suite runs on, since the shell owns
+        // the window.
+        foreach (var type in new[] { "MINIMIZE", "TOGGLE_MAXIMIZE", "CLOSE", "START_DRAG", "START_RESIZE", "SET_CAPTION_BUTTONS", "SHOW_SYSTEM_MENU" })
             Assert.True((await module.HandleMessageAsync(new IpcRequest { Id = type, Module = ChromiumWindowCommands.Module, Type = type })).Success, type);
 
         var maximized = await module.HandleMessageAsync(new IpcRequest { Id = "m", Module = ChromiumWindowCommands.Module, Type = "IS_MAXIMIZED" });

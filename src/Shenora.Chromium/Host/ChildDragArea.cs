@@ -48,8 +48,9 @@ internal sealed class DragAreas
 /// A child browser's drag area on Windows: its render widgets are subclassed, and a mouse press there is the host's,
 /// not the page's. Held with the capture until the pointer passes the system's drag threshold, and only then handed to
 /// the host as a move, as the Chromium shell's caption is (<see cref="CaptionHitTest"/> has what the other ways
-/// measured): a still click moves nothing and enters no modal loop. A double click is handed over at once. A touch or
-/// a pen, and anything outside the area, reach the page. CEF's UI thread, which owns the render widgets.
+/// measured): a still click moves nothing and enters no modal loop. A double click is handed over at once, and a right
+/// click as it is released there. A touch or a pen, and anything outside the area, reach the page. CEF's UI thread,
+/// which owns the render widgets.
 /// <para>
 /// Nothing in the window moves it otherwise: the render widget answers HTCLIENT over the whole page, and the host's
 /// window is on another thread, which a child's HTTRANSPARENT does not reach.
@@ -58,8 +59,8 @@ internal sealed class DragAreas
 internal sealed unsafe class ChildDragArea : IDisposable
 {
     private const uint WM_NCDESTROY = 0x0082, WM_MOUSEMOVE = 0x0200, WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202,
-        WM_LBUTTONDBLCLK = 0x0203, WM_RBUTTONDOWN = 0x0204, WM_MBUTTONDBLCLK = 0x0209, WM_CAPTURECHANGED = 0x0215,
-        WM_XBUTTONDOWN = 0x020B, WM_XBUTTONDBLCLK = 0x020D;
+        WM_LBUTTONDBLCLK = 0x0203, WM_RBUTTONDOWN = 0x0204, WM_RBUTTONUP = 0x0205, WM_RBUTTONDBLCLK = 0x0206,
+        WM_MBUTTONDBLCLK = 0x0209, WM_CAPTURECHANGED = 0x0215, WM_XBUTTONDOWN = 0x020B, WM_XBUTTONDBLCLK = 0x020D;
     private const nint MK_LBUTTON = 0x0001;
     private const nuint WidgetId = 3;
 
@@ -69,6 +70,7 @@ internal sealed unsafe class ChildDragArea : IDisposable
     private GCHandle _self;          // allocated once a window is subclassed, so a browser that never opens holds nothing
     private nint _holder;            // the widget holding a press, until it moves far enough or ends
     private Point _press;            // where that press began, in screen px
+    private nint _rightPress;        // the widget a right press in the area went down on, until its release
     private bool _releasing;         // the capture change our own release causes
     private bool _disposed;
 
@@ -175,6 +177,16 @@ internal sealed unsafe class ChildDragArea : IDisposable
                 // The other buttons during a held press, as the system's loop ignores them: passed on, they would reach
                 // Chromium in the middle of a press it never saw begin.
                 case (>= WM_RBUTTONDOWN and <= WM_MBUTTONDBLCLK) or (>= WM_XBUTTONDOWN and <= WM_XBUTTONDBLCLK) when me._holder == hwnd:
+                    return 0;
+                // A caption's right click opens its menu as the button is released, over the caption.
+                case WM_RBUTTONDOWN or WM_RBUTTONDBLCLK:
+                    me._rightPress = !FromTouchOrPen() && InArea(me, hwnd, lParam) ? hwnd : 0;
+                    if (me._rightPress != 0) return 0;
+                    break;
+                case WM_RBUTTONUP when me._rightPress == hwnd:
+                    // The page never saw this press begin, so it does not see it end.
+                    me._rightPress = 0;
+                    if (InArea(me, hwnd, lParam)) me._pressed(new ChromiumDragAreaPress(ChromiumDragAreaAction.ShowSystemMenu, Screen(hwnd, lParam)));
                     return 0;
                 case WM_CAPTURECHANGED when me._releasing:
                     return 0;

@@ -13,8 +13,9 @@ namespace Shenora.Tests.Chromium;
 /// </summary>
 public class ChildDragAreaTests
 {
-    private const uint WM_MOUSEMOVE = 0x0200, WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, WM_LBUTTONDBLCLK = 0x0203;
-    private const nint MK_LBUTTON = 1;
+    private const uint WM_MOUSEMOVE = 0x0200, WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, WM_LBUTTONDBLCLK = 0x0203,
+        WM_RBUTTONDOWN = 0x0204, WM_RBUTTONUP = 0x0205;
+    private const nint MK_LBUTTON = 1, MK_RBUTTON = 2;
 
     [Fact]
     public void A_later_area_wins_where_two_overlap()
@@ -111,6 +112,50 @@ public class ChildDragAreaTests
             Send(page, WM_LBUTTONDOWN, MK_LBUTTON, X(10), X(10));
             Assert.Equal(2, pageDowns);
             Assert.Equal(2, presses.Count);
+        });
+    }
+
+    // A caption's right click opens its menu as it is released there. The page sees neither half of it, and keeps a right
+    // click anywhere else.
+    [Fact]
+    public void A_right_click_released_in_the_area_asks_for_the_system_menu_there()
+    {
+        Sta.Run(() =>
+        {
+            using var form = new Form();
+            var page = new Control { Bounds = new Rectangle(0, 0, 400, 300) };
+            form.Controls.Add(page);
+            _ = form.Handle;
+            _ = page.Handle;
+            int pageDowns = 0, pageUps = 0;
+            page.MouseDown += (_, _) => pageDowns++;
+            page.MouseUp += (_, _) => pageUps++;
+            var presses = new List<ChromiumDragAreaPress>();
+            var area = new ChildDragArea(presses.Add, null);
+            area.Areas.Set((0, 0, 200, 30, true));
+            Assert.True(area.Adopt(page.Handle));
+            var scale = page.DeviceDpi / 96.0;
+            int X(double dip) => (int)Math.Round(dip * scale);
+
+            Send(page, WM_RBUTTONDOWN, MK_RBUTTON, X(10), X(10));
+            Assert.Empty(presses);   // asked as it is released
+            Send(page, WM_RBUTTONUP, 0, X(20), X(12));
+            var menu = Assert.Single(presses);
+            Assert.Equal(ChromiumDragAreaAction.ShowSystemMenu, menu.Action);
+            Assert.Equal(page.PointToScreen(new Point(X(20), X(12))), menu.Position);
+
+            // Released off the area: nothing, and the page still sees no half of it.
+            Send(page, WM_RBUTTONDOWN, MK_RBUTTON, X(10), X(10));
+            Send(page, WM_RBUTTONUP, 0, X(10), X(50));
+            Assert.Single(presses);
+            Assert.Equal((0, 0), (pageDowns, pageUps));
+
+            // Outside the area it is the page's.
+            Send(page, WM_RBUTTONDOWN, MK_RBUTTON, X(10), X(50));
+            Send(page, WM_RBUTTONUP, 0, X(10), X(50));
+            Assert.Equal((1, 1), (pageDowns, pageUps));
+            Assert.Single(presses);
+            area.Dispose();
         });
     }
 

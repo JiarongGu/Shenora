@@ -48,6 +48,7 @@ interface WindowRequests {
   IS_MAXIMIZED: void;
   START_DRAG: void;
   START_RESIZE: { edge: WindowResizeEdge };
+  SHOW_SYSTEM_MENU: void;
   SET_THEME: { dark: boolean };
   SET_CAPTION_BUTTONS: { buttons: CaptionButtonRect[] };
 }
@@ -91,6 +92,16 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
   /** Call from the top strip's `onMouseDown` — hands off to the OS size loop. */
   startResize(edge: WindowResizeEdge = 'top'): Promise<void> {
     return this.send('START_RESIZE', { payload: { edge } });
+  }
+
+  /**
+   * Open the window's system menu at the pointer, as a right click on a real caption does. Call from the header's
+   * `onContextMenu`, and `preventDefault()` there so the browser's own menu does not open too. It resolves as the
+   * menu opens, not when it closes. A Chromium page's `-webkit-app-region: drag` area opens the menu on a right click
+   * without it.
+   */
+  showSystemMenu(): Promise<void> {
+    return this.send('SHOW_SYSTEM_MENU');
   }
 
   /** Resync the native chrome to the app theme (host `WindowCommandOptions.ApplyTheme`). */

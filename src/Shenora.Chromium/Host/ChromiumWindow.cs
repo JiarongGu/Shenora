@@ -87,6 +87,25 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
 
     public void Activate() { if (_window != null) { _window->show(_window); _window->activate(_window); } }
 
+    /// <summary>True where the shell can open a window's system menu: Windows.</summary>
+    public static bool SupportsSystemMenu =>
+#if CEF_WINDOWS
+        true;
+#else
+        false;
+#endif
+
+    /// <summary><c>SHOW_SYSTEM_MENU</c>: the window's system menu at the pointer. Queued behind the request that asked,
+    /// which answers first, since the menu is a modal loop. UI thread.</summary>
+    public void ShowSystemMenu()
+    {
+#if CEF_WINDOWS
+        if (_window == null) return;
+        var hwnd = _window->get_window_handle(_window);
+        CefTask.Post(cef_thread_id_t.TID_UI, () => SystemMenu.ShowAtPointer(hwnd));
+#endif
+    }
+
     /// <summary>True where the shell can make page-drawn caption buttons real ones: Windows, today.</summary>
     public static bool SupportsCaptionButtons =>
 #if CEF_WINDOWS
@@ -186,7 +205,9 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         window->show(window);
 #if CEF_WINDOWS
         // Before the page can ask for anything: the drag area needs the frame's hit-test from the start.
-        _captionHitTest = CaptionHitTest.Attach(window->get_window_handle(window), _captions, _options.FramelessChrome, _log);
+        var hwnd = window->get_window_handle(window);
+        _captionHitTest = CaptionHitTest.Attach(hwnd, _captions, _options.FramelessChrome, _log);
+        SystemMenu.Ensure(hwnd);
 #endif
         // Without the hit-test, painted buttons would look real and do nothing.
         if (PaintsCaptionButtons && _captionHitTest is not null)
