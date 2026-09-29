@@ -39,11 +39,18 @@ internal static unsafe class CefStartup
     public static int ExecuteIfSubprocess(ChromiumApp app, ILogger? log)
     {
         SelectApiVersion();
+#if CEF_MACOS
+        // Every subprocess runs the bundle's native helper, never .NET, and sandboxes itself there.
+        _ = app;
+        _ = log;
+        return -1;
+#else
         if (Sandbox != 0) return -1;   // the shim ran every subprocess itself
         var args = MainArgs(RuntimePointer("Shenora.Chromium.Instance"));
         var code = Cef.cef_execute_process(&args, app.ForCef(), null);
         if (code < 0) AppCallback.Log(log, () => "[Shenora.Chromium] Running without CEF's bootstrap launcher: Chromium's sandbox is OFF", LogLevel.Warning);
         return code;
+#endif
     }
 
     /// <summary>Initialize CEF. Throws when it will not start, naming its log.</summary>
@@ -64,11 +71,22 @@ internal static unsafe class CefStartup
         var subprocess = sandbox == 0
             ? LauncherBesideApp(System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name, AppContext.BaseDirectory, Environment.ProcessPath, File.Exists)
             : null;
+#if CEF_MACOS
+        // The bundle's helper, which sandboxes each subprocess itself: the browser process is never sandboxed there.
+        subprocess = MacPlatform.Helper;
+        var noSandbox = 0;
+        var framework = MacPlatform.Framework;
+        var bundle = Path.GetDirectoryName(MacPlatform.Contents) ?? MacPlatform.Contents;
+#else
+        var noSandbox = sandbox == 0 ? 1 : 0;
+        var framework = "";
+        var bundle = "";
+#endif
         subprocess ??= "";
         var cef = new _cef_settings_t
         {
             size = (nuint)sizeof(_cef_settings_t),
-            no_sandbox = sandbox == 0 ? 1 : 0,
+            no_sandbox = noSandbox,
             multi_threaded_message_loop = settings.MultiThreadedLoop ? 1 : 0,
             command_line_args_disabled = settings.IsDevelopment ? 0 : 1,
             remote_debugging_port = settings.IsDevelopment ? settings.DevToolsPort : 0,
@@ -81,11 +99,15 @@ internal static unsafe class CefStartup
         fixed (char* p = profile)
         fixed (char* l = logFile)
         fixed (char* s = subprocess)
+        fixed (char* f = framework)
+        fixed (char* b = bundle)
         {
             cef.root_cache_path = CefStrings.View(c, settings.Cache.Length);
             cef.cache_path = CefStrings.View(p, profile.Length);
             cef.log_file = CefStrings.View(l, logFile.Length);
             if (subprocess.Length > 0) cef.browser_subprocess_path = CefStrings.View(s, subprocess.Length);
+            if (framework.Length > 0) cef.framework_dir_path = CefStrings.View(f, framework.Length);
+            if (bundle.Length > 0) cef.main_bundle_path = CefStrings.View(b, bundle.Length);
             initialized = Cef.cef_initialize(&args, &cef, app.ForCef(), (void*)sandbox);
         }
         if (initialized == 0)
@@ -128,6 +150,9 @@ internal static unsafe class CefStartup
 #endif
         try
         {
+#if CEF_MACOS
+            MacPlatform.Prepare();
+#endif
             Cef.cef_api_hash(CefApi.Version, 0);
         }
         catch (DllNotFoundException ex)

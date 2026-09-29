@@ -13,14 +13,20 @@
 
     So the app's assembly is named <App>.App, and the build refuses otherwise rather than lay out an app that
     cannot start. Set ShenoraChromiumLayout=false to build without the engine (a compile-only CI step).
-    Windows only today: the macOS and Linux layouts (app bundles, helper processes) are not built yet.
+
+      ShenoraChromiumMacLayout  after Build on macOS: bundle/<App>.app, whose Contents/MacOS holds the app with the .NET
+                                apphost as <App>, and whose Contents/Frameworks holds CEF's framework and the five
+                                helper apps CEF starts its subprocesses from, each the kit's helper.
+
+    The Linux layout is not built yet.
   -->
   <Import Project="$(MSBuildThisFileDirectory)Shenora.Chromium.Cef.g.targets" />
 
   <PropertyGroup>
     <ShenoraChromiumLayout Condition="'$(ShenoraChromiumLayout)' == ''">true</ShenoraChromiumLayout>
-    <!-- CEF's bootstrap.exe IS the app's exe, so the .NET apphost would be a second, wrong one. -->
-    <UseAppHost Condition="'$(ShenoraChromiumLayout)' == 'true'">false</UseAppHost>
+    <!-- On Windows CEF's bootstrap.exe IS the app's exe, so the .NET apphost would be a second, wrong one. On macOS
+         the apphost is the bundle's executable. -->
+    <UseAppHost Condition="'$(ShenoraChromiumLayout)' == 'true' and $(RuntimeIdentifier.StartsWith('win'))">false</UseAppHost>
 
     <ShenoraCefPlatform Condition="'$(RuntimeIdentifier)' == 'win-x64'">windows64</ShenoraCefPlatform>
     <ShenoraCefPlatform Condition="'$(RuntimeIdentifier)' == 'win-arm64'">windowsarm64</ShenoraCefPlatform>
@@ -42,9 +48,12 @@
     <ShenoraCefRoot>$([System.IO.Path]::Combine('$(ShenoraCefCache)', '$(ShenoraCefBuild)', '$(ShenoraCefPlatform)'))</ShenoraCefRoot>
     <ShenoraCefDist>$([System.IO.Path]::Combine('$(ShenoraCefRoot)', 'dist'))</ShenoraCefDist>
 
-    <!-- The package's own shim; in this repo, where an app references the project, the one cef-native staged. -->
-    <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == '' and Exists('$(MSBuildThisFileDirectory)..\tools')">$(MSBuildThisFileDirectory)..\tools\$(RuntimeIdentifier)\native\shenora_chromium_shim.dll</ShenoraChromiumShim>
-    <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == ''">$(MSBuildThisFileDirectory)..\artifacts\runtimes\$(RuntimeIdentifier)\native\shenora_chromium_shim.dll</ShenoraChromiumShim>
+    <!-- The package's own native half, the Windows shim or the macOS helper; in this repo, where an app references the
+         project, the one cef-native staged. -->
+    <_ShenoraNative Condition="$(ShenoraCefPlatform.StartsWith('macos'))">shenora_chromium_helper</_ShenoraNative>
+    <_ShenoraNative Condition="'$(_ShenoraNative)' == ''">shenora_chromium_shim.dll</_ShenoraNative>
+    <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == '' and Exists('$(MSBuildThisFileDirectory)..\tools')">$(MSBuildThisFileDirectory)..\tools\$(RuntimeIdentifier)\native\$(_ShenoraNative)</ShenoraChromiumShim>
+    <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == ''">$(MSBuildThisFileDirectory)..\artifacts\runtimes\$(RuntimeIdentifier)\native\$(_ShenoraNative)</ShenoraChromiumShim>
   </PropertyGroup>
 
   <!-- GetFileHash has no SHA-1, and SHA-1 is what CEF's index publishes. -->
@@ -82,10 +91,10 @@
   <Target Name="_ShenoraChromiumCheck">
     <Error Condition="'$(ShenoraCefPlatform)' == ''"
            Text="Shenora.Chromium needs a RuntimeIdentifier CEF publishes a build for (win-x64, win-arm64, osx-x64, osx-arm64, linux-x64, linux-arm64); this build has '$(RuntimeIdentifier)'. Set &lt;RuntimeIdentifier&gt; in the app's project." />
-    <Error Condition="!$(ShenoraCefPlatform.StartsWith('windows'))" Text="The Chromium shell's app layout is Windows-only today (this build targets $(RuntimeIdentifier)); the macOS and Linux layouts are not built yet." />
+    <Error Condition="$(ShenoraCefPlatform.StartsWith('linux'))" Text="The Chromium shell's app layout is Windows' and macOS' today (this build targets $(RuntimeIdentifier)); the Linux layout is not built yet." />
     <Error Condition="!$(AssemblyName.EndsWith('.App'))"
            Text="A Shenora.Chromium app's own assembly must be named '&lt;App&gt;.App' (this one is '$(AssemblyName)'): CEF's launcher runs as &lt;App&gt;.exe and loads &lt;App&gt;.dll, the kit's shim, which starts &lt;App&gt;.App.dll. Set &lt;AssemblyName&gt;$(AssemblyName).App&lt;/AssemblyName&gt;." />
-    <Error Condition="!Exists('$(ShenoraChromiumShim)')" Text="The kit's shim for $(RuntimeIdentifier) is missing at $(ShenoraChromiumShim). The package carries it for win-x64 and win-arm64; in this repo, `node devtools/dev.mjs cef-native --rid $(RuntimeIdentifier)` builds and stages it." />
+    <Error Condition="!Exists('$(ShenoraChromiumShim)')" Text="The kit's native half for $(RuntimeIdentifier) is missing at $(ShenoraChromiumShim). The package carries it for win-x64 and win-arm64; in this repo, `node devtools/dev.mjs cef-native --rid $(RuntimeIdentifier)` builds and stages it (a macOS RID on a Mac)." />
   </Target>
 
   <Target Name="ShenoraChromiumFetchCef" DependsOnTargets="_ShenoraChromiumCheck" Condition="'$(ShenoraChromiumLayout)' == 'true'">
@@ -138,18 +147,85 @@
     </ItemGroup>
   </Target>
 
-  <Target Name="ShenoraChromiumLayout" AfterTargets="Build" DependsOnTargets="_ShenoraChromiumLayoutInputs" Condition="'$(ShenoraChromiumLayout)' == 'true'">
+  <Target Name="ShenoraChromiumLayout" AfterTargets="Build" DependsOnTargets="_ShenoraChromiumLayoutInputs" Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
     <Copy SourceFiles="@(_ShenoraCefRuntime)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraCefDist)\Release\$(_ShenoraBootstrap)" DestinationFiles="$(OutDir)$(_ShenoraAppExe).exe" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(OutDir)$(_ShenoraAppExe).dll" SkipUnchangedFiles="true" />
   </Target>
 
-  <Target Name="ShenoraChromiumPublishLayout" AfterTargets="Publish" DependsOnTargets="_ShenoraChromiumLayoutInputs" Condition="'$(ShenoraChromiumLayout)' == 'true'">
+  <Target Name="ShenoraChromiumPublishLayout" AfterTargets="Publish" DependsOnTargets="_ShenoraChromiumLayoutInputs" Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
     <Copy SourceFiles="@(_ShenoraCefRuntime)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(PublishDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraCefDist)\Release\$(_ShenoraBootstrap)" DestinationFiles="$(PublishDir)$(_ShenoraAppExe).exe" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(PublishDir)$(_ShenoraAppExe).dll" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- An Info.plist, the one piece of a bundle the build has to write rather than copy. -->
+  <UsingTask TaskName="ShenoraMacPlist" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <File ParameterType="System.String" Required="true" />
+      <Executable ParameterType="System.String" Required="true" />
+      <Identifier ParameterType="System.String" Required="true" />
+      <Version ParameterType="System.String" Required="true" />
+      <Helper ParameterType="System.Boolean" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        string E(string s) => System.Security.SecurityElement.Escape(s);
+        var plist = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+          + "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+          + "<plist version=\"1.0\">\n<dict>\n"
+          + "  <key>CFBundleExecutable</key><string>" + E(Executable) + "</string>\n"
+          + "  <key>CFBundleIdentifier</key><string>" + E(Identifier) + "</string>\n"
+          + "  <key>CFBundleName</key><string>" + E(Executable) + "</string>\n"
+          + "  <key>CFBundlePackageType</key><string>APPL</string>\n"
+          + "  <key>CFBundleShortVersionString</key><string>" + E(Version) + "</string>\n"
+          + "  <key>CFBundleVersion</key><string>" + E(Version) + "</string>\n"
+          + "  <key>LSMinimumSystemVersion</key><string>12.0</string>\n"
+          + "  <key>NSHighResolutionCapable</key><true/>\n"
+          + (Helper ? "  <key>LSUIElement</key><true/>\n" : "  <key>NSSupportsAutomaticGraphicsSwitching</key><true/>\n")
+          + "</dict>\n</plist>\n";
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(File));
+        System.IO.File.WriteAllText(File, plist);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!-- macOS: <App>.app. CEF finds its framework and helpers by the bundle's shape, so the shape is the contract. -->
+  <Target Name="ShenoraChromiumMacLayout" AfterTargets="Build" DependsOnTargets="ShenoraChromiumFetchCef"
+          Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('macos'))">
+    <PropertyGroup>
+      <_ShenoraAppExe>$(AssemblyName.Substring(0, $([MSBuild]::Subtract($(AssemblyName.Length), 4))))</_ShenoraAppExe>
+      <!-- In a folder of its own: macOS's file system ignores case, so <App>.app beside the <App>.App apphost is the
+           same name (measured: the bundle's folders could not be created). -->
+      <_ShenoraBundleDir>$(OutDir)bundle/</_ShenoraBundleDir>
+      <_ShenoraBundle>$(_ShenoraBundleDir)$(_ShenoraAppExe).app</_ShenoraBundle>
+      <_ShenoraContents>$(_ShenoraBundle)/Contents</_ShenoraContents>
+      <!-- Letters, digits, dots and hyphens only, which is all a bundle identifier may hold. -->
+      <ShenoraChromiumBundleId Condition="'$(ShenoraChromiumBundleId)' == ''">com.shenora.app.$([System.Text.RegularExpressions.Regex]::Replace('$(_ShenoraAppExe)', '[^A-Za-z0-9.-]', '-'))</ShenoraChromiumBundleId>
+      <_ShenoraBundleVersion>$(Version)</_ShenoraBundleVersion>
+      <_ShenoraBundleVersion Condition="'$(_ShenoraBundleVersion)' == ''">1.0.0</_ShenoraBundleVersion>
+    </PropertyGroup>
+    <ItemGroup>
+      <!-- The app's build output, except the bundle this target makes inside it. -->
+      <_ShenoraAppFiles Include="$(OutDir)**/*" Exclude="$(_ShenoraBundleDir)**" />
+      <_ShenoraCefFramework Include="$(ShenoraCefDist)/Release/Chromium Embedded Framework.framework/**/*" />
+      <!-- The five helpers Chromium starts its subprocess types from, all the same binary. -->
+      <_ShenoraHelper Include="helper" Variant="" />
+      <_ShenoraHelper Include="helper.gpu" Variant=" (GPU)" />
+      <_ShenoraHelper Include="helper.renderer" Variant=" (Renderer)" />
+      <_ShenoraHelper Include="helper.plugin" Variant=" (Plugin)" />
+      <_ShenoraHelper Include="helper.alerts" Variant=" (Alerts)" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ShenoraAppFiles)" DestinationFolder="$(_ShenoraContents)/MacOS/%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(OutDir)$(AssemblyName)" DestinationFiles="$(_ShenoraContents)/MacOS/$(_ShenoraAppExe)" SkipUnchangedFiles="true" />
+    <ShenoraMacPlist File="$(_ShenoraContents)/Info.plist" Executable="$(_ShenoraAppExe)" Identifier="$(ShenoraChromiumBundleId)" Version="$(_ShenoraBundleVersion)" />
+    <Copy SourceFiles="@(_ShenoraCefFramework)" DestinationFolder="$(_ShenoraContents)/Frameworks/Chromium Embedded Framework.framework/%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(_ShenoraContents)/Frameworks/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant).app/Contents/MacOS/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant)" SkipUnchangedFiles="true" />
+    <ShenoraMacPlist File="$(_ShenoraContents)/Frameworks/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant).app/Contents/Info.plist"
+                     Executable="$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant)" Identifier="$(ShenoraChromiumBundleId).%(_ShenoraHelper.Identity)"
+                     Version="$(_ShenoraBundleVersion)" Helper="true" />
   </Target>
 
 </Project>

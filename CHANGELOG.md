@@ -66,7 +66,8 @@ at the first list and missed five more breaking changes.
   brings the code, not CEF, and the engine says so as it starts. Started as `dotnet <App>.App.dll` instead, as an
   IDE may, the app still runs, with the sandbox off and every CEF subprocess run through `<App>.exe`. win-x64
   and win-arm64. ⚠ win-arm64 is built and laid out (an ARM64 launcher, shim and CEF), but has not yet run on
-  ARM64 hardware.
+  ARM64 hardware. ⚠ macOS runs from a project reference on an Intel Mac (the build lays out `bundle/<App>.app`),
+  but the package does not carry the macOS assembly or helper yet.
 
 - **`createChromiumTransport()` in `@shenora/react`, and `createHostTransport()` finds the Chromium hosts**
   (**D83**). They mark each HTML document they serve, the app's own routes' included, with

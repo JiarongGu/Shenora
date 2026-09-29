@@ -1,29 +1,48 @@
-// Build the Chromium shell's native shim (src/Shenora.Chromium/native) against the pinned CEF build.
+// Build the Chromium shell's native half (src/Shenora.Chromium/native) for one RID.
 //
 //   node devtools/dev.mjs cef-native                  → src/Shenora.Chromium/artifacts/runtimes/win-x64/native/shenora_chromium_shim.dll
 //   node devtools/dev.mjs cef-native --rid win-arm64  → …/runtimes/win-arm64/native/…, cross-compiled from x64
+//   node devtools/dev.mjs cef-native --rid osx-x64    → …/runtimes/osx-x64/native/shenora_chromium_helper, on a Mac
 //
 // That staging folder is what the package packs (gitignored, never committed, like the launcher's), and what
 // the app-build targets fall back to for an app in this repo that references the project rather than the package.
 //
-// Windows only today. It needs CMake (on PATH, or the copy Visual Studio ships), MSVC for the target (win-arm64
-// needs Visual Studio's "C++ ARM64 build tools" component), the pinned CEF build for the RID (downloaded and
-// SHA-1-checked by cef-cache.mjs), and the .NET SDK's static nethost for the RID and the SDK's own runtime version.
+// Windows: the shim CEF's bootstrap.exe loads. It needs CMake (on PATH, or the copy Visual Studio ships), MSVC for
+// the target (win-arm64 needs Visual Studio's "C++ ARM64 build tools" component), the pinned CEF build for the RID
+// (downloaded and SHA-1-checked by cef-cache.mjs), and the .NET SDK's static nethost for the RID.
+// macOS: the helper every CEF subprocess runs, built with clang against no headers, on a Mac.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { distribution, fail, main, pin, project, repo, run } from './cef-cache.mjs';
 
-/** The RIDs the shim builds for: CEF's platform name, and the Visual Studio generator's architecture. */
+/**
+ * The RIDs this builds for: CEF's platform name, the compiler's architecture, and the machine the binary must
+ * turn out to be — a PE Machine on Windows, a Mach-O CPU type on macOS.
+ */
 const targets = {
-  'win-x64': { platform: 'windows64', arch: 'x64', machine: 0x8664 },
-  'win-arm64': { platform: 'windowsarm64', arch: 'ARM64', machine: 0xaa64 },
+  'win-x64': { os: 'win32', platform: 'windows64', arch: 'x64', machine: 0x8664 },
+  'win-arm64': { os: 'win32', platform: 'windowsarm64', arch: 'ARM64', machine: 0xaa64 },
+  'osx-x64': { os: 'darwin', platform: 'macosx64', arch: 'x86_64', machine: 0x01000007 },
+  'osx-arm64': { os: 'darwin', platform: 'macosarm64', arch: 'arm64', machine: 0x0100000c },
 };
 
-/** The PE header's Machine field: what the DLL was really compiled for, whatever the build said. */
-function machineOf(dll) {
-  const bytes = fs.readFileSync(dll);
+/** What the binary was really compiled for, whatever the build said: a PE's Machine, or a Mach-O's CPU type. */
+function machineOf(binary) {
+  const bytes = fs.readFileSync(binary);
+  if (bytes.readUInt32LE(0) === 0xfeedfacf) return bytes.readUInt32LE(4);
   return bytes.readUInt16LE(bytes.readUInt32LE(0x3c) + 4);
+}
+
+/** The macOS helper: one C file, no CEF headers, the oldest macOS CEF supports. */
+function buildHelper(rid, arch) {
+  const build = path.join(repo, 'devtools', '_build', 'cef-native', rid);
+  fs.mkdirSync(build, { recursive: true });
+  const binary = path.join(build, 'shenora_chromium_helper');
+  const compile = run('clang', ['-O2', '-Wall', '-Wextra', '-Werror', '-arch', arch, '-mmacosx-version-min=12.0',
+    `-DCEF_API_VERSION=${pin.apiVersion}`, '-o', binary, path.join(project, 'native', 'helper_mac.c')]);
+  if (compile.status !== 0) fail(`build failed:\n${compile.stdout}${compile.stderr}`);
+  return binary;
 }
 
 function cmake() {
@@ -80,10 +99,8 @@ function ridArgument() {
   return rid;
 }
 
-await main('cef-native', async () => {
-  if (process.platform !== 'win32') fail('the shim is Windows-only today.');
-  const rid = ridArgument();
-  const { platform, arch, machine } = targets[rid];
+/** The Windows shim, through CMake and MSVC. */
+async function buildShim(rid, platform, arch) {
   const cef = path.join(await distribution(platform), 'cef');
   const build = path.join(repo, 'devtools', '_build', 'cef-native', rid);
   const tool = cmake();
@@ -93,13 +110,20 @@ await main('cef-native', async () => {
   if (configure.status !== 0) fail(`configure failed:\n${configure.stdout}${configure.stderr}`);
   const compile = run(tool, ['--build', build, '--config', 'Release']);
   if (compile.status !== 0) fail(`build failed:\n${compile.stdout}${compile.stderr}`);
-  const dll = path.join(build, 'Release', 'shenora_chromium_shim.dll');
-  if (!fs.existsSync(dll)) fail(`the build reported success but ${dll} is missing.`);
+  return path.join(build, 'Release', 'shenora_chromium_shim.dll');
+}
+
+await main('cef-native', async () => {
+  const rid = ridArgument();
+  const { os, platform, arch, machine } = targets[rid];
+  if (process.platform !== os) fail(`${rid} builds on ${os === 'darwin' ? 'a Mac' : 'Windows'}; this is ${process.platform}.`);
+  const binary = os === 'darwin' ? buildHelper(rid, arch) : await buildShim(rid, platform, arch);
+  if (!fs.existsSync(binary)) fail(`the build reported success but ${binary} is missing.`);
   // A stale build directory configured for another architecture builds that one and succeeds.
-  if (machineOf(dll) !== machine)
-    fail(`${dll} is machine 0x${machineOf(dll).toString(16)}, not ${rid}'s 0x${machine.toString(16)}; delete ${build} and build again.`);
+  if (machineOf(binary) !== machine)
+    fail(`${binary} is machine 0x${machineOf(binary).toString(16)}, not ${rid}'s 0x${machine.toString(16)}; delete its build folder and build again.`);
   const staged = path.join(project, 'artifacts', 'runtimes', rid, 'native');
   fs.mkdirSync(staged, { recursive: true });
-  fs.copyFileSync(dll, path.join(staged, path.basename(dll)));
-  console.log(`cef-native: ${path.relative(repo, path.join(staged, path.basename(dll)))} (${(fs.statSync(dll).size / 1024).toFixed(0)} KB, ${rid}, CEF API ${pin.apiVersion})`);
+  fs.copyFileSync(binary, path.join(staged, path.basename(binary)));
+  console.log(`cef-native: ${path.relative(repo, path.join(staged, path.basename(binary)))} (${(fs.statSync(binary).size / 1024).toFixed(0)} KB, ${rid}, CEF API ${pin.apiVersion})`);
 });

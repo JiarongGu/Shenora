@@ -382,7 +382,7 @@ internal sealed unsafe class CaptionHitTest : IDisposable
     [DllImport("user32")] private static extern int ReleaseCapture();
 }
 #else
-/// <summary>No caption hit-test on this OS yet: the macOS and Linux shells are not built.</summary>
+/// <summary>No caption hit-test on this OS yet: macOS's window chrome is CEF's own, and Linux's shell is not built.</summary>
 internal sealed class CaptionHitTest : IDisposable
 {
     public double Scale => 1.0;

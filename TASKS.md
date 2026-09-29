@@ -111,7 +111,7 @@ D37 and D51 are corrected in place to point at them.
      - 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles here (the PE header says ARM64), and an app built
        with `-r win-arm64` lays out an ARM64 launcher, shim and `libcef.dll`. Running it needs ARM64 hardware or
        a `windows-11-arm` CI runner. ⚠ The release job's cross-compile on `windows-latest` is untried until it runs.
-     - the macOS and Linux layouts (the targets refuse them by name).
+     - the Linux layout (the targets refuse it by name); macOS's is built, see 4.
    - **The page bridge needs no renderer code, and the kit's IPC runs over it unchanged** (prototype,
      2026-09-28, sandboxed through the shim). The page `fetch`es `POST /__shenora/ipc` on its own origin,
      the browser process answers from the resource handler on CEF's IO thread, and the host pushes with
@@ -190,9 +190,24 @@ D37 and D51 are corrected in place to point at them.
    Chromium window, measured only with the message the taskbar sends (`WM_POPUPSYSTEMMENU`, posted); CEF's window
    ignored it until the shell's subclass answered it. A person Shift+right-clicking the app's taskbar button is
    the check, since a probe must not act on the taskbar, another app's window.
-4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
-   reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
-   old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).
+4. **macOS: the shell RUNS from the repo on an Intel Mac** (macOS 15, CEF 154, 2026-09-29). An app built with
+   `-r osx-x64` is laid out as `bundle/<App>.app`: the .NET apphost as `Contents/MacOS/<App>`, CEF's framework and
+   five helper apps in `Contents/Frameworks`, each helper the kit's `helper_mac.c`, which sandboxes the process
+   and runs CEF alone. `NSApp` is the kit's subclass speaking `CefAppProtocol`, registered through the Objective-C
+   runtime from C#. CEF's Views works there: the probe's Views window showed its page, visible and painting 60
+   frames a second, and it handshook and echoed (100 `invoke`s: median 1.1 ms) and exited cleanly when its window
+   closed. Every subprocess ran sandboxed (`sandbox_check`), the network service included; the .NET process does not.
+   **Left:**
+   - 🔴 **The package carries nothing for macOS.** Its `lib/` is the Windows binding; a macOS app needs the
+     macOS one as `runtimes/osx-*/lib/net10.0/` (it compiles on Windows) and the helper in `tools/osx-*/`, built
+     on a Mac, so the release needs a macOS job.
+   - **.NET installed per user is not found** when the app starts from Finder or `open`, whose environment has no
+     `DOTNET_ROOT` ("You must install .NET"). A self-contained publish avoids it; there is no macOS publish layout
+     yet (the targets lay out Build only).
+   - Frameless chrome, drag regions and the caption on macOS (the Windows ones are Win32); the per-OS services
+     (clipboard, dialogs, tray); code signing; osx-arm64 (no Apple Silicon Mac here).
+   - Whether the app comes to the front when started from Finder: from `open` over ssh it stayed behind the
+     active app, which macOS 15's cooperative activation explains and does not settle.
 5. **Linux:** the per-OS services are the hard part: a tray over D-Bus (StatusNotifierItem) and file dialogs
    through xdg-desktop-portal.
 

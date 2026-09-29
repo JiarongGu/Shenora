@@ -17,6 +17,9 @@
     <PackageId>Shenora.Chromium</PackageId>
     <Description>Shenora's Chromium engine, through CEF, for an app that ships its own browser engine instead of WebView2. UseChromium is a shell of the kit's own: CEF's windows with frameless chrome, real caption buttons and Snap Layouts, file drops with real paths, native file dialogs, the clipboard, secondary windows, crash reload and dev-server hot reload, with IPC over a transport that needs no code in the renderer. ChromiumEngine and ChromiumChildBrowser embed a page in a window the host owns, which is how Shenora.Windows hosts one beside its WebView2 control. CEF itself is not in the package: the app's build fetches the pinned CEF build, checks its SHA-1, and lays the app out beside CEF's launcher with the kit's shim, which is what gives Chromium its sandbox. Reference it from the app's own project, with a RuntimeIdentifier and an assembly named &lt;App&gt;.App. win-x64 and win-arm64 today.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- An app's RuntimeIdentifier reaches this project only because it is NOT rid-agnostic: the SDK strips the RID
+         from a reference to a library that is, and a macOS app then got the Windows binding (measured). -->
+    <IsRidAgnostic>false</IsRidAgnostic>
     <CefOs Condition="'$(CefOs)' == '' and $(RuntimeIdentifier.StartsWith('osx'))">MacOS</CefOs>
     <CefOs Condition="'$(CefOs)' == '' and $(RuntimeIdentifier.StartsWith('linux'))">Linux</CefOs>
     <CefOs Condition="'$(CefOs)' == ''">Windows</CefOs>
