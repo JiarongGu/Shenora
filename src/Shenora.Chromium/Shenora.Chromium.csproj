@@ -28,7 +28,9 @@
   <ItemGroup>
     <Compile Remove="Interop/Generated/Windows/**;Interop/Generated/MacOS/**;Interop/Generated/Linux/**" />
     <Compile Include="Interop/Generated/$(CefOs)/**/*.cs" />
-    <None Include="cef.json;THIRD-PARTY-NOTICES.md" />
+    <None Include="cef.json" />
+    <!-- Beside the binaries it covers: the binding is a derivative of CEF's BSD headers, and the shim links nethost. -->
+    <None Include="THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
     <!-- The app-build targets, which fetch CEF from its own published builds (D81) and lay the app out beside
          CEF's launcher. build/ and never buildTransitive/: NuGet keeps a dependency's build/ private by default,
          so an app gets the engine only by referencing this package itself, and a Shenora.Windows app, which
@@ -42,6 +44,10 @@
 
   <!-- A package without the shim restores fine and fails at the consumer's build, so packing one fails here. -->
   <Target Name="RequireShimArtifacts" BeforeTargets="GenerateNuspec">
+    <!-- lib/net10.0 is whichever OS this build compiled, and the only shim is win-x64's: a pack of another OS would
+         ship its struct layouts beside a Windows shim. -->
+    <Error Condition="'$(CefOs)' != 'Windows'"
+           Text="Shenora.Chromium packs the Windows build only today; this build is CefOs=$(CefOs)." />
     <Error Condition="!Exists('$(ShimArtifacts)runtimes\win-x64\native\shenora_chromium_shim.dll')"
            Text="Shenora.Chromium has no shim at $(ShimArtifacts)runtimes\win-x64\native\. Build it with `node devtools/dev.mjs cef-native`, which stages it there." />
   </Target>
