@@ -146,4 +146,26 @@ public class CefUiDispatcherTests
 
         Assert.True(ranOnUi);
     }
+
+    // SynchronizationContext.Post means "later": run inline on the UI thread, Task.Yield would never yield and a
+    // continuation would re-enter the code that scheduled it. The dispatcher's own Post runs there inline, as
+    // IUiDispatcher says; the context's does not.
+    [Fact]
+    public void The_sync_context_queues_even_on_the_UI_thread()
+    {
+        var (dispatcher, ui) = Make();
+        dispatcher.MarkReady();
+        var context = new CefUiContext(dispatcher);
+        var ran = false;
+
+        ui.OnUi = true;
+        context.Post(_ => ran = true, null);
+        Assert.False(ran);
+        ui.Drain();
+        Assert.True(ran);
+
+        var inline = false;
+        Assert.True(dispatcher.Post(() => inline = true));
+        Assert.True(inline);
+    }
 }
