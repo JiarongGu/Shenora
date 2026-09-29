@@ -8,8 +8,8 @@ namespace Shenora.Windows;
 /// A Chromium page as a WinForms control, beside the WebView2 control (D83): a <see cref="ChromiumChildBrowser"/>
 /// in the control's own window, filling it, with its IPC dispatched on the thread that owns the control, which is
 /// right for a <see cref="SecondaryWindows"/> window too. The kit's window commands, frameless chrome and caption
-/// buttons work over it as they do over the WebView2 control, with the view as the
-/// <see cref="WindowCommandOptions.CoordinateSpace"/>.
+/// buttons work over it as they do over the WebView2 control: its page commands the view's own window, and its
+/// caption rectangles are read against the view.
 /// <para>
 /// The engine comes from <see cref="WindowsHostExtensions.UseChromiumEngine"/>. The browser opens as the control's
 /// handle is created and closes as it goes, so a recreated handle opens the page again.

@@ -21,9 +21,11 @@ depend on each other.
 **v0.16.0 — pre-release, stabilising toward 1.0.** Newest in the PUBLISHED version: holding the window
 at an orientation (Android), the notification path's own report of what it accepted, filtered, dropped
 and delivered, and the Android recreation crash. **Landing in the tree ahead of the next release** — see
-`CHANGELOG.md`'s `## Unreleased`, which is the authority — are the shell's own **picture surface** on a
-phone (`useMediaSurface` / `useMediaTransport`: the platform's player draws the film under a transparent
-region the page leaves, no transcode, the page keeping every control) and **orientation on iOS**.
+`CHANGELOG.md`'s `## Unreleased`, which is the authority — are **`Shenora.Chromium`**, a new package: Chromium
+through CEF for an app that ships its own engine, as a shell of its own (`UseChromium`) or as a `ChromiumView`
+control in the Windows shell; the shell's own **picture surface** on a phone (`useMediaSurface` /
+`useMediaTransport`: the platform's player draws the film under a transparent region the page leaves, no
+transcode, the page keeping every control); and **orientation on iOS**.
 
 > **The segment/streaming media tier is the newest part of the kit, and the only one not extracted from an
 > application that had already proven it in production.** An August 2026 review found several faults

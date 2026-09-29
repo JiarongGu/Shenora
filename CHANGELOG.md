@@ -36,206 +36,177 @@ at the first list and missed five more breaking changes.
   instead of WebView2** (**D81–D84**). Two hosts:
   - **its own shell, `UseChromium(ChromiumHostOptions)`**, on CEF's windows (`ChromiumWindows` opens them by
     name): frameless chrome whose page-drawn caption buttons are real ones, so Snap Layouts works, and behave
-    as the system's (a press holds the pointer until its release, wherever that is), or which the window
-    paints itself in the system's own glyphs and colours, fading on hover at the system's timings (`ChromiumWindowOptions.NativeCaptionButtons`,
-    following the page's `SET_THEME`), and whose page-drawn drag bar moves the window as a real caption does,
-    under the pointer from the press; file
-    drops with real paths; CEF's native file dialogs; the clipboard; secondary windows; crash reload; and
-    dev-server hot reload;
+    as the system's (a press holds the pointer until its release, wherever that is), or which the window paints
+    itself in the system's own glyphs and colours (`ChromiumWindowOptions.NativeCaptionButtons`, following the
+    page's `SET_THEME`); a page-drawn drag bar that moves the window as a real caption does; file drops with
+    real paths; CEF's native file dialogs; the clipboard; secondary windows; crash reload; and dev-server hot
+    reload;
   - **`ChromiumView`, a control in `Shenora.Windows`**, with `UseChromiumEngine()` running CEF beside the
-    WinForms loop. It keeps `OptimizedForm`, the window commands (`CoordinateSpace` = the view) and
-    `SecondaryWindows`, whose pages dispatch on their own threads, and Tab leaves the page for the form's next
-    control and Shift+Tab for its previous one, measured with real keys (`ChromiumChildBrowserOptions.FocusLeaving`).
-    The page's `-webkit-app-region: drag` area moves the
-    window: a mouse press there is held until the pointer passes the system's drag threshold and then starts the
-    OS move loop, a still click does nothing, and a double click maximizes or restores the window
-    (`ChromiumChildBrowserOptions.DragAreaPressed`, `ChromiumDragAreaPress`). Measured with the real pointer: a
-    drag of (200, 120) moved the window by exactly that, a still click held the form's thread 16 ms at most, and a
-    double click maximized and restored; a `no-drag` button inside the bar still clicks, and the areas keep working
-    after a renderer crash, a scroll, a CSS zoom and a browser zoom (all with posted presses). Unlike the Chromium shell's caption, a touch, a pen or a right
-    click there is the page's, and a frameless window maximized its own way is not moved. Underneath it is a small public
+    WinForms loop. It works with `OptimizedForm`, the window commands and `SecondaryWindows`, whose pages
+    dispatch on their own threads and command their own windows. Tab leaves the page for the form's next
+    control and Shift+Tab for its previous one (`ChromiumChildBrowserOptions.FocusLeaving`), and the page's
+    `-webkit-app-region: drag` area is the window's caption: a mouse drag there moves the window, a still click
+    does nothing, and a double click maximizes or restores it (`ChromiumChildBrowserOptions.DragAreaPressed`,
+    `ChromiumDragAreaPress`). Unlike the Chromium shell's caption, a touch, a pen or a right click there is the
+    page's, and a frameless window maximized its own way is not moved. Underneath it is a small public
     embedding, `ChromiumEngine` + `ChromiumChildBrowser`, which puts a page in any native window.
 
   ⚠ **CEF itself is not in the package**, and that is D81's point: an app that chose WebView2 carries none of
-  it. The app's build fetches the pinned CEF build once per machine (about 170 MB, SHA-1-checked) and lays the app
-  out as `<App>.exe`, CEF's launcher, which gives Chromium its sandbox and starts `<App>.App.dll`. So
-  **reference `Shenora.Chromium` from the app's own project**, with a `RuntimeIdentifier`: a reference that
-  arrives only through `Shenora.Windows` brings the code, not CEF, and the engine says so as it starts.
-  Started as `dotnet <App>.App.dll` instead, as an IDE may, the app still runs, with the sandbox off and every
-  CEF subprocess run through `<App>.exe`. Windows only today.
+  it. The app's build fetches the pinned CEF build once per machine (165 MB, SHA-1-checked) and lays the app out
+  as `<App>.exe`, CEF's launcher, which gives Chromium its sandbox and starts `<App>.App.dll`. So **reference
+  `Shenora.Chromium` from the app's own project**, with a `RuntimeIdentifier`, and **name its assembly
+  `<App>.App`** — the build refuses any other name. A reference that arrives only through `Shenora.Windows`
+  brings the code, not CEF, and the engine says so as it starts. Started as `dotnet <App>.App.dll` instead, as an
+  IDE may, the app still runs, with the sandbox off and every CEF subprocess run through `<App>.exe`. win-x64
+  only today.
 
-- **`createChromiumTransport()` in `@shenora/react`, and `createHostTransport()` finds the Chromium shell**
-  (**D83**). That shell marks each HTML document it serves with `window.__shenora_chromium`, naming a
-  same-origin route. The page posts each envelope there with `fetch`, and the shell pushes by calling the
-  marker's `receive`, so no kit code runs in a renderer. `isShenoraAvailable()` answers true there too, and a
-  page on the default bridge needs no change to run on either host.
+- **`createChromiumTransport()` in `@shenora/react`, and `createHostTransport()` finds the Chromium hosts**
+  (**D83**). They mark each HTML document they serve, the app's own routes' included, with
+  `window.__shenora_chromium`, naming a same-origin route. The page posts each envelope there with `fetch`, and
+  the host pushes by calling the marker's `receive`, so no kit code runs in a renderer. `isShenoraAvailable()`
+  answers true there too, and a page on the default bridge needs no change to run on either engine.
 
-- **`useDropZone()` works on the Chromium shell, with no change to your code.** That shell draws no overlay:
-  it answers `REGISTER` with `pageDrop`, the hook then takes the page's own drag events on the element, and a
-  drop there asks the host (`DROP`) for the real paths the engine reported as the drag entered. On the
-  WebView2 shell the hook behaves exactly as before, and an app with both engines keeps its WebView2
-  `DropZoneModule`: each page's zones are answered by its own engine, mapped in either order, and a Chromium
-  page ignores the drag and drop events the WebView2 page's zones announce.
+- **`useDropZone()` works on the Chromium hosts, with no change to your code.** They draw no overlay: they
+  answer `REGISTER` with `pageDrop`, the hook then takes the page's own drag events on the element, and a drop
+  there asks the host (`DROP`) for the real paths the engine reported as the drag entered. On the WebView2
+  shell the hook behaves exactly as before, and an app with both engines keeps its WebView2 `DropZoneModule`:
+  each page's zones are answered by its own engine, mapped in either order, and a Chromium page ignores the
+  drag and drop events the WebView2 page's zones announce.
 
 - **`useCaptionButtonState()` in `@shenora/react`, with `CaptionButtonState` and `WindowEventTypes`.** Once a
   page registers its caption buttons with `setCaptionButtons`, the host takes the hit-test there, so CSS
   `:hover` no longer fires over them. The hook tells the page which button is hot or pressed, from the host's
-  `SHENORA.WINDOW` / `CAPTION_BUTTON_STATE` event. The Chromium shell sends that event to the window's own
-  page as the pointer moves, not on the notification tick. The WebView2 shell does not send it: with
-  `OptimizedFormOptions.NativeCaptionButtons` it paints the buttons itself, and an app drawing them there can
-  emit the event from `OptimizedForm.CaptionButtonStateChanged`.
+  `SHENORA.WINDOW` / `CAPTION_BUTTON_STATE` event. The Chromium shell sends that event to the window's own page
+  as the pointer moves, not on the notification tick. The Windows shell, WebView2 or `ChromiumView`, does not
+  send it: with `OptimizedFormOptions.NativeCaptionButtons` it paints the buttons itself, and an app drawing
+  them there can emit the event, named `WindowCommandModule.CaptionButtonStateEvent`, from
+  `OptimizedForm.CaptionButtonStateChanged`.
 
 - **The player's SECOND SURFACE — on a phone the shell draws the picture and the page keeps the UI**
   (**D80**). `IMediaSurface` (`Show(MediaSurfaceRegion)` / `Hide()`) takes the rectangle the page measured;
-  the shell's own player fills it from underneath, through a transparent region the page leaves. The
-  chain: `MediaPlayerBase.AttachSurface` (the platform picture handle, typed `object` because `Shenora` is
-  `net10.0` and may not name a platform type) · `SURFACE_SHOW`/`SURFACE_HIDE` **on the media module that
-  already existed, not a second one** · `ShellCapability.MediaSurface` · `MediaSurfaceView` +
-  `MobileMediaSurface` + `UseShenoraMediaSurface()` on both mobile shells · `useMediaSurface(ref)` in
-  `@shenora/react`.
-  🔴 **Why it earns its place, and it is a refuted premise rather than a new feature:** the `<video>`
-  element could not open an adopter's films, and the on-device re-encode built to compensate cost
-  decode → pixel-convert → encode → mux *per segment, to produce something the device's own decoder could
-  already play*. The native surface plays the original with no transcode.
+  the shell's own player fills it from underneath, through a transparent region the page leaves. The chain:
+  `MediaPlayerBase.AttachSurface` (the platform picture handle, typed `object` because `Shenora` is `net10.0`
+  and may not name a platform type) · `SURFACE_SHOW`/`SURFACE_HIDE` **on the media module that already
+  existed, not a second one** · `ShellCapability.MediaSurface` · `MediaSurfaceView` + `MobileMediaSurface` on
+  both mobile shells · `useMediaSurface(ref)` in `@shenora/react`. `MediaSurfaceHolder` pairs the platform
+  handle with the player whichever arrives second, for an app writing its own surface view.
   ⚠ **The kit still ships no engine** (D51): the default is the platform's own player — `AVPlayer` on iOS,
-  `android.media.MediaPlayer` on Android, no new package on either — and an app wanting ExoPlayer, VLC or
-  mpv derives `MediaPlayerBase` and overrides `AttachSurfaceCore`.
+  `android.media.MediaPlayer` on Android, no new package on either — and an app wanting ExoPlayer, VLC or mpv
+  derives `MediaPlayerBase` and overrides `AttachSurfaceCore`.
   ⚠ **Mobile only.** Windows reports the capability absent rather than half-satisfying it (D39).
-  ⚠ **Three things are the app's, and each one missing looks identical — no picture:** put a
-  `MediaSurfaceView` in a layout *before* the webview, register `MobileMediaSurface` over the two views,
-  and give the page a stage — a transparent background where the picture belongs **and** its own content
-  out of the way, which is the half that gets missed. ✅ Photographed on Android; the MAUI page's
-  `BackgroundColor` is deliberately NOT part of the chain (`docs/guides/media.md`).
+  ⚠ **The setup is the app's, and each step missing looks identical — no picture:** `UseShenoraMediaSurface()`
+  on the builder and `AddShenoraMediaSurface()` on the services; a `MediaSurfaceView` in the layout *before* the
+  webview; `MobileMediaSurface.Attach(view, webView, dispatcher)` when the page is built; `view.Player` set to the
+  shell's own player; `ShellCapability.MediaSurface` advertised in the app's `ShellInfo`; and a stage in the page
+  — a transparent background where the picture belongs **and** its own content out of the way, the half that
+  gets missed. ✅ Photographed on Android; the MAUI page's `BackgroundColor` is deliberately NOT part of the
+  chain (`docs/guides/media.md`).
 
-- **iOS can hold an orientation now — `MobileWindowOrientation.SupportedInterfaceOrientations`.** It was
-  absent there, honestly but expensively: an adopter deleted their own working portrait lock to take the
-  capability and lost it on one of their two shells. **Return the new mask from your app delegate** and
-  `Lock`/`Unlock` work on both:
+- **iOS can hold an orientation now — `MobileWindowOrientation.SupportedInterfaceOrientations`.** **Return the
+  mask from your app delegate** and `Lock`/`Unlock` work on both shells:
   ```csharp
   public override UIInterfaceOrientationMask GetSupportedInterfaceOrientations(
       UIApplication application, UIWindow? forWindow) =>
       MobileWindowOrientation.SupportedInterfaceOrientations;
   ```
-  🔴 **A library cannot do this for you, which is why it is not automatic:** UIKit asks the APP's delegate
-  and intersects that answer with every rotation, so `requestGeometryUpdate` on its own is a request the
-  next rotation undoes.
+  🔴 **A library cannot do this for you, which is why it is not automatic:** UIKit asks the APP's delegate and
+  intersects that answer with every rotation, so `requestGeometryUpdate` on its own is a request the next
+  rotation undoes.
   ⚠ **The override IS the opt-in.** `MobileWindowOrientation.IsSupported` goes true on iOS once UIKit has
-  asked, so an app that omits it still advertises the capability as absent (D39/D36) — and `Lock` throws
-  an error naming the override rather than failing silently.
-  ⚠ **`Info.plist` stays the ceiling**, and `Unlock` hands the decision back to it. ⚠ **iOS 15 gets the
-  lock but not the immediate turn** — the two calls that rotate on demand are 16+.
-  ⚠ **Compile-verified only.** Nothing in this repo runs an iOS device; the behaviour needs a Mac.
-
-- **`MediaSurfaceHolder` — the handle/player rendezvous, as a type a test can reach.** Remembers the
-  platform's picture handle and the player independently and pairs whichever arrives second.
-  `MediaSurfaceView` now delegates to it, and an app writing its own surface view over
-  `MediaPlayerBase.AttachSurfaceCore` gets the same rule instead of reimplementing it.
-  🔴 **Extracted because the ordering shipped BROKEN and no gate could see it**: a handle arriving before
-  the player was dropped for good, while the XML claimed whichever came second completed the pair. The
-  view lives in a platform-only assembly and the suite is `net10.0`, so only a device could find it —
-  and the only symptom is a black rectangle, because the player still opens the file and still reports a
-  moving clock. Seven tests now cover it, including that exact ordering.
+  asked, so an app that omits it still advertises the capability as absent (D39/D36) — and `Lock` throws an
+  error naming the override rather than failing silently.
+  ⚠ **`Info.plist` stays the ceiling**, and `Unlock` hands the decision back to it. ⚠ **iOS 15 gets the lock
+  but not the immediate turn** — the two calls that rotate on demand are 16+.
+  ⚠ **Compile-verified only:** not yet run on an iOS device.
 
 - **`useMediaTransport()` — drive the host's player and read what it is doing.** The companion to
-  `useMediaSurface`: with the picture on the shell's surface the page's own element is not playing, so
-  the host is the only clock. Returns `status`, `unanswered`, and the commands.
-  🔴 **The commands are part of the hook, not a convenience.** A status ask issued BEFORE a command
-  returns AFTER it, describing a player that has since been told to do something else — stale in position
-  as well as state. Reported rather than dropped it undoes the command's own answer, and the next sample
-  undoes that: three flips per press. The hook can only drop those answers because every command goes
-  through it. ⚠ A command's own answer is applied at once, so a press does not wait for the next sample.
-  ⚠ **`unanswered` exists because a dead poll has no symptom of its own** — the callback simply stops,
-  the scrubber keeps its last value, and it otherwise has to be diagnosed from an absence.
+  `useMediaSurface`: with the picture on the shell's surface the page's own element is not playing, so the
+  host is the only clock. Returns `status`, `unanswered`, and the commands.
+  🔴 **The commands are part of the hook, not a convenience.** A status ask issued BEFORE a command returns
+  AFTER it, describing a player that has since been told to do something else, so the hook drops those
+  answers, which it can do only because every command goes through it. ⚠ A command's own answer is applied
+  at once, so a press does not wait for the next sample. ⚠ **`unanswered` exists because a dead poll has no
+  symptom of its own**: it turns true after eight failed asks, about 2 s when the host refuses them and about
+  10 s when it has gone quiet.
 
-- **`MediaPlayerStatus.Engine` — which player produced the reading.** Defaults to the implementation's
-  type name (`AndroidMediaPlayer`, `IosMediaPlayer`, or an app's own), so no shell has to supply anything
-  and it is never absent; `MediaPlayerBase.EngineName` overrides it where a player delegates to a
-  swappable native engine and its own type name would misreport. Surfaced on `PLAYER_STATUS` and on
-  `useMediaTransport`'s status.
-  🔴 **Once an app can supply its own player through the seam, nothing else can answer "which decoder
-  ran"** — and assuming it wrong is the cheapest way to spend a session debugging the wrong code.
-  ⚠ **A diagnostic, not a branch:** it names an implementation, so anything conditional on it is coupled
-  to a class name. Branch on `ShellCapability` instead.
+- **`MediaPlayerStatus.Engine` — which player produced the reading.** Defaults to the implementation's type
+  name (`AndroidMediaPlayer`, `IosMediaPlayer`, or an app's own), so no shell has to supply anything, and it is
+  never absent for the kit's players or any `MediaPlayerBase` subclass; `MediaPlayerBase.EngineName` overrides
+  it where a player delegates to a swappable native engine and its own type name would misreport. Surfaced on
+  `PLAYER_STATUS` and on `useMediaTransport`'s status.
+  ⚠ **A diagnostic, not a branch:** it names an implementation, so anything conditional on it is coupled to a
+  class name. Branch on `ShellCapability` instead.
 
 ### Changed
 
-- **`MediaPlayerModule`'s constructor takes an optional `IMediaSurface?`.** Source-compatible — existing
-  calls compile unchanged — but the signature moved, so **recompile if you construct it yourself**. The
-  kit's own `UseMediaPlayer()` passes it.
+- **`Shenora.Windows` now depends on `Shenora.Chromium`** (D83), for `ChromiumView`: every Windows app gets its
+  managed assembly (about 300 KB), never CEF, whose bytes arrive only through a direct reference.
 
-- **`MobileWindowOrientation`'s constructor takes an optional `ILogger?`**, matching every other service
-  in that shell, and iOS's refused-geometry report now goes through it. Source-compatible, same
-  recompile note as above; DI supplies it, so `UseAndroid`/`UseIOS` need no change.
-  🔴 **The report it replaces did not exist in a shipped app.** It was `Debug.WriteLine`, which is
-  `[Conditional("DEBUG")]` — the compiler removes the call from a Release build, so the one place a
-  refused orientation request is reported was silent in every configuration an adopter ships, while the
-  comment beside it said swallowing that error is how "the lock did nothing" becomes undiagnosable.
+- **`MediaPlayerModule`'s constructor takes an optional `IMediaSurface?`.** Source-compatible — existing calls
+  compile unchanged — but the signature moved, so **recompile if you construct it yourself**. The kit's own
+  `UseMediaPlayer()` passes it.
+
+- **`MobileWindowOrientation`'s constructor takes an optional `ILogger<MobileWindowOrientation>?`**, which DI
+  supplies; a refused iOS rotation is reported there. Source-compatible, same recompile note as above;
+  `UseAndroid`/`UseIOS` need no change.
 
 ### Fixed
 
-- **`START_DRAG` and `START_RESIZE` no longer start the OS move or size loop once the button is up.** The page sends
-  them on its mousedown and the loop starts when the command arrives; on a busy UI thread that could be after the
-  release, and the window then followed the pointer until the next click. Both now start only while the left
-  button is still down (from the code: the OS loop is not run in a test). A window command that throws, such as an
-  app's `FormClosing` under `CLOSE` or its `ApplyTheme`, is now logged rather than dropped.
+- **A page in a `SecondaryWindows` window commanded the app's main window.** `WindowCommandModule` is mapped
+  once, bound to the main form, and it acted there whoever sent the command: a WebView2 page's close button in
+  a second window closed the main window, which ended the app. Each command now acts on the window whose page
+  sent it, as its top-level form (an MDI child's commands still reach the main window): `MINIMIZE`, `CLOSE`,
+  maximize and drag act on that window, an `OptimizedForm` there maximizes its own way and takes its caption
+  buttons, and its `SET_THEME` answers `NO_ROUTE`, since `ApplyTheme` is the main window's. A command sent from
+  no page still acts on the main window. In the main window too, a page's caption rectangles are read against
+  the control that shows it rather than `CoordinateSpace`, which matters in a form with two pages.
 
 - **A WebView2 page in a second web view registered its drop zones over the MAIN window.** `DropZoneModule` is
   mapped once over the main web view's `DropZoneManager`, so another page's `REGISTER` placed an overlay over the
-  main window at that page's coordinates, and its own window had no drop target. Measured with a WebView2 page in
-  a `SecondaryWindows` window, before: the overlay on the main window, none on its own; after: on its own, none
-  on the main one. Each other web view now gets a manager of its own over its top-level form, made on its first
-  request and disposed with the web view; a second web view in the main window gets one too, so its zones are no
-  longer measured against the first. Drop events still go out on the one bus, told apart by `zoneId`, which
-  `useDropZone` generates unique unless the page names its zones.
+  main window at that page's coordinates, and its own window had no drop target. Each other web view now gets a
+  manager of its own over its top-level form, made on its first request and disposed with the web view; a
+  second web view in the main window gets one too, so its zones are no longer measured against the first. Drop
+  events still go out on the one bus, told apart by `zoneId`, which `useDropZone` generates unique unless the
+  page names its zones.
 
-- **A page in a `SecondaryWindows` window commanded the app's main window.** `WindowCommandModule` is mapped
-  once, bound to the main form, and it acted there whoever sent the command. Measured with a `ChromiumView` page
-  in a secondary window, before: its `MINIMIZE` minimized the main window, and **its `CLOSE` closed the main
-  window, which ended the app**. Now each command acts on the window whose page sent it. Measured after, with a
-  `ChromiumView` page and with a WebView2 page, each in a plain secondary form: `MINIMIZE` and `CLOSE` act on that
-  window and the main one does not move, and `SET_THEME` and `SET_CAPTION_BUTTONS` answer `NO_ROUTE`, since the
-  main window's `ApplyTheme` is not that window's and a plain form has no caption buttons. Tested on hidden forms,
-  not run: an `OptimizedForm` there maximizes its own way and takes its caption buttons relative to the page,
-  and a window embedded in the main one (an MDI child) still commands the main window. A page whose window has
-  gone commands nothing. A command sent from no page still acts on the main window. In the main window too, a
-  page's caption rectangles are now read against the control that shows it rather than `CoordinateSpace`, which
-  matters in a form with two pages.
+- **`START_DRAG` and `START_RESIZE` no longer start the OS move or size loop once the button is up.** The page
+  sends them on its mousedown and the loop starts when the command arrives; on a busy UI thread that could be
+  after the release, and the window then followed the pointer until the next click. Both now start only while
+  the left button is still down. A window command that throws, such as an app's `FormClosing` under `CLOSE` or
+  its `ApplyTheme`, is now logged rather than dropped.
 
-- **`OptimizedForm`'s caption buttons hold a press the way the system's do.** A press on a registered
-  button now takes the mouse capture until its release: while it is held only that button shows, pressed
-  while the pointer is on it, and the release acts only there. Measured with a real cursor on a bare
-  `OptimizedForm`, before: a press dragged onto another button lit that one, and **a press dragged off and
-  back was forgotten, so releasing on maximize did not maximize**. After: 24 of 24 checkpoints as a native
-  window. A double-click's second press is handled the same way; it used to go to the default window
-  procedure (read from the code, not measured).
+- **`OptimizedForm`'s caption buttons hold a press the way the system's do.** A press on a registered button now
+  takes the mouse capture until its release: while it is held only that button shows, pressed while the pointer
+  is on it, and the release acts only there. Before, a press dragged onto another button lit that one, and **a
+  press dragged off and back was forgotten, so releasing on maximize did not maximize**. A double-click's second
+  press is handled the same way.
 
-- **`WindowCommandModule`'s docs named the wrong error for an unwired opt-in route.** An unset
-  `ApplyTheme` or `SetCaptionButtons` answers `NO_ROUTE` (the module exists, the type does not), never
-  `NO_HANDLER` (no module at all). The behaviour is unchanged; a page branching on the documented code
-  never matched. Measured through the Chromium shell, which answers the same way.
+- **`WindowCommandModule`'s docs named the wrong error for an unwired opt-in route.** An unset `ApplyTheme` or
+  `SetCaptionButtons` answers `NO_ROUTE` (the module exists, the type does not), never `NO_HANDLER` (no module
+  at all). The behaviour is unchanged; a page branching on the documented code never matched.
 
-- **`ResourcePackJournal.Open` no longer boots a staged client that a newer app build has overtaken.**
-  The packaged version was compared against a **confirmed** pack and not against a **pending** one, so a
-  device that staged a pack and then took an app update served the older staged client anyway — measured
-  on a real iPhone: `packaged 1.0.19, pending 1.0.18` → `serving PENDING bundle 1.0.18`. The comparison now
-  happens on both branches, before the attempt is spent.
-  🔴 **The user-visible failure is the worst shape there is:** a fix demonstrably inside the installed app
-  does not appear, so the app looks broken AND the fix looks wrong.
+- **`ResourcePackJournal.Open` no longer boots a staged client that a newer app build has overtaken.** The
+  packaged version was compared against a **confirmed** pack and not against a **pending** one, so a device that
+  staged a pack and then took an app update served the older staged client anyway — measured on a real iPhone:
+  `packaged 1.0.19, pending 1.0.18` → `serving PENDING bundle 1.0.18`. The comparison now happens on both
+  branches, before the attempt is spent.
   ⚠ **A superseded pack is dropped, not rolled back** — `RolledBackFrom` still means "served and failed to
   confirm", which an app surfaces to its user; a pack a release overtook never ran and never failed.
-  ⚠ **EQUAL versions keep the staged pack**, matching the confirmed-pack branch: the two carry the same
-  client, so there is nothing to gain by churning. An app wanting the stricter rule can still refuse it.
+  ⚠ **EQUAL versions keep the staged pack**, matching the confirmed-pack branch: the two carry the same client,
+  so there is nothing to gain by churning. An app wanting the stricter rule can still refuse it.
 
-- **`shenora ios provision` no longer prints your Apple team id or the build Mac's address.** They were in
+- **`shenora ios provision` no longer opens with your Apple team id or the build Mac's address.** They were in
   the first line of output, unprompted, on every run — a developer-account identifier and usually a home
-  network, into whatever the operator happened to be piping into. The banner now carries the bundle-id
-  COUNT, and the per-id `ok`/`MISSING` result lines below it are unchanged; `--verbose` adds the identity
-  back for the case it diagnoses, a profile minted against the wrong account.
+  network, into whatever the operator happened to be piping into. The banner now carries the bundle-id COUNT,
+  and the per-id `ok`/`MISSING` result lines below it are unchanged; `--verbose` adds the identity back for the
+  case it diagnoses, a profile minted against the wrong account. A failure still says where it ran and prints
+  the tail of `xcodebuild`'s output, which the failure needs.
   ⚠ **A default-safety fix rather than a vulnerability** — it discloses only to whoever ran the command.
-  It is worth a release because a disclosure is not undone by deleting the log afterwards.
-- **`Shenora.Android`'s package description claimed an ExoPlayer-backed player.** It has never shipped
-  one: `AndroidMediaPlayer` is `android.media.MediaPlayer`, deliberately. No gate reads a
-  `<Description>`, so it had been wrong on nuget.org since the player shipped.
+
+- **`@shenora/cli` no longer ships its test double** (`dist/remote/fake-target.js`), which only its tests use.
+
+- **`Shenora.Android`'s package description claimed an ExoPlayer-backed player.** It has never shipped one:
+  `AndroidMediaPlayer` is `android.media.MediaPlayer`, deliberately.
 
 ## 0.16.0 — 2026-08-23
 

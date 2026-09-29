@@ -61,8 +61,9 @@ public static class MobileMediaSurfaceExtensions
     /// Register the shell's picture surface, so the media module's <c>SURFACE_SHOW</c>/<c>SURFACE_HIDE</c>
     /// routes have somewhere to land.
     /// <para>
-    /// <b>Opt-in</b>, like every other kit cluster: an app that plays no video registers nothing, and its
-    /// shell then reports the capability absent instead of accepting positions it will never draw.
+    /// <b>Opt-in</b>, like every other kit cluster: an app that plays no video registers nothing. ⚠ The
+    /// capability is the APP's to advertise: add <c>ShellCapability.MediaSurface</c> to its <c>ShellInfo</c> once
+    /// a page has attached the views and <c>MediaSurfaceView.Player</c> is set; nothing here advertises it.
     /// </para>
     /// <para>
     /// ⚠ <b>It registers a surface with no VIEWS yet</b> — the page attaches those later

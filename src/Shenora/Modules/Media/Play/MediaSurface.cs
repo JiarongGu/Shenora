@@ -41,8 +41,9 @@ public readonly record struct MediaSurfaceRegion(
 /// <para>
 /// <b>What it is for.</b> A platform player decodes what the webview refuses, but its pixels have nowhere to
 /// go: the shell draws them under a transparent region the page leaves, and the page keeps every control.
-/// Registered by a shell that can do that, absent on one that cannot — the page asks for
-/// <see cref="Core.Shell.ShellCapability.MediaSurface"/> rather than sniffing.
+/// Registered by an app on a shell that can do that (the mobile shells' <c>AddShenoraMediaSurface</c>), absent
+/// otherwise — the page asks for <see cref="Core.Shell.ShellCapability.MediaSurface"/>, which the app
+/// advertises, rather than sniffing.
 /// </para>
 /// <para>
 /// ⚠ <b><see cref="Show"/> does NOT mean "something is playing".</b> It means the page is rendering a hole.

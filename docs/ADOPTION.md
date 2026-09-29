@@ -56,17 +56,20 @@ that is the design, not a gap.
 ## Stage 0 — consume the packages, change nothing
 
 Reference the **leaf** package you need; the rest arrive transitively. The graph is a **fan, one level
-deep** — each shell references `Shenora` and nothing else of the kit's, so referencing two shells is
-impossible by construction rather than by convention. (It was a *diamond* while `Shenora.Ipc` sat in the
+deep** — each platform shell references `Shenora` and no other shell, so referencing two shells is
+impossible by construction rather than by convention. The one further edge is the Chromium engine, which
+`Shenora.Windows` references for its `ChromiumView` (D83): its managed code comes along, and CEF itself only
+into an app that references `Shenora.Chromium` directly. (It was a *diamond* while `Shenora.Ipc` sat in the
 middle; D65 removed that level.)
 
 ```
                       Shenora           net10.0    portable: no Windows reference
-                         ↑              (the IPC stack is the Shenora.Core.Ipc
-            ┌────────────┼────────────┐  NAMESPACE — it stopped being a package in D65)
-            │            │            │
-   Shenora.Windows  Shenora.Android  Shenora.iOS
-   net10.0-windows  net10.0-android  net10.0-ios
+                         ↑              (the IPC stack is Shenora.Core.Ipc, a NAMESPACE)
+            ┌────────────┼────────────┬───────────────┐
+            │            │            │               │
+   Shenora.Windows  Shenora.Android  Shenora.iOS   Shenora.Chromium   net10.0, win-x64 today
+   net10.0-windows  net10.0-android  net10.0-ios      ↑   (D81)
+            └─────────────────────────────────────────┘   ChromiumView (D83)
 ```
 
 **One shell package per platform.** Reference the one you are building for. Pin exact versions — see
@@ -288,7 +291,8 @@ opens in the system browser exactly once.
    `DevUrl` and `VirtualHost`, and the app's `app.Use…()` pipeline, frozen as the first view opens.
 3. **Swap the control:** `new ChromiumView(engine) { Dock = DockStyle.Fill, Path = … }`, with the engine
    resolved from the services. The view serves its page and bridges its IPC itself, so the `WebViewHost` and
-   `WebViewIpcBridge` setup goes. Map `WindowCommandModule` as before, with `CoordinateSpace = view`. A view in
+   `WebViewIpcBridge` setup goes. Map `WindowCommandModule` as before; a view's page reads its caption rectangles against the view itself, so
+   `CoordinateSpace` is not needed. A view in
    a `SecondaryWindows` window needs nothing more: its page commands its own window.
 4. **Drops:** nothing to map for the view. The engine answers its pages' `useDropZone()` itself, with the real
    paths, and the hook needs no change. A form that keeps a WebView2 page as well keeps its `DropZoneModule`:

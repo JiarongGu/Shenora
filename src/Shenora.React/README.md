@@ -1,7 +1,7 @@
 # @shenora/react
 
-React client for [Shenora](https://github.com/JiarongGu/Shenora) desktop hosts (.NET + WinForms +
-WebView2). The typed bridge between a React frontend and the Shenora host: correlated `invoke`
+React client for [Shenora](https://github.com/JiarongGu/Shenora) hosts: the Windows shell (WebView2 or
+Chromium), the Chromium shell, Android and iOS. The typed bridge between a React frontend and the Shenora host: correlated `invoke`
 with timeouts and structured errors, the event hub host notifications stream into, typed module
 services, React hooks, and a pluggable transport with a browser fallback so the UI can be
 developed in a plain browser. Headless by design — no UI components, bring your own design
@@ -144,8 +144,9 @@ runs ahead of the feature code it is observing. Prefer `subscribe` when you know
 catch-all wakes for every event on the bus.
 
 Pure-UI development in a plain browser: pass a `fallback` to `configureBridge` (gated behind
-`import.meta.env.DEV`) to answer requests with canned data. Other shells (WebSocket,
-mobile/Capacitor) implement the small `ShenoraTransport` seam and speak the same envelopes.
+`import.meta.env.DEV`) to answer requests with canned data. The kit's own hosts are found by
+`createHostTransport()`; another host (a WebSocket, say) implements the small `ShenoraTransport` seam and
+speaks the same envelopes.
 For CDP-driven testing, `installDevInterceptor()` records IPC/event traffic into ring buffers
 and exposes `window.__shenora.call()/waitEvent()`.
 

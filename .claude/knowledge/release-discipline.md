@@ -21,7 +21,7 @@ hand-bump moves that baseline and **SKIPS a release**. It cost 0.2.0 outright on
   buries the real breaks. 1.0 is a separate deliberate freeze, not yet cut.
 
 🔴 **AFTER the publish: a PARTIAL registry read is LAG, so re-check — never re-push.** Verify against the
-registries rather than the tree, and expect the seven to answer over a few minutes: npm is immediate,
+registries rather than the tree, and expect the eight (six NuGet, two npm) to answer over a few minutes: npm is immediate,
 NuGet trails, and one package trails the rest (0.13.0 and 0.16.0 both took three reads over ~3 min).
 **The evidence that it is lag rather than a half-landed release is structural** — the workflow tags only
 after every publish succeeds and publishes NuGet BEFORE npm, so npm answering already means NuGet's step

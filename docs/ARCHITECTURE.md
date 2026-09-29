@@ -112,6 +112,13 @@ Shenora.slnx
 │   │                                                    webview cannot play this". Ships no queue,
 │   │                                                    playlist or effects — only the app knows what
 │   │                                                    "next" means, as with IPlaybackSession.
+│   │                                                    IMediaSurface (D80) is the player's SECOND
+│   │                                                    surface: the page measures a rectangle
+│   │                                                    (SURFACE_SHOW/HIDE on this module) and a mobile
+│   │                                                    shell's native player draws under it
+│   │                                                    (AttachSurface; MediaSurfaceHolder pairs the
+│   │                                                    handle and the player; MobileMediaSurface moves
+│   │                                                    the view). Windows reports it absent.
 │   │                                          ⚠ It still implements NO interception. Serving bytes to a
 │   │                                          page configures a WEBVIEW and is a shell capability, so
 │   │                                          IWebViewInterceptor lives in Core and each shell
@@ -471,8 +478,10 @@ and the dependency rules a reviewer checks.
   neutral contract and compile with no Windows reference. The bar for moving a contract to `Core` is
   "app logic must compile off Windows", NOT "the signature happens to be platform-neutral" — which is
   why the window-state stack deliberately stays in `Shenora.Windows`.
-  🔴 **There is no package-on-package edge above `Shenora` any more.** D37 merged the session stack into
-  `Shenora.Windows`, where it is the `Sessions/` FOLDER, so D14's separation survives as an internal
-  direction rather than an edge a reviewer can check against the csproj files.
+  🔴 **The one package-on-package edge above `Shenora` is `Shenora.Windows` → `Shenora.Chromium`** (D83), for
+  `ChromiumView`. It carries the engine's managed code, never CEF: the engine's build assets stay private to a
+  direct reference. D37 merged the session stack into `Shenora.Windows`, where it is the `Sessions/` FOLDER, so
+  D14's separation survives as an internal direction rather than an edge a reviewer can check against the
+  csproj files.
 - `src/*` never references `tests/`, `samples/`, or anything app-specific.
 - No Lyntai reference, ever (docs/DECISIONS.md D1).

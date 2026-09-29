@@ -11,6 +11,7 @@ with no way in — hence the guides, and `ADOPTION.md` for the whole adoption.
 | To start a NEW app | **[getting-started.md](getting-started.md)** — packages, a window, a typed IPC round trip, onto a device |
 | One capability, on its own | **[guides/](guides/)** — [missions](guides/missions.md) · [file updates](guides/file-updates.md) · [media](guides/media.md) · [mobile](guides/mobile.md) |
 | To move an EXISTING desktop app across | **[ADOPTION.md](ADOPTION.md)** — staged, so your app ships at every step |
+| To run a page on Chromium instead of WebView2 | [ADOPTION.md](ADOPTION.md)'s *Stage 2 on Chromium* (`ChromiumView` in a WinForms app) and [the root README](../README.md)'s `Shenora.Chromium` section (the `UseChromium` shell) |
 | The package table and per-package basics | [the root README](../README.md) |
 | The strings your PAGE types — routes, events, error codes, capabilities | **[reference/wire.md](reference/wire.md)** — generated from the source constants |
 | The device loop (`shenora ios deploy`, `android deploy`) | [`@shenora/cli`'s README](../src/Shenora.Cli/README.md) |
