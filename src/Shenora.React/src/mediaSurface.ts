@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import { getBridge, type ShenoraBridge } from './bridge.js';
-import { useRefElement } from './internal.js';
+import { useRefElement } from './internalHooks.js';
 import { MEDIA_PLAYER_MODULE } from './mediaPlayer.js';
 
 /**

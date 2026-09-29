@@ -35,6 +35,29 @@ public class WireMirrorTests
         return dir!;
     }
 
+    /// <summary>
+    /// The bridge loads without React: a page importing <c>bridge.js</c> directly (the kit's own probes do), a worker,
+    /// a non-React caller. Once a React hook was added to a module the bridge imports, the bare <c>'react'</c> import
+    /// could not resolve in a plain page and its script never ran, while every gate stayed green, because vitest and
+    /// the typecheck both resolve React. Everything the bridge reaches through relative imports is checked.
+    /// </summary>
+    [Fact]
+    public void The_bridge_imports_nothing_that_imports_React()
+    {
+        var reached = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Stack<string>(["bridge.ts"]);
+        while (pending.TryPop(out var file))
+        {
+            if (!reached.Add(file)) continue;
+            var source = ClientSource(file);
+            Assert.False(Regex.IsMatch(source, @"from\s+'react'|from\s+""react"""),
+                $"{file} imports React, and the bridge reaches it: bridge.js would not load in a page without a bundler");
+            foreach (Match import in Regex.Matches(source, @"from\s+'\./(?<name>[A-Za-z0-9_]+)\.js'"))
+                pending.Push(import.Groups["name"].Value + ".ts");
+        }
+        Assert.Contains("internal.ts", reached);   // parser self-check: the bridge's own import was followed
+    }
+
     private static string ClientSource(string fileName)
     {
         var path = Path.Combine(RepoRoot(), "src", "Shenora.React", "src", fileName);
