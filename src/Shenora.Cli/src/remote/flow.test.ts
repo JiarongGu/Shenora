@@ -202,7 +202,9 @@ describe('app extensions are verified BEFORE install', () => {
   });
 });
 
-describe('push', () => {
+// These list THIS repository through git, so their time is the repo's size and the machine's load: 0.3–1.1 s alone,
+// 5.2 s once under the full gate, past vitest's default 5 s. A ceiling sized for the work, not a retry.
+describe('push', { timeout: 30_000 }, () => {
   it('🔴 deletes what it previously sent and would no longer send', () => {
     // The first version only added, and the Mac's older checkout kept files this kit had since renamed —
     // so IFileLockInspector existed twice and the KIT failed to compile on a tree that is clean here.
