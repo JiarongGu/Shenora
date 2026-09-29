@@ -126,21 +126,26 @@ at the first list and missed five more breaking changes.
   chain (`docs/guides/media.md`).
 
 - **iOS can hold an orientation now — `MobileWindowOrientation.SupportedInterfaceOrientations`.** **Return the
-  mask from your app delegate** and `Lock`/`Unlock` work on both shells:
+  mask from your app delegate** and `Lock`/`Unlock` work on both shells. It is EXPORTED, not overridden:
+  MAUI's `MauiUIApplicationDelegate` implements the delegate protocol, so an `override` does not compile.
   ```csharp
-  public override UIInterfaceOrientationMask GetSupportedInterfaceOrientations(
-      UIApplication application, UIWindow? forWindow) =>
+  [Export("application:supportedInterfaceOrientationsForWindow:")]
+  public UIInterfaceOrientationMask GetSupportedInterfaceOrientations(UIApplication application, UIWindow? forWindow) =>
       MobileWindowOrientation.SupportedInterfaceOrientations;
   ```
   🔴 **A library cannot do this for you, which is why it is not automatic:** UIKit asks the APP's delegate and
   intersects that answer with every rotation, so `requestGeometryUpdate` on its own is a request the next
   rotation undoes.
-  ⚠ **The override IS the opt-in.** `MobileWindowOrientation.IsSupported` goes true on iOS once UIKit has
+  ⚠ **That method IS the opt-in.** `MobileWindowOrientation.IsSupported` goes true on iOS once UIKit has
   asked, so an app that omits it still advertises the capability as absent (D39/D36) — and `Lock` throws an
-  error naming the override rather than failing silently.
-  ⚠ **`Info.plist` stays the ceiling**, and `Unlock` hands the decision back to it. ⚠ **iOS 15 gets the lock
+  error naming the method rather than failing silently.
+  ⚠ **`Info.plist` stays the ceiling**, and `Unlock` hands the decision back to it — turning the window to
+  the way the device is held, or back to where it was before the lock when the device cannot say. Without
+  that turn a released landscape lock stayed landscape until the next rotation. ⚠ **iOS 15 gets the lock
   but not the immediate turn** — the two calls that rotate on demand are 16+.
-  ⚠ **Compile-verified only:** not yet run on an iOS device.
+  ⚠ **Run on the iOS simulator only:** lock, unlock and the advertised capability. Whether the lock
+  survives a device rotation, and the turn to the way the device is held, need an iPhone — the simulator
+  reports no device orientation, so only the turn back to the pre-lock orientation has run.
 
 - **`useMediaTransport()` — drive the host's player and read what it is doing.** The companion to
   `useMediaSurface`: with the picture on the shell's surface the page's own element is not playing, so the

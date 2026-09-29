@@ -30,8 +30,12 @@ public class AppDelegate : MauiUIApplicationDelegate
 	/// ⚠ <c>Info.plist</c> remains the ceiling: this mask is intersected with
 	/// <c>UISupportedInterfaceOrientations</c>, so an orientation missing there can never be locked to.
 	/// </para>
+	/// <para>
+	/// ⚠ Exported, not overridden: <c>MauiUIApplicationDelegate</c> implements the delegate PROTOCOL, so there is no
+	/// virtual method to override, and an <c>override</c> does not compile.
+	/// </para>
 	/// </summary>
-	public override UIInterfaceOrientationMask GetSupportedInterfaceOrientations(
-		UIApplication application, UIWindow? forWindow) =>
+	[Export("application:supportedInterfaceOrientationsForWindow:")]
+	public UIInterfaceOrientationMask GetSupportedInterfaceOrientations(UIApplication application, UIWindow? forWindow) =>
 		MobileWindowOrientation.SupportedInterfaceOrientations;
 }

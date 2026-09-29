@@ -287,21 +287,25 @@ from the resize, never from the call returning.
 portrait rather than 180° off.
 🔴 **iOS NEEDS ONE LINE IN YOUR `AppDelegate`, and does nothing without it.** UIKit asks the APP what
 orientations it supports and intersects that with every rotation, so `requestGeometryUpdate` alone is a
-request the next rotation undoes. A library cannot override your delegate, so you return the kit's mask:
+request the next rotation undoes. A library cannot reach your delegate, so you return the kit's mask from
+it. ⚠ **Export it, do not override it**: MAUI's `MauiUIApplicationDelegate` implements the delegate protocol,
+so there is nothing to override and an `override` does not compile.
 
 ```csharp
-public override UIInterfaceOrientationMask GetSupportedInterfaceOrientations(
-    UIApplication application, UIWindow? forWindow) =>
+[Export("application:supportedInterfaceOrientationsForWindow:")]
+public UIInterfaceOrientationMask GetSupportedInterfaceOrientations(UIApplication application, UIWindow? forWindow) =>
     MobileWindowOrientation.SupportedInterfaceOrientations;
 ```
 
-**That override IS the opt-in.** `MobileWindowOrientation.IsSupported` goes true on iOS once UIKit has
+**That method IS the opt-in.** `MobileWindowOrientation.IsSupported` goes true on iOS once UIKit has
 asked, so an app that omits it advertises the capability as ABSENT rather than accepting a lock nothing
-holds (D39/D36) — and calling `Lock` anyway throws an error naming this override rather than failing
+holds (D39/D36) — and calling `Lock` anyway throws an error naming this method rather than failing
 silently.
 ⚠ **`Info.plist` is the ceiling on both counts.** The mask is intersected with
 `UISupportedInterfaceOrientations`, so an orientation missing there can never be locked TO, and `unlock()`
-hands the decision back to that list rather than to everything.
+hands the decision back to that list rather than to everything. On iOS it also turns the window to the way
+the device is held — or back to where it was before the lock, when the device cannot say (a simulator, a
+phone lying flat).
 ⚠ **iOS 15 gets the lock but not the immediate turn** — the two calls that rotate on demand are 16+, so an
 older device holds the new orientation from its next rotation instead of snapping to it.
 ⚠ **iOS orientation used to be absent entirely, and one adopter deleted a working portrait lock to take

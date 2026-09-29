@@ -264,15 +264,13 @@ mpeg4.
 working `LockPortrait`/`UnlockOrientation`, and now guard everything on
 `MobileWindowOrientation.IsSupported` — which was `false` on iOS. Their `Info.plist` permits portrait and
 both landscapes, so **their iPhone build lost its portrait lock and nobody has looked.** The fix is built
-(`SupportedInterfaceOrientations` + the app-delegate override); only the run is left.
+(`SupportedInterfaceOrientations` + an exported app-delegate method) and ran on the simulator: the
+capability is advertised, `Lock` turns the window, `Unlock` turns it back.
 
-- [ ] **Prove it on an iPhone.** Three things, and the second is the one no reasoning settles: a locked app
-  does not rotate; **the lock SURVIVES a device rotation** (the failure the old `requestGeometryUpdate`
-  path had, and the reason the delegate mask exists); and `Unlock` hands the decision back rather than
-  pinning the current edge. ⚠ Check `IsSupported` is TRUE in the handshake — it goes true only once UIKit
-  has asked the delegate, and a false reading there means the capability is advertised absent for that
-  whole session. ⚠ Nothing in this repo runs an iOS device, and the sample's iOS head does not compile on
-  Windows, so its one-line override is unverified even though the library half is not.
+- [ ] **Prove it on an iPhone.** Two things the simulator cannot answer: **the lock SURVIVES a device
+  rotation** (the failure the old `requestGeometryUpdate` path had, and the reason the delegate mask
+  exists), and `Unlock` turns to the way the device is HELD — the simulator reports no device
+  orientation, so only the fall-back to the pre-lock orientation has run.
 
 ⚠ **Resume deliberately does NOT duplicate `document.visibilitychange`**, which already fires on both shells
 — it reports the one thing a throttled, possibly frozen page cannot measure: **how long it was away**. If a

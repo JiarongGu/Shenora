@@ -15,13 +15,15 @@ namespace Shenora.Mobile;
 /// 🔴 <b>iOS NEEDS ONE LINE FROM THE APP, and cannot be made to work without it.</b>
 /// <c>requestGeometryUpdate</c> rotates the window, but UIKit then INTERSECTS that with what the app
 /// says it supports — so the next device rotation undoes a rotation nothing is backing. The app's answer
-/// comes from its own <c>UIApplicationDelegate</c>, which a library cannot override:
+/// comes from its own app delegate, which a library cannot reach. In a MAUI app it is EXPORTED, not overridden:
+/// <c>MauiUIApplicationDelegate</c> implements the delegate protocol, so an <c>override</c> has nothing to override
+/// and does not compile.
 /// <code>
-/// public override UIInterfaceOrientationMask GetSupportedInterfaceOrientations(
-///     UIApplication application, UIWindow? forWindow)
+/// [Export("application:supportedInterfaceOrientationsForWindow:")]
+/// public UIInterfaceOrientationMask GetSupportedInterfaceOrientations(UIApplication application, UIWindow? forWindow)
 ///     =&gt; MobileWindowOrientation.SupportedInterfaceOrientations;
 /// </code>
-/// <b>That override IS the opt-in</b> — <see cref="IsSupported"/> goes true once UIKit has asked, so an
+/// <b>That method IS the opt-in</b> — <see cref="IsSupported"/> goes true once UIKit has asked, so an
 /// app that has not wired it advertises the capability as absent rather than accepting a lock it cannot
 /// hold (D39/D36).
 /// </para>
@@ -57,10 +59,16 @@ public sealed class MobileWindowOrientation : IWindowOrientation
     /// something locks, which is what hands the decision to <c>Info.plist</c>.</summary>
     private static UIKit.UIInterfaceOrientationMask _mask = UIKit.UIInterfaceOrientationMask.All;
 
+    /// <summary>The window's orientation before the first lock, while one is in force.</summary>
+    private static UIKit.UIInterfaceOrientationMask? _beforeLock;
+
+    /// <summary>True while a lock keeps the device's orientation readings on — one begin, balanced by Unlock.</summary>
+    private static bool _watchingDevice;
+
     /// <summary>
-    /// The orientations this app supports right now. <b>Return this from your
-    /// <c>UIApplicationDelegate.GetSupportedInterfaceOrientations</c></b> — see the type's remarks for the
-    /// one line, and note that returning it is also what turns <see cref="IsSupported"/> on.
+    /// The orientations this app supports right now. <b>Return this from your app delegate's
+    /// <c>application:supportedInterfaceOrientationsForWindow:</c></b> — see the type's remarks for the
+    /// method, and note that returning it is also what turns <see cref="IsSupported"/> on.
     /// </summary>
     public static UIKit.UIInterfaceOrientationMask SupportedInterfaceOrientations
     {
@@ -101,6 +109,15 @@ public sealed class MobileWindowOrientation : IWindowOrientation
         // ⚠ The FAMILY, matching Android's Sensor* choice: a phone held the other way up should follow its
         // user rather than sit 180° from them. `Info.plist` is the ceiling, so an app that does not list
         // upside-down simply never gets it and this costs nothing.
+        // What Unlock turns back by. `UIDevice.Orientation` reads Unknown unless something has asked for the
+        // readings, so the lock asks for them until Unlock; the window's own orientation is the fall-back.
+        // Not when the lock is about to be refused: a page told no has no reason to call Unlock.
+        if (!_watchingDevice && _consulted)
+        {
+            _beforeLock = CurrentWindowOrientation();
+            UIKit.UIDevice.CurrentDevice.BeginGeneratingDeviceOrientationNotifications();
+            _watchingDevice = true;
+        }
         Apply(orientation == Core.Shell.WindowOrientation.Portrait
             ? UIKit.UIInterfaceOrientationMask.Portrait | UIKit.UIInterfaceOrientationMask.PortraitUpsideDown
             : UIKit.UIInterfaceOrientationMask.Landscape, _log);
@@ -121,8 +138,20 @@ public sealed class MobileWindowOrientation : IWindowOrientation
         Apply(global::Android.Content.PM.ScreenOrientation.Unspecified);
 #elif IOS
         // `All` is not "every orientation" here — UIKit intersects it with `Info.plist`, so this hands the
-        // decision back to the app's own declared set, which is the peer of Android's `Unspecified`.
-        Apply(UIKit.UIInterfaceOrientationMask.All, _log);
+        // decision back to the app's own declared set, which is the peer of Android's `Unspecified`. And as
+        // Android does, the window turns to the way the device is held NOW: left alone, iOS kept the locked
+        // orientation until the next rotation (measured on the simulator: landscape, the device upright).
+        // A device that cannot say (flat on a table) goes back to where the window was before the lock. ⚠ The
+        // simulator reads Unknown even with the readings on, so only that fall-back is measured.
+        var heldNow = HeldNow();
+        if (_watchingDevice)
+        {
+            UIKit.UIDevice.CurrentDevice.EndGeneratingDeviceOrientationNotifications();
+            _watchingDevice = false;
+        }
+        Apply(UIKit.UIInterfaceOrientationMask.All, _log,
+            turnTo: heldNow != UIKit.UIInterfaceOrientationMask.All ? heldNow : _beforeLock);
+        _beforeLock = null;
 #else
         throw ShellCapability.NotSupported(ShellCapability.WindowOrientation, MauiShellNames.Shell,
             "this shell cannot hold an orientation.");
@@ -158,7 +187,10 @@ public sealed class MobileWindowOrientation : IWindowOrientation
     /// backing it. Rotate without the first two and the next device rotation undoes it.
     /// </para>
     /// </summary>
-    private static void Apply(UIKit.UIInterfaceOrientationMask mask, ILogger? log)
+    /// <param name="mask">What the app supports from now on.</param>
+    /// <param name="log">Diagnostics.</param>
+    /// <param name="turnTo">Where the window turns now; null, the mask itself.</param>
+    private static void Apply(UIKit.UIInterfaceOrientationMask mask, ILogger? log, UIKit.UIInterfaceOrientationMask? turnTo = null)
     {
         _mask = mask;
 
@@ -168,10 +200,11 @@ public sealed class MobileWindowOrientation : IWindowOrientation
             // this lock is already in force — but a page told "locked" while nothing can hold it is the
             // exact failure this capability exists to avoid, and it is invisible from the glass.
             throw ShellCapability.NotSupported(ShellCapability.WindowOrientation, MauiShellNames.Shell,
-                "this app's UIApplicationDelegate does not return "
+                "this app's delegate does not return "
                 + "MobileWindowOrientation.SupportedInterfaceOrientations, so iOS has never been told what "
-                + "the app supports and any rotation would be undone by the next one. Override "
-                + "GetSupportedInterfaceOrientations to return it — one line, and it is what turns "
+                + "the app supports and any rotation would be undone by the next one. Export "
+                + "application:supportedInterfaceOrientationsForWindow: on the AppDelegate to return it (an "
+                + "[Export] method: MAUI's delegate has nothing to override) — one line, and it is what turns "
                 + "IsSupported on.");
         }
 
@@ -201,11 +234,39 @@ public sealed class MobileWindowOrientation : IWindowOrientation
             // rotation while still honouring the lock. Logged, not Debug.WriteLine, which Release builds
             // compile out; guarded, since the logger is app code inside a UIKit callback.
             windowScene.RequestGeometryUpdate(
-                new UIKit.UIWindowSceneGeometryPreferencesIOS(mask),
+                new UIKit.UIWindowSceneGeometryPreferencesIOS(turnTo ?? mask),
                 error => AppCallback.Log(log, () =>
-                    $"The window scene refused the orientation request: {error.LocalizedDescription}. The lock is "
-                    + "still in force — the app will take the orientation at the next rotation.", LogLevel.Warning));
+                    $"The window scene refused the orientation request: {error.LocalizedDescription}. What the app "
+                    + "supports is in force either way — the window turns at the next rotation.", LogLevel.Warning));
         }
     }
+
+    /// <summary>The key window's interface orientation now, or null when there is no window yet, or on an iOS before
+    /// 16, which has no immediate turn to go back with (<see cref="Apply"/>).</summary>
+    private static UIKit.UIInterfaceOrientationMask? CurrentWindowOrientation()
+    {
+        if (!OperatingSystem.IsIOSVersionAtLeast(16)) return null;
+        var scene = UIKit.UIApplication.SharedApplication.ConnectedScenes.OfType<UIKit.UIWindowScene>()
+            .FirstOrDefault(candidate => candidate.Windows.Any(window => window.IsKeyWindow));
+        return scene?.EffectiveGeometry.InterfaceOrientation switch
+        {
+            UIKit.UIInterfaceOrientation.Portrait => UIKit.UIInterfaceOrientationMask.Portrait,
+            UIKit.UIInterfaceOrientation.PortraitUpsideDown => UIKit.UIInterfaceOrientationMask.PortraitUpsideDown,
+            UIKit.UIInterfaceOrientation.LandscapeLeft => UIKit.UIInterfaceOrientationMask.LandscapeLeft,
+            UIKit.UIInterfaceOrientation.LandscapeRight => UIKit.UIInterfaceOrientationMask.LandscapeRight,
+            _ => null,
+        };
+    }
+
+    /// <summary>The interface orientation the device is held in now, or <c>All</c> (no turn) face up, face down or
+    /// unknown. A device turned LEFT shows its interface turned RIGHT.</summary>
+    private static UIKit.UIInterfaceOrientationMask HeldNow() => UIKit.UIDevice.CurrentDevice.Orientation switch
+    {
+        UIKit.UIDeviceOrientation.Portrait => UIKit.UIInterfaceOrientationMask.Portrait,
+        UIKit.UIDeviceOrientation.PortraitUpsideDown => UIKit.UIInterfaceOrientationMask.PortraitUpsideDown,
+        UIKit.UIDeviceOrientation.LandscapeLeft => UIKit.UIInterfaceOrientationMask.LandscapeRight,
+        UIKit.UIDeviceOrientation.LandscapeRight => UIKit.UIInterfaceOrientationMask.LandscapeLeft,
+        _ => UIKit.UIInterfaceOrientationMask.All,
+    };
 #endif
 }
