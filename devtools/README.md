@@ -123,7 +123,7 @@ post-mortems — only the build step differs (that project builds an Xcode proje
 | `mac doctor` | is the Mac reachable, and does it have Xcode, a .NET 10 SDK, the `ios` workload and the configured simulator? Reports every gap, not just the first |
 | `mac setup` | one-time: a bare repo + working clone on the Mac, and a local `mac` git remote |
 | `mac push` | push the branch and reset the Mac's clone to it |
-| `mac build` / `mac run` | build for the simulator; `run` also boots it, installs and launches |
+| `mac build` / `mac run [--no-push]` | build for the simulator; `run` also boots it, installs and launches. `--no-push` builds what `mac put` left in the Mac's clone, with no commit |
 | `mac shot [name]` | screenshot the simulator → `devtools/_mac/` (gitignored) |
 | `mac tap <x> <y>` / `mac type <text>` | input, in the NATIVE pixels of that screenshot (see the trap below) |
 | `mac swipe <x1> <y1> <x2> <y2>` | drag/scroll, same coordinate space. Needs `cliclick` on the Mac and REFUSES without it rather than half-scrolling |

@@ -580,8 +580,8 @@ function build(cfg, { skipPush = false } = {}) {
 }
 
 // ---------------------------------------------------------------- run
-function run(cfg) {
-  const rid = build(cfg);
+function run(cfg, { skipPush = false } = {}) {
+  const rid = build(cfg, { skipPush });
   console.log('\nmac: booting the simulator + launching…');
   // `open -a Simulator` is what actually shows the window; a booted device with no UI still installs
   // and runs, which looks like nothing happened. Find the .app rather than composing its path: the
@@ -1799,8 +1799,9 @@ switch (cmd) {
   case 'doctor': doctor(cfg); break;
   case 'setup': setup(cfg); break;
   case 'push': push(cfg); break;
-  case 'build': build(cfg); break;
-  case 'run': run(cfg); break;
+  // --no-push builds what `mac put` left in the Mac's clone, which is the commit-free probe loop.
+  case 'build': build(cfg, { skipPush: rest.includes('--no-push') }); break;
+  case 'run': run(cfg, { skipPush: rest.includes('--no-push') }); break;
   case 'sim': sim(cfg, rest.filter((a) => !a.startsWith('--'))[0]); break;
   case 'shot': shot(cfg, rest[0]); break;
   // The interactive ones open the persistent worker first and close it after: each runs several remote
