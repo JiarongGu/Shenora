@@ -28,6 +28,18 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Changed
+
+- **The ready handshake answers without the JSON serializer's first-use cost.** Every shell's bridge read its first
+  request, the page's `notifyReady`, through the serializer, which built the envelope's metadata by reflection
+  there, and wrote the answer the same way. It now reads requests and writes the handshake's answer by hand, to the
+  same wire contract (a test puts every case through both and compares them): in the Chromium shell the handshake
+  took 39 ms instead of 77 ms, and the first ordinary route after it 35 ms instead of 22 ms, 74 ms instead of 97 ms
+  for the two (medians, 10 interleaved pairs). A page that lays out once it knows the shell does so sooner. A
+  source-generated context for the envelope was measured too and was slower under JIT, compiling itself.
+
 ## 0.18.0 — 2026-09-29
 
 ### Added

@@ -110,7 +110,9 @@ public sealed class IpcHostBridge : IDisposable
         IpcRequest? request;
         try
         {
-            request = IpcJson.Deserialize<IpcRequest>(json);
+            // By hand rather than through IpcJson: the first request is the handshake, and building the envelope's
+            // metadata by reflection was most of its cost (IpcWire).
+            request = IpcWire.ReadRequest(json);
         }
         catch (Exception ex)
         {
@@ -124,7 +126,8 @@ public sealed class IpcHostBridge : IDisposable
             if (string.Equals(request.Module, HandshakeModule, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(request.Type, HandshakeType, StringComparison.OrdinalIgnoreCase))
             {
-                return IpcJson.Serialize(HandleHandshake(request));
+                HandleHandshake(request);
+                return IpcWire.WriteHandshakeResponse(request.Id, _options.Shell);
             }
 
             var response = await _options.Dispatcher.DispatchAsync(request, _lifetimeToken);
@@ -141,7 +144,7 @@ public sealed class IpcHostBridge : IDisposable
         }
     }
 
-    private IpcResponse HandleHandshake(IpcRequest request)
+    private void HandleHandshake(IpcRequest request)
     {
         _options.Pump?.Open();
         Log(() => "[Shenora.Core.Ipc] Client ready");
@@ -151,7 +154,6 @@ public sealed class IpcHostBridge : IDisposable
             AppCallback.Run(() => onReady(request),
                 ex => Log(() => "[Shenora.Core.Ipc] OnClientReady callback failed", ex));
         }
-        return IpcResponse.CreateSuccess(request.Id, _options.Shell);
     }
 
     /// <summary>
