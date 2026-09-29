@@ -24,6 +24,11 @@ minutes — **0/12 without a new process group, 6/12 with one**. The kit was nev
   buffering 0.07 s produced two confident wrong causes (a decoder returning nothing; an encoder that
   packetises differently on hardware) and one tally killed both: `emitted=3` packets × 1024 / 44100 =
   0.0697 s matched the observed number exactly, which pointed at the CLOCK rather than the codec.
+- 🔴 **A native crash inside a vendored engine: run the VENDOR'S OWN SAMPLE through the same steps before
+  eliminating anything on your side.** A CDP tab crashed the kit's Chromium process (0x80000003 in `libcef`,
+  5/5), and five eliminations of the kit's own parts settled nothing; CEF's prebuilt `cefclient` for the same
+  build crashed identically on the same two calls, and the next patch release did not, which was the fix. CEF
+  publishes that sample for every build (the `client` file in its index).
 - ⚠ **A measurement attributes to your change only if nothing else moved.** The device reading after that
   fix looked like proof and was not — every run in it started at segment 0, where the bug cannot manifest.
   Confounded is not wrong; it is UNATTRIBUTED, and must be labelled so rather than banked.

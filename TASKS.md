@@ -235,11 +235,8 @@ transport })` works today.
 A tab a CDP client opens has no window and raises no event, where Edge 154 on its own profile shows it; a
 session cookie ends with the process, with no setting to keep it.
 
-**The adopter's in-app browser on the kit's engine is built: `ChromiumBrowserProcess` (D86)**, in a second process
-of the app's own exe, so an install carries one CEF. Measured on Windows (the commit has the runs); it needed CEF
-154.0.32, since 154.0.28 crashed when a debugging client opened a tab. CEF's log is `cef.log` in the profile's
-folder at warning level, where the adopter chose the name.
-- [ ] **macOS: the browser process is unmeasured** there (it compiles), and so is the 154.0.32 pin.
+The adopter's in-app browser runs on the kit's engine as `ChromiumBrowserProcess` (D86); osx-arm64 is unmeasured
+there as it is for the shell (4).
 
 ### 🎬 THE PICTURE SURFACE (D80) — answered on Android and the iOS simulator
 

@@ -41,7 +41,7 @@ at the first list and missed five more breaking changes.
   `PersistSessionCookies` keeps a sign-in across a restart, `Locale` sets the UI's language, and the profile is
   `UserDataFolder`'s `Default` folder, which must not be another Chromium process's. So an install carries one CEF,
   and on Windows CEF's launcher sandboxes the browser as it does the app. Unlike the app's pages, its pages keep
-  Chromium's local-network checks. Measured on Windows.
+  Chromium's local-network checks. Measured on Windows and on an Intel Mac.
 
 ### Changed
 

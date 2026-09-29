@@ -37,3 +37,7 @@ subsystem as broken, and each cost a day.
   composition's. So say WHICH — the media pipeline names whether a dropped stream had a codec seam supplied
   at all (D70), and `WhoHolds` returning empty means "cannot tell" rather than "nobody" (D32). ⚠ The tell
   that you have this bug: a report that is correct, actionable-looking, and points at code that is fine.
+- ⚠ **A Windows Chromium app that cannot find .NET puts a MODAL error dialog on the owner's screen and
+  waits** (the kit's shim, for a GUI app). A probe that started one with a `DOTNET_ROOT` naming no runtime
+  saw only a port that never answered, and no exit: the tell is a child with no log line and no exit code.
+  Set `DOTNET_ROOT` only where it is right, a Mac's per-user install.
