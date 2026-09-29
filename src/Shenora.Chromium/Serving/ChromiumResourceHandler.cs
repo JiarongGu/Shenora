@@ -9,8 +9,10 @@ namespace Shenora.Chromium.Serving;
 /// Delivers one <see cref="WebViewResourceResponse"/>, the kit's pipeline's answer, to CEF.
 /// <para>
 /// ASYNCHRONOUS both ways: the response is a task, and every read goes to the body with <c>ReadAsync</c>,
-/// so a slow body (a computed media route) never blocks CEF's IO thread. The body is disposed at its end,
-/// on cancel, and when CEF frees the handler, whichever comes first, because nothing else ever will.
+/// so a slow body (a computed media route) does not hold CEF's IO thread while it produces bytes. What does run
+/// there: the pipeline's synchronous start, and a skip into a body that cannot seek. The body is disposed at its
+/// end, on cancel, and when CEF frees the handler, whichever comes first, because nothing else ever will. A cancel
+/// also cancels the pipeline's token, so a route still working learns nobody is reading.
 /// </para>
 /// <para>
 /// A failed response becomes a 500 with a constant body: every response is readable by page script, and
@@ -23,6 +25,7 @@ internal sealed unsafe class ChromiumResourceHandler : CefObject<_cef_resource_h
     private const int ChunkSize = 64 * 1024;
 
     private readonly Task<WebViewResourceResponse> _pending;
+    private readonly CancellationTokenSource? _cancel;
     private readonly ILogger? _log;
     private WebViewResourceResponse? _response;
     private Stream? _body;
@@ -42,6 +45,18 @@ internal sealed unsafe class ChromiumResourceHandler : CefObject<_cef_resource_h
 
     /// <summary>A handler for a response that is already known.</summary>
     public ChromiumResourceHandler(WebViewResourceResponse response, ILogger? log = null) : this(Task.FromResult(response), log) { }
+
+    /// <summary>A handler for a response <paramref name="produce"/> starts now, given a token this handler cancels
+    /// when CEF does.</summary>
+    public ChromiumResourceHandler(Func<CancellationToken, Task<WebViewResourceResponse>> produce, ILogger? log = null)
+        : this(Start(produce, out var cancel), log) => _cancel = cancel;
+
+    private static Task<WebViewResourceResponse> Start(Func<CancellationToken, Task<WebViewResourceResponse>> produce, out CancellationTokenSource cancel)
+    {
+        cancel = new CancellationTokenSource();
+        try { return produce(cancel.Token); }
+        catch (Exception ex) { return Task.FromException<WebViewResourceResponse>(ex); }
+    }
 
     private static readonly byte[] FailureBody = "The response could not be produced."u8.ToArray();
 
@@ -80,13 +95,31 @@ internal sealed unsafe class ChromiumResourceHandler : CefObject<_cef_resource_h
     private void Close()
     {
         Volatile.Write(ref _closed, 1);
+        try { _cancel?.Cancel(); }
+        catch (Exception ex) { AppCallback.Log(_log, () => "[Shenora.Chromium] Cancelling a resource response threw", LogLevel.Warning, ex); }
         CloseBody();
     }
 
-    private protected override void OnFreed() => Close();
+    private protected override void OnFreed()
+    {
+        Close();
+        _cancel?.Dispose();
+    }
 
+    // An exception must never unwind into CEF's frames: it ends the process. What these touch is app data.
     [UnmanagedCallersOnly]
     private static int Open(_cef_resource_handler_t* self, _cef_request_t* request, int* handleRequest, _cef_callback_t* callback)
+    {
+        try { return OpenCore(self, request, handleRequest, callback); }
+        catch (Exception ex)
+        {
+            AppCallback.Log(From<ChromiumResourceHandler>(self)._log, () => "[Shenora.Chromium] Opening a response failed", LogLevel.Warning, ex);
+            *handleRequest = 1;
+            return 0;   // cancels the request
+        }
+    }
+
+    private static int OpenCore(_cef_resource_handler_t* self, _cef_request_t* request, int* handleRequest, _cef_callback_t* callback)
     {
         using var ownedRequest = new CefRef<_cef_request_t>(request);
         var me = From<ChromiumResourceHandler>(self);
@@ -115,20 +148,32 @@ internal sealed unsafe class ChromiumResourceHandler : CefObject<_cef_resource_h
     {
         using var ownedResponse = new CefRef<_cef_response_t>(response);
         var me = From<ChromiumResourceHandler>(self);
-        var r = me._response!;
-
-        response->set_status(response, r.StatusCode);
-        fixed (char* phrase = r.ReasonPhrase)
+        try
         {
-            var s = CefStrings.View(phrase, r.ReasonPhrase.Length);
-            response->set_status_text(response, &s);
+            var r = me._response!;
+            response->set_status(response, r.StatusCode);
+            var phrase = r.ReasonPhrase ?? "";
+            fixed (char* p = phrase)
+            {
+                var s = CefStrings.View(p, phrase.Length);
+                response->set_status_text(response, &s);
+            }
+            foreach (var (name, value) in r.Headers ?? new Dictionary<string, string>())
+            {
+                if (string.Equals(name, "Content-Type", StringComparison.OrdinalIgnoreCase)) SetContentType(response, value);
+                else SetHeader(response, name, value);
+            }
+            *length = me._body is { CanSeek: true } body ? body.Length - body.Position : -1;
         }
-        foreach (var (name, value) in r.Headers)
+        catch (Exception ex)
         {
-            if (string.Equals(name, "Content-Type", StringComparison.OrdinalIgnoreCase)) SetContentType(response, value);
-            else SetHeader(response, name, value);
+            // A response the app built badly (a null header value, a body that cannot report its length): a 500 with
+            // nothing to read, never the process.
+            AppCallback.Log(me._log, () => "[Shenora.Chromium] A response's headers could not be read; answering 500", LogLevel.Warning, ex);
+            me.CloseBody();
+            response->set_status(response, 500);
+            *length = 0;
         }
-        *length = me._body is { CanSeek: true } body ? body.Length - body.Position : -1;
     }
 
     /// <summary>CEF keeps the MIME type and the charset apart: <c>text/html; charset=utf-8</c> is both.</summary>
@@ -208,6 +253,13 @@ internal sealed unsafe class ChromiumResourceHandler : CefObject<_cef_resource_h
 
     private void FinishRead(Task<int> read, nint target, CefRef<_cef_resource_read_callback_t> held)
     {
+        // Cancelled: CEF's buffer is no longer ours to write into, and nobody waits for the answer.
+        if (Volatile.Read(ref _closed) != 0)
+        {
+            CloseBody();
+            held.Dispose();
+            return;
+        }
         int result;
         if (read.IsCompletedSuccessfully)
         {

@@ -124,6 +124,31 @@ public class ChromiumRoutingTests
         Assert.Equal(404, (await ServeAsync(serving, "https://app.local/api/nothing")).Status);
     }
 
+    // A page served by the app's own route (or an embedded bundle) finds its transport too, as it would on WebView2;
+    // unmarked, its IPC was silently absent.
+    [Fact]
+    public async Task An_HTML_document_the_apps_pipeline_serves_is_marked_and_nothing_else_is()
+    {
+        var interceptor = new ChromiumInterceptor();
+        interceptor.Use((request, next, ct) => Task.FromResult<WebViewResourceResponse?>(request.Uri.AbsolutePath switch
+        {
+            "/page" => WebViewResourceResponse.Bytes("<html><head></head><body>routed</body></html>"u8.ToArray(), "text/html",
+                new Dictionary<string, string> { ["Content-Length"] = "44", ["Cache-Control"] = "no-store" }),
+            "/latin" => WebViewResourceResponse.Bytes("<p>x</p>"u8.ToArray(), "text/html; charset=iso-8859-1"),
+            _ => WebViewResourceResponse.Bytes("{}"u8.ToArray(), "application/json"),
+        }));
+        var serving = new ChromiumServing(null, Origins, interceptor);
+
+        var page = await ServeAsync(serving, "https://app.local/page");
+        var latin = await ServeAsync(serving, "https://app.local/latin");
+        var data = await ServeAsync(serving, "https://app.local/data");
+
+        Assert.Contains(ChromiumTransport.HostGlobal, page.Body);
+        Assert.Contains("routed", page.Body);
+        Assert.DoesNotContain(ChromiumTransport.HostGlobal, latin.Body);
+        Assert.Equal("{}", data.Body);
+    }
+
     [Fact]
     public async Task A_range_is_answered_with_exactly_its_slice()
     {

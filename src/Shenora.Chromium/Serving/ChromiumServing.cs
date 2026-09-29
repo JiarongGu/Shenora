@@ -9,7 +9,8 @@ namespace Shenora.Chromium.Serving;
 /// request is the shell's.
 /// <list type="bullet">
 /// <item>The bundle first, then the app's interceptor pipeline on a miss, then a fixed 404 (D45's order).
-/// An HTML document from the bundle is MARKED (D83), so the page finds the transport.</item>
+/// An HTML document from either is MARKED (D83), so the page finds the transport, as it does on WebView2
+/// whatever served it.</item>
 /// <item>The dev server's top-level document is fetched and marked the same way.</item>
 /// <item>Every refusal and failure is a constant body: every response here is readable by page script.</item>
 /// </list>
@@ -40,13 +41,12 @@ internal sealed class ChromiumServing
         switch (route)
         {
             case ChromiumRoute.Bundle:
-                return TryBundle(request)
-                    ?? await _interceptor.Handle(request, cancellationToken).ConfigureAwait(false)
-                    ?? WebViewResourceResponse.NotFound();
+                if (TryBundle(request) is { } file) return file;
+                return await _interceptor.Handle(request, cancellationToken).ConfigureAwait(false) is { } routed
+                    ? await MarkedAsync(routed, cancellationToken).ConfigureAwait(false)
+                    : WebViewResourceResponse.NotFound();
             case ChromiumRoute.DevDocument:
                 return await DevDocumentAsync(request, cancellationToken).ConfigureAwait(false);
-            case ChromiumRoute.Ipc:
-                return Accepted();
             default:
                 return Forbidden();
         }
@@ -70,6 +70,34 @@ internal sealed class ChromiumServing
         var marked = ChromiumTransport.MarkHtml(File.ReadAllText(full, Encoding.UTF8), _origins.IpcPath);
         return WebViewResourceResponse.Bytes(Encoding.UTF8.GetBytes(marked), "text/html; charset=utf-8",
             new Dictionary<string, string> { ["Cache-Control"] = WebViewContentTypes.CacheControlFromPath(full) });
+    }
+
+    /// <summary>
+    /// An HTML document the app's pipeline served (its own route, an embedded bundle), marked like a bundle file.
+    /// Anything else, and HTML in a charset other than UTF-8, passes through untouched.
+    /// </summary>
+    private async Task<WebViewResourceResponse> MarkedAsync(WebViewResourceResponse response, CancellationToken cancellationToken)
+    {
+        var type = response.Headers?.FirstOrDefault(h => string.Equals(h.Key, "Content-Type", StringComparison.OrdinalIgnoreCase)).Value;
+        if (type is null || !type.StartsWith("text/html", StringComparison.OrdinalIgnoreCase)) return response;
+        var charset = type.IndexOf("charset=", StringComparison.OrdinalIgnoreCase);
+        if (charset >= 0 && !type[(charset + 8)..].TrimStart('"').StartsWith("utf-8", StringComparison.OrdinalIgnoreCase)) return response;
+
+        string html;
+        await using (var body = response.Content)
+        using (var reader = new StreamReader(body, Encoding.UTF8))
+            html = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in response.Headers!)
+            if (!string.Equals(name, "Content-Length", StringComparison.OrdinalIgnoreCase)) headers[name] = value;
+        headers["Content-Type"] = "text/html; charset=utf-8";
+        return new WebViewResourceResponse
+        {
+            StatusCode = response.StatusCode,
+            ReasonPhrase = response.ReasonPhrase,
+            Content = new MemoryStream(Encoding.UTF8.GetBytes(ChromiumTransport.MarkHtml(html, _origins.IpcPath)), writable: false),
+            Headers = headers,
+        };
     }
 
     /// <summary>The dev server's document, marked. The dev server serves everything else itself.</summary>

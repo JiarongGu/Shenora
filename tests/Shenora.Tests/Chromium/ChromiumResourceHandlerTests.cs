@@ -110,6 +110,38 @@ public unsafe class ChromiumResourceHandlerTests
         Assert.Equal("late", Encoding.UTF8.GetString(buffer, 0, 4));
     }
 
+    // A route still working when the page abandons the request learns it from its token.
+    [Fact]
+    public void Cancelling_cancels_the_token_the_response_was_started_with()
+    {
+        var token = CancellationToken.None;
+        var pending = new TaskCompletionSource<WebViewResourceResponse>();
+        using var run = new Run(ct => { token = ct; return pending.Task; });
+        run.Open();
+        Assert.False(token.IsCancellationRequested);
+
+        run.Cancel();
+
+        Assert.True(token.IsCancellationRequested);
+    }
+
+    // What the app built is app data: a null header value must not unwind into CEF, which ends the process.
+    [Fact]
+    public void A_response_whose_headers_cannot_be_read_is_a_500_not_a_crash()
+    {
+        using var run = new Run(new WebViewResourceResponse
+        {
+            Content = new MemoryStream("body"u8.ToArray()),
+            Headers = new Dictionary<string, string> { ["X-Bad"] = null! },
+        });
+        run.Open();
+
+        var response = run.Headers(out var length);
+
+        Assert.Equal(500, response.Status);
+        Assert.Equal(0, length);
+    }
+
     [Fact]
     public void Freeing_the_handler_disposes_a_body_nobody_read()
     {
@@ -141,6 +173,12 @@ public unsafe class ChromiumResourceHandlerTests
         {
             _handler = new ChromiumResourceHandler(response);
             _struct = _handler.ForCef();   // the reference CEF holds while the request lives
+        }
+
+        public Run(Func<CancellationToken, Task<WebViewResourceResponse>> produce)
+        {
+            _handler = new ChromiumResourceHandler(produce);
+            _struct = _handler.ForCef();
         }
 
         public (int Handle, int Result) Open()

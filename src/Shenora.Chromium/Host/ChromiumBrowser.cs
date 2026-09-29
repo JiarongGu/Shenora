@@ -495,7 +495,10 @@ internal sealed unsafe class ChromiumBrowser
                 }
                 else
                 {
-                    handler = new ChromiumResourceHandler(me._owner.Serving.ServeAsync(me._route, Snapshot(request), CancellationToken.None), me._owner.Log);
+                    var snapshot = Snapshot(request);
+                    var serving = me._owner.Serving;
+                    var route = me._route;
+                    handler = new ChromiumResourceHandler(cancel => serving.ServeAsync(route, snapshot, cancel), me._owner.Log);
                 }
             }
             catch (Exception ex)
@@ -546,8 +549,11 @@ internal sealed unsafe class ChromiumBrowser
             var elements = new _cef_post_data_element_t*[(int)count];
             using var bytes = new MemoryStream();
             fixed (_cef_post_data_element_t** e = elements) post.Ptr->get_elements(post.Ptr, &count, e);
-            foreach (var element in elements)
+            // CEF lowers count to what it filled in: past it the array is null.
+            for (var i = 0; i < (int)count && i < elements.Length; i++)
             {
+                var element = elements[i];
+                if (element == null) continue;
                 using var el = new CefRef<_cef_post_data_element_t>(element);
                 var size = element->get_bytes_count(element);
                 var buffer = new byte[(int)size];
