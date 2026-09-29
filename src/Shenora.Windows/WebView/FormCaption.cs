@@ -16,6 +16,10 @@ internal static class FormCaption
     public static bool ManuallyMaximized(Form form) =>
         form is IAppMaximizable { AppPlacement: WindowPlacement.Maximized } && form.WindowState != FormWindowState.Maximized;
 
+    /// <summary>The window's own truth: an <see cref="IAppMaximizable"/>'s placement, else <see cref="Form.WindowState"/>.</summary>
+    public static bool IsMaximized(Form form) =>
+        form is IAppMaximizable app ? app.AppPlacement == WindowPlacement.Maximized : form.WindowState == FormWindowState.Maximized;
+
     public static void ToggleMaximize(Form form)
     {
         if (form is OptimizedForm optimized) optimized.ToggleMaximize();
@@ -47,6 +51,21 @@ internal static class FormCaption
         {
             placement?.ReleaseHandle();
         }
+        return true;
+    }
+
+    /// <summary>
+    /// Start the OS size loop from an edge (<paramref name="hitTest"/>: an <c>HT*</c> edge code), at the cursor, while
+    /// the button is still down; false, and nothing started, once it is up.
+    /// </summary>
+    public static bool Resize(Form form, int hitTest) => Resize(form, hitTest, LeftButtonDown);
+
+    internal static bool Resize(Form form, int hitTest, Func<bool> buttonDown)
+    {
+        if (!form.IsHandleCreated || !buttonDown()) return false;
+        GetCursorPos(out var at);
+        ReleaseCapture();
+        SendMessage(form.Handle, WM_NCLBUTTONDOWN, hitTest, (nint)(((at.Y & 0xFFFF) << 16) | (at.X & 0xFFFF)));
         return true;
     }
 

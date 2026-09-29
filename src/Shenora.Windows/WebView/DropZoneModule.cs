@@ -48,15 +48,18 @@ public sealed class DropZoneModule : ModuleBase
         _manager = manager ?? throw new ArgumentNullException(nameof(manager));
     }
 
-    // The manager for the page that sent this: the main one for its own web view and for a send from no page. On the
-    // sending web view's thread, which is the one a manager over it must be made on.
-    private DropZoneManager? For(Control? sender)
+    // The manager for the page that sent this: the main one for its own web view and for a send from no page; none for
+    // a page whose web view is gone. A new one only on the sending web view's own thread, the one a manager over it
+    // must be made on: work a page's request started runs elsewhere, as that page's.
+    private DropZoneManager? For(bool isPage, Control? sender)
     {
+        if (!isPage) return _manager;
+        if (sender is null) return null;   // collected
         if (sender is not WebView2Control web || ReferenceEquals(web, _manager.WebView)) return _manager;
         lock (_lock)
         {
             if (_pages.TryGetValue(web, out var existing)) return existing;
-            if (web.IsDisposed || web.TopLevelControl is not Form form) return null;
+            if (web.IsDisposed || web.InvokeRequired || web.TopLevelControl is not Form form) return null;
             var manager = new DropZoneManager(new DropZoneManagerOptions { WebView = web, ParentForm = form, EventBus = _manager.EventBus }, _manager.Logger);
             _pages[web] = manager;
             web.Disposed += (_, _) =>
@@ -74,7 +77,7 @@ public sealed class DropZoneModule : ModuleBase
     /// <inheritdoc />
     protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
     {
-        var manager = For(PageSender.Current);
+        var manager = For(PageSender.IsPage(out var sender), sender);
         switch (request.Type.ToUpperInvariant())
         {
             case RegisterType:

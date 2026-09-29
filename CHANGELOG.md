@@ -173,6 +173,12 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **`START_DRAG` and `START_RESIZE` no longer start the OS move or size loop once the button is up.** The page sends
+  them on its mousedown and the loop starts when the command arrives; on a busy UI thread that could be after the
+  release, and the window then followed the pointer until the next click. Both now start only while the left
+  button is still down (from the code: the OS loop is not run in a test). A window command that throws, such as an
+  app's `FormClosing` under `CLOSE` or its `ApplyTheme`, is now logged rather than dropped.
+
 - **A WebView2 page in a second web view registered its drop zones over the MAIN window.** `DropZoneModule` is
   mapped once over the main web view's `DropZoneManager`, so another page's `REGISTER` placed an overlay over the
   main window at that page's coordinates, and its own window had no drop target. Measured with a WebView2 page in

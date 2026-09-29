@@ -289,17 +289,22 @@ internal sealed class WinFormsRunner : IShenoraRunner
         }
         finally
         {
-            if (engine is not null)
+            try
             {
-                // Every browser closes before CEF does. A secondary window outlives the main loop on a thread of
-                // its own, so close them; Stop waits, briefly, for their browsers.
-                app.Services.GetService<SecondaryWindows>()?.CloseAll();
-                engine.Stop();
+                if (engine is not null)
+                {
+                    // Every browser closes before CEF does. A secondary window outlives the main loop on a thread of
+                    // its own, so close them; Stop waits, briefly, for their browsers.
+                    app.Services.GetService<SecondaryWindows>()?.CloseAll();
+                    engine.Stop();
+                }
             }
-
-            // Released LAST and explicitly, so a --restarted relaunch waiting on the mutex gets it the
-            // moment shutdown work is done rather than at process teardown.
-            guard?.Dispose();
+            finally
+            {
+                // Released LAST and explicitly, so a --restarted relaunch waiting on the mutex gets it the
+                // moment shutdown work is done rather than at process teardown, even when that work threw.
+                guard?.Dispose();
+            }
         }
     }
 }

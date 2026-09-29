@@ -73,7 +73,7 @@ public sealed class ChromiumView : Control
         catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException)
         {
             // Never out of handle creation, where WinForms answers an exception with a blocking modal dialog.
-            _log?.LogError(ex, "The Chromium page '{Name}' could not open", Name);
+            AppCallback.Log(_log, () => $"The Chromium page '{Name}' could not open", LogLevel.Error, ex);
         }
     }
 

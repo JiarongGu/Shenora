@@ -195,6 +195,37 @@ public class DropZoneManagerTests
         }
     }));
 
+    // Work a page's request started runs as that page, on another thread: a manager over its web view must not be made
+    // there, where CoreWebView2 cannot be touched.
+    [Fact]
+    public async Task A_pages_work_on_another_thread_makes_no_manager_there() => await Task.Run(() => Sta.Run(() =>
+    {
+        var (form, _, _, manager) = CreateFixture();
+        using var other = new Form();
+        var otherWeb = new WebView2Control { Dock = DockStyle.Fill };
+        other.Controls.Add(otherWeb);
+        _ = other.Handle;
+        using (form)
+        using (manager)
+        {
+            var dispatcher = new MessageDispatcher().UseErrorHandler().MapModule(new DropZoneModule(manager));
+            var response = Task.Run(() =>
+            {
+                using (PageSender.Enter(otherWeb))
+                    return dispatcher.DispatchAsync(new IpcRequest
+                    {
+                        Module = DropZoneManager.Module,
+                        Type = "REGISTER",
+                        Payload = IpcJson.SerializeToElement(new { zoneId = "z1", x = 1, y = 2, width = 30, height = 40 }),
+                    }).GetAwaiter().GetResult();
+            }).GetAwaiter().GetResult();
+
+            Assert.True(response.Success);
+            Assert.False(manager.HasZone("z1"));
+            Assert.Empty(other.Controls.OfType<DropZoneOverlay>());
+        }
+    }));
+
     [Fact]
     public async Task A_page_whose_web_view_is_gone_registers_nothing() => await Task.Run(() => Sta.Run(() =>
     {

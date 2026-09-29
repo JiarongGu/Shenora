@@ -111,6 +111,7 @@ public class ChromiumViewTests
             _ = frameless.Handle;
 
             Assert.False(FormCaption.Move(frameless, new Point(10, 10), buttonDown: () => false));
+            Assert.False(FormCaption.Resize(frameless, 12 /* HTTOP */, buttonDown: () => false));
 
             frameless.ToggleMaximize();
             Assert.True(FormCaption.ManuallyMaximized(frameless));

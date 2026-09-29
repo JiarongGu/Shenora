@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Shenora.Core.Shell;
@@ -44,14 +43,13 @@ public sealed class WindowCommandOptions
     /// button, which a page-drawn button otherwise never gets. A frameless app wires
     /// <c>OptimizedForm.SetCaptionButtons</c> here.
     /// </summary>
-    public Action<IReadOnlyList<Shenora.Windows.CaptionButtonRegion>>? SetCaptionButtons { get; init; }
+    public Action<IReadOnlyList<CaptionButtonRegion>>? SetCaptionButtons { get; init; }
 
     /// <summary>
-    /// The control the page's CSS coordinates are relative to — required only when
-    /// <see cref="SetCaptionButtons"/> is set. Normally the WebView2 itself. Its
-    /// <c>DeviceDpi</c> is what converts CSS px to physical px, per-monitor under PerMonitorV2.
-    /// A page the kit's transports mark is read against the control showing it instead, so a form
-    /// with two pages converts each one's own; this is for a send from no page.
+    /// The control a send from no page reads its caption rectangles against, when
+    /// <see cref="SetCaptionButtons"/> is set; null means <see cref="Window"/>. Its <c>DeviceDpi</c>
+    /// converts CSS px to physical px, per-monitor under PerMonitorV2. A page the kit's transports
+    /// mark is read against the control showing it, so a form with two pages converts each one's own.
     /// </summary>
     public Control? CoordinateSpace { get; init; }
 }
@@ -118,23 +116,22 @@ public sealed class WindowCommandModule : ModuleBase
     /// <see cref="WindowCommandOptions.SetCaptionButtons"/> answers <c>NO_ROUTE</c>.</summary>
     public const string SetCaptionButtonsType = "SET_CAPTION_BUTTONS";
 
-    // Borderless-window drag/resize: hand off to the OS window-move/-size loop — the page can't drive
-    // native drag itself.
-    private const int WM_NCLBUTTONDOWN = 0x00A1;
-    private const int HTCAPTION = 2, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
+    // Borderless-window resize: the OS size loop from the top edge or a top corner.
+    private const int HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
 
     private readonly WindowCommandOptions _options;
     private readonly Target _own;
-    private readonly Microsoft.Extensions.Logging.ILogger? _log;
+    private readonly ILogger? _log;
 
-    /// <summary>Window commands over IPC. Every route is opt-in: an unset callback answers NO_ROUTE.</summary>
-    public WindowCommandModule(WindowCommandOptions options, Microsoft.Extensions.Logging.ILogger<WindowCommandModule>? logger = null)
+    /// <summary>Window commands over IPC. The two opt-in routes, <c>SET_THEME</c> and <c>SET_CAPTION_BUTTONS</c>,
+    /// answer NO_ROUTE while their callback is unset.</summary>
+    public WindowCommandModule(WindowCommandOptions options, ILogger<WindowCommandModule>? logger = null)
         : base(logger)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _log = logger;
         _own = new Target(_options.Window, _options.CoordinateSpace ?? _options.Window, _options.ToggleMaximize,
-            _options.IsMaximized, _options.ApplyTheme, _options.SetCaptionButtons);
+            _options.IsMaximized, _options.ApplyTheme, _options.SetCaptionButtons, logger);
     }
 
     /// <inheritdoc />
@@ -173,13 +170,11 @@ public sealed class WindowCommandModule : ModuleBase
                 // ⚠ Refused while maximized: a manual work-area maximize keeps WindowState.Normal, so
                 // the OS would drag the maximized-size window with stale restore bounds. The page's
                 // header restores first, as native caption drags do.
+                // Started only while the button is still down: the request arrives after the press, and a loop
+                // started after the release follows the pointer until the next click.
                 if (window.Maximized())
                     return Done();
-                window.Post(() =>
-                {
-                    ReleaseCapture();
-                    SendMessage(form.Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
-                });
+                window.Post(() => FormCaption.Move(form, Cursor.Position));
                 return Done();
 
             case StartResizeType:
@@ -189,12 +184,7 @@ public sealed class WindowCommandModule : ModuleBase
                 // and doesn't track.
                 var edge = PayloadHelper.GetOptionalValue<string>(request.Payload, "edge");
                 var hitTest = edge switch { "topLeft" => HTTOPLEFT, "topRight" => HTTOPRIGHT, _ => HTTOP };
-                window.Post(() =>
-                {
-                    GetCursorPos(out var pt);
-                    ReleaseCapture();
-                    SendMessage(form.Handle, WM_NCLBUTTONDOWN, (IntPtr)hitTest, (IntPtr)((pt.Y << 16) | (pt.X & 0xFFFF)));
-                });
+                window.Post(() => FormCaption.Resize(form, hitTest));
                 return Done();
 
             case SetThemeType when window.ApplyTheme is { } applyTheme:
@@ -236,10 +226,8 @@ public sealed class WindowCommandModule : ModuleBase
         }
         if (sender is null || sender.IsDisposed || sender.TopLevelControl is not Form form) return null;
         if (ReferenceEquals(form, _options.Window)) return _own;
-        Func<bool>? maximized = form is IAppMaximizable app ? () => app.AppPlacement == WindowPlacement.Maximized : null;
-        return form is OptimizedForm optimized
-            ? new Target(form, sender, optimized.ToggleMaximize, maximized, applyTheme: null, optimized.SetCaptionButtons)
-            : new Target(form, sender, null, maximized, null, null);
+        return new Target(form, sender, () => FormCaption.ToggleMaximize(form), () => FormCaption.IsMaximized(form),
+            applyTheme: null, form is OptimizedForm optimized ? optimized.SetCaptionButtons : null, _log);
     }
 
     // No window to command: the commands do nothing, and the opt-in routes, which a window's callbacks answer, have none.
@@ -252,18 +240,19 @@ public sealed class WindowCommandModule : ModuleBase
 
     /// <summary>A window, what its page's coordinates are relative to, and its callbacks (null: the default, or no route).</summary>
     private sealed class Target(Form form, Control space, Action? toggleMaximize, Func<bool>? isMaximized,
-        Action<bool>? applyTheme, Action<IReadOnlyList<Shenora.Windows.CaptionButtonRegion>>? setCaptionButtons)
+        Action<bool>? applyTheme, Action<IReadOnlyList<CaptionButtonRegion>>? setCaptionButtons, ILogger? log)
     {
         // The one marshalling owner. It also GUARDS the posted body, which matters here: SET_THEME runs
         // an app-supplied callback and CLOSE runs app FormClosing logic, and an exception from either
-        // has no caller on the stack.
-        private readonly Shenora.Windows.WinFormsUiDispatcher _ui = new(form);
+        // has no caller on the stack, so it is logged here.
+        private readonly WinFormsUiDispatcher _ui = new(form,
+            ex => AppCallback.Log(log, () => "[Shenora.Windows] A window command failed", LogLevel.Warning, ex));
 
         public Form Form => form;
         public Control Space => space;
         public Action? ToggleMaximize => toggleMaximize;
         public Action<bool>? ApplyTheme => applyTheme;
-        public Action<IReadOnlyList<Shenora.Windows.CaptionButtonRegion>>? SetCaptionButtons => setCaptionButtons;
+        public Action<IReadOnlyList<CaptionButtonRegion>>? SetCaptionButtons => setCaptionButtons;
 
         public bool Maximized() => isMaximized?.Invoke() ?? form.WindowState == FormWindowState.Maximized;
 
@@ -288,9 +277,9 @@ public sealed class WindowCommandModule : ModuleBase
     /// Unknown kinds and malformed entries are SKIPPED rather than failing the whole call — rejecting a batch over one
     /// odd entry would drop the other buttons' hit-tests as collateral.
     /// </summary>
-    private static List<(Shenora.Windows.CaptionButtonKind Kind, double X, double Y, double Width, double Height)> ParseCaptionButtons(JsonElement? payload)
+    private static List<(CaptionButtonKind Kind, double X, double Y, double Width, double Height)> ParseCaptionButtons(JsonElement? payload)
     {
-        var css = new List<(Shenora.Windows.CaptionButtonKind, double, double, double, double)>(3);
+        var css = new List<(CaptionButtonKind, double, double, double, double)>(3);
         if (payload is not { } root || root.ValueKind != JsonValueKind.Object) return css;
         if (!root.TryGetProperty("buttons", out var buttons) || buttons.ValueKind != JsonValueKind.Array) return css;
 
@@ -310,39 +299,36 @@ public sealed class WindowCommandModule : ModuleBase
     /// CSS px, relative to <paramref name="space"/>, → the form's client px. Zero-size rectangles are skipped. On the
     /// form's thread: the conversion goes through both windows' handles.
     /// </summary>
-    private static IReadOnlyList<Shenora.Windows.CaptionButtonRegion> ToClient(
-        List<(Shenora.Windows.CaptionButtonKind Kind, double X, double Y, double Width, double Height)> css, Form form, Control space)
+    private static IReadOnlyList<CaptionButtonRegion> ToClient(
+        List<(CaptionButtonKind Kind, double X, double Y, double Width, double Height)> css, Form form, Control space)
     {
         // CSS px → physical px via the CONTROL's DeviceDpi — per-monitor under PerMonitorV2, where a
         // process-global scale factor is wrong on a mixed-DPI desktop (same as
         // DropZoneManager.ToFormBounds).
-        var scale = Shenora.Windows.DpiHelper.ScaleFromDeviceDpi(space.DeviceDpi);
+        var scale = DpiHelper.ScaleFromDeviceDpi(space.DeviceDpi);
         int Px(double value) => (int)Math.Round(value * scale);
 
-        var regions = new List<Shenora.Windows.CaptionButtonRegion>(css.Count);
+        var regions = new List<CaptionButtonRegion>(css.Count);
         foreach (var (kind, x, y, width, height) in css)
         {
             if (Px(width) <= 0 || Px(height) <= 0) continue;
             // Through screen coordinates: the page's origin is the CONTROL, the hit-test works in the
             // FORM's client space, and the two differ whenever the WebView2 does not fill the form.
             var client = form.PointToClient(space.PointToScreen(new Point(Px(x), Px(y))));
-            regions.Add(new Shenora.Windows.CaptionButtonRegion(kind, new Rectangle(client.X, client.Y, Px(width), Px(height))));
+            regions.Add(new CaptionButtonRegion(kind, new Rectangle(client.X, client.Y, Px(width), Px(height))));
         }
         return regions;
     }
 
-    private static Shenora.Windows.CaptionButtonKind? ParseKind(JsonElement entry) =>
+    private static CaptionButtonKind? ParseKind(JsonElement entry) =>
         entry.TryGetProperty("kind", out var kind) && kind.ValueKind == JsonValueKind.String
             ? kind.GetString()?.ToUpperInvariant() switch
             {
-                "MINIMIZE" => Shenora.Windows.CaptionButtonKind.Minimize,
-                "MAXIMIZE" => Shenora.Windows.CaptionButtonKind.Maximize,
-                "CLOSE" => Shenora.Windows.CaptionButtonKind.Close,
+                "MINIMIZE" => CaptionButtonKind.Minimize,
+                "MAXIMIZE" => CaptionButtonKind.Maximize,
+                "CLOSE" => CaptionButtonKind.Close,
                 _ => null,
             }
             : null;
 
-    [DllImport("user32.dll")] private static extern bool ReleaseCapture();
-    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point pt);
 }
