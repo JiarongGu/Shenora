@@ -396,8 +396,19 @@ webview-specific, and this is one data point against it.
 then played the file.** The advisory answer and the real one disagree, so a planner keyed on `canPlayType`
 routes this file to a converter for nothing.
 
-⚠ **ONE device, and the WebView VERSION is the variable.** It says nothing about an older WebView, and
-nothing about WKWebView — where an adopter's refusals were measured and where the surface's case was made.
+**And on the other engines — measured 2026-09-30**, the same clip in the page's own `<video>` (a minimal MAUI or
+WinForms app on the kit's packages; `clip-faststart.mp4`, the same streams in MP4, as the control):
+
+| engine | `canPlayType` for the MKV | the MKV | the MP4 |
+|---|---|---|---|
+| Android WebView 133.0.6943.137 (API 36 AVD) | `""` | plays | plays |
+| Android AOSP WebView 110.0.5481.154 (MuMu, Android 12) | `""` | plays | plays |
+| WebView2, Edge 154 (Windows 11) | `probably` | plays | plays |
+| WKWebView (iOS 26.3 simulator) | `""` | **error 4**, refused | plays |
+
+So D52's container case is **iOS's**: WKWebView refuses Matroska, and so does the shell's AVPlayer, which leaves
+container repair the only way that file plays there. Android's WebView, two generations apart, and WebView2 play
+it directly. (A page on the Chromium engine plays no H.264 at all; the media guide has that.)
 
 **What this settles for D80 on Android:** the kit's zero-dependency default reaches the file, so ExoPlayer
 is not needed for CONTAINER reach here (D51/D42's seam remains the answer for an app that needs more). The
@@ -437,8 +448,9 @@ because a rule that failed to match and a rule that matched perfectly are otherw
 webview opaque after `MobileWebViewTransparency` ran. Rung 3 makes the control's `BackgroundColor`
 transparent so the two agree rather than compete, and it is pixel-identical to rung 2.
 
-⚠ **ONE device, and it is the emulator.** Nothing here says anything about WKWebView, where the surface's
-case was originally made.
+**The iOS simulator ran the same five rungs (2026-09-29)**: the picture composites under WKWebView's page, rung 5
+showing the clip playing beside the magenta control. With the MP4, since AVPlayer refuses the MKV. ⚠ Both runs
+are emulators; no phone has shown the picture on either platform.
 
 ## First load does not scale with the file — measured 2026-08-21
 

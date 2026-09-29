@@ -103,6 +103,14 @@ pipeline.Use((source, codecPrivate) => source.Codec is "ac3" ? MyDecoder.Begin(s
 ⚠ **The kit ships no codec and no engine, ever** (D51) — every byte of decoding is the platform's. Where
 the device cannot decode it either, there is nothing to bridge and the honest answer is a refusal.
 
+⚠ **A page on the Chromium engine plays no H.264, AAC or HEVC.** CEF's published builds, which
+`Shenora.Chromium` pins, carry no licensed codecs: on the pinned build (measured on Windows) `canPlayType` and
+`MediaSource` refuse all three, and an H.264+AAC MP4 fails as an unsupported source, while VP8, VP9, AV1, Opus and
+MP3 play. So a
+Chromium page cannot play the MP4 that container repair produces, and its policy names only what it decodes. In
+the WinForms shell a `ChromiumView` app still has `WindowsMediaPlayer`, which uses the platform's codecs; the
+Chromium shell (`UseChromium`) has no native player of its own.
+
 > **Need playback the page element cannot give you?** Resolve the shell's NATIVE player instead —
 > `IosMediaPlayer` on iOS, `AndroidMediaPlayer` on Android, `WindowsMediaPlayer` on the desktop. On iOS the gap is absolute: the system
 > pauses a `<video>` the moment the app backgrounds, so background audio also needs your app's own

@@ -309,6 +309,12 @@ there stays the page's. What differs: WinForms'
 `Focused` stays false while the page has the keyboard focus. Started as `dotnet MyApp.App.dll` rather than
 `MyApp.exe`, as an IDE may, the app runs, with Chromium's sandbox off: the engine logs a warning saying so.
 
+**What the engine costs, and what ships with it.** The laid-out CEF runtime is about 400 MB on disk
+(`libcef.dll` 276 MB and 220 locale files 49 MB, at CEF 154). Its pages play no H.264, AAC or HEVC, where
+WebView2's do (the media guide). And the app now redistributes Chromium: CEF's `LICENSE.txt` and Chromium's
+third-party notices (`CREDITS.html`, in the same CEF build) are the app's to ship, and the layout does not copy
+them.
+
 **Verify:** the app starts from `MyApp.exe`, the page loads from the dev server and from the bundle, and
 the caption buttons, a window drag and a file drop behave as they did on WebView2.
 
@@ -339,7 +345,9 @@ static int Main(string[] args)
 
 `Environment.ProcessPath` is `MyApp.exe`, CEF's launcher, so the browser is sandboxed as the app is. Its windows come
 from `StartUrl` or over the port (`Target.createTarget`), and it exits when its last window closes, or when `stop`
-fires, after closing them.
+fires, after closing them. ⚠ A target made over the port is announced as `other` and becomes a `page` a moment later
+(`Target.targetInfoChanged`), so a client that waits for a `page`, as Playwright's MCP server does, needs it
+re-typed on the way through.
 
 ---
 

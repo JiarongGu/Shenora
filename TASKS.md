@@ -122,9 +122,8 @@ D37 and D51 are corrected in place to point at them.
      chain, with `ChromiumTransport` (`MarkHtml`, `PushScript`) on the host side and the marker's names
      mirrored by `WireMirrorTests` (sabotage-verified both ways, which the TS `satisfies keyof` also catches
      at compile time). Slice 1 (step 3) promoted it into the shell.
-2. **Read the adopter's own probe evidence** when it lands: the debug port's reach across processes,
-   CDP-opened tabs, session cookies, Playwright, the round trip, codecs, install size and licences. Do not
-   repeat it.
+2. **The adopter's probe evidence is read and folded in:** D86 (the port, CDP tabs, cookies), the media guide
+   (no H.264, AAC or HEVC in CEF's builds) and ADOPTION (install size, licences, CDP's `other` target).
 3. **The Windows shell on Views.** **Slice 1 is built** (owner: windows first, multi-view composition in
    slice 2): `builder.UseChromium(new ChromiumHostOptions { … })`, `ChromiumWindows`, CEF's own frameless
    windows with native drag regions, the bundle served and marked, the app's interceptor pipeline behind
@@ -199,12 +198,14 @@ D37 and D51 are corrected in place to point at them.
    closed. Every subprocess ran sandboxed (`sandbox_check`), the network service included; the .NET process does not.
    **The package carries it**: the macOS binding once, as `runtimes/osx/lib/net10.0/` (compiled on Windows by `dev.mjs
    pack`), the helpers in `tools/osx-*/native/` (a macOS release job builds both with clang), and the layout marks
-   each helper executable, since a package keeps no Unix permissions. From a local feed, on the Mac, with nothing
-   but a `PackageReference`: the macOS binding reached the app, and the page echoed and exited cleanly. The cookie
+   each helper executable, since a package keeps no Unix permissions. From nuget.org (0.17.0), on the Mac, with
+   nothing but a `PackageReference`: the macOS binding reached the app, the release-built x64 helper ran, and the
+   page echoed and exited cleanly. The cookie
    key is Chromium's mock keychain's (owner's call): the real one is an item every CEF app shares, and a second kit
    app on the Mac stalled behind a login-password prompt.
    **Left:**
-   - The release's macOS job has not run; nor has osx-arm64 (no Apple Silicon Mac here).
+   - osx-arm64 has never run (no Apple Silicon Mac here): all there is, is the 0.17.0 package's helper whose Mach-O
+     header says arm64.
    - A framework-dependent app needs .NET installed for every user: a per-user install is not found when the app
      starts from Finder or `open`, whose environment has no `DOTNET_ROOT` ("You must install .NET"). The publish
      layout is the answer for distribution: `dotnet publish -r osx-x64 --self-contained` makes
@@ -237,18 +238,6 @@ session cookie ends with the process, with no setting to keep it.
 
 The adopter's in-app browser runs on the kit's engine as `ChromiumBrowserProcess` (D86); osx-arm64 is unmeasured
 there as it is for the shell (4).
-
-### 🎬 THE PICTURE SURFACE (D80) — answered on Android and the iOS simulator
-
-Android is done end to end, pixels included: the run, the layer table and the two refutations are in
-`docs/design/media.md`. The iOS simulator ran the same five-rung stage ladder: the picture composites under
-the page (rung 5 shows the clip playing beside the page's magenta). ⚠ AVPlayer refuses the MKV fixture
-outright, so the iOS picture was tested with the MP4.
-
-- [ ] **Re-measure the container delta on an older WebView before D52's example is trusted.** It is cited
-  as the thing the media tier exists for, and it now has one Android device saying otherwise. On iOS the
-  shell's own player cannot open Matroska at all (simulator), so there the surface cannot widen reach for
-  that container whatever WKWebView does — which was not measured.
 
 ### 🟡 THE PLAYBACK HEALTH FIGURES — the adopter has now BUILT them, so this is a harvest call
 

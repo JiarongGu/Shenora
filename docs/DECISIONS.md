@@ -706,7 +706,8 @@ docs cite them — so the number is the column to scan.
     this the least we can do about it?* D59 states it as a measurable DELTA — what the DEVICE decodes minus
     what its WEBVIEW accepts — because "make more formats play" has no end.
   - 🔴 **What actually breaks for ordinary video is not the picture** but the **container** (`.mkv` holding
-    playable H.264) and the **soundtrack** (`AC-3`, `E-AC-3`, `DTS`). **That is why a remuxer is worth
+    playable H.264, refused on iOS by WKWebView and AVPlayer alike, where Android's WebView and WebView2 play
+    it) and the **soundtrack** (`AC-3`, `E-AC-3`, `DTS`). **That is why a remuxer is worth
     writing in managed code and a codec library is not** — H.265 needs no software codec anywhere, since
     hardware decodes HEVC and encodes H.264. Reach is D70; the licence bound is D51.
   - 🔴 **The delta is bounded by what .NET CAN REACH — the platform's own codecs AND anything an app
