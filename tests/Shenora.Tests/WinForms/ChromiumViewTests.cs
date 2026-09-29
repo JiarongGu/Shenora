@@ -26,7 +26,7 @@ public class ChromiumViewTests
     {
         Sta.Run(() =>
         {
-            using var view = new ChromiumView(new ChromiumEngine());
+            using var view = new ChromiumView(new ChromiumEngine(new ChromiumEngineOptions()));
 
             view.CreateControl();   // WinForms answers a throw here with a blocking dialog
 
@@ -43,7 +43,7 @@ public class ChromiumViewTests
         Sta.Run(() =>
         {
             using var form = new Form();
-            var view = new ChromiumView(new ChromiumEngine());
+            var view = new ChromiumView(new ChromiumEngine(new ChromiumEngineOptions()));
             form.Controls.Add(view);
             _ = form.Handle;
             _ = view.Handle;
@@ -83,7 +83,7 @@ public class ChromiumViewTests
                 Bounds = new Rectangle(0, 0, 800, 600),
                 ShowInTaskbar = false,
             };
-            var view = new ChromiumView(new ChromiumEngine()) { Dock = DockStyle.Fill };
+            var view = new ChromiumView(new ChromiumEngine(new ChromiumEngineOptions())) { Dock = DockStyle.Fill };
             form.Controls.Add(view);
             _ = form.Handle;
             _ = view.Handle;
@@ -151,9 +151,9 @@ public class ChromiumViewTests
     public void UseChromiumEngine_registers_one_engine_in_either_order_with_UseWindows()
     {
         var builder = Builder();
-        builder.UseChromiumEngine();
+        builder.UseChromiumEngine(new ChromiumEngineOptions());
         builder.UseWindows(new WindowsHostOptions { MainForm = _ => new Form() });
-        builder.UseChromiumEngine();
+        builder.UseChromiumEngine(new ChromiumEngineOptions());
         using var app = builder.Build();
 
         Assert.Single(app.Services.GetServices<ChromiumEngine>());
@@ -164,7 +164,7 @@ public class ChromiumViewTests
     {
         var built = false;
         var builder = Builder();
-        builder.UseChromiumEngine();
+        builder.UseChromiumEngine(new ChromiumEngineOptions());
         builder.UseWindows(new WindowsHostOptions
         {
             MainForm = _ => { built = true; return new Form(); },

@@ -8,7 +8,7 @@ public class ChromiumEngineTests
     [Fact]
     public void A_browser_needs_a_started_engine()
     {
-        var engine = new ChromiumEngine();
+        var engine = new ChromiumEngine(new ChromiumEngineOptions());
 
         var error = Assert.Throws<InvalidOperationException>(() => new ChromiumChildBrowser(engine, parentWindow: 1));
         Assert.Contains("Start", error.Message);
@@ -29,7 +29,7 @@ public class ChromiumEngineTests
     [Fact]
     public void Stopping_an_engine_that_never_started_does_nothing()
     {
-        var engine = new ChromiumEngine();
+        var engine = new ChromiumEngine(new ChromiumEngineOptions());
 
         engine.Stop();
 

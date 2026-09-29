@@ -1175,7 +1175,7 @@ docs cite them — so the number is the column to scan.
   - ⚠ On Windows both hosts start through CEF's `bootstrap.exe` and the kit's shim, or there is no sandbox.
   - **The WinForms engine option is a `ChromiumView` control, beside the WebView2 control and not inside
     `WebViewHost`** (owner), whose options are full of WebView2 types that would mean nothing under Chromium.
-    An app adds a `ChromiumView` to its form and calls `UseChromiumEngine()`.
+    An app adds a `ChromiumView` to its form and calls `UseChromiumEngine(options)`.
   - **`Shenora.Windows` reaches the engine through a small PUBLIC embedding API in `Shenora.Chromium`**
     (owner): host a browser in any parent window. It is honest SemVer surface rather than a second
     `InternalsVisibleTo`, and an adopter can embed Chromium in a window type of its own the same way.

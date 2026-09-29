@@ -159,7 +159,7 @@ public class SystemMenuTests
     public void A_ChromiumView_drag_areas_right_click_opens_its_forms_menu_where_it_was_released() => Sta.Run(() =>
     {
         using var form = new Form { ShowInTaskbar = false };
-        var view = new ChromiumView(new ChromiumEngine()) { Dock = DockStyle.Fill };
+        var view = new ChromiumView(new ChromiumEngine(new ChromiumEngineOptions())) { Dock = DockStyle.Fill };
         form.Controls.Add(view);
         _ = form.Handle;
         _ = view.Handle;

@@ -31,7 +31,7 @@ struct Shenora.Chromium.ChromiumDragAreaPress : System.IEquatable<Shenora.Chromi
   public static bool op_Inequality(Shenora.Chromium.ChromiumDragAreaPress left, Shenora.Chromium.ChromiumDragAreaPress right)
   public void Deconstruct(out Shenora.Chromium.ChromiumDragAreaAction Action, out System.Drawing.Point Position)
 sealed class Shenora.Chromium.ChromiumEngine
-  public .ctor(Shenora.Chromium.ChromiumEngineOptions? options = null, Microsoft.Extensions.Logging.ILogger<Shenora.Chromium.ChromiumEngine>? log = null)
+  public .ctor(Shenora.Chromium.ChromiumEngineOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Chromium.ChromiumEngine>? log = null)
   public System.Threading.Tasks.Task Ready { get; }
   public bool IsRunning { get; }
   public static bool RunIfSubprocess(out int exitCode)

@@ -174,9 +174,10 @@ public static class WindowsHostExtensions
     /// </summary>
     /// <param name="builder">The app being composed.</param>
     /// <param name="options">Where the pages come from, where CEF keeps its cache, and development settings.</param>
-    public static ShenoraApplicationBuilder UseChromiumEngine(this ShenoraApplicationBuilder builder, ChromiumEngineOptions? options = null)
+    public static ShenoraApplicationBuilder UseChromiumEngine(this ShenoraApplicationBuilder builder, ChromiumEngineOptions options)
     {
         ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(options);
         builder.Services.TryAddSingleton(sp => new ChromiumEngine(options, sp.GetService<ILogger<ChromiumEngine>>()));
         return builder;
     }

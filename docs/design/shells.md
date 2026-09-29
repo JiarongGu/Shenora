@@ -28,7 +28,7 @@ project that turns red if it stops being true.
 
 `UseWindows(options)` registers `WinFormsRunner`, and `ShenoraApplication.Run` executes it. The order is
 load-bearing at four points, each marked, and the Chromium engine's three steps (marked C) run only when
-`UseChromiumEngine()` registered one:
+`UseChromiumEngine(options)` registered one:
 
 ```
 C. ChromiumEngine.RunIfSubprocess  ← before everything: CEF's subprocesses exit here

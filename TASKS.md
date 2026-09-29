@@ -187,7 +187,7 @@ D37 and D51 are corrected in place to point at them.
    - **Under Views, the page's drag bar becomes a real caption only when the shell forwards
      `on_draggable_regions_changed` to `set_draggable_regions`**: HTCAPTION with the forwarding, HTCLIENT
      without it, through real routing (`WindowFromPoint`).
-3b. **`ChromiumView` in `Shenora.Windows` (D83), what is left.** The control and `UseChromiumEngine()` ship,
+3b. **`ChromiumView` in `Shenora.Windows` (D83), what is left.** The control and `UseChromiumEngine(options)` ship,
    proven in an `OptimizedForm` with the kit's window commands: the caption hole and Snap Layouts, a real
    `START_DRAG`, drops with real paths, `SecondaryWindows` pages on their own threads, keyboard focus, Tab out
    of the page and back in (to its first element), Shift+Tab out and back in (to its last, as a native control

@@ -41,7 +41,7 @@ at the first list and missed five more breaking changes.
     page's `SET_THEME`); a page-drawn drag bar that moves the window as a real caption does; file drops with
     real paths; CEF's native file dialogs; the clipboard; secondary windows; crash reload; and dev-server hot
     reload;
-  - **`ChromiumView`, a control in `Shenora.Windows`**, with `UseChromiumEngine()` running CEF beside the
+  - **`ChromiumView`, a control in `Shenora.Windows`**, with `UseChromiumEngine(options)` running CEF beside the
     WinForms loop. It works with `OptimizedForm`, the window commands and `SecondaryWindows`, whose pages
     dispatch on their own threads and command their own windows. Tab leaves the page for the form's next
     control and Shift+Tab for its previous one (`ChromiumChildBrowserOptions.MoveFocusRequested`), and the

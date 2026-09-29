@@ -74,9 +74,10 @@ public sealed class ChromiumEngine
 
     /// <param name="options">Where the pages come from, where CEF keeps its cache, and development settings.</param>
     /// <param name="log">Diagnostics.</param>
-    public ChromiumEngine(ChromiumEngineOptions? options = null, ILogger<ChromiumEngine>? log = null)
+    public ChromiumEngine(ChromiumEngineOptions options, ILogger<ChromiumEngine>? log = null)
     {
-        _options = options ?? new ChromiumEngineOptions();
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options;
         _log = log;
     }
 
