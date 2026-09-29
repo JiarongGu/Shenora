@@ -13,7 +13,8 @@
 
     So the app's assembly is named <App>.App, and the build refuses otherwise rather than lay out an app that
     cannot start. Set ShenoraChromiumLayout=false to build without the engine (a compile-only CI step), and
-    ShenoraChromiumLocales (such as "zh-CN;fr") to lay out only those of CEF's locales, and en-US.
+    ShenoraChromiumLocales (such as "zh-CN;fr") to lay out only those of CEF's locales, and en-US. The app's own
+    icon: ApplicationIcon (.ico) on Windows, ShenoraChromiumBundleIcon (.icns) for the macOS bundle.
 
       ShenoraChromiumMacLayout  after Build (and Publish) on macOS: bundle/<App>.app beside the output, whose
                                 Contents/MacOS holds the app with the .NET apphost as <App>, and whose
@@ -373,16 +374,24 @@ public sealed class ShenoraChromiumStampLauncher : Task
       <Identifier ParameterType="System.String" Required="true" />
       <Version ParameterType="System.String" Required="true" />
       <Helper ParameterType="System.Boolean" />
+      <IconFile ParameterType="System.String" />
+      <DisplayName ParameterType="System.String" />
+      <Copyright ParameterType="System.String" />
     </ParameterGroup>
     <Task>
       <Code Type="Fragment" Language="cs"><![CDATA[
         string E(string s) => System.Security.SecurityElement.Escape(s);
+        string Optional(string key, string value) =>
+          string.IsNullOrEmpty(value) ? "" : "  <key>" + key + "</key><string>" + E(value) + "</string>\n";
         var plist = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
           + "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
           + "<plist version=\"1.0\">\n<dict>\n"
           + "  <key>CFBundleExecutable</key><string>" + E(Executable) + "</string>\n"
           + "  <key>CFBundleIdentifier</key><string>" + E(Identifier) + "</string>\n"
           + "  <key>CFBundleName</key><string>" + E(Executable) + "</string>\n"
+          + Optional("CFBundleDisplayName", DisplayName)
+          + Optional("CFBundleIconFile", IconFile)
+          + Optional("NSHumanReadableCopyright", Copyright)
           + "  <key>CFBundlePackageType</key><string>APPL</string>\n"
           + "  <key>CFBundleShortVersionString</key><string>" + E(Version) + "</string>\n"
           + "  <key>CFBundleVersion</key><string>" + E(Version) + "</string>\n"
@@ -446,7 +455,17 @@ public sealed class ShenoraChromiumStampLauncher : Task
              Text="ShenoraChromiumLocales names $(_ShenoraMissingLocales), for which CEF $(ShenoraCefBuild) has no locale: CEF's names are like en-GB, zh-CN, pt-BR and fr." />
     <Copy SourceFiles="@(_ShenoraAppFiles)" DestinationFolder="$(_ShenoraContents)/MacOS/%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(_ShenoraMacFrom)$(AssemblyName)" DestinationFiles="$(_ShenoraContents)/MacOS/$(_ShenoraAppExe)" SkipUnchangedFiles="true" />
-    <ShenoraMacPlist File="$(_ShenoraContents)/Info.plist" Executable="$(_ShenoraAppExe)" Identifier="$(ShenoraChromiumBundleId)" Version="$(_ShenoraBundleVersion)" />
+    <!-- The app's icon, an .icns (ShenoraChromiumBundleIcon), in the bundle's Resources where CFBundleIconFile names it:
+         without one the Dock and Finder show a generic app. The Windows layout takes ApplicationIcon instead. -->
+    <Copy Condition="'$(ShenoraChromiumBundleIcon)' != ''" SourceFiles="$(ShenoraChromiumBundleIcon)"
+          DestinationFiles="$(_ShenoraContents)/Resources/$(_ShenoraAppExe).icns" SkipUnchangedFiles="true" />
+    <PropertyGroup>
+      <_ShenoraBundleIconFile Condition="'$(ShenoraChromiumBundleIcon)' != ''">$(_ShenoraAppExe).icns</_ShenoraBundleIconFile>
+      <!-- The SDK defaults Product to the assembly's name, which is no name a person should see. -->
+      <_ShenoraBundleDisplayName Condition="'$(Product)' != '$(AssemblyName)'">$(Product)</_ShenoraBundleDisplayName>
+    </PropertyGroup>
+    <ShenoraMacPlist File="$(_ShenoraContents)/Info.plist" Executable="$(_ShenoraAppExe)" Identifier="$(ShenoraChromiumBundleId)" Version="$(_ShenoraBundleVersion)"
+                     IconFile="$(_ShenoraBundleIconFile)" DisplayName="$(_ShenoraBundleDisplayName)" Copyright="$(Copyright)" />
     <Copy SourceFiles="@(_ShenoraCefFramework)" DestinationFolder="$(_ShenoraContents)/Frameworks/Chromium Embedded Framework.framework/%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(_ShenoraContents)/Frameworks/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant).app/Contents/MacOS/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant)" SkipUnchangedFiles="true" />
     <!-- A NuGet package keeps no Unix permissions, so the helper arrives from one without its executable bit. -->

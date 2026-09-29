@@ -66,7 +66,8 @@ at the first list and missed five more breaking changes.
   version. The layout now gives it the app's own icon and version, copied from `<App>.App.dll`, which the compiler
   builds from `ApplicationIcon`, `Product`, `Company`, `AssemblyTitle` and the version, as the .NET SDK does for
   its own apphost; its manifest, which CEF's processes need, is untouched. An app with no `ApplicationIcon` gets
-  Windows' default icon rather than CEF's.
+  Windows' default icon rather than CEF's. The macOS bundle, which showed a generic app, takes
+  `ShenoraChromiumBundleIcon` (an `.icns`), and its `Info.plist` names the app's `Product` and `Copyright`.
 
 ### Changed
 

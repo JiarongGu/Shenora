@@ -288,7 +288,8 @@ opens in the system browser exactly once.
    — see TASKS for what macOS still lacks),
    and name the app's assembly `<App>.App` (`<AssemblyName>MyApp.App</AssemblyName>`). The build fetches the pinned
    CEF build and lays the app out as `MyApp.exe`, which is CEF's launcher, starting `MyApp.App.dll`. `MyApp.exe`
-   carries the app's `ApplicationIcon`, `Product`, `Company` and version, as an apphost would. A reference
+   carries the app's `ApplicationIcon`, `Product`, `Company` and version, as an apphost would; a macOS bundle takes
+   its icon from `ShenoraChromiumBundleIcon`, an `.icns`. A reference
    through `Shenora.Windows` alone brings the code and not CEF, and the engine says so as it starts.
 2. **Compose the engine beside the shell:** `builder.UseChromiumEngine(new ChromiumEngineOptions { ContentRoot =
    …, DevUrl = … })` next to `UseWindows`. Its options say where every view's page comes from: `ContentRoot`,
