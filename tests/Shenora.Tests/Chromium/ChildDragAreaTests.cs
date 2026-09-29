@@ -114,7 +114,37 @@ public class ChildDragAreaTests
         });
     }
 
+    // The system's drag rectangle is SM_CXDRAG wide CENTRED on the press, as DragDetect uses it: half each way. A press
+    // that has moved exactly that far is still a click; one pixel more is a drag. The shell's caption uses the same.
+    [Fact]
+    public void The_drag_threshold_is_the_systems_rectangle_centred_on_the_press()
+    {
+        Sta.Run(() =>
+        {
+            using var form = new Form();
+            var page = new Control { Bounds = new Rectangle(0, 0, 400, 300) };
+            form.Controls.Add(page);
+            _ = form.Handle;
+            _ = page.Handle;
+            var presses = new List<ChromiumDragAreaPress>();
+            var area = new ChildDragArea(presses.Add, null);
+            area.Areas.Set((0, 0, 400, 300, true));
+            Assert.True(area.Adopt(page.Handle));
+            var half = GetSystemMetricsForDpi(68 /* SM_CXDRAG */, (uint)page.DeviceDpi) / 2;
+
+            Send(page, WM_LBUTTONDOWN, MK_LBUTTON, 100, 100);
+            Send(page, WM_MOUSEMOVE, MK_LBUTTON, 100 + half, 100);
+            Assert.Empty(presses);
+            Send(page, WM_MOUSEMOVE, MK_LBUTTON, 100 + half + 1, 100);
+            Assert.Single(presses);
+            Send(page, WM_LBUTTONUP, 0, 100 + half + 1, 100);
+            area.Dispose();
+        });
+    }
+
     private static nint At(int x, int y) => (y << 16) | (x & 0xFFFF);
+
+    [DllImport("user32")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
 
     private static void Send(Control window, uint msg, nint keys, int x, int y) => SendMessage(window.Handle, msg, keys, At(x, y));
 

@@ -1,5 +1,8 @@
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
+#if CEF_WINDOWS
+using static Shenora.Chromium.Host.RenderWidgets;
+#endif
 
 namespace Shenora.Chromium.Host;
 
@@ -79,39 +82,27 @@ internal sealed unsafe class CaptionHitTest : IDisposable
             hitTest.Refresh();
             return hitTest;
         }
-        AppCallback.Log(log, () => $"[Shenora.Chromium] Could not subclass the window for its hit-test (error {Marshal.GetLastPInvokeError()})", LogLevel.Warning);
+        AppCallback.Log(log, () => "[Shenora.Chromium] Could not subclass the window for its hit-test", LogLevel.Warning);
         hitTest._self.Free();
         return null;
     }
 
 
     /// <summary>Physical pixels per CSS pixel, from the window's own DPI (per monitor).</summary>
-    public double Scale
-    {
-        get
-        {
-            var dpi = GetDpiForWindow(_top);
-            return dpi > 0 ? dpi / 96.0 : 1.0;
-        }
-    }
+    public double Scale => RenderWidgets.Scale(_top);
 
     /// <summary>Subclass every render-widget child that exists now. Idempotent.</summary>
     public void Refresh()
     {
         if (_disposed) return;
-        var found = new List<nint>();
-        var handle = GCHandle.Alloc(found);
-        try { EnumChildWindows(_top, &CollectChild, GCHandle.ToIntPtr(handle)); }
-        finally { handle.Free(); }
-
-        foreach (var child in found) Adopt(child);
+        foreach (var child in Under(_top)) Adopt(child);
     }
 
     // Only a render widget on this window's own thread: a subclass installs from that thread alone, and
     // HTTRANSPARENT passes a hit-test on only to a window of the same thread.
     private void Adopt(nint child)
     {
-        if (_disposed || _children.Contains(child) || !IsRenderWidget(child)) return;
+        if (_disposed || _children.Contains(child) || !Is(child)) return;
         if (GetWindowThreadProcessId(child, null) != GetWindowThreadProcessId(_top, null)) return;
         if (SetWindowSubclass(child, &ChildProc, ChildId, (nuint)GCHandle.ToIntPtr(_self)) != 0) _children.Add(child);
     }
@@ -170,9 +161,6 @@ internal sealed unsafe class CaptionHitTest : IDisposable
         finally { _releasing = false; }
     }
 
-    // A mouse message the system synthesized from touch or pen carries this signature in its extra info.
-    private static bool FromTouchOrPen() => ((ulong)GetMessageExtraInfo() & 0xFFFFFF00) == 0xFF515700;
-
     // Snapped to an edge or a corner (Windows 10+); false where the call does not exist.
     private static bool IsArranged(nint hwnd)
     {
@@ -180,13 +168,7 @@ internal sealed unsafe class CaptionHitTest : IDisposable
         catch (EntryPointNotFoundException) { return false; }
     }
 
-    // The system's own drag rectangle, centred on the press, at this window's DPI.
-    private bool PastDragThreshold(POINT press, POINT at)
-    {
-        var dpi = GetDpiForWindow(_top);
-        return Math.Abs(at.X - press.X) > GetSystemMetricsForDpi(SM_CXDRAG, dpi) / 2
-            || Math.Abs(at.Y - press.Y) > GetSystemMetricsForDpi(SM_CYDRAG, dpi) / 2;
-    }
+    private bool PastDragThreshold(POINT press, POINT at) => RenderWidgets.PastDragThreshold(_top, press.X, press.Y, at.X, at.Y);
 
     private static CaptionButtonKind? FromHitTest(nint code) => (int)code switch
     {
@@ -340,45 +322,20 @@ internal sealed unsafe class CaptionHitTest : IDisposable
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
-    [UnmanagedCallersOnly]
-    private static int CollectChild(nint hwnd, nint lParam)
-    {
-        ((List<nint>)GCHandle.FromIntPtr(lParam).Target!).Add(hwnd);
-        return 1;
-    }
-
-    private static bool IsRenderWidget(nint hwnd)
-    {
-        var name = stackalloc char[64];
-        var length = GetClassNameW(hwnd, name, 64);
-        return new ReadOnlySpan<char>(name, length).SequenceEqual(RenderWidgetClass);
-    }
-
     // ── Win32 ────────────────────────────────────────────────────────────────────────────────────────────
     private const uint TME_LEAVE = 0x2, TME_NONCLIENT = 0x10;
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct TRACKMOUSEEVENT { public uint cbSize, dwFlags; public nint hwndTrack; public uint dwHoverTime; }
 
-    [DllImport("comctl32", SetLastError = true)]
-    private static extern int SetWindowSubclass(nint hwnd, delegate* unmanaged<nint, uint, nint, nint, nuint, nuint, nint> proc, nuint id, nuint data);
-    [DllImport("comctl32")]
-    private static extern int RemoveWindowSubclass(nint hwnd, delegate* unmanaged<nint, uint, nint, nint, nuint, nuint, nint> proc, nuint id);
-    [DllImport("comctl32")] private static extern nint DefSubclassProc(nint hwnd, uint msg, nint wParam, nint lParam);
     [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
     [DllImport("user32")] private static extern int GetWindowRect(nint hwnd, out RECT rect);
     [DllImport("user32")] private static extern int ClientToScreen(nint hwnd, POINT* point);
-    [DllImport("user32")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
     [DllImport("user32")] private static extern nint DefWindowProcW(nint hwnd, uint msg, nint wParam, nint lParam);
-    [DllImport("user32")] private static extern nint GetMessageExtraInfo();
     [DllImport("user32")] private static extern int IsWindowArranged(nint hwnd);
-    private const int SM_CXDRAG = 68, SM_CYDRAG = 69;
     [DllImport("user32")] private static extern uint GetMessagePos();
     [DllImport("user32")] private static extern int IsZoomed(nint hwnd);
-    [DllImport("user32")] private static extern int EnumChildWindows(nint parent, delegate* unmanaged<nint, nint, int> proc, nint lParam);
     [DllImport("user32")] private static extern uint GetWindowThreadProcessId(nint hwnd, uint* processId);
-    [DllImport("user32")] private static extern int GetClassNameW(nint hwnd, char* name, int max);
     [DllImport("user32")] private static extern int ScreenToClient(nint hwnd, POINT* point);
-    [DllImport("user32")] private static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("user32")] private static extern nint SendMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
     [DllImport("user32")] private static extern int TrackMouseEvent(TRACKMOUSEEVENT* track);
     [DllImport("user32")] private static extern nint SetCapture(nint hwnd);

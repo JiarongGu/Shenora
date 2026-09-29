@@ -2,6 +2,9 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Shenora.Chromium.Interop;
+#if CEF_WINDOWS
+using static Shenora.Chromium.Host.RenderWidgets;
+#endif
 
 namespace Shenora.Chromium.Host;
 
@@ -58,9 +61,7 @@ internal sealed unsafe class ChildDragArea : IDisposable
         WM_LBUTTONDBLCLK = 0x0203, WM_RBUTTONDOWN = 0x0204, WM_MBUTTONDBLCLK = 0x0209, WM_CAPTURECHANGED = 0x0215,
         WM_XBUTTONDOWN = 0x020B, WM_XBUTTONDBLCLK = 0x020D;
     private const nint MK_LBUTTON = 0x0001;
-    private const int SM_CXDRAG = 68, SM_CYDRAG = 69;
     private const nuint WidgetId = 3;
-    private const string RenderWidgetClass = "Chrome_RenderWidgetHostHWND";
 
     private readonly Action<ChromiumDragAreaPress> _pressed;
     private readonly ILogger? _log;
@@ -91,10 +92,9 @@ internal sealed unsafe class ChildDragArea : IDisposable
 
     /// <summary>
     /// A document started loading: look for the render widgets, which exist by then (not yet as the browser is created,
-    /// measured). A replaced renderer (a crash, a cross-site navigation) brings a new widget, and the areas alone did not
-    /// always bring it here: after a renderer crash CEF sometimes reported no areas at all, the new widget went
-    /// unsubclassed and the area stopped working (measured). Chromium's windows are not announced to their parents
-    /// either (<c>WM_PARENTNOTIFY</c> never arrived, measured).
+    /// measured). A replaced renderer (a crash, a cross-site navigation) brings a new widget, and nothing else announces
+    /// it here: the areas CEF reports after a crash may be none, and a child browser's window hears of no new child
+    /// (<c>WM_PARENTNOTIFY</c> never arrived, measured, where the Views shell's top-level window does hear of one).
     /// </summary>
     public void DocumentStarted(nint browserWindow)
     {
@@ -103,13 +103,7 @@ internal sealed unsafe class ChildDragArea : IDisposable
 
     private void AdoptWidgets(nint browserWindow)
     {
-        if (browserWindow == 0) return;
-        var found = new List<nint>();
-        var handle = GCHandle.Alloc(found);
-        try { EnumChildWindows(browserWindow, &Collect, GCHandle.ToIntPtr(handle)); }
-        finally { handle.Free(); }
-        foreach (var widget in found)
-            if (IsRenderWidget(widget)) Adopt(widget);
+        foreach (var widget in Under(browserWindow)) Adopt(widget);
     }
 
     /// <summary>Subclass <paramref name="window"/> as a render widget. It must be on the calling thread. Idempotent.</summary>
@@ -141,13 +135,7 @@ internal sealed unsafe class ChildDragArea : IDisposable
         finally { _releasing = false; }
     }
 
-    private bool PastDragThreshold(nint hwnd, Point at)
-    {
-        var dpi = GetDpiForWindow(hwnd);
-        var dx = dpi > 0 ? GetSystemMetricsForDpi(SM_CXDRAG, dpi) : GetSystemMetrics(SM_CXDRAG);
-        var dy = dpi > 0 ? GetSystemMetricsForDpi(SM_CYDRAG, dpi) : GetSystemMetrics(SM_CYDRAG);
-        return Math.Abs(at.X - _press.X) > dx || Math.Abs(at.Y - _press.Y) > dy;
-    }
+    private bool PastDragThreshold(nint hwnd, Point at) => RenderWidgets.PastDragThreshold(hwnd, _press.X, _press.Y, at.X, at.Y);
 
     private static Point Screen(nint hwnd, nint lParam)
     {
@@ -208,43 +196,11 @@ internal sealed unsafe class ChildDragArea : IDisposable
     }
 
 
-    private static bool InArea(ChildDragArea me, nint hwnd, nint lParam)
-    {
-        var dpi = GetDpiForWindow(hwnd);
-        return me.Areas.ContainsMessagePoint(lParam, dpi > 0 ? dpi / 96.0 : 1.0);
-    }
-
-    // A touch or a pen press arrives as a mouse message too, marked in its extra info. The page keeps those, so they do
-    // not move the window.
-    private static bool FromTouchOrPen() => ((ulong)GetMessageExtraInfo() & 0xFFFFFF00) == 0xFF515700;
-
-    [UnmanagedCallersOnly]
-    private static int Collect(nint hwnd, nint lParam)
-    {
-        ((List<nint>)GCHandle.FromIntPtr(lParam).Target!).Add(hwnd);
-        return 1;
-    }
-
-    private static bool IsRenderWidget(nint hwnd)
-    {
-        var name = stackalloc char[64];
-        var length = GetClassNameW(hwnd, name, 64);
-        return new ReadOnlySpan<char>(name, length).SequenceEqual(RenderWidgetClass);
-    }
+    // A touch or a pen press arrives as a mouse message too: the page keeps those, so they do not move the window.
+    private static bool InArea(ChildDragArea me, nint hwnd, nint lParam) => me.Areas.ContainsMessagePoint(lParam, Scale(hwnd));
 
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
 
-    [DllImport("comctl32")]
-    private static extern int SetWindowSubclass(nint hwnd, delegate* unmanaged<nint, uint, nint, nint, nuint, nuint, nint> proc, nuint id, nuint data);
-    [DllImport("comctl32")]
-    private static extern int RemoveWindowSubclass(nint hwnd, delegate* unmanaged<nint, uint, nint, nint, nuint, nuint, nint> proc, nuint id);
-    [DllImport("comctl32")] private static extern nint DefSubclassProc(nint hwnd, uint msg, nint wParam, nint lParam);
-    [DllImport("user32")] private static extern int EnumChildWindows(nint parent, delegate* unmanaged<nint, nint, int> proc, nint lParam);
-    [DllImport("user32")] private static extern int GetClassNameW(nint hwnd, char* name, int max);
-    [DllImport("user32")] private static extern uint GetDpiForWindow(nint hwnd);
-    [DllImport("user32")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
-    [DllImport("user32")] private static extern int GetSystemMetrics(int index);
-    [DllImport("user32")] private static extern nint GetMessageExtraInfo();
     [DllImport("user32")] private static extern int ClientToScreen(nint hwnd, POINT* point);
     [DllImport("user32")] private static extern nint SetCapture(nint hwnd);
     [DllImport("user32")] private static extern int ReleaseCapture();
