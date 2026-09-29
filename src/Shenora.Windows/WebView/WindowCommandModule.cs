@@ -116,6 +116,14 @@ public sealed class WindowCommandModule : ModuleBase
     /// <see cref="WindowCommandOptions.SetCaptionButtons"/> answers <c>NO_ROUTE</c>.</summary>
     public const string SetCaptionButtonsType = "SET_CAPTION_BUTTONS";
 
+    /// <summary>
+    /// Event, under <see cref="Module"/>: <c>{ hot?, pressed? }</c>, which caption button the OS is hovering or
+    /// pressing, for a page that draws its buttons and lost their mouse events to the hit-test (the client's
+    /// <c>useCaptionButtonState</c>). This shell does not send it; an app drawing its buttons in the page emits
+    /// it from <c>OptimizedForm.CaptionButtonStateChanged</c>. The Chromium shell sends it itself.
+    /// </summary>
+    public const string CaptionButtonStateEvent = "CAPTION_BUTTON_STATE";
+
     // Borderless-window resize: the OS size loop from the top edge or a top corner.
     private const int HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
 

@@ -61,6 +61,10 @@ const SECTIONS = [
   ['WindowCommandModule', 'Window command routes', 'Frameless chrome drives the real window through these.'],
   ['DropZoneModule', 'Drop zone routes', 'Registering the page regions a native file drop is matched against.'],
   ['DropZoneManager', 'Drop zone events', 'What the host pushes back as a drag crosses a registered zone.'],
+  // The Chromium hosts answer the same page code: the Windows shell's routes by the same names, plus what only
+  // they add — the caption-button state the shell pushes, and the drop route that returns the real paths.
+  ['ChromiumWindowCommands', 'Chromium window commands', 'The Windows shell\'s routes by the same names, plus the caption-button state event the Chromium shell pushes to its window\'s page.'],
+  ['ChromiumDropZones', 'Chromium drop zone routes', 'The Windows shell\'s drop zone routes, answered with pageDrop, plus DROP for the paths.'],
   ['SessionEvents', 'Browser session events', 'What an auxiliary session publishes on the event bus — the 0.11.0 replacement for the deleted observation taps.'],
   ['InteractiveSessionErrorCodes', 'Interactive session failures', 'The `code` when an interactive session cannot answer.'],
   ['ClipboardContent', 'Clipboard media types', 'The keys of `ClipboardContent.Formats` the kit names itself; an app\'s own type is its own string.'],
@@ -94,6 +98,10 @@ const NOT_WIRE = new Map([
   // host reads it at BOOT. No page ever types it, so publishing it in the page's reference would be the
   // wrong kind of documentation — its pair is pinned by `ResourcePackStampTests` against copy.ts instead.
   ['ResourcePackJournal', 'the version-stamp FILE the CLI drops in a bundle, read host-side at boot'],
+  ['ChromiumTransport', 'the marker the Chromium hosts write into a document and createChromiumTransport reads; no page types it, and WireMirrorTests pins the pair'],
+  ['ChromiumWindows', 'the host-side name of the main window, passed to ChromiumWindows, never sent'],
+  ['RenderWidgets', 'a Win32 window class name the host looks for'],
+  ['CefApi', 'the pinned CEF build, stamped by the binding generator'],
 ]);
 
 /** Every `public const string` with its summary's first sentence, keyed by declaring type. */
@@ -117,7 +125,7 @@ function readConstants() {
   // the whole SHELL half of the wire unreadable — window commands, drop zones and session events are
   // declared in `Shenora.Windows` and are named by a page exactly as often as the core's own routes.
   // ⚠ The plain `Shenora` prefix would also match `Shenora.Tests`; these are named explicitly.
-  for (const pkg of ['Shenora', 'Shenora.Windows', 'Shenora.Mobile', 'Shenora.Android', 'Shenora.iOS']) {
+  for (const pkg of ['Shenora', 'Shenora.Windows', 'Shenora.Chromium', 'Shenora.Mobile', 'Shenora.Android', 'Shenora.iOS']) {
     const dir = path.join(repo, 'src', pkg);
     if (fs.existsSync(dir)) walk(dir);
   }

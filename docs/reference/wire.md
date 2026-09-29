@@ -189,6 +189,7 @@ Frameless chrome drives the real window through these.
 | `WindowCommandModule.StartResizeType` | `START_RESIZE` | Route: begin an OS resize loop: { edge } — top, topLeft or topRight. |
 | `WindowCommandModule.SetThemeType` | `SET_THEME` | Route: { dark }. |
 | `WindowCommandModule.SetCaptionButtonsType` | `SET_CAPTION_BUTTONS` | Route: { buttons }, the caption-button hit rectangles. |
+| `WindowCommandModule.CaptionButtonStateEvent` | `CAPTION_BUTTON_STATE` | Event, under Module: { hot?, pressed? }, which caption button the OS is hovering or pressing, for a page that draws its buttons and lost their mouse events to the hit-test (the client's useCaptionButtonState). |
 
 ## Drop zone routes
 
@@ -211,6 +212,36 @@ What the host pushes back as a drag crosses a registered zone.
 | `DropZoneManager.DragEnterEvent` | `DRAG_ENTER` | Event: the pointer entered a zone while dragging: { zoneId }. |
 | `DropZoneManager.DragLeaveEvent` | `DRAG_LEAVE` | Event: the pointer left a zone, or the drag ended elsewhere: { zoneId }. |
 | `DropZoneManager.FileDropEvent` | `FILE_DROP` | Event: files were dropped: { zoneId, files, position }. |
+
+## Chromium window commands
+
+The Windows shell's routes by the same names, plus the caption-button state event the Chromium shell pushes to its window's page.
+
+| Constant | Value | |
+|---|---|---|
+| `ChromiumWindowCommands.Module` | `SHENORA.WINDOW` |  |
+| `ChromiumWindowCommands.MinimizeType` | `MINIMIZE` |  |
+| `ChromiumWindowCommands.ToggleMaximizeType` | `TOGGLE_MAXIMIZE` |  |
+| `ChromiumWindowCommands.CloseType` | `CLOSE` |  |
+| `ChromiumWindowCommands.IsMaximizedType` | `IS_MAXIMIZED` |  |
+| `ChromiumWindowCommands.StartDragType` | `START_DRAG` |  |
+| `ChromiumWindowCommands.StartResizeType` | `START_RESIZE` |  |
+| `ChromiumWindowCommands.SetCaptionButtonsType` | `SET_CAPTION_BUTTONS` |  |
+| `ChromiumWindowCommands.SetThemeType` | `SET_THEME` | Route: { dark }, the page's theme, for a window that paints its caption buttons. |
+| `ChromiumWindowCommands.CaptionButtonStateEvent` | `CAPTION_BUTTON_STATE` | The event this window's page receives when the OS changes what it is doing to a caption button: { hot?, pressed? }, each a button kind or absent. |
+
+## Chromium drop zone routes
+
+The Windows shell's drop zone routes, answered with pageDrop, plus DROP for the paths.
+
+| Constant | Value | |
+|---|---|---|
+| `ChromiumDropZones.Module` | `SHENORA.DROPZONE` | The module the page speaks: the WebView2 shell's. |
+| `ChromiumDropZones.RegisterType` | `REGISTER` |  |
+| `ChromiumDropZones.UpdateType` | `UPDATE` |  |
+| `ChromiumDropZones.UnregisterType` | `UNREGISTER` |  |
+| `ChromiumDropZones.ShowType` | `SHOW` |  |
+| `ChromiumDropZones.DropType` | `DROP` | Route, this shell only: { zoneId }, the page's drop on a zone, answered with { files }, the real paths of the drag it ended. |
 
 ## Browser session events
 

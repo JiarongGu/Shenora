@@ -775,6 +775,7 @@ Shenora.Windows.WinFormsUiDispatcher
   property State
   property TargetName
 Shenora.Windows.WindowCommandModule
+  field CaptionButtonStateEvent
   field CloseType
   field IsMaximizedType
   field MinimizeType

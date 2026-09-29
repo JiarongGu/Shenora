@@ -883,6 +883,8 @@ public class WireMirrorTests
         var events = ParseConstObject(source, "WindowEventTypes");
         Assert.NotEmpty(events);   // parser self-check
         Assert.Equal(Shenora.Chromium.Host.ChromiumWindowCommands.CaptionButtonStateEvent, events["CaptionButtonState"]);
+        // The name a WebView2 app emits it under is the same one.
+        Assert.Equal(Shenora.Chromium.Host.ChromiumWindowCommands.CaptionButtonStateEvent, WindowCommandModule.CaptionButtonStateEvent);
         Assert.Single(events);
 
         var subscription = Regex.Match(source, @"useShenoraEvent<[^>]*>\(\s*'(?<module>[A-Z_.]+)'");

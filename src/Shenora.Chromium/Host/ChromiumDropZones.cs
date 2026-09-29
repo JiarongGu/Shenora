@@ -24,8 +24,9 @@ internal sealed class ChromiumDropZones(Func<ChromiumBrowser?> current) : Module
     /// <summary>The module the page speaks: the WebView2 shell's.</summary>
     public const string Module = "SHENORA.DROPZONE";
 
-    /// <summary>The name this module is mapped under, which only a Chromium page's requests are addressed to.</summary>
-    public const string EngineModule = "SHENORA.CHROMIUM.DROPZONE";
+    /// <summary>The name this module is mapped under, which only a Chromium page's requests are addressed to. Host-side:
+    /// no page types it, so it is not published as wire.</summary>
+    internal const string EngineModule = "SHENORA.CHROMIUM.DROPZONE";
     public const string RegisterType = "REGISTER";
     public const string UpdateType = "UPDATE";
     public const string UnregisterType = "UNREGISTER";
