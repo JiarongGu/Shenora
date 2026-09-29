@@ -24,6 +24,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     private CaptionHitTest? _captionHitTest;
     private NativeCaptionButtons? _nativeCaptions;
     private CaptionButtonPalette? _theme;   // the page's, once it has said; else the system's
+    private CaptionButtonPalette? _colors;  // the page's own colours, which win over any theme
 
     public ChromiumWindow(string name, ChromiumWindowOptions options, ChromiumServing serving, ChromiumOrigins origins,
         Func<ChromiumBrowser, ChromiumIpcBridge> bridge, Action<ChromiumWindow> destroyed, ILogger? log, IUrlLauncher? urls = null)
@@ -120,11 +121,26 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     /// <summary>The page's theme, once it has sent one.</summary>
     internal CaptionButtonPalette? Theme => _theme;
 
-    /// <summary><c>SET_THEME</c>: the page's theme, which the painted caption buttons follow. UI thread.</summary>
+    /// <summary>The page's own colours, while it has set them.</summary>
+    internal CaptionButtonPalette? Colors => _colors;
+
+    // What the painted buttons show: the page's colours, else its theme, else the system's.
+    private CaptionButtonPalette Palette => _colors ?? _theme ?? CaptionButtonPalette.SystemTheme();
+
+    /// <summary><c>SET_THEME</c>: the page's theme, which the painted caption buttons follow unless the page has set
+    /// colours of its own. UI thread.</summary>
     public void SetTheme(bool dark)
     {
         _theme = CaptionButtonPalette.ForTheme(dark);
-        _nativeCaptions?.SetPalette(_theme);
+        _nativeCaptions?.SetPalette(Palette);
+    }
+
+    /// <summary><c>SET_CAPTION_BUTTON_COLORS</c>: the page's own colours, which win over its theme; null goes back to
+    /// the theme. UI thread.</summary>
+    public void SetCaptionButtonColors(CaptionButtonPalette? colors)
+    {
+        _colors = colors;
+        _nativeCaptions?.SetPalette(Palette);
     }
 
     /// <summary><c>SET_CAPTION_BUTTONS</c>: the page's button rectangles in CSS px. UI thread.</summary>
@@ -211,7 +227,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
 #endif
         // Without the hit-test, painted buttons would look real and do nothing.
         if (PaintsCaptionButtons && _captionHitTest is not null)
-            _nativeCaptions = new NativeCaptionButtons(window, _theme ?? CaptionButtonPalette.SystemTheme());
+            _nativeCaptions = new NativeCaptionButtons(window, Palette);
         AppCallback.Log(_log, () => $"[Shenora.Chromium] Window '{Name}' shown");
     }
 

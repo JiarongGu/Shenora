@@ -890,8 +890,12 @@ public class WireMirrorTests
             WindowCommandModule.ShowSystemMenuType,
             WindowCommandModule.SetThemeType,
             WindowCommandModule.SetCaptionButtonsType,
+            WindowCommandModule.SetCaptionButtonColorsType,
         };
         Assert.Equal(hostRoutes, routes);
+
+        // The colours a page sends, by the host type's own field names.
+        AssertMirroredFields(typeof(CaptionButtonColors), "windowCommands.ts", "CaptionButtonColors");
     }
 
     /// <summary>

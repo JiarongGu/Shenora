@@ -25,6 +25,48 @@ public class ChromiumWindowCommandsTests
         Assert.Equal(WindowCommandModule.SetCaptionButtonsType, ChromiumWindowCommands.SetCaptionButtonsType);
         Assert.Equal(WindowCommandModule.SetThemeType, ChromiumWindowCommands.SetThemeType);
         Assert.Equal(WindowCommandModule.ShowSystemMenuType, ChromiumWindowCommands.ShowSystemMenuType);
+        Assert.Equal(WindowCommandModule.SetCaptionButtonColorsType, ChromiumWindowCommands.SetCaptionButtonColorsType);
+    }
+
+    [Fact]
+    public async Task A_window_that_paints_its_caption_buttons_takes_the_pages_colours_over_its_theme()
+    {
+        var window = Window(new ChromiumWindowOptions { NativeCaptionButtons = true });
+        var module = new ChromiumWindowCommands(() => window);
+        IpcRequest Colors(string json) => new()
+        {
+            Id = "c", Module = ChromiumWindowCommands.Module, Type = "SET_CAPTION_BUTTON_COLORS",
+            Payload = System.Text.Json.JsonDocument.Parse(json).RootElement,
+        };
+
+        var set = await module.HandleMessageAsync(Colors("""
+            { "colors": { "surface": "#305080", "hover": "#ffffff22", "pressed": "#fff1", "glyph": "#fff",
+                          "closeHover": "#c42b1c", "closePressed": "#c42b1ce6" } }
+            """));
+        Assert.True(set.Success);
+        var colors = Assert.IsType<CaptionButtonPalette>(window.Colors);
+        Assert.Equal(0x22FFFFFFu, colors.Hover);
+        Assert.Equal(0x11FFFFFFu, colors.Pressed);
+        Assert.Equal(0xE6C42B1Cu, colors.ClosePressed);
+        Assert.Equal(0xFFFFFFFFu, colors.CloseGlyphHot);   // absent: the glyph
+        Assert.Equal(0x5AFFFFFFu, colors.InactiveGlyph);   // absent: the glyph at the system's inactive opacity
+
+        // The page's theme changes nothing the page coloured itself; no colours goes back to the theme.
+        Assert.True((await module.HandleMessageAsync(new IpcRequest { Id = "t", Module = ChromiumWindowCommands.Module, Type = "SET_THEME" })).Success);
+        Assert.Same(colors, window.Colors);
+        Assert.True((await module.HandleMessageAsync(Colors("{}"))).Success);
+        Assert.Null(window.Colors);
+
+        var malformed = await module.HandleMessageAsync(Colors("""
+            { "colors": { "surface": "#305080", "hover": "white", "pressed": "#fff1", "glyph": "#fff",
+                          "closeHover": "#c42b1c", "closePressed": "#c42b1ce6" } }
+            """));
+        Assert.Equal(IpcErrorCodes.InvalidPayloadValue, malformed.Error?.Code);
+        Assert.Null(window.Colors);
+
+        // A window whose page draws its own buttons has nothing to colour.
+        var unpainted = await Module().HandleMessageAsync(Colors("{}"));
+        Assert.Equal(IpcErrorCodes.NoRoute, unpainted.Error?.Code);
     }
 
     [Fact]

@@ -33,6 +33,30 @@ export interface CaptionButtonState {
   pressed?: CaptionButtonKind;
 }
 
+/**
+ * The colours of the caption buttons the window paints (`NativeCaptionButtons`), each a CSS hex colour: `#rgb`,
+ * `#rgba`, `#rrggbb` or `#rrggbbaa`. Mirrors the host's `CaptionButtonColors`.
+ */
+export interface CaptionButtonColors {
+  /** The title bar's own colour. The WebView2 shell paints it behind its buttons; the Chromium shell's idle buttons
+   * show the page through them, so it is unused there. */
+  surface: string;
+  /** A hovered minimize or maximize button's background. */
+  hover: string;
+  /** A pressed minimize or maximize button's background. */
+  pressed: string;
+  /** The glyphs. */
+  glyph: string;
+  /** A hovered close button's background, red by the platform's convention. */
+  closeHover: string;
+  /** A pressed close button's background. */
+  closePressed: string;
+  /** The close glyph while close is hovered or pressed. Absent: `glyph`. */
+  closeGlyphHot?: string;
+  /** The idle glyphs while the window is inactive. Absent: `glyph` at about a third of its opacity. */
+  inactiveGlyph?: string;
+}
+
 /** The host's `SHENORA.WINDOW` event names, pinned against it by `WireMirrorTests`. */
 export const WindowEventTypes = {
   /** A {@link CaptionButtonState}, sent to the window's own page. See {@link useCaptionButtonState}. */
@@ -51,6 +75,7 @@ interface WindowRequests {
   SHOW_SYSTEM_MENU: void;
   SET_THEME: { dark: boolean };
   SET_CAPTION_BUTTONS: { buttons: CaptionButtonRect[] };
+  SET_CAPTION_BUTTON_COLORS: { colors?: CaptionButtonColors };
 }
 
 /**
@@ -129,6 +154,19 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
    */
   setCaptionButtons(buttons: CaptionButtonRect[]): Promise<void> {
     return this.send('SET_CAPTION_BUTTONS', { payload: { buttons } });
+  }
+
+  /**
+   * Colour the caption buttons the window paints, to match the page's title bar; send them again when the page's
+   * theme changes. `null` goes back to the default: on the Chromium shell the colours of {@link WindowCommands.setTheme},
+   * on the WebView2 shell a fallback from the form's own colour (it replaces `OptimizedForm.CaptionButtonColors`).
+   * The row's height is the page's: the rects sent to {@link WindowCommands.setCaptionButtons}.
+   *
+   * ⚠ Rejects with `NO_ROUTE` where the window does not paint its buttons, and with `INVALID_PAYLOAD_VALUE` for a
+   * colour that is not CSS hex.
+   */
+  setCaptionButtonColors(colors: CaptionButtonColors | null): Promise<void> {
+    return this.send('SET_CAPTION_BUTTON_COLORS', { payload: colors ? { colors } : {} });
   }
 }
 

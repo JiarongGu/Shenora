@@ -8,6 +8,7 @@ Shenora.Windows.CaptionButtonColors
   property ClosePressed
   property Glyph
   property Hover
+  property InactiveGlyph
   property Pressed
   property Surface
 Shenora.Windows.CaptionButtonKind
@@ -184,6 +185,8 @@ Shenora.Windows.OptimizedForm
   method ApplyChromeTheme
   method Dispose
   method Maximize
+  method OnActivated
+  method OnDeactivate
   method OnHandleCreated
   method OnPaint
   method OnShown
@@ -780,6 +783,7 @@ Shenora.Windows.WindowCommandModule
   field IsMaximizedType
   field MinimizeType
   field Module
+  field SetCaptionButtonColorsType
   field SetCaptionButtonsType
   field SetThemeType
   field ShowSystemMenuType

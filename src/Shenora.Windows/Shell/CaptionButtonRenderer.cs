@@ -25,7 +25,7 @@ internal sealed class CaptionButtonRenderer : IDisposable
     /// </summary>
     internal void Paint(Graphics graphics, IReadOnlyList<CaptionButtonRegion> regions, Rectangle union,
                         CaptionButtonKind? hot, CaptionButtonKind? pressed, bool maximized,
-                        int deviceDpi, Color formBackColor, CaptionButtonColors? colors)
+                        int deviceDpi, Color formBackColor, CaptionButtonColors? colors, bool active = true)
     {
         if (regions.Count == 0 || union.IsEmpty) return;
         var palette = colors ?? FallbackColors(formBackColor);
@@ -39,21 +39,38 @@ internal sealed class CaptionButtonRenderer : IDisposable
             var isHot = hot == region.Kind;
             var isPressed = pressed == region.Kind;
             var isClose = region.Kind == CaptionButtonKind.Close;
+            var back = palette.Surface;
 
             if (isHot || isPressed)
             {
-                var back = isPressed
+                var fill = isPressed
                     ? (isClose ? palette.ClosePressed : palette.Pressed)
                     : (isClose ? palette.CloseHover : palette.Hover);
-                using var brush = new SolidBrush(back);
+                using var brush = new SolidBrush(fill);
                 graphics.FillRectangle(brush, region.Bounds);
+                back = Over(fill, palette.Surface);
             }
 
-            var glyph = isClose && (isHot || isPressed) ? palette.CloseGlyphHot ?? palette.Glyph : palette.Glyph;
-            TextRenderer.DrawText(graphics, Glyph(region.Kind, maximized), font, region.Bounds, glyph,
+            var glyph = isClose && (isHot || isPressed) ? palette.CloseGlyphHot ?? palette.Glyph
+                : !active && !isHot && !isPressed ? palette.InactiveGlyph ?? Color.FromArgb(palette.Glyph.A * InactiveAlpha / 255, palette.Glyph)
+                : palette.Glyph;
+            // GDI text has no alpha, so a translucent glyph is blended over what is behind it here.
+            TextRenderer.DrawText(graphics, Glyph(region.Kind, maximized), font, region.Bounds, Over(glyph, back),
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
                 | TextFormatFlags.NoPadding | TextFormatFlags.PreserveGraphicsClipping);
         }
+    }
+
+    /// <summary>An inactive window's idle glyph opacity, as the system draws its own (0x5A of 0xFF, measured on a dark
+    /// caption).</summary>
+    private const int InactiveAlpha = 0x5A;
+
+    /// <summary><paramref name="color"/> over an opaque <paramref name="back"/>.</summary>
+    internal static Color Over(Color color, Color back)
+    {
+        if (color.A == 255) return color;
+        int Mix(int c, int b) => (c * color.A + b * (255 - color.A) + 127) / 255;
+        return Color.FromArgb(255, Mix(color.R, back.R), Mix(color.G, back.G), Mix(color.B, back.B));
     }
 
     /// <summary>

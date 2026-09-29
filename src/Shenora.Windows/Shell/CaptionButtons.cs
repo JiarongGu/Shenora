@@ -67,4 +67,8 @@ public sealed class CaptionButtonColors
     /// <summary>The close glyph's color while close is hot or pressed — white over the conventional red.
     /// Null (default) reuses <see cref="Glyph"/>.</summary>
     public Color? CloseGlyphHot { get; init; }
+
+    /// <summary>The idle glyphs' color while the window is inactive, as the system dims its own. Null (default) is
+    /// <see cref="Glyph"/> at about a third of its opacity over <see cref="Surface"/>.</summary>
+    public Color? InactiveGlyph { get; init; }
 }

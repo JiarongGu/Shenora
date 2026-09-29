@@ -535,6 +535,43 @@ public class WindowCommandModuleTests
         other.SetCaptionButtons(null);
     }
 
+    // The page colours the buttons the window paints; a window that does not paint them has no route for it.
+    [Fact]
+    public async Task Caption_button_colours_reach_a_window_that_paints_its_buttons()
+    {
+        using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true, NativeCaptionButtons = true })
+        {
+            ShowInTaskbar = false,
+        };
+        _ = form.Handle;
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = form });
+        var colors = new
+        {
+            surface = "#305080", hover = "#ffffff22", pressed = "#fff1", glyph = "#fff",
+            closeHover = "#c42b1c", closePressed = "#c42b1ce6", inactiveGlyph = "#ffffff5a",
+        };
+
+        Assert.True((await facade.HandleMessageAsync(Request("SET_CAPTION_BUTTON_COLORS", new { colors }))).Success);
+        Application.DoEvents();
+        var set = Assert.IsType<CaptionButtonColors>(form.CaptionButtonColors);
+        Assert.Equal(Color.FromArgb(255, 0x30, 0x50, 0x80), set.Surface);
+        Assert.Equal(Color.FromArgb(0x11, 255, 255, 255), set.Pressed);
+        Assert.Equal(Color.FromArgb(0x5A, 255, 255, 255), set.InactiveGlyph);
+        Assert.Null(set.CloseGlyphHot);
+
+        var bad = await facade.HandleMessageAsync(Request("SET_CAPTION_BUTTON_COLORS", new { colors = colors with { glyph = "white" } }));
+        Assert.Equal(IpcErrorCodes.InvalidPayloadValue, bad.Error!.Code);
+
+        Assert.True((await facade.HandleMessageAsync(Request("SET_CAPTION_BUTTON_COLORS"))).Success);
+        Application.DoEvents();
+        Assert.Null(form.CaptionButtonColors);   // back to the fallback
+
+        using var plain = CreateForm();
+        var none = await new WindowCommandModule(new WindowCommandOptions { Window = plain })
+            .HandleMessageAsync(Request("SET_CAPTION_BUTTON_COLORS", new { colors }));
+        Assert.Equal(IpcErrorCodes.NoRoute, none.Error!.Code);
+    }
+
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 }

@@ -3,6 +3,7 @@ static class Shenora.Windows.BrowserArguments
   public static string Compose(string preset, bool isDevelopment, string? devExtraArguments = null, string? additionalArguments = null)
 sealed class Shenora.Windows.CaptionButtonColors
   public System.Drawing.Color? CloseGlyphHot { get; init; }
+  public System.Drawing.Color? InactiveGlyph { get; init; }
   public required System.Drawing.Color CloseHover { get; init; }
   public required System.Drawing.Color ClosePressed { get; init; }
   public required System.Drawing.Color Glyph { get; init; }
@@ -179,6 +180,8 @@ class Shenora.Windows.OptimizedForm : System.Windows.Forms.Form, Shenora.Windows
   [Browsable(false)] [DesignerSerializationVisibility(0)] public System.Func<System.Windows.Forms.Message, System.IntPtr?>? WndProcHook { get; set; }
   protected override System.Windows.Forms.CreateParams CreateParams { get; }
   protected override void Dispose(bool disposing)
+  protected override void OnActivated(System.EventArgs e)
+  protected override void OnDeactivate(System.EventArgs e)
   protected override void OnHandleCreated(System.EventArgs e)
   protected override void OnPaint(System.Windows.Forms.PaintEventArgs e)
   protected override void OnShown(System.EventArgs e)
@@ -785,6 +788,7 @@ sealed class Shenora.Windows.WindowCommandModule : Shenora.Core.Ipc.ModuleBase
   public const string IsMaximizedType = "IS_MAXIMIZED"
   public const string MinimizeType = "MINIMIZE"
   public const string Module = "SHENORA.WINDOW"
+  public const string SetCaptionButtonColorsType = "SET_CAPTION_BUTTON_COLORS"
   public const string SetCaptionButtonsType = "SET_CAPTION_BUTTONS"
   public const string SetThemeType = "SET_THEME"
   public const string ShowSystemMenuType = "SHOW_SYSTEM_MENU"

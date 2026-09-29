@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Text.Json;
 
 namespace Shenora.Core.Ipc;
@@ -56,6 +57,41 @@ public static class PayloadHelper
         {
             return default;
         }
+    }
+
+    /// <summary>
+    /// Read a required colour, written as CSS hex: <c>#rgb</c>, <c>#rgba</c>, <c>#rrggbb</c> or <c>#rrggbbaa</c>, alpha
+    /// last as in CSS. Throws <see cref="ShenoraException"/> when the key is absent or the value is not one.
+    /// </summary>
+    public static Color GetRequiredColor(JsonElement? payload, string key) =>
+        GetOptionalColor(payload, key) ?? throw new ShenoraException(IpcErrorCodes.MissingPayloadValue, "key", key,
+            $"Missing required payload value '{key}'.");
+
+    /// <summary>
+    /// Read an optional colour, written as CSS hex (<see cref="GetRequiredColor"/>): null when the key is absent.
+    /// ⚠ Unlike <see cref="GetOptionalValue{T}"/>, a value that is present and not a colour THROWS, since a mistyped
+    /// colour should say so rather than paint the default.
+    /// </summary>
+    public static Color? GetOptionalColor(JsonElement? payload, string key)
+    {
+        if (!TryGetValue(payload, key, out var value)) return null;
+        if (value.ValueKind == JsonValueKind.String && TryParseHexColor(value.GetString()!, out var color)) return color;
+        throw new ShenoraException(IpcErrorCodes.InvalidPayloadValue, new Dictionary<string, string> { ["key"] = key },
+            $"Invalid payload value '{key}': a colour is CSS hex, #rgb, #rgba, #rrggbb or #rrggbbaa.");
+    }
+
+    private static bool TryParseHexColor(string text, out Color color)
+    {
+        color = default;
+        if (text.Length is not (4 or 5 or 7 or 9) || text[0] != '#') return false;
+        var digits = text[1..];
+        foreach (var c in digits) if (!char.IsAsciiHexDigit(c)) return false;
+        int Channel(int i) => digits.Length <= 4
+            ? Convert.ToInt32(new string(digits[i], 2), 16)
+            : Convert.ToInt32(digits.Substring(i * 2, 2), 16);
+        var alpha = digits.Length is 4 or 8 ? Channel(3) : 255;
+        color = Color.FromArgb(alpha, Channel(0), Channel(1), Channel(2));
+        return true;
     }
 
     private static bool TryGetValue(JsonElement? payload, string key, out JsonElement value)

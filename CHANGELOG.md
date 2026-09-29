@@ -83,6 +83,19 @@ at the first list and missed five more breaking changes.
   them there can emit the event, named `WindowCommandModule.CaptionButtonStateEvent`, from
   `OptimizedForm.CaptionButtonStateChanged`.
 
+- **The page colours the caption buttons the window paints, on both engines.**
+  `WindowCommands.setCaptionButtonColors({ surface, hover, pressed, glyph, closeHover, closePressed, closeGlyphHot?,
+  inactiveGlyph? })` in `@shenora/react` (`SET_CAPTION_BUTTON_COLORS`, `WindowCommandModule.SetCaptionButtonColorsType`)
+  takes CSS hex colours, alpha included, the fields of the host's `CaptionButtonColors`.
+  - **On the WebView2 shell** it replaces the `OptimizedForm`'s `CaptionButtonColors`.
+  - **On the Chromium shell** it wins over the light and dark of `setTheme` until `null` goes back to them. There,
+    before, only the system's two palettes were available. Its idle buttons still show the page through them, so
+    `surface` is unused there.
+
+  A window that does not paint its buttons answers `NO_ROUTE`, and a colour that is not CSS hex
+  `INVALID_PAYLOAD_VALUE`. The row's height was already the page's, since the rects set it. A module of an app's
+  own can read colours the same way with `PayloadHelper.GetRequiredColor` and `GetOptionalColor`.
+
 - **The window's system menu from a page's caption, on both engines.** `WindowCommands.showSystemMenu()` in
   `@shenora/react` (`SHOW_SYSTEM_MENU`, `WindowCommandModule.ShowSystemMenuType`) opens it at the pointer: call it
   from the title bar's `onContextMenu`. It answers as the menu opens, not when it closes. A Chromium page's
@@ -150,6 +163,10 @@ at the first list and missed five more breaking changes.
 
 - **`Shenora.Windows` now depends on `Shenora.Chromium`** (D83), for `ChromiumView`: every Windows app gets its
   managed assembly (about 300 KB), never CEF, whose bytes arrive only through a direct reference.
+
+- **An `OptimizedForm` that paints its caption buttons dims their idle glyphs while the window is inactive**, as the
+  system dims its own. Set the colour with the new `CaptionButtonColors.InactiveGlyph`; left out, it is the glyph
+  at about a third of its opacity over the surface.
 
 - **A frameless `OptimizedForm` has a system menu now** (`WS_SYSMENU`), which WinForms gives a borderless form
   none of. So Alt+Space and the taskbar's window menu open it, where before they did nothing. Nothing is drawn

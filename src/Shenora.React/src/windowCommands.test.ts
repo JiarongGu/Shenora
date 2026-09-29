@@ -35,6 +35,18 @@ describe('WindowCommands', () => {
     expect(transport.posted[4]?.payload).toBeUndefined();
   });
 
+  it('sends the caption-button colours, and none to go back to the default', () => {
+    const { transport, commands } = createCommands();
+    const colors = { surface: '#305080', hover: '#fff2', pressed: '#fff1', glyph: '#fff', closeHover: '#c42b1c', closePressed: '#c42b1ce6' };
+
+    void commands.setCaptionButtonColors(colors);
+    void commands.setCaptionButtonColors(null);
+
+    expect(transport.posted.map((r) => r.type)).toEqual(['SET_CAPTION_BUTTON_COLORS', 'SET_CAPTION_BUTTON_COLORS']);
+    expect(transport.posted[0]?.payload).toEqual({ colors });
+    expect(transport.posted[1]?.payload).toEqual({});
+  });
+
   it('isMaximized unwraps the host answer', async () => {
     const { transport, commands } = createCommands();
 

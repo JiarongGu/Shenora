@@ -8,9 +8,9 @@ namespace Shenora.Chromium.Host;
 /// A drag or a resize is a no-op here: Chromium moves the window natively from the page's
 /// <c>-webkit-app-region</c>. <c>SET_CAPTION_BUTTONS</c> and <c>SHOW_SYSTEM_MENU</c> are always wired on Windows,
 /// because the shell owns the window, and the page learns hover and press from <see cref="CaptionButtonStateEvent"/>.
-/// <c>SET_THEME</c> is wired for a window that paints its caption buttons, which follow it. Otherwise it, and the other
-/// two on another OS, answer <c>NO_ROUTE</c> (the module exists, the type does not), as the WebView2 module does for a
-/// route that is not wired.
+/// <c>SET_THEME</c> and <c>SET_CAPTION_BUTTON_COLORS</c> are wired for a window that paints its caption buttons, which
+/// follow them. Otherwise they, and the other two on another OS, answer <c>NO_ROUTE</c> (the module exists, the type
+/// does not), as the WebView2 module does for a route that is not wired.
 /// <para>
 /// ONE module for every window, mapped once: each command acts on the window whose page sent it
 /// (<see cref="ChromiumBrowserContext"/>), so a secondary window's close closes that window, and a main window
@@ -32,6 +32,10 @@ internal sealed class ChromiumWindowCommands(Func<ChromiumWindow?> current) : Mo
 
     /// <summary>Route: <c>{ dark }</c>, the page's theme, for a window that paints its caption buttons.</summary>
     public const string SetThemeType = "SET_THEME";
+
+    /// <summary>Route: <c>{ colors? }</c>, the page's own colours for a window that paints its caption buttons, which win
+    /// over its theme; no <c>colors</c> goes back to the theme.</summary>
+    public const string SetCaptionButtonColorsType = "SET_CAPTION_BUTTON_COLORS";
 
     /// <summary>
     /// The event this window's page receives when the OS changes what it is doing to a caption button:
@@ -63,6 +67,9 @@ internal sealed class ChromiumWindowCommands(Func<ChromiumWindow?> current) : Mo
             case SetThemeType when window is { PaintsCaptionButtons: true }:
                 // As the WebView2 shell's: `dark` optional, default true, so the same page works on either engine.
                 window.SetTheme(PayloadHelper.GetOptionalValue<bool?>(request.Payload, "dark") ?? true);
+                return Done();
+            case SetCaptionButtonColorsType when window is { PaintsCaptionButtons: true }:
+                window.SetCaptionButtonColors(CaptionButtonPalette.FromPayload(request.Payload));
                 return Done();
             default: throw UnknownType(request);
         }

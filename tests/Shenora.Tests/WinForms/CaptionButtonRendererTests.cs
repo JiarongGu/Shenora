@@ -197,4 +197,35 @@ public class CaptionButtonRendererTests
         Assert.Equal(colors.CloseHover.ToArgb(), bitmap.GetPixel(2, 1).ToArgb());
         Assert.Equal(colors.CloseHover.ToArgb(), bitmap.GetPixel(2, 94).ToArgb());
     }
+
+    /// <summary>
+    /// An inactive window's idle glyphs are dimmed, as the system dims its own: by default the glyph at about a third of
+    /// its opacity, blended over the surface since GDI text has none. A hovered button keeps its full glyph.
+    /// </summary>
+    [Fact]
+    public void An_inactive_windows_idle_glyphs_are_dimmed()
+    {
+        var colors = new CaptionButtonColors
+        {
+            Surface = Color.Black, Hover = Color.FromArgb(255, 60, 60, 60), Pressed = Color.FromArgb(255, 90, 90, 90),
+            Glyph = Color.White, CloseHover = Color.Red, ClosePressed = Color.DarkRed,
+        };
+        CaptionButtonRegion[] regions = [new(CaptionButtonKind.Minimize, new Rectangle(0, 0, 46, 32))];
+        int Brightest(CaptionButtonKind? hot, bool active)
+        {
+            using var renderer = new CaptionButtonRenderer();
+            using var bitmap = new Bitmap(46, 32);
+            using (var graphics = Graphics.FromImage(bitmap))
+                renderer.Paint(graphics, regions, new Rectangle(0, 0, 46, 32), hot, null, false, 96, Color.Black, colors, active);
+            var max = 0;
+            for (var y = 0; y < bitmap.Height; y++)
+                for (var x = 0; x < bitmap.Width; x++)
+                    max = Math.Max(max, bitmap.GetPixel(x, y).R);
+            return max;
+        }
+
+        Assert.Equal(255, Brightest(null, active: true));
+        Assert.Equal(CaptionButtonRenderer.Over(Color.FromArgb(0x5A, Color.White), Color.Black).R, Brightest(null, active: false));
+        Assert.Equal(255, Brightest(CaptionButtonKind.Minimize, active: false));
+    }
 }

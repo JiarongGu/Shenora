@@ -88,4 +88,36 @@ public class PayloadHelperTests
 
         Assert.Equal(new Item("y", 7), PayloadHelper.GetRequiredValue<Item>(payload, "item"));
     }
+
+    // CSS hex, alpha last as in CSS: the four lengths a page writes.
+    [Theory]
+    [InlineData("#fff", 255, 255, 255, 255)]
+    [InlineData("#fff8", 0x88, 255, 255, 255)]
+    [InlineData("#305080", 255, 0x30, 0x50, 0x80)]
+    [InlineData("#C42B1Ce6", 0xE6, 0xC4, 0x2B, 0x1C)]
+    public void A_colour_is_read_from_css_hex(string text, int a, int r, int g, int b)
+    {
+        var payload = Payload($$"""{"c":"{{text}}"}""");
+
+        Assert.Equal(System.Drawing.Color.FromArgb(a, r, g, b), PayloadHelper.GetRequiredColor(payload, "c"));
+        Assert.Equal(System.Drawing.Color.FromArgb(a, r, g, b), PayloadHelper.GetOptionalColor(payload, "c"));
+    }
+
+    // Absent is null for the optional read; present and not a colour is an error for both, never the default.
+    [Theory]
+    [InlineData("\"white\"")]
+    [InlineData("\"#12345\"")]
+    [InlineData("\"#ggg\"")]
+    [InlineData("\"305080\"")]
+    [InlineData("42")]
+    public void A_value_that_is_not_css_hex_is_refused(string json)
+    {
+        var payload = Payload($$"""{"c":{{json}}}""");
+
+        Assert.Null(PayloadHelper.GetOptionalColor(Payload("{}"), "c"));
+        var ex = Assert.Throws<ShenoraException>(() => PayloadHelper.GetOptionalColor(payload, "c"));
+        Assert.Equal(IpcErrorCodes.InvalidPayloadValue, ex.Code);
+        Assert.Equal("c", ex.Parameters!["key"]);
+        Assert.Equal(IpcErrorCodes.MissingPayloadValue, Assert.Throws<ShenoraException>(() => PayloadHelper.GetRequiredColor(Payload("{}"), "c")).Code);
+    }
 }

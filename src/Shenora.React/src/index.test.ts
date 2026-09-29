@@ -16,6 +16,7 @@ import type {
   CaptionButtonKind,
   CaptionButtonRect,
   CaptionButtonState,
+  CaptionButtonColors,
   DropZoneFileDrop,
   InvokeOptions,
   ClipboardContent,
@@ -174,7 +175,7 @@ const EXPECTED_EXPORTS = [
  */
 type ExportedTypeSurface = [
   EventMessage, IpcError, IpcNotification, IpcNotificationBatch, IpcRequest, IpcResponse,
-  CaptionButtonKind, CaptionButtonRect, CaptionButtonState, DropZoneFileDrop, InvokeOptions,
+  CaptionButtonKind, CaptionButtonRect, CaptionButtonState, CaptionButtonColors, DropZoneFileDrop, InvokeOptions,
   ClipboardContent, ClipboardHandle,
   BackNavigationEvent, BackNavigationResult, BackNavigationHandle,
   AppLifecycleReport, AppLifecycleHandlers,

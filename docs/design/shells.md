@@ -113,7 +113,8 @@ window, and each command acts on the window whose page sent it: the page transpo
 another window commands that window, as an `OptimizedForm` or a plain form; only the main window has the
 options' callbacks. The Chromium shell's windows also act on the sending page's own window
 (`ChromiumWindowCommands`), but a send from no page does nothing there, and a window that paints its caption
-buttons has `SET_THEME`.
+buttons has `SET_THEME`. On either shell, a window that paints its caption buttons takes the page's colours
+(`SET_CAPTION_BUTTON_COLORS`); the row's height is the page's rects.
 
 **The system menu** is the window's own, whichever way it opens: a page's `SHOW_SYSTEM_MENU`, a right click on a
 Chromium page's drag area, Alt+Space, the taskbar. With the real pointer and keys, a right click (on the WebView2

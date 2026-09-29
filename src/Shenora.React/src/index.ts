@@ -74,6 +74,7 @@ export {
   type CaptionButtonKind,
   type CaptionButtonRect,
   type CaptionButtonState,
+  type CaptionButtonColors,
 } from './windowCommands.js';
 export {
   WindowOrientation,

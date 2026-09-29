@@ -282,6 +282,8 @@ struct Shenora.Core.Ipc.NotificationPumpReport : System.IEquatable<Shenora.Core.
   public static bool op_Inequality(Shenora.Core.Ipc.NotificationPumpReport left, Shenora.Core.Ipc.NotificationPumpReport right)
   public void Deconstruct(out bool IsOpen, out int Pending, out long Accepted, out long Filtered, out long Overflowed, out long Unserializable, out long Delivered)
 static class Shenora.Core.Ipc.PayloadHelper
+  public static System.Drawing.Color GetRequiredColor(System.Text.Json.JsonElement? payload, string key)
+  public static System.Drawing.Color? GetOptionalColor(System.Text.Json.JsonElement? payload, string key)
   public static T GetOptionalValue<T>(System.Text.Json.JsonElement? payload, string key)
   public static T GetRequiredValue<T>(System.Text.Json.JsonElement? payload, string key)
 sealed class Shenora.Core.Ipc.ScopedContainerRouter : System.IDisposable

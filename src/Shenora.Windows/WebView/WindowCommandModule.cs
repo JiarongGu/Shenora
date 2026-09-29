@@ -121,6 +121,15 @@ public sealed class WindowCommandModule : ModuleBase
     public const string SetCaptionButtonsType = "SET_CAPTION_BUTTONS";
 
     /// <summary>
+    /// Route: <c>{ colors? }</c>, the <see cref="CaptionButtonColors"/> an <see cref="OptimizedForm"/> paints its caption
+    /// buttons with, its fields camelCased and each a CSS hex colour. It replaces
+    /// <see cref="OptimizedForm.CaptionButtonColors"/>, and no <c>colors</c> clears it back to the fallback. A window that
+    /// does not paint its buttons answers <c>NO_ROUTE</c>, and a colour that is not CSS hex
+    /// <c>INVALID_PAYLOAD_VALUE</c>.
+    /// </summary>
+    public const string SetCaptionButtonColorsType = "SET_CAPTION_BUTTON_COLORS";
+
+    /// <summary>
     /// Event, under <see cref="Module"/>: <c>{ hot?, pressed? }</c>, which caption button the OS is hovering or
     /// pressing, for a page that draws its buttons and lost their mouse events to the hit-test (the client's
     /// <c>useCaptionButtonState</c>). This shell does not send it; an app drawing its buttons in the page emits
@@ -216,6 +225,11 @@ public sealed class WindowCommandModule : ModuleBase
                 // which presents as "the close button sometimes does nothing".
                 var css = ParseCaptionButtons(request.Payload);
                 window.Post(() => setCaptionButtons(ToClient(css, form, space)));
+                return Done();
+
+            case SetCaptionButtonColorsType when form is OptimizedForm { PaintsCaptionButtons: true } painted:
+                var colors = ParseColors(request.Payload);   // read while the payload is the request's
+                window.Post(() => painted.CaptionButtonColors = colors);
                 return Done();
 
             default:
@@ -340,6 +354,25 @@ public sealed class WindowCommandModule : ModuleBase
             regions.Add(new CaptionButtonRegion(kind, new Rectangle(client.X, client.Y, Px(width), Px(height))));
         }
         return regions;
+    }
+
+    /// <summary><c>{ colors: { surface, hover, … } }</c> as CSS hex; null when there are none, which clears them.</summary>
+    private static CaptionButtonColors? ParseColors(JsonElement? payload)
+    {
+        if (payload is not { ValueKind: JsonValueKind.Object } root || !root.TryGetProperty("colors", out var c)
+            || c.ValueKind != JsonValueKind.Object)
+            return null;
+        return new CaptionButtonColors
+        {
+            Surface = PayloadHelper.GetRequiredColor(c, "surface"),
+            Hover = PayloadHelper.GetRequiredColor(c, "hover"),
+            Pressed = PayloadHelper.GetRequiredColor(c, "pressed"),
+            Glyph = PayloadHelper.GetRequiredColor(c, "glyph"),
+            CloseHover = PayloadHelper.GetRequiredColor(c, "closeHover"),
+            ClosePressed = PayloadHelper.GetRequiredColor(c, "closePressed"),
+            CloseGlyphHot = PayloadHelper.GetOptionalColor(c, "closeGlyphHot"),
+            InactiveGlyph = PayloadHelper.GetOptionalColor(c, "inactiveGlyph"),
+        };
     }
 
     private static CaptionButtonKind? ParseKind(JsonElement entry) =>

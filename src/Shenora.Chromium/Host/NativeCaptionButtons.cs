@@ -1,5 +1,8 @@
+using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Shenora.Chromium.Interop;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Chromium.Host;
 
@@ -306,6 +309,29 @@ internal sealed record CaptionButtonPalette(
         CloseHover: 0xFFC42B1C, ClosePressed: 0xE6C42B1C, CloseGlyphHot: 0xFFFFFFFF);
 
     public static CaptionButtonPalette ForTheme(bool dark) => dark ? Dark : Light;
+
+    /// <summary>
+    /// The page's own colours (<c>SET_CAPTION_BUTTON_COLORS</c>: <c>{ colors: { surface, hover, … } }</c>, CSS hex), or
+    /// null when it sent none. <c>surface</c> is required as on the WebView2 shell and unused here, where an idle button
+    /// is transparent. An inactive glyph not given is the glyph at the system's opacity for one.
+    /// </summary>
+    public static CaptionButtonPalette? FromPayload(JsonElement? payload)
+    {
+        if (payload is not { ValueKind: JsonValueKind.Object } root || !root.TryGetProperty("colors", out var c)
+            || c.ValueKind != JsonValueKind.Object)
+            return null;
+        static uint Argb(Color color) => (uint)color.ToArgb();
+        _ = PayloadHelper.GetRequiredColor(c, "surface");
+        var glyph = PayloadHelper.GetRequiredColor(c, "glyph");
+        return new(
+            Hover: Argb(PayloadHelper.GetRequiredColor(c, "hover")),
+            Pressed: Argb(PayloadHelper.GetRequiredColor(c, "pressed")),
+            Glyph: Argb(glyph),
+            InactiveGlyph: Argb(PayloadHelper.GetOptionalColor(c, "inactiveGlyph") ?? Color.FromArgb(glyph.A * 0x5A / 255, glyph)),
+            CloseHover: Argb(PayloadHelper.GetRequiredColor(c, "closeHover")),
+            ClosePressed: Argb(PayloadHelper.GetRequiredColor(c, "closePressed")),
+            CloseGlyphHot: Argb(PayloadHelper.GetOptionalColor(c, "closeGlyphHot") ?? glyph));
+    }
 
     /// <summary>The system's app theme (Settings → Personalization → Colors): light unless it says dark.</summary>
     public static CaptionButtonPalette SystemTheme()

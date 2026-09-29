@@ -107,6 +107,8 @@ public class OptimizedForm : Form, IAppMaximizable
     private readonly HashSet<Control> _trackedChildren = [];
     private readonly HashSet<Control> _clippedChildren = [];
     private CaptionButtonColors? _captionButtonColors;
+    // An inactive window's idle glyphs are dimmed, as the system's are.
+    private bool _captionActive = true;
     private readonly CaptionButtonRenderer _captionRenderer = new();
 
     /// <summary>A form with the default options: double-buffered, framed, no manual maximize.</summary>
@@ -278,6 +280,10 @@ public class OptimizedForm : Form, IAppMaximizable
 
     /// <summary>True when this window owns and paints the caption-button pixels.</summary>
     private bool NativeCaptionButtonsEnabled => _options.FramelessChrome && _options.NativeCaptionButtons;
+
+    /// <summary>True when this window paints the caption buttons, which a page's <c>SET_CAPTION_BUTTON_COLORS</c>
+    /// colours.</summary>
+    internal bool PaintsCaptionButtons => NativeCaptionButtonsEnabled;
 
     private void OnClippedChildGeometryChanged(object? sender, EventArgs e)
     {
@@ -464,7 +470,23 @@ public class OptimizedForm : Form, IAppMaximizable
         if (!NativeCaptionButtonsEnabled) return;
         _captionRenderer.Paint(e.Graphics, _captionButtons, _captionUnion,
             _hotCaptionButton, _pressedCaptionButton, AppPlacement == WindowPlacement.Maximized, DeviceDpi, BackColor,
-            _captionButtonColors);
+            _captionButtonColors, _captionActive);
+    }
+
+    /// <inheritdoc />
+    protected override void OnActivated(EventArgs e)
+    {
+        base.OnActivated(e);
+        _captionActive = true;
+        InvalidateCaptionButtons();
+    }
+
+    /// <inheritdoc />
+    protected override void OnDeactivate(EventArgs e)
+    {
+        base.OnDeactivate(e);
+        _captionActive = false;
+        InvalidateCaptionButtons();
     }
 
     /// <summary>
