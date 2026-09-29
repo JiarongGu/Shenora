@@ -150,7 +150,6 @@ D37 and D51 are corrected in place to point at them.
    the page's drag bar moves the window exactly (a still press stalls nothing), all four edges and two corners
    resize it (the other two corners unmeasured), a double-click maximizes and restores, and dragging a maximized
    window's bar restores it. Mouse only: touch and pen, and a framed window's caption, are left to Chromium.
-   ⚠ Maximized, its client overhangs the monitor's work area by 1 px on every side.
    **`useDropZone` gets real paths with no overlay** (the page is Alloy style, D84): the page's own drop names
    the zone, and the host answers with the paths CEF reported as the drag entered. A file dropped anywhere
    else no longer navigates the app away. A crashed renderer is reloaded on the WebView2 shell's policy.

@@ -34,7 +34,7 @@ namespace Shenora.Chromium.Host;
 /// </summary>
 internal sealed unsafe class CaptionHitTest : IDisposable
 {
-    private const uint WM_CREATE = 0x0001, WM_NCDESTROY = 0x0082, WM_NCHITTEST = 0x0084, WM_NCMOUSEMOVE = 0x00A0,
+    private const uint WM_CREATE = 0x0001, WM_NCCALCSIZE = 0x0083, WM_NCDESTROY = 0x0082, WM_NCHITTEST = 0x0084, WM_NCMOUSEMOVE = 0x00A0,
         WM_NCLBUTTONDOWN = 0x00A1, WM_NCLBUTTONUP = 0x00A2, WM_NCLBUTTONDBLCLK = 0x00A3, WM_MOUSEMOVE = 0x0200,
         WM_LBUTTONUP = 0x0202, WM_RBUTTONDOWN = 0x0204, WM_MBUTTONDBLCLK = 0x0209, WM_XBUTTONDOWN = 0x020B,
         WM_XBUTTONDBLCLK = 0x020D, WM_PARENTNOTIFY = 0x0210, WM_MOVING = 0x0216, WM_CAPTURECHANGED = 0x0215,
@@ -281,6 +281,14 @@ internal sealed unsafe class CaptionHitTest : IDisposable
                 case WM_PARENTNOTIFY when (wParam & 0xFFFF) == WM_CREATE:
                     me.Adopt(lParam);   // a new render widget: a renderer was replaced
                     break;
+                // Chromium's client for a maximized frameless window overhangs the monitor's work area (measured, CEF 154
+                // at 200 %: (-1,-1)-(3839,2305) over (0,0)-(3840,2304)), a column of it on the next monitor. It is the
+                // work area exactly, except beside an auto-hide taskbar, whose reveal edge Chromium keeps clear itself.
+                case WM_NCCALCSIZE when wParam != 0 && me._frameless && IsZoomed(hwnd) != 0:
+                    var calculated = DefSubclassProc(hwnd, msg, wParam, lParam);
+                    var client = (RECT*)lParam;   // NCCALCSIZE_PARAMS.rgrc[0], the client it will have
+                    if (WorkArea(*client) is { } work) *client = work;
+                    return calculated;
                 case WM_NCDESTROY:
                     RemoveWindowSubclass(hwnd, &TopProc, TopId);
                     break;
@@ -320,8 +328,36 @@ internal sealed unsafe class CaptionHitTest : IDisposable
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
+    /// <summary>
+    /// The work area of the monitor <paramref name="client"/> is on, less a reveal gap beside each auto-hide app bar
+    /// there, which covers the edge it hides on. Chromium's own gap is 2 px (measured beside an auto-hide bar on the
+    /// right: 3841 less 2). Null when the monitor cannot be read.
+    /// </summary>
+    private static RECT? WorkArea(RECT client)
+    {
+        const int RevealGap = 2;
+        var info = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
+        if (GetMonitorInfoW(MonitorFromRect(&client, 2 /* MONITOR_DEFAULTTONEAREST */), &info) == 0) return null;
+        var work = info.rcWork;
+        for (uint edge = 0; edge < 4; edge++)   // ABE_LEFT, ABE_TOP, ABE_RIGHT, ABE_BOTTOM
+        {
+            var bar = new APPBARDATA { cbSize = (uint)sizeof(APPBARDATA), uEdge = edge, rc = info.rcMonitor };
+            if (SHAppBarMessage(0x0B /* ABM_GETAUTOHIDEBAREX */, &bar) == 0) continue;
+            if (edge == 0) work.Left += RevealGap;
+            else if (edge == 1) work.Top += RevealGap;
+            else if (edge == 2) work.Right -= RevealGap;
+            else work.Bottom -= RevealGap;
+        }
+        return work;
+    }
+
     // ── Win32 ────────────────────────────────────────────────────────────────────────────────────────────
     private const uint TME_LEAVE = 0x2, TME_NONCLIENT = 0x10;
+    [StructLayout(LayoutKind.Sequential)] private struct MONITORINFO { public uint cbSize; public RECT rcMonitor, rcWork; public uint dwFlags; }
+    [StructLayout(LayoutKind.Sequential)] private struct APPBARDATA { public uint cbSize; public nint hWnd; public uint uCallbackMessage, uEdge; public RECT rc; public nint lParam; }
+    [DllImport("user32")] private static extern nint MonitorFromRect(RECT* rect, uint flags);
+    [DllImport("user32")] private static extern int GetMonitorInfoW(nint monitor, MONITORINFO* info);
+    [DllImport("shell32")] private static extern nint SHAppBarMessage(uint message, APPBARDATA* data);
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct TRACKMOUSEEVENT { public uint cbSize, dwFlags; public nint hwndTrack; public uint dwHoverTime; }
 
