@@ -152,6 +152,7 @@
       <Code Type="Class" Language="cs"><![CDATA[
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Build.Framework;
@@ -187,26 +188,48 @@ public sealed class ShenoraChromiumStampLauncher : Task
         if (!File.Exists(Executable) || !File.Exists(From)) { Log.LogMessage(MessageImportance.Low, "Nothing to stamp: {0} or {1} is missing.", Executable, From); return true; }
         var remove = Read(Executable, withData: false);
         var add = Read(From, withData: true);
+        // A file just copied can be held for a moment by whatever scans new executables, and the update then fails
+        // with a sharing error (110 measured once in a row of builds); the .NET SDK retries its apphost's for the same
+        // reason. Only those errors are retried.
+        for (var attempt = 1; ; attempt++)
+        {
+            var error = Stamp(remove, add);
+            if (error == 0)
+            {
+                Log.LogMessage(MessageImportance.Low, "{0} now carries {1}'s icon and version ({2} resource(s)).", Path.GetFileName(Executable), Path.GetFileName(From), add.Count);
+                return true;
+            }
+            if (attempt == 5 || (error != 5 && error != 32 && error != 33 && error != 110))
+            {
+                Log.LogError("Giving {0} the app's icon and version failed (error {1}).", Executable, error);
+                return false;
+            }
+            Log.LogMessage(MessageImportance.Normal, "{0} is busy (error {1}); trying again.", Path.GetFileName(Executable), error);
+            System.Threading.Thread.Sleep(200 * attempt);
+        }
+    }
+
+    // 0, or the Win32 error that stopped it; nothing is saved unless every step succeeded.
+    private int Stamp(List<Resource> remove, List<Resource> add)
+    {
         var update = BeginUpdateResource(Executable, false);
-        if (update == IntPtr.Zero) { Log.LogError("Could not open {0} to give it the app's icon and version (error {1}).", Executable, Marshal.GetLastWin32Error()); return false; }
+        if (update == IntPtr.Zero) return Marshal.GetLastWin32Error();
         var names = new List<IntPtr>();
         try
         {
             foreach (var r in remove) Write(update, r, null, names);
             foreach (var r in add) Write(update, r, r.Data, names);
         }
-        catch (Exception error)
+        catch (Win32Exception error)
         {
             EndUpdateResource(update, true);
             foreach (var n in names) Marshal.FreeHGlobal(n);
-            Log.LogError("Giving {0} the app's icon and version failed: {1}", Executable, error.Message);
-            return false;
+            return error.NativeErrorCode;
         }
         var saved = EndUpdateResource(update, false);
+        var code = saved ? 0 : Marshal.GetLastWin32Error();
         foreach (var n in names) Marshal.FreeHGlobal(n);
-        if (!saved) { Log.LogError("Saving {0} with the app's icon and version failed (error {1}).", Executable, Marshal.GetLastWin32Error()); return false; }
-        Log.LogMessage(MessageImportance.Low, "{0} now carries {1}'s icon and version ({2} resource(s)).", Path.GetFileName(Executable), Path.GetFileName(From), add.Count);
-        return true;
+        return code;
     }
 
     private static void Write(IntPtr update, Resource r, byte[] data, List<IntPtr> names)
@@ -214,7 +237,7 @@ public sealed class ShenoraChromiumStampLauncher : Task
         var name = r.Name == null ? (IntPtr)r.Id : Marshal.StringToHGlobalUni(r.Name);
         if (r.Name != null) names.Add(name);
         if (!UpdateResource(update, r.Type, name, r.Language, data, data == null ? 0u : (uint)data.Length))
-            throw new InvalidOperationException("updating a resource failed (error " + Marshal.GetLastWin32Error() + ")");
+            throw new Win32Exception(Marshal.GetLastWin32Error());
     }
 
     // A resource named by a string keeps its string: the pointer the enumeration hands over dies with the call.
