@@ -13,6 +13,7 @@ import { resolveTarget, resolveHost, diagnoseHost, reportDiagnosis } from './rem
 import type { Target } from './remote/target.js';
 import { pushTree } from './remote/push.js';
 import { provisionBundleIds, teamId } from './remote/provision.js';
+import { resignOn } from './remote/resign.js';
 
 interface Device {
   id: string;
@@ -1331,6 +1332,52 @@ export function cmdProvision(cfg: DeployConfig, args: string[]): void {
     return;
   }
   console.log('\nshenora: profiles are in place. `shenora ios deploy --device` can sign now.');
+}
+
+/**
+ * What `resign` re-signs: the path named (on the build machine, relative to the project's directory), or the
+ * newest Release `.ipa` from `ios build`, or the device `.app` from `ios deploy --device`.
+ */
+export function resignSource(target: Target, cfg: DeployConfig, own: readonly string[]): string | null {
+  const valued = new Set(['--host', '--key', '-o']);
+  let named: string | undefined;
+  for (let i = 0; i < own.length; i++) {
+    const a = own[i]!;
+    if (valued.has(a)) { i++; continue; }
+    if (!a.startsWith('-')) { named = a; break; }
+  }
+  const dir = buildDir(cfg, target);
+  if (named) return named.startsWith('/') || named.startsWith('~') || !dir ? named : target.join(dir, named);
+  if (!dir) return null;
+  const publish = target.join(dir, 'bin', 'Release', iosTfmOf(cfg), 'ios-arm64', 'publish');
+  return findArtifact(target, publish) ?? findApp(target, cfg, 'ios-arm64');
+}
+
+/**
+ * `shenora ios resign [<.ipa|.app>] [-o <file.ipa>]` — re-sign a BUILT app with the newest unexpired profile
+ * and bring the `.ipa` here, without rebuilding.
+ *
+ * 🔴 **For the free team's seven-day profile**: when it expires the installed app stops launching, and a
+ * rebuild is the slow way back. `provision` mints a fresh profile over ssh; this re-signs the build you have
+ * with it, and the `.ipa` it brings back installs over USB from any machine (`docs/guides/mobile.md`).
+ */
+export function cmdResign(cfg: DeployConfig, args: string[]): void {
+  const target = resolveTarget(cfg, args);
+  if (!target) return;
+  const { own } = splitArgs(args);
+  const source = resignSource(target, cfg, own);
+  if (!source) {
+    target.close();
+    fail('there is no device build to re-sign.',
+      '  Name one (`shenora ios resign path/to/App.ipa`), or build one with `shenora ios build`.');
+    return;
+  }
+  const name = target.basename(source).replace(/\.(ipa|app)$/, '');
+  const out = argValue(own, '-o') ?? `${name}-resigned.ipa`;
+  // The file's NAME only: the full path and the host name a machine and an account (see `provisionBanner`).
+  console.log(`shenora: re-signing ${target.basename(source)}…`);
+  resignOn(target, source, out);
+  target.close();
 }
 
 /**

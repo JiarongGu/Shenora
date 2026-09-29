@@ -776,12 +776,13 @@ a fresh profile over ssh, so signing is solved; the rest is here.
   iOS exposes its device services on the network only after one USB session has armed "Connect via network".
   It is a service-layer block that reads exactly like a network fault.
 - **The route that installed it, from a Windows machine, with no Mac in the room:**
-  1. Re-sign the built `.app` with the fresh profile. Sign nested frameworks inside-out, take the entitlements
-     from the profile, and check with `codesign --verify --deep --strict`. ⚠ The signing ORDER is the trap:
-     getting it wrong fails at launch, not at build. ⚠ This needs a GUI session on the Mac, since `codesign`
-     cannot use a login keychain over ssh.
-  2. Zip it as `Payload/<app>.app` into an `.ipa`.
-  3. Install over USB from Windows with [`pymobiledevice3`](https://github.com/doronz88/pymobiledevice3)
+  1. `shenora ios provision`, then `shenora ios resign`, over ssh. It re-signs the build you have with the
+     fresh profile, inside-out, with the profile's entitlements, checks it with `codesign --verify --deep
+     --strict`, and brings the `.ipa` back. ⚠ The signing ORDER is the trap it exists for: getting it wrong
+     fails at launch, not at build. It signs in the Mac's GUI session, since `codesign` cannot use a login
+     keychain over ssh, so the Mac must be logged in at its screen. ⚠ Its signing half has not yet run against
+     a live profile.
+  2. Install over USB from Windows with [`pymobiledevice3`](https://github.com/doronz88/pymobiledevice3)
      (`pymobiledevice3 apps install <app>.ipa`), or `ideviceinstaller` from libimobiledevice. Both talk to the
      phone through usbmuxd, which Apple's device driver on Windows provides. No Apple ID, and no third-party
      signing service.

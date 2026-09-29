@@ -32,6 +32,12 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`shenora ios resign` — re-sign a built app with a fresh profile, without rebuilding.** For a free team's
+  seven-day profile: after `ios provision`, it re-signs the newest `ios build` `.ipa` (or a build you name) on
+  the Mac with the newest unexpired profile for each bundle id, inside-out, with the profile's entitlements,
+  checks it with `codesign --verify --deep --strict`, and brings the `.ipa` back to install over USB. It signs
+  in the Mac's GUI session, like a device build. ⚠ Its signing half has not yet run against a live profile.
+
 - **`Shenora.Chromium`, a new package: Chromium through CEF, for an app that ships its own browser engine
   instead of WebView2** (**D81–D84**). Two hosts:
   - **its own shell, `UseChromium(ChromiumHostOptions)`**, on CEF's windows (`ChromiumWindows` opens them by

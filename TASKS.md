@@ -34,17 +34,19 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 📦 RE-SIGNING AN EXPIRED iOS BUILD — the install path is documented, the re-sign is not built
+### 🅿️ RE-SIGNING AN EXPIRED iOS BUILD — built; its signing half is parked
 
 `ios deploy` installs only to a phone attached to the build Mac. An adopter measured the way around it
 (2026-09-11), and `docs/guides/mobile.md` ("Installing when the phone is with you…") now carries it: the OTA
 dead end, the network-vs-USB trap, and the Windows USB install of a re-signed `.ipa`.
 
-- [ ] **Re-sign an existing build with a fresh profile in `@shenora/cli`.** `ios build` builds a new `.ipa`
-  rather than refreshing one whose profile expired, and the framework signing ORDER is the trap: getting it
-  wrong fails at launch, not at build. ⚠ It needs a **GUI session** on the Mac (`codesign` cannot use a login
-  keychain over ssh), so it belongs beside `ios provision`, not in the CLI's portable half, and needs the Mac
-  to build and verify. ⚠ D15: one consumer, but the weekly free-tier expiry is what makes it bite.
+`shenora ios resign` is built: it re-signs inside-out in the Mac's GUI session and brings the `.ipa` back.
+Run on the build Mac as far as the profile lookup: it took the extension first and stopped, rightly, at no
+unexpired profile for that bundle id.
+
+- [ ] 🅿️ **Its signing half, against a live profile, then the install.** It needs a fresh profile for the
+  sample's ids (`ios provision`, which mints on the Apple account, spending a free team's App ID quota), and
+  the install needs the phone.
 
 ### 🌐 A CHROMIUM SHELL OF THE KIT'S OWN — Windows, macOS and Linux, on CEF's own windows
 

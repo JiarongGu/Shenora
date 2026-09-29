@@ -127,7 +127,19 @@ forgetting one fails at the very end of a device install with an error naming th
 
 Two things are yours and no tool can do them for you:
 
-1. **A free/personal team profile expires after 7 days.** Re-deploy to refresh it.
+1. **A free/personal team profile expires after 7 days.** Re-deploy to refresh it — or, to keep the build you
+   have, `provision` again and re-sign it:
+
+   ```bash
+   npx shenora ios resign                     # the newest `ios build` .ipa, or the device .app
+   npx shenora ios resign App.ipa -o App.ipa  # a build you name, relative to the project
+   ```
+
+   It signs inside-out (each bundle's frameworks, every extension, then the app) with the newest unexpired
+   profile for each bundle id and the entitlements in it, checks the result with `codesign --verify --deep
+   --strict`, and brings the `.ipa` here, where it installs over USB from any machine
+   (`docs/guides/mobile.md`). ⚠ The signing itself has not yet run against a live profile; a run stopping at
+   the profile lookup has.
 2. **A first install needs the certificate TRUSTED on the phone**: Settings → General → VPN & Device
    Management → your developer account → Trust.
 

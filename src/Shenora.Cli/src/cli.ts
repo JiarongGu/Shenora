@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadConfig, CONFIG_FILE, SAMPLE_CONFIG, type DeployConfig } from './config.js';
-import { cmdDevices, cmdDoctor, cmdBuild, cmdDeploy, cmdLog, cmdSimulators, cmdShot, cmdPush, cmdProvision, cmdExec } from './ios.js';
+import { cmdDevices, cmdDoctor, cmdBuild, cmdDeploy, cmdLog, cmdSimulators, cmdShot, cmdPush, cmdProvision, cmdResign, cmdExec } from './ios.js';
 import {
   cmdDoctor as androidDoctor, cmdDevices as androidDevices, cmdDeploy as androidDeploy,
   cmdLog as androidLog, cmdBuild as androidBuild,
@@ -39,6 +39,10 @@ const USAGE = `shenora — take a built app onto a simulator or a real iPhone
                                mint the signing profiles a device build needs (app + its extensions).
                                --verbose also prints the team id and the Mac; both identify YOU, so
                                they are left out by default
+  shenora ios resign [<.ipa|.app>] [-o <file.ipa>]
+                               re-sign a built app with the newest unexpired profile (after
+                               \`provision\`, when a free team's 7-day profile has expired) and bring
+                               the .ipa here — no rebuild. Defaults to the newest \`ios build\` output
   shenora ios exec <command>   run a command on the build machine (the Mac) over ssh
 
   shenora android doctor       can this machine build, install and log? (works on Windows too)
@@ -91,7 +95,7 @@ function needConfig(): DeployConfig | null {
 // the question someone has BEFORE they have a project wired.
 const MACHINE_ONLY = new Set(['doctor', 'devices', 'simulators']);
 
-const IOS_VERBS = new Set(['doctor', 'devices', 'simulators', 'build', 'deploy', 'log', 'shot', 'push', 'provision', 'exec']);
+const IOS_VERBS = new Set(['doctor', 'devices', 'simulators', 'build', 'deploy', 'log', 'shot', 'push', 'provision', 'resign', 'exec']);
 const ANDROID_VERBS = new Set(['doctor', 'devices', 'deploy', 'log', 'build']);
 const INSPECT_VERBS = new Set(['serve', 'devices', 'report', 'eval']);
 
@@ -162,6 +166,7 @@ export function main(argv: string[]): void | Promise<void> {
     if (verb === 'log') return cmdLog(cfg, args);
     if (verb === 'push') return cmdPush(cfg, args);
     if (verb === 'provision') return cmdProvision(cfg, args);
+    if (verb === 'resign') return cmdResign(cfg, args);
     if (verb === 'exec') { cmdExec(cfg, args); return; }
     return cmdShot(cfg, args);
   }
