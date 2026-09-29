@@ -27,8 +27,7 @@ public static class MobileWindowLifecycle
     /// <para>
     /// ⚠ <b>You normally never call this</b> — <c>MobileIpcBridge</c> does it when it is disposed, because
     /// forgetting it costs the app (see below) and a step an adopter must remember is not a mechanism.
-    /// Reach for it directly only where the kit cannot see the moment: a page with no bridge, or one that
-    /// turned <c>ReleaseHandlerOnDispose</c> off because it unloads and reloads the same view instance.
+    /// Reach for it directly only where the kit cannot see the moment: a page with no bridge.
     /// </para>
     /// </summary>
     /// <param name="view">The view going away — the page's webview. Null and no-handler are no-ops.</param>
@@ -51,11 +50,9 @@ public static class MobileWindowLifecycle
     /// be a change with no benefit. Same shape as <see cref="IsRecreating"/>.
     /// </para>
     /// <para>
-    /// ⚠ <b>The bridge does this by default</b> (<c>MobileIpcBridgeOptions.ReleaseHandlerOnDispose</c>).
-    /// The one shape it cannot be right for is a page that unloads and RELOADS the same view instance — an
-    /// ordinary navigation, where the handler would be pulled out from under a view that is coming back.
-    /// That case is unmeasured; turn the option off there and call this where the page knows it is really
-    /// going away.
+    /// ⚠ <b>The bridge does this by default</b> (<c>MobileIpcBridgeOptions.ReleaseHandlerOnDispose</c>), and a
+    /// page that navigates away and back is no reason to stop it: its document reloads either way (measured,
+    /// see that option).
     /// </para>
     /// </remarks>
     public static void ReleaseHandler(Microsoft.Maui.IView? view)

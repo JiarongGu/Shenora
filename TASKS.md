@@ -266,18 +266,3 @@ capability is advertised, `Lock` turns the window, `Unlock` turns it back.
 ⚠ **Resume deliberately does NOT duplicate `document.visibilitychange`**, which already fires on both shells
 — it reports the one thing a throttled, possibly frozen page cannot measure: **how long it was away**. If a
 future session is tempted to add a visibility event, that is the reason not to.
-
-### 📱 THE RECREATION CRASH IS FIXED AND AUTOMATIC — one case is still unmeasured
-
-`MobileIpcBridgeOptions.ReleaseHandlerOnDispose` is ON by default and the crash is fixed (8/10 → 0/10 on
-API 36). What `HandlerReleaseProbe` has NOT covered is navigation.
-
-- [ ] **Measure the real NAVIGATION case.** ⚠ **Do NOT re-parent the view inside its layout** — that
-  shortcut is what this probe tried and it throws `MauiContext should have been set on parent`, which is an
-  artefact of re-parenting a handler-less view and says nothing about navigation. MAUI unloads and reloads a
-  PAGE while the view keeps its parent. **The faithful mechanic is swapping `Window.Page` away and back**,
-  which fires `Unloaded`/`Loaded` on the same page instance. ⚠ It needs a run-once guard: the sample's whole
-  probe suite re-runs from `OnLoaded`, so the swap-back would recurse into this probe.
-  ⚠ **No adopter needs this yet** — the only one has a single `ContentPage` and no `PushAsync` at all, which
-  is the ordinary hybrid shape. It stays filed because the default is ON and the failure is silent.
-

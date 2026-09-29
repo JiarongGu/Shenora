@@ -46,6 +46,19 @@ are not it. The handler is what holds the disposed scope.
 AFTER the replacement activity is created and its page attached (destroy `.647` → new `OnCreate` `.731`
 → new bridge `.836` → **old page unloaded `.945`**), so `IsRecreating` already answers false there.
 
+**A navigation away and back reloads the document whoever releases the handler** — so the default release
+costs a navigating page nothing. The sample's `HandlerReleaseProbe` (`navigate` / `navigate-keep`) stamps the
+document, swaps the window's page away and back (the same page instance, so `Unloaded` and `Loaded` run on it),
+and looks for the stamp. API 36 emulator, one run per arm, 2026-09-29:
+
+| arm | handler while away | on return |
+|---|---|---|
+| the kit's default (`ReleaseHandlerOnDispose` on) | released | the view answers; the document reloaded |
+| `ReleaseHandlerOnDispose` off | **released anyway** — by MAUI's own `HandlerDisconnectPolicy.Automatic` | the view answers; the document reloaded |
+| off, and the webview's `DisconnectPolicy` `Manual` | connected | the view answers; the document reloaded |
+
+⚠ Only the window's page swapping was measured, not a `NavigationPage` push and pop.
+
 ## Deploying to a REAL iPhone — four traps, each found by running it rather than writing it
 
 Harvested 2026-08-07 from the closed task record before it was deleted. Under **D56** this is product

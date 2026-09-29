@@ -100,6 +100,10 @@ public sealed class MainPage : ContentPage
 			HybridRoot = "wwwroot",
 			DefaultFile = "index.html",
 		};
+		// The navigation probe's control keeps the handler, and MAUI releases a page's handlers itself when
+		// the page leaves its window (its Automatic policy), so the control turns that off too.
+		if (!HandlerReleaseProbe.ReleasesHandler)
+			HandlerProperties.SetDisconnectPolicy(_webView, HandlerDisconnectPolicy.Manual);
 		// What the stage ladder puts back. Read rather than assumed to be null, so restoring is restoring
 		// rather than a second guess about MAUI's default.
 		_webViewBackgroundBefore = _webView.BackgroundColor;
@@ -245,6 +249,8 @@ public sealed class MainPage : ContentPage
 			// same property — it is the only view of the notification path from the host side.
 			OnClientReady = request => MauiProgram.Log(
 				$"client READY (handshake id={request.Id}) — notifications: {_bridge?.NotificationReport}"),
+			// The kit's default everywhere but the navigation probe's control run.
+			ReleaseHandlerOnDispose = HandlerReleaseProbe.ReleasesHandler,
 			Log = AppCallback.Logger(MauiProgram.Log),
 		});
 		_bridge.Attach();
@@ -362,6 +368,12 @@ public sealed class MainPage : ContentPage
 		// unhandled UI-thread exception rather than a failed copy.
 		_ = Task.Run(async () =>
 		{
+			// The navigation probe's way back re-runs this method; the suite must not run into itself.
+			if (HandlerReleaseProbe.Navigated)
+			{
+				MauiProgram.Log("page loaded AGAIN after the navigation probe — the probe suite does not re-run");
+				return;
+			}
 			try { await _media.PrepareAsync(); }
 			catch (Exception ex) { MauiProgram.Log($"media: staging FAILED — {ex}"); }
 
@@ -688,7 +700,7 @@ public sealed class MainPage : ContentPage
 				// 🔴 DEAD LAST, AND DESTRUCTIVE — it tears the live webview down, so every probe above it
 				// would be measuring the wreckage. Opt-in per launch for the same reason
 				// `ServeDocumentFromDisk` is: a run that did not ask keeps the whole suite intact.
-				MauiProgram.Log(await HandlerReleaseProbe.RunAsync(_webView, Content as Layout, MauiProgram.Log));
+				MauiProgram.Log(await HandlerReleaseProbe.RunAsync(_webView, Content as Layout, MauiProgram.Log, this));
 			}
 			catch (Exception ex) { MauiProgram.Log($"PLAYER: probe threw — {ex}"); }
 		});

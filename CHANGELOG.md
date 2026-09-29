@@ -167,6 +167,13 @@ at the first list and missed five more breaking changes.
 
 ### Changed
 
+- **Android: leave `MobileIpcBridgeOptions.ReleaseHandlerOnDispose` on in a page that navigates.** 0.16.0 said to
+  turn it off for a page that unloads and comes back, which was unmeasured. Measured now (API 36, the window's
+  page swapped away and back): the webview comes back and answers either way, and its document reloads either
+  way — with the option on, with it off (MAUI's own `HandlerDisconnectPolicy.Automatic` then releases the
+  handler), and with MAUI's release off too. Turning it off keeps no page state and brings back the
+  configuration-change crash the option exists to prevent.
+
 - **`Shenora.Windows` now depends on `Shenora.Chromium`** (D83), for `ChromiumView`: every Windows app gets its
   managed assembly (about 300 KB), never CEF, whose bytes arrive only through a direct reference.
 

@@ -57,11 +57,10 @@ public sealed class MobileIpcBridgeOptions
     /// <c>StopLoading()</c> was 10 of 10. The HANDLER is what holds the dead scope.
     /// </para>
     /// <para>
-    /// ⚠ <b>Turn it off for a page that unloads and RELOADS the same view instance</b> — an ordinary
-    /// navigation, where the handler would be pulled out from under a view that is coming back. That case
-    /// is unmeasured; a recreation, where MAUI builds a new page and a new view, is what this is for and
-    /// what was measured. Then call <see cref="MobileWindowLifecycle.ReleaseHandler"/> yourself at the
-    /// point your page knows it is really going away.
+    /// ⚠ <b>A page that navigates away and back loses its document whatever this is set to</b>, so it costs a
+    /// navigating page nothing. Measured on an API 36 emulator by swapping the window's page away and back: the
+    /// view came back and answered with its document reloaded, with this on, with it off (MAUI's own
+    /// <c>HandlerDisconnectPolicy.Automatic</c> then released the handler), and with MAUI's release off too.
     /// </para>
     /// <para>
     /// ⚠ iOS does not recreate a window for a configuration change, so this is a no-op there.
