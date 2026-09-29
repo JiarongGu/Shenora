@@ -173,4 +173,28 @@ public class CaptionButtonRendererTests
         // A pixel in the GAP — no button covers it, and it must still be painted with the surface.
         Assert.Equal(surface.ToArgb(), bitmap.GetPixel(30, 10).ToArgb());
     }
+
+    /// <summary>
+    /// The row is as tall as the page's rectangles, so a taller title bar gets taller buttons: a hot button's fill
+    /// reaches its top and bottom edges, with the app's colours.
+    /// </summary>
+    [Fact]
+    public void A_taller_row_is_filled_to_its_full_height_in_the_apps_colours()
+    {
+        using var renderer = new CaptionButtonRenderer();
+        using var bitmap = new Bitmap(46, 96);
+        using var graphics = Graphics.FromImage(bitmap);
+        var colors = new CaptionButtonColors
+        {
+            Surface = Color.FromArgb(255, 48, 80, 128), Hover = Color.FromArgb(255, 70, 100, 150),
+            Pressed = Color.FromArgb(255, 90, 120, 170), Glyph = Color.White,
+            CloseHover = Color.FromArgb(255, 200, 30, 30), ClosePressed = Color.FromArgb(255, 160, 20, 20),
+        };
+        CaptionButtonRegion[] regions = [new(CaptionButtonKind.Close, new Rectangle(0, 0, 46, 96))];
+
+        renderer.Paint(graphics, regions, new Rectangle(0, 0, 46, 96), CaptionButtonKind.Close, null, false, 96, Color.Black, colors);
+
+        Assert.Equal(colors.CloseHover.ToArgb(), bitmap.GetPixel(2, 1).ToArgb());
+        Assert.Equal(colors.CloseHover.ToArgb(), bitmap.GetPixel(2, 94).ToArgb());
+    }
 }
