@@ -34,9 +34,15 @@ public static class BrowserArguments
     /// <param name="devExtraArguments">
     /// Normally <c>Environment.GetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")</c>.
     /// </param>
-    /// <param name="additionalArguments">App-specific extra switches, appended in ALL modes.</param>
+    /// <param name="additionalArguments">
+    /// App-specific extra switches, appended in ALL modes, except the remote-debugging ones
+    /// (<c>--remote-debugging-port</c>, <c>-pipe</c>, <c>-address</c>), which are dropped outside development: this
+    /// environment hosts the page holding the bridge, and a DevTools port there hands any local process the app's
+    /// IPC. The Chromium shell honours its port in development only too.
+    /// </param>
     public static string Build(bool isDevelopment, string? devExtraArguments = null, string? additionalArguments = null)
     {
+        if (!isDevelopment && additionalArguments is not null) additionalArguments = WithoutRemoteDebugging(additionalArguments);
         var args =
             $"--enable-features={EnableFeatures} " +
             $"--disable-features={DisableFeatures} " +
@@ -97,6 +103,16 @@ public static class BrowserArguments
 
         return args;
     }
+
+    /// <summary>Whether <paramref name="arguments"/> carries a switch that opens the DevTools protocol.</summary>
+    internal static bool HasRemoteDebugging(string? arguments) =>
+        arguments is not null && arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(IsRemoteDebugging);
+
+    private static string WithoutRemoteDebugging(string arguments) =>
+        string.Join(' ', arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(a => !IsRemoteDebugging(a)));
+
+    private static bool IsRemoteDebugging(string argument) =>
+        argument.StartsWith("--remote-debugging-", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Move any <paramref name="switchName"/> occurrence out of <paramref name="remainder"/> and fold

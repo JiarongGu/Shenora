@@ -33,6 +33,24 @@ public class BrowserArgumentsTests
         Assert.Contains(extra, BrowserArguments.Build(true, null, extra));
     }
 
+    // This environment hosts the page holding the bridge: a DevTools port there, in production, hands any local process
+    // the app's IPC. Development keeps it, as the Chromium shell does its own.
+    [Fact]
+    public void An_apps_remote_debugging_switches_are_dropped_outside_development()
+    {
+        const string extra = "--mute-audio --remote-debugging-port=9222 --remote-debugging-address=0.0.0.0 --remote-debugging-pipe";
+
+        var production = BrowserArguments.Build(false, null, extra);
+        Assert.DoesNotContain("--remote-debugging", production);
+        Assert.Contains("--mute-audio", production);
+        Assert.Contains("--remote-debugging-port=9222", BrowserArguments.Build(true, null, extra));
+        Assert.True(BrowserArguments.HasRemoteDebugging(extra));
+        Assert.False(BrowserArguments.HasRemoteDebugging("--mute-audio"));
+
+        // A session browser's arguments are the app's to drive over CDP: Compose leaves them alone.
+        Assert.Contains("--remote-debugging-port=9222", BrowserArguments.Compose("--x", false, null, extra));
+    }
+
     [Fact]
     public void No_arguments_are_empty_or_double_spaced()
     {

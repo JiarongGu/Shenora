@@ -209,9 +209,7 @@ D37 and D51 are corrected in place to point at them.
 **The first adopter moves off `OptimizedForm` and `SecondaryWindows`** onto the new shell's window type.
 What it keeps (modules, dispatcher, event bus, `ShenoraPaths`) lives in `Shenora` and is engine-neutral
 already. `IpcHostBridge` + `NotificationPump` are what both current shells wrap, and `configureBridge({
-transport })` works today. ⚠ **On WebView2 today**, `BrowserArguments` appends an app's
-`additionalArguments` in ALL modes, so nothing refuses `--remote-debugging-port` on the environment hosting
-the bridge page in production. The adopter is safe (its browser builds its OWN environment); the kit is not.
+transport })` works today.
 
 **Measured by the adopter on WebView2, 2026-09-28**: the limits it is leaving are the API's, not Chromium's.
 A tab a CDP client opens has no window and raises no event, where Edge 154 on its own profile shows it; a

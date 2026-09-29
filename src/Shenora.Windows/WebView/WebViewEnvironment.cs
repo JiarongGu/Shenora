@@ -22,7 +22,8 @@ public sealed class WebViewEnvironmentOptions
     /// </summary>
     public string? DevExtraArguments { get; init; }
 
-    /// <summary>App-specific switches appended in all modes.</summary>
+    /// <summary>App-specific switches appended in all modes, except the remote-debugging ones, which only development
+    /// keeps (see <see cref="BrowserArguments.Build"/>).</summary>
     public string? AdditionalArguments { get; init; }
 
     /// <summary>Fixed browser binaries folder; null = the Evergreen runtime.</summary>
@@ -153,6 +154,9 @@ public static class WebViewEnvironment
 
         var devExtra = options.DevExtraArguments
             ?? (options.IsDevelopment ? Environment.GetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") : null);
+        if (!options.IsDevelopment && BrowserArguments.HasRemoteDebugging(options.AdditionalArguments))
+            AppCallback.Log(options.Log, () => "[WebView2] A remote-debugging switch in AdditionalArguments was dropped: outside " +
+                "development it would open the DevTools protocol onto the page holding the bridge", LogLevel.Warning);
         var browserArguments = BrowserArguments.Build(options.IsDevelopment, devExtra, options.AdditionalArguments);
 
         // ⚠ Custom schemes go through the CONSTRUCTOR, never the property. `CustomSchemeRegistrations`

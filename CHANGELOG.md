@@ -168,6 +168,12 @@ at the first list and missed five more breaking changes.
   system dims its own. Set the colour with the new `CaptionButtonColors.InactiveGlyph`; left out, it is the glyph
   at about a third of its opacity over the surface.
 
+- **Outside development, the WebView2 environment drops an app's remote-debugging switches**
+  (`--remote-debugging-port`, `-pipe`, `-address` in `WebViewEnvironmentOptions.AdditionalArguments`) and logs a
+  warning. That environment hosts the page holding the bridge, so a DevTools port there handed any local process
+  the app's IPC. Development keeps them, as the Chromium shell keeps its port. A `SessionBrowser`'s arguments are
+  unchanged, since an app may drive one over CDP on purpose.
+
 - **A frameless `OptimizedForm` has a system menu now** (`WS_SYSMENU`), which WinForms gives a borderless form
   none of. So Alt+Space and the taskbar's window menu open it, where before they did nothing. Nothing is drawn
   for it.
