@@ -5,25 +5,34 @@ namespace Shenora.Chromium.Host;
 
 /// <summary>
 /// Runs the app on CEF's message loop, on the main thread (D83's Views model): CEF started as
-/// <see cref="CefStartup"/> starts it, the app's hooks once CEF's context exists, and after the loop the hooks stop
-/// before CEF shuts down.
+/// <see cref="CefStartup"/> starts it, or taken over from <see cref="ChromiumEarlyStart"/> when it started as the app
+/// was composed (D87), the app's hooks once CEF's context exists, and after the loop the hooks stop before CEF shuts
+/// down.
 /// </summary>
 internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDispatcher ui, ChromiumWindows windows, ChromiumTray? tray = null,
     ILogger<ChromiumRunner>? log = null)
     : IShenoraRunner
 {
+    /// <summary>What the shell starts CEF with, from the app's options, paths and environment: the same whether it
+    /// starts as the app is composed or when it runs.</summary>
+    internal static CefStartup.Settings SettingsFor(ChromiumHostOptions options, ShenoraPaths paths, ShenoraEnvironment environment) =>
+        new(options.UserDataFolder ?? paths.DataArea("chromium"), IsDevelopment(options, environment), options.DevToolsPort,
+            options.Window.BackgroundColor is { } color ? (uint)color.ToArgb() : null, MultiThreadedLoop: false) { Locale = options.Locale };
+
+    private static bool IsDevelopment(ChromiumHostOptions options, ShenoraEnvironment environment) =>
+        options.IsDevelopment ?? environment.IsDevelopment;
+
     public void Run(ShenoraApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
-        var isDevelopment = options.IsDevelopment ?? app.Environment.IsDevelopment;
-        var cefApp = new ChromiumApp(() => Started(app, isDevelopment));
-
-        var code = CefStartup.ExecuteIfSubprocess(cefApp, log);
-        if (code >= 0) { Environment.Exit(code); return; }
-
-        CefStartup.Initialize(cefApp, new CefStartup.Settings(
-            options.UserDataFolder ?? app.Paths.DataArea("chromium"), isDevelopment, options.DevToolsPort,
-            options.Window.BackgroundColor is { } color ? (uint)color.ToArgb() : null, MultiThreadedLoop: false) { Locale = options.Locale });
+        var isDevelopment = IsDevelopment(options, app.Environment);
+        if (!ChromiumEarlyStart.Process.TakeOver(options, () => Started(app, isDevelopment)))
+        {
+            var cefApp = new ChromiumApp(() => Started(app, isDevelopment));
+            var code = CefStartup.ExecuteIfSubprocess(cefApp, log);
+            if (code >= 0) { Environment.Exit(code); return; }
+            CefStartup.Initialize(cefApp, SettingsFor(options, app.Paths, app.Environment));
+        }
 
         SynchronizationContext.SetSynchronizationContext(new CefUiContext(ui, log));
         try

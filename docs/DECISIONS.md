@@ -143,6 +143,7 @@ docs cite them — so the number is the column to scan.
 | **D84** | THE CHROMIUM SHELL'S PAGE IS AN ALLOY-STYLE BROWSER. |
 | **D85** | ON MACOS THE CHROMIUM SHELL USES CHROMIUM'S MOCK KEYCHAIN. |
 | **D86** | CHROMIUM ALSO RUNS AS A BROWSER, IN A PROCESS THAT HOLDS NONE OF THE APP. |
+| **D87** | THE CHROMIUM SHELL STARTS CEF WHILE THE APP IS COMPOSED. |
 
 <!-- decisions-index:end -->
 
@@ -1229,6 +1230,21 @@ docs cite them — so the number is the column to scan.
   - ⚠ **It needs CEF 154.0.32 or later.** On 154.0.28 a debugging client that opened a TAB in an existing window
     crashed the browser process, in the kit and in CEF's own sample client alike, which is exactly what an agent's
     "new tab" does.
+
+- **D87 — THE CHROMIUM SHELL STARTS CEF WHILE THE APP IS COMPOSED.** Run from its layout (on Windows through CEF's
+  launcher and the kit's shim, on macOS from its bundle), the app has `UseChromium` start CEF on the calling thread,
+  and the runner takes it over; run from anywhere else (a test host, `dotnet` running the app's dll) the runner starts
+  it, as before. Owner, 2026-09-30, before 0.18.0, after comparing the shell's cold start with Electron's.
+  - 🔴 **Why: the first frame waits on Chromium's GPU process, which starts only once CEF does.** Setting up the GPU
+    took about half a second on the reference machine, in CEF and Electron alike, and the window, the page and
+    the app's own start all finish inside that wait. So the app's composition, which ran before CEF, was the kit's
+    one cost on the first frame's path, which is why a warm-up that served the first document 20× faster did not
+    move the first paint. Electron wins the same race by running app code inside Chromium's startup.
+  - **The constraints:** `UseChromium` and `Run` on one thread, because CEF's loop runs where CEF started;
+    `ChromiumBrowserProcess.Run`, and any mode that never shows a window, decided before `UseChromium`, which
+    otherwise pays CEF's start; a Chromium that will not start is still reported by `Run`. An app that composes
+    and then fails, or returns without running, exits with CEF started, measured clean on Windows: its exit code,
+    no child process left, no error report.
 
 ## Anti-goals — deliberately NOT built
 

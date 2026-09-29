@@ -84,8 +84,16 @@ at the first list and missed five more breaking changes.
   of that System.Text.Json's first use in the transport marker. The shell and `ChromiumView` now serve the root
   document once on a background thread as they start, while Chromium is busy, and the marker is encoded without the
   serializer: the first document now takes 2–3 ms in .NET, and its response completed ~20 ms sooner in an
-  interleaved A/B (8 pairs). Most of a cold start (about 1 s to first paint here) is Chromium's own; the same
-  measurements found no gain from ReadyToRun or from switching off Chrome's background services.
+  interleaved A/B (8 pairs). The first paint did not move, because it waits on Chromium's GPU process (next
+  entry); the same measurements found no gain from ReadyToRun or from switching off Chrome's background services.
+- **The Chromium shell starts Chromium while the app is composed** (D87). A page's first frame waits on Chromium's
+  GPU process, which took about half a second to set up here, in CEF and in Electron alike, and which started only
+  once the app had been built. Run from its layout (through CEF's launcher on Windows, from its bundle on macOS),
+  `UseChromium` now starts Chromium itself, so whatever the app composes after it happens while the GPU sets up:
+  with 150 ms of composition after `UseChromium`, the first frame came 134 ms sooner and the ready handshake 118 ms
+  sooner (medians, 16 interleaved pairs); a probe composing ~45 ms gained ~40 ms. ⚠ Call `UseChromium` on the thread
+  that runs the app, which `Run` now checks, and decide on `ChromiumBrowserProcess.Run` before it. A Chromium that
+  will not start is still reported by `Run`.
 - **`Shenora.Chromium` pins CEF 154.0.32** (was 154.0.28), the same Chromium 154.0.8037.58 and the same API
   version, so the binding is unchanged. On 154.0.28 a debugging client that opened a tab in an existing window
   crashed the browser process, and CEF's own sample client crashed the same way; 154.0.32 does not.

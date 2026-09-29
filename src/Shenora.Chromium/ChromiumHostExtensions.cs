@@ -24,6 +24,13 @@ public static class ChromiumHostExtensions
     /// ⚠ On Windows, Chromium's sandbox exists only when the app starts through CEF's <c>bootstrap.exe</c> and
     /// the kit's shim (D82). Started any other way it runs, and logs a warning that the sandbox is off.
     /// </para>
+    /// <para>
+    /// Run from its layout (on Windows through CEF's launcher, on macOS from its bundle), the app has Chromium start
+    /// here rather than in <see cref="ShenoraApplication.Run"/>, so Chromium sets up while the rest of the app is
+    /// composed and the first frame comes sooner (D87). So call this on the thread that runs the app, and decide on
+    /// <see cref="ChromiumBrowserProcess.Run"/> before it. A Chromium that will not start is still reported by
+    /// <see cref="ShenoraApplication.Run"/>.
+    /// </para>
     /// </summary>
     /// <param name="builder">The app being composed.</param>
     /// <param name="options">The main window, where the page comes from, and development settings.</param>
@@ -62,6 +69,9 @@ public static class ChromiumHostExtensions
             sp.GetRequiredService<CefUiDispatcher>(), sp.GetService<IFileDialogPathStore>(), sp.GetService<ILogger<ChromiumFileDialogs>>()));
         // The page's route to them, registered where the implementation exists (D64), as UseWindows does.
         builder.Services.AddShenoraFileDialogs();
+        // Last, once the options are known good: CEF starts now, so its GPU process sets up while the app is built (D87).
+        if (ChromiumEarlyStart.LaunchedFromLayout)
+            ChromiumEarlyStart.Process.Start(options, ChromiumRunner.SettingsFor(options, builder.Paths, builder.Environment));
         return builder;
     }
 }

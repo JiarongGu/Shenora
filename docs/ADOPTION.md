@@ -325,7 +325,8 @@ the caption buttons, a window drag and a file drop behave as they did on WebView
 **A browser beside the app, from the same CEF** (D86). Chromium's own windows (tabs, address bar, devtools), with
 a debugging port an agent's tools can drive in production, run in a SECOND process of the app's own exe, because
 the port reaches every page in its process and the app's page holds the bridge. The app's `Main` routes an
-argument of its own before anything else:
+argument of its own before anything else, and before a Chromium shell's `UseChromium` in particular, which starts
+Chromium itself when the app runs from its layout (D87):
 
 ```csharp
 [STAThread]

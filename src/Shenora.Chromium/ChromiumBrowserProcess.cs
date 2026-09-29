@@ -65,8 +65,9 @@ public static class ChromiumBrowserProcess
     /// <param name="log">Diagnostics.</param>
     /// <returns>The code to exit with: 0, a CEF subprocess's own when this process was one, and 1 when the window at
     /// <see cref="ChromiumBrowserProcessOptions.StartUrl"/> could not be made.</returns>
-    /// <exception cref="InvalidOperationException">Chromium would not start (the message names its log), or the
-    /// debugging port is taken.</exception>
+    /// <exception cref="InvalidOperationException">Chromium would not start (the message names its log), the
+    /// debugging port is taken, or Chromium already runs in this process: <see cref="ChromiumHostExtensions.UseChromium"/>
+    /// starts it as the app is composed (D87), so this is decided first.</exception>
     public static int Run(ChromiumBrowserProcessOptions options, CancellationToken stop = default, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -76,6 +77,9 @@ public static class ChromiumBrowserProcess
             throw new ArgumentOutOfRangeException(nameof(options), $"{nameof(ChromiumBrowserProcessOptions.RemoteDebuggingPort)} must be 0 to 65535.");
         if (options.StartUrl is { IsAbsoluteUri: false })
             throw new ArgumentException($"{nameof(ChromiumBrowserProcessOptions.StartUrl)} must be absolute.", nameof(options));
+        if (ChromiumEarlyStart.Process.HasStarted)
+            throw new InvalidOperationException(
+                "Chromium already runs in this process: UseChromium started it for the app. Call ChromiumBrowserProcess.Run before composing the app.");
 
         var client = new BrowserProcessClient(log);
         var exitCode = 0;

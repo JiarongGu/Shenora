@@ -304,7 +304,9 @@ name its assembly `<App>.App`.** Its build fetches the pinned CEF build once per
 to download, SHA-1-checked) and lays the app out as `<App>.exe`, CEF's launcher, which creates Chromium's
 sandbox and starts `<App>.App.dll`. The build refuses a layout that could not start, and an engine with no
 CEF beside it says which package to reference. A reference that arrives only through `Shenora.Windows`
-carries the code, not CEF. Windows only today.
+carries the code, not CEF. Windows and macOS, where the build makes an app bundle. Run from that layout,
+`UseChromium` starts Chromium itself, so Chromium sets up while the rest of the app is composed and the first
+frame comes sooner (D87): call it on the thread that runs the app.
 
 ### `@shenora/react` — the client half
 
