@@ -537,3 +537,12 @@ SessionApiCall           # 0.11.0 -> deleted with the observation taps; SessionE
 # between `AndroidAsset` and the staged assets directory, silently, so the stamp shipped everywhere
 # except the platform with the app stores.
 .shenora-pack.json       # -> shenora-pack.json
+
+# --- 2026-09-29: the Chromium hosts take the WebView2 side's names (never released) ------------------
+# Qualified where the bare word is live elsewhere (NotificationPump.IsOpen, NotifyIcon.DoubleClick).
+ChromiumWindows.IsOpen                # -> HasWindow, as SecondaryWindows
+ChromiumWindowOptions.Frameless       # -> FramelessChrome, as OptimizedFormOptions
+CachePath                             # -> UserDataFolder, as WebViewEnvironment
+FocusLeaving                          # -> MoveFocusRequested, WebView2's name for the same event
+ChromiumDragAreaPress.DoubleClick     # -> ChromiumDragAreaPress.Action (a ChromiumDragAreaAction)
+ChromiumDragAreaPress.Press           # -> ChromiumDragAreaPress.Position

@@ -29,10 +29,10 @@ public sealed class ChromiumChildBrowserOptions
 
     /// <summary>
     /// The keyboard focus is leaving the page, <c>true</c> for Tab past its last element and <c>false</c> for Shift+Tab
-    /// past its first: the host moves it to its next or previous control. Called on the thread of
-    /// <see cref="UiDispatcher"/>. Null leaves the focus in the page.
+    /// past its first: the host moves it to its next or previous control. WebView2's name for the same event. Called on
+    /// the thread of <see cref="UiDispatcher"/>. Null leaves the focus in the page.
     /// </summary>
-    public Action<bool>? FocusLeaving { get; init; }
+    public Action<bool>? MoveFocusRequested { get; init; }
 
     /// <summary>
     /// The page's <c>-webkit-app-region: drag</c> area asks the host to move its window, or to maximize or restore it,
@@ -46,11 +46,21 @@ public sealed class ChromiumChildBrowserOptions
 
 /// <summary>What a page's <c>-webkit-app-region: drag</c> area asks of its window
 /// (<see cref="ChromiumChildBrowserOptions.DragAreaPressed"/>).</summary>
-/// <param name="DoubleClick">True for a double click: maximize or restore the window. False for a press that has moved
-/// past the system's drag threshold with the button down: move it.</param>
-/// <param name="Press">Where the press began, in screen pixels. A move loop started now should place the window by the
-/// pointer's travel since then, as a caption's does, or the window trails the pointer by the threshold.</param>
-public readonly record struct ChromiumDragAreaPress(bool DoubleClick, Point Press);
+/// <param name="Action">What to do. A host ignores an action it does not know: a later version may add one.</param>
+/// <param name="Position">Where, in screen pixels. For <see cref="ChromiumDragAreaAction.Move"/>, where the press began:
+/// a move loop started now should place the window by the pointer's travel since then, as a caption's does, or the
+/// window trails the pointer by the threshold.</param>
+public readonly record struct ChromiumDragAreaPress(ChromiumDragAreaAction Action, Point Position);
+
+/// <summary>What a press in a page's drag area asks of its window, as the same gesture on a caption would.</summary>
+public enum ChromiumDragAreaAction
+{
+    /// <summary>A press has moved past the system's drag threshold with the button down: move the window.</summary>
+    Move,
+
+    /// <summary>A double click: maximize the window, or restore it.</summary>
+    ToggleMaximize,
+}
 
 /// <summary>
 /// A page in a window the host owns (D83): a Chromium browser as a child of a native window, served from the
@@ -101,7 +111,7 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
         var ui = options.UiDispatcher ?? pages.Ui;
         _browser = new ChromiumBrowser(options.Name, pages.Serving, pages.Origins, browser => NewBridge(browser, pages, ui), pages.Log, pages.Urls)
         {
-            Host = new BrowserHost(this, options.FocusLeaving is { } leaving ? forward => ui.Post(() => AppCallback.Run(() => leaving(forward))) : null,
+            Host = new BrowserHost(this, options.MoveFocusRequested is { } moveFocus ? forward => ui.Post(() => AppCallback.Run(() => moveFocus(forward))) : null,
                 options.DragAreaPressed is { } pressed
                     ? new ChildDragArea(press => ui.Post(() => AppCallback.Run(() => pressed(press),
                         ex => AppCallback.Log(pages.Log, () => "[Shenora.Chromium] The host's drag-area callback failed", Microsoft.Extensions.Logging.LogLevel.Warning, ex))), pages.Log)
@@ -269,10 +279,10 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
     }
 
     /// <summary>What the page's browser asks of its host. CEF's UI thread.</summary>
-    private sealed class BrowserHost(ChromiumChildBrowser owner, Action<bool>? focusLeaving, ChildDragArea? dragArea) : IChromiumBrowserHost
+    private sealed class BrowserHost(ChromiumChildBrowser owner, Action<bool>? moveFocus, ChildDragArea? dragArea) : IChromiumBrowserHost
     {
         // Posted to the host's thread, which owns its other controls.
-        public void FocusLeaving(bool forward) => focusLeaving?.Invoke(forward);
+        public void MoveFocusRequested(bool forward) => moveFocus?.Invoke(forward);
         public void DraggableRegionsChanged(nuint count, _cef_draggable_region_t* regions) => dragArea?.Update(owner.WindowHandle, count, regions);
         public void TitleChanged(string title) { }
         public void DocumentStarted() => dragArea?.DocumentStarted(owner.WindowHandle);

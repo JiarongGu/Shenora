@@ -156,7 +156,7 @@ internal sealed unsafe class ChildDragArea : IDisposable
                 case WM_LBUTTONDOWN or WM_LBUTTONDBLCLK when me._holder == 0 && !FromTouchOrPen() && InArea(me, hwnd, lParam):
                     if (msg == WM_LBUTTONDBLCLK)
                     {
-                        me._pressed(new ChromiumDragAreaPress(true, Screen(hwnd, lParam)));
+                        me._pressed(new ChromiumDragAreaPress(ChromiumDragAreaAction.ToggleMaximize, Screen(hwnd, lParam)));
                         return 0;
                     }
                     me._press = Screen(hwnd, lParam);
@@ -169,7 +169,7 @@ internal sealed unsafe class ChildDragArea : IDisposable
                     if (me.PastDragThreshold(hwnd, Screen(hwnd, lParam)))
                     {
                         me.EndHold();
-                        me._pressed(new ChromiumDragAreaPress(false, me._press));
+                        me._pressed(new ChromiumDragAreaPress(ChromiumDragAreaAction.Move, me._press));
                     }
                     return 0;
                 // The other buttons during a held press, as the system's loop ignores them: passed on, they would reach

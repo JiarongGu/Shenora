@@ -38,8 +38,8 @@ public sealed class ChromiumEngineOptions
     /// <summary>Chrome DevTools' port, in development only. 0 = none.</summary>
     public int DevToolsPort { get; init; }
 
-    /// <summary>Where CEF keeps its cache, profile and log. Null = the app's data area <c>chromium</c>.</summary>
-    public string? CachePath { get; init; }
+    /// <summary>Where CEF keeps its profile, cache and log. Null = the app's data area <c>chromium</c>.</summary>
+    public string? UserDataFolder { get; init; }
 
     /// <summary>What the ready handshake tells each page this host is and can do (D36).</summary>
     public ShellInfo? Shell { get; init; }
@@ -120,7 +120,7 @@ public sealed class ChromiumEngine
         try
         {
             CefStartup.Initialize(_cefApp, new CefStartup.Settings(
-                _options.CachePath ?? app.Paths.DataArea("chromium"), _isDevelopment, _options.DevToolsPort, BackgroundColor: null,
+                _options.UserDataFolder ?? app.Paths.DataArea("chromium"), _isDevelopment, _options.DevToolsPort, BackgroundColor: null,
                 MultiThreadedLoop: true));
         }
         catch (Exception ex)

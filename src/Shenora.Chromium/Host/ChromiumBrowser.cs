@@ -34,7 +34,7 @@ internal unsafe interface IChromiumBrowserHost
 
     /// <summary>The keyboard focus is leaving the page: Tab past its last element (<paramref name="forward"/>) or
     /// Shift+Tab past its first. A host with other controls moves the focus to its next one. CEF's UI thread.</summary>
-    void FocusLeaving(bool forward);
+    void MoveFocusRequested(bool forward);
 }
 
 /// <summary>
@@ -361,7 +361,7 @@ internal sealed unsafe class ChromiumBrowser
         {
             using var b = new CefRef<_cef_browser_t>(browser);
             var owner = From<FocusHandler>(self)._owner;
-            AppCallback.Run(() => owner.Host?.FocusLeaving(next != 0));
+            AppCallback.Run(() => owner.Host?.MoveFocusRequested(next != 0));
         }
     }
 

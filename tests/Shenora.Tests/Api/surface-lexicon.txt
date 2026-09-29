@@ -830,3 +830,5 @@ Remote
 # of its window. Both are pointer mechanics (a drag, a press), the CSS property's own word and the input event's.
 Drag
 Press
+# `Action` (2026-09-29) — for `ChromiumDragAreaAction`: which caption gesture a drag-area press is (move, maximize).
+Action

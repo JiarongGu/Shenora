@@ -92,14 +92,14 @@ public class ChildDragAreaTests
             Assert.Empty(presses);
             Send(page, WM_MOUSEMOVE, MK_LBUTTON, X(60), X(20));
             var moved = Assert.Single(presses);
-            Assert.False(moved.DoubleClick);
-            Assert.Equal(page.PointToScreen(new Point(X(10), X(10))), moved.Press);
+            Assert.Equal(ChromiumDragAreaAction.Move, moved.Action);
+            Assert.Equal(page.PointToScreen(new Point(X(10), X(10))), moved.Position);
             Assert.NotEqual(page.Handle, GetCapture());
             Send(page, WM_LBUTTONUP, 0, X(60), X(20));
 
             // A double click asks at once.
             Send(page, WM_LBUTTONDBLCLK, MK_LBUTTON, X(10), X(10));
-            Assert.True(presses[^1].DoubleClick);
+            Assert.Equal(ChromiumDragAreaAction.ToggleMaximize, presses[^1].Action);
             Assert.Equal(2, presses.Count);
             Assert.Equal(0, pageDowns);
 

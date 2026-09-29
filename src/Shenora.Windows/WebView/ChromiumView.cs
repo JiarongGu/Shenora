@@ -85,7 +85,7 @@ public sealed class ChromiumView : Control
         Path = Path,
         BackgroundColor = BackColor,
         UiDispatcher = new PageUiDispatcher(this),
-        FocusLeaving = MoveFocusOut,
+        MoveFocusRequested = MoveFocusOut,
         DragAreaPressed = PressDragArea,
     };
 
@@ -94,9 +94,16 @@ public sealed class ChromiumView : Control
     private void PressDragArea(ChromiumDragAreaPress press)
     {
         if (IsDisposed || TopLevelControl is not Form form) return;
-        if (press.DoubleClick) FormCaption.ToggleMaximize(form);
-        // Refused when the button is up by now, or the window is maximized its own way.
-        else if (!FormCaption.Move(form, press.Press)) _log?.LogDebug("The page's drag area asked to move its window, which did not start");
+        switch (press.Action)
+        {
+            case ChromiumDragAreaAction.ToggleMaximize:
+                FormCaption.ToggleMaximize(form);
+                break;
+            // Refused when the button is up by now, or the window is maximized its own way.
+            case ChromiumDragAreaAction.Move when !FormCaption.Move(form, press.Position):
+                _log?.LogDebug("The page's drag area asked to move its window, which did not start");
+                break;
+        }
     }
 
     // Tab past the page's last element, or Shift+Tab past its first: on to the form's next or previous control, as a

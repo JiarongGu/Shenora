@@ -25,8 +25,9 @@ public sealed unsafe class ChromiumWindows
     private readonly IEventBus? _events;
     private readonly ILogger? _log;
     private readonly IUrlLauncher _urls;
-    // Written on CEF's UI thread, read by IsOpen from any thread, so a concurrent collection, not a Dictionary.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ChromiumWindow> _open = new(StringComparer.Ordinal);
+    // A name is reserved by Open on any thread, as null, and gets its window on CEF's UI thread, where every later post
+    // for it runs after that one. Read by HasWindow from any thread, so a concurrent collection, not a Dictionary.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ChromiumWindow?> _open = new(StringComparer.Ordinal);
     private ChromiumServing? _serving;
     private ChromiumOrigins? _origins;
     private bool _isDevelopment;
@@ -42,12 +43,12 @@ public sealed unsafe class ChromiumWindows
         _urls = urls;
     }
 
-    /// <summary>True while the named window is open.</summary>
-    public bool IsOpen(string name) => _open.ContainsKey(name);
+    /// <summary>True while the named window is open (or opening).</summary>
+    public bool HasWindow(string name) => _open.ContainsKey(name);
 
     /// <summary>
-    /// Open a window, or activate it if the name is open already. Safe from any thread: the work runs on CEF's
-    /// UI thread. False when the shell is not running.
+    /// Open the named window. Safe from any thread: the work runs on CEF's UI thread. Returns false (and activates the
+    /// existing window) when the name is already open, and false when the shell is not running.
     /// </summary>
     /// <param name="name">The window's name.</param>
     /// <param name="options">Its size, title and page.</param>
@@ -57,16 +58,24 @@ public sealed unsafe class ChromiumWindows
         ArgumentNullException.ThrowIfNull(options);
         options.Validate(nameof(options));   // here, since the window itself is made on CEF's thread
         if (Volatile.Read(ref _serving) is null) return false;   // not started: the post would only log
-        return _ui.Post(() => OpenOnUi(name, options));
+        if (!_open.TryAdd(name, null))
+        {
+            Activate(name);
+            return false;
+        }
+        if (_ui.Post(() => OpenOnUi(name, options))) return true;
+        _open.TryRemove(KeyValuePair.Create(name, (ChromiumWindow?)null));
+        return false;
     }
 
-    /// <summary>Close the named window. No-op when it is not open.</summary>
+    /// <summary>Close the named window. No-op when it is not open. False when the shell is not running.</summary>
     /// <param name="name">The window's name.</param>
-    public bool Close(string name) => _ui.Post(() => { if (_open.TryGetValue(name, out var w)) w.Close(); });
+    public bool Close(string name) => _ui.Post(() => { if (_open.TryGetValue(name, out var w)) w?.Close(); });
 
-    /// <summary>Bring the named window to the front. No-op when it is not open.</summary>
+    /// <summary>Bring the named window to the front. No-op when it is not open. False when the shell is not
+    /// running.</summary>
     /// <param name="name">The window's name.</param>
-    public bool Activate(string name) => _ui.Post(() => { if (_open.TryGetValue(name, out var w)) w.Activate(); });
+    public bool Activate(string name) => _ui.Post(() => { if (_open.TryGetValue(name, out var w)) w?.Activate(); });
 
     /// <summary>
     /// Show a file dialog over the main window, or over any open window when the main one is not. UI thread.
@@ -74,7 +83,7 @@ public sealed unsafe class ChromiumWindows
     /// </summary>
     internal bool RunFileDialog(cef_file_dialog_mode_t mode, string title, string defaultPath, IReadOnlyList<string> filters, Action<string[]> done)
     {
-        var owner = _open.TryGetValue(MainWindowName, out var main) ? main : _open.Values.FirstOrDefault();
+        var owner = (_open.TryGetValue(MainWindowName, out var main) ? main : null) ?? _open.Values.FirstOrDefault(w => w is not null);
         if (owner is null) return false;
         owner.Browser.RunFileDialog(mode, title, defaultPath, filters, done);
         return true;
@@ -99,21 +108,23 @@ public sealed unsafe class ChromiumWindows
 
     private void OpenOnUi(string name, ChromiumWindowOptions options)
     {
-        if (_open.TryGetValue(name, out var existing)) { existing.Activate(); return; }
-        if (_serving is null || _origins is null) throw new InvalidOperationException("The Chromium shell has not started.");
+        ChromiumWindow? window = null;
+        try
+        {
+            if (_serving is null || _origins is null) throw new InvalidOperationException("The Chromium shell has not started.");
+            window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls);
+            _open[name] = window;
 
-        var window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls);
-        _open[name] = window;
-
-        var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
-        if ((options.BackgroundColor ?? _options.Window.BackgroundColor) is { } color) settings.background_color = (uint)color.ToArgb();
-        try { window.Open(PageUrl(options), &settings); }
+            var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
+            if ((options.BackgroundColor ?? _options.Window.BackgroundColor) is { } color) settings.background_color = (uint)color.ToArgb();
+            window.Open(PageUrl(options), &settings);
+        }
         catch
         {
             // A window CEF would not make frees its name, and a shell left with none quits rather than wait for a
             // window that will never close.
             _open.TryRemove(name, out _);
-            window.Browser.Bridge.Dispose();
+            window?.Browser.Bridge.Dispose();
             if (_open.IsEmpty) Cef.cef_quit_message_loop();
             throw;
         }
@@ -135,7 +146,7 @@ public sealed unsafe class ChromiumWindows
 
     private void Closed(ChromiumWindow window)
     {
-        _open.TryRemove(window.Name, out _);
+        _open.TryRemove(KeyValuePair.Create(window.Name, (ChromiumWindow?)window));
         if (_open.Count == 0) Cef.cef_quit_message_loop();
     }
 }

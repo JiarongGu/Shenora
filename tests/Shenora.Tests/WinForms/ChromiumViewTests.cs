@@ -89,9 +89,11 @@ public class ChromiumViewTests
             _ = view.Handle;
             var pressed = view.BrowserOptions().DragAreaPressed!;
 
-            pressed(new ChromiumDragAreaPress(true, default));
+            pressed(new ChromiumDragAreaPress(ChromiumDragAreaAction.ToggleMaximize, default));
             Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
-            pressed(new ChromiumDragAreaPress(true, default));
+            pressed(new ChromiumDragAreaPress((ChromiumDragAreaAction)99, default));   // a later version's action
+            Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
+            pressed(new ChromiumDragAreaPress(ChromiumDragAreaAction.ToggleMaximize, default));
             Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
         });
     }

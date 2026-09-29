@@ -10,21 +10,25 @@ sealed class Shenora.Chromium.ChromiumChildBrowserOptions
   public .ctor()
   public Shenora.Core.Shell.IUiDispatcher? UiDispatcher { get; init; }
   public System.Action<Shenora.Chromium.ChromiumDragAreaPress>? DragAreaPressed { get; init; }
-  public System.Action<bool>? FocusLeaving { get; init; }
+  public System.Action<bool>? MoveFocusRequested { get; init; }
   public System.Drawing.Color? BackgroundColor { get; init; }
   public string Name { get; init; }
   public string? Path { get; init; }
+enum Shenora.Chromium.ChromiumDragAreaAction (int)
+  public const Shenora.Chromium.ChromiumDragAreaAction Move = 0
+  public const Shenora.Chromium.ChromiumDragAreaAction ToggleMaximize = 1
+  public int value__
 struct Shenora.Chromium.ChromiumDragAreaPress : System.IEquatable<Shenora.Chromium.ChromiumDragAreaPress>
-  public .ctor(bool DoubleClick, System.Drawing.Point Press)
-  public System.Drawing.Point Press { get; init; }
-  public bool DoubleClick { get; init; }
+  public .ctor(Shenora.Chromium.ChromiumDragAreaAction Action, System.Drawing.Point Position)
+  public Shenora.Chromium.ChromiumDragAreaAction Action { get; init; }
+  public System.Drawing.Point Position { get; init; }
   public bool Equals(Shenora.Chromium.ChromiumDragAreaPress other)
   public override bool Equals(object obj)
   public override int GetHashCode()
   public override string ToString()
   public static bool op_Equality(Shenora.Chromium.ChromiumDragAreaPress left, Shenora.Chromium.ChromiumDragAreaPress right)
   public static bool op_Inequality(Shenora.Chromium.ChromiumDragAreaPress left, Shenora.Chromium.ChromiumDragAreaPress right)
-  public void Deconstruct(out bool DoubleClick, out System.Drawing.Point Press)
+  public void Deconstruct(out Shenora.Chromium.ChromiumDragAreaAction Action, out System.Drawing.Point Position)
 sealed class Shenora.Chromium.ChromiumEngine
   public .ctor(Shenora.Chromium.ChromiumEngineOptions? options = null, Microsoft.Extensions.Logging.ILogger<Shenora.Chromium.ChromiumEngine>? log = null)
   public System.Threading.Tasks.Task Ready { get; }
@@ -38,9 +42,9 @@ sealed class Shenora.Chromium.ChromiumEngineOptions
   public bool? IsDevelopment { get; init; }
   public int DevToolsPort { get; init; }
   public string VirtualHost { get; init; }
-  public string? CachePath { get; init; }
   public string? ContentRoot { get; init; }
   public string? DevUrl { get; init; }
+  public string? UserDataFolder { get; init; }
 static class Shenora.Chromium.ChromiumHostExtensions
   public static Shenora.ShenoraApplicationBuilder UseChromium(Shenora.ShenoraApplicationBuilder builder, Shenora.Chromium.ChromiumHostOptions options)
 sealed class Shenora.Chromium.ChromiumHostOptions
@@ -50,13 +54,13 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public bool? IsDevelopment { get; init; }
   public int DevToolsPort { get; init; }
   public string VirtualHost { get; init; }
-  public string? CachePath { get; init; }
   public string? ContentRoot { get; init; }
   public string? DevUrl { get; init; }
+  public string? UserDataFolder { get; init; }
 sealed class Shenora.Chromium.ChromiumWindowOptions
   public .ctor()
   public System.Drawing.Color? BackgroundColor { get; init; }
-  public bool Frameless { get; init; }
+  public bool FramelessChrome { get; init; }
   public bool NativeCaptionButtons { get; init; }
   public int Height { get; init; }
   public int Width { get; init; }
@@ -65,6 +69,6 @@ sealed class Shenora.Chromium.ChromiumWindowOptions
 sealed class Shenora.Chromium.ChromiumWindows
   public bool Activate(string name)
   public bool Close(string name)
-  public bool IsOpen(string name)
+  public bool HasWindow(string name)
   public bool Open(string name, Shenora.Chromium.ChromiumWindowOptions options)
   public const string MainWindowName = "main"

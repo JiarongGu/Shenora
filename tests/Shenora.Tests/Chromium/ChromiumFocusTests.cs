@@ -13,7 +13,7 @@ public unsafe class ChromiumFocusTests
     private sealed class RecordingHost : IChromiumBrowserHost
     {
         public readonly List<bool> Leaving = [];
-        public void FocusLeaving(bool forward) => Leaving.Add(forward);
+        public void MoveFocusRequested(bool forward) => Leaving.Add(forward);
         public void DraggableRegionsChanged(nuint count, _cef_draggable_region_t* regions) { }
         public void TitleChanged(string title) { }
         public void DocumentStarted() { }

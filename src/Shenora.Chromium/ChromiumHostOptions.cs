@@ -6,7 +6,8 @@ namespace Shenora.Chromium;
 /// <summary>
 /// Inputs for <see cref="ChromiumHostExtensions.UseChromium"/>: the Chromium shell of the kit's own (D82),
 /// on CEF's Views framework. The names match the WebView2 host's where the concept is the same
-/// (<c>DevUrl</c>, <c>VirtualHost</c>, <c>IsDevelopment</c>), so changing engines does not change vocabulary.
+/// (<c>DevUrl</c>, <c>VirtualHost</c>, <c>IsDevelopment</c>, <c>UserDataFolder</c>), so changing engines does not
+/// change vocabulary.
 /// </summary>
 public sealed class ChromiumHostOptions
 {
@@ -37,8 +38,9 @@ public sealed class ChromiumHostOptions
     /// </summary>
     public int DevToolsPort { get; init; }
 
-    /// <summary>Where Chromium keeps its profile. Null means the application's <c>chromium</c> data area.</summary>
-    public string? CachePath { get; init; }
+    /// <summary>Where Chromium keeps its profile, cache and log. Null means the application's <c>chromium</c> data
+    /// area.</summary>
+    public string? UserDataFolder { get; init; }
 
     /// <summary>What the ready handshake tells the page this shell is and can do (D36).</summary>
     public ShellInfo? Shell { get; init; }
@@ -60,7 +62,7 @@ public sealed class ChromiumWindowOptions
     /// No native frame: the page draws its own title bar, and its <c>-webkit-app-region: drag</c> regions move
     /// the window natively.
     /// </summary>
-    public bool Frameless { get; init; } = true;
+    public bool FramelessChrome { get; init; } = true;
 
     /// <summary>What shows before the page paints, so a dark page never flashes white.</summary>
     public Color? BackgroundColor { get; init; }
@@ -76,14 +78,14 @@ public sealed class ChromiumWindowOptions
     /// Light or dark follows the page's <c>SET_THEME</c>. Until the page sends one it is the system's app theme, read
     /// as the window opens and not followed afterwards, so a page whose theme can differ from the system's sends it.
     /// </para>
-    /// <para>Requires <see cref="Frameless"/>: a framed window has the system's own buttons.</para>
+    /// <para>Requires <see cref="FramelessChrome"/>: a framed window has the system's own buttons.</para>
     /// </summary>
     public bool NativeCaptionButtons { get; init; }
 
     /// <summary>Refuse a combination that cannot work, where the caller can see why.</summary>
     internal void Validate(string parameter)
     {
-        if (NativeCaptionButtons && !Frameless)
-            throw new ArgumentException($"{nameof(NativeCaptionButtons)} requires {nameof(Frameless)}: a framed window has the system's own caption buttons.", parameter);
+        if (NativeCaptionButtons && !FramelessChrome)
+            throw new ArgumentException($"{nameof(NativeCaptionButtons)} requires {nameof(FramelessChrome)}: a framed window has the system's own caption buttons.", parameter);
     }
 }

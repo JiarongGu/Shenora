@@ -21,7 +21,7 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
         if (code >= 0) { Environment.Exit(code); return; }
 
         CefStartup.Initialize(cefApp, new CefStartup.Settings(
-            options.CachePath ?? app.Paths.DataArea("chromium"), isDevelopment, options.DevToolsPort,
+            options.UserDataFolder ?? app.Paths.DataArea("chromium"), isDevelopment, options.DevToolsPort,
             options.Window.BackgroundColor is { } color ? (uint)color.ToArgb() : null, MultiThreadedLoop: false));
 
         SynchronizationContext.SetSynchronizationContext(new CefUiContext(ui, log));

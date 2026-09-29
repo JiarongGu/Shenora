@@ -61,10 +61,10 @@ public class ChromiumWindowCommandsTests
     [Fact]
     public void Painted_caption_buttons_on_a_framed_window_are_refused_where_the_caller_sees_it()
     {
-        var framed = new ChromiumWindowOptions { NativeCaptionButtons = true, Frameless = false };
+        var framed = new ChromiumWindowOptions { NativeCaptionButtons = true, FramelessChrome = false };
 
         var refused = Assert.Throws<ArgumentException>(() => framed.Validate("options"));
-        Assert.Contains("Frameless", refused.Message);
+        Assert.Contains(nameof(ChromiumWindowOptions.FramelessChrome), refused.Message);
         new ChromiumWindowOptions { NativeCaptionButtons = true }.Validate("options");   // frameless by default
     }
 

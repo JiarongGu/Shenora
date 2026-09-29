@@ -170,7 +170,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     bool IChromiumBrowserHost.CloseRequested() => false;
 
     // The page is the window's only control: there is nowhere else for the focus to go, and it stays in the page.
-    void IChromiumBrowserHost.FocusLeaving(bool forward) { }
+    void IChromiumBrowserHost.MoveFocusRequested(bool forward) { }
 
     // ── CEF's window callbacks, delegated here ────────────────────────────────────────────────────────
 
@@ -186,7 +186,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         window->show(window);
 #if CEF_WINDOWS
         // Before the page can ask for anything: the drag area needs the frame's hit-test from the start.
-        _captionHitTest = CaptionHitTest.Attach(window->get_window_handle(window), _captions, _options.Frameless, _log);
+        _captionHitTest = CaptionHitTest.Attach(window->get_window_handle(window), _captions, _options.FramelessChrome, _log);
 #endif
         // Without the hit-test, painted buttons would look real and do nothing.
         if (PaintsCaptionButtons && _captionHitTest is not null)
@@ -270,7 +270,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         private static int IsFrameless(_cef_window_delegate_t* self, _cef_window_t* window)
         {
             using var w = new CefRef<_cef_window_t>(window);
-            return From<WindowDelegate>(self)._owner._options.Frameless ? 1 : 0;
+            return From<WindowDelegate>(self)._owner._options.FramelessChrome ? 1 : 0;
         }
 
         [UnmanagedCallersOnly]
