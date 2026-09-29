@@ -219,6 +219,7 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
     {
         if (Interlocked.Exchange(ref _finished, 1) == 1) return;
         _browser.Bridge.Dispose();
+        _browser.Retire();
         _engine.BrowserClosed(this);
         if (failure is null) _created.TrySetCanceled();
         else _created.TrySetException(failure);

@@ -56,6 +56,7 @@ public sealed unsafe class ChromiumWindows
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(options);
         options.Validate(nameof(options));   // here, since the window itself is made on CEF's thread
+        if (Volatile.Read(ref _serving) is null) return false;   // not started: the post would only log
         return _ui.Post(() => OpenOnUi(name, options));
     }
 
@@ -106,7 +107,16 @@ public sealed unsafe class ChromiumWindows
 
         var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
         if ((options.BackgroundColor ?? _options.Window.BackgroundColor) is { } color) settings.background_color = (uint)color.ToArgb();
-        window.Open(PageUrl(options), &settings);
+        try { window.Open(PageUrl(options), &settings); }
+        catch
+        {
+            // A window CEF would not make frees its name, and a shell left with none quits rather than wait for a
+            // window that will never close.
+            _open.TryRemove(name, out _);
+            window.Browser.Bridge.Dispose();
+            if (_open.IsEmpty) Cef.cef_quit_message_loop();
+            throw;
+        }
     }
 
     private Uri PageUrl(ChromiumWindowOptions options)

@@ -120,8 +120,20 @@ internal sealed unsafe class ChromiumBrowser
 
     private delegate void BrowserHostAction(_cef_browser_host_t* host);
 
-    /// <summary>The client to create this browser with, with the reference CEF takes added.</summary>
+    /// <summary>The client to create this browser with, with the reference CEF takes added. Once.</summary>
     public _cef_client_t* ClientForCef() => _client.ForCef();
+
+    private int _retired;
+
+    /// <summary>
+    /// Give up this browser's own reference to its client, once CEF has closed the browser or would not create it:
+    /// CEF frees the client, and its handlers, as it lets go of its own. Kept, the client's handle would root this
+    /// browser for the life of the process. Idempotent.
+    /// </summary>
+    public void Retire()
+    {
+        if (Interlocked.Exchange(ref _retired, 1) == 0) _client.Release();
+    }
 
     /// <summary>
     /// The main frame started a new document, and everything the old page set up goes with it: whoever handshook
@@ -218,6 +230,7 @@ internal sealed unsafe class ChromiumBrowser
             Volatile.Write(ref _windowHandle, 0);
         }
         Host?.BrowserClosed();
+        Retire();
     }
 
     // From the renderer-terminated callback. The reload is posted, so it runs after CEF has finished reporting
@@ -307,6 +320,18 @@ internal sealed unsafe class ChromiumBrowser
             Struct->get_display_handler = &GetDisplay;
             Struct->get_permission_handler = &GetPermissions;
             Struct->get_focus_handler = &GetFocus;
+        }
+
+        // The client's references to its handlers: each is freed once CEF has let go of it too.
+        private protected override void OnFreed()
+        {
+            _requests.Release();
+            _lifeSpan.Release();
+            _load.Release();
+            _drag.Release();
+            _display.Release();
+            _permissions.Release();
+            _focus.Release();
         }
 
         // A getter handing CEF one of our structs must add the reference CEF takes.

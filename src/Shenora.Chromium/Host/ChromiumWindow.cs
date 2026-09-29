@@ -43,7 +43,8 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
 
     public string Name => Browser.Name;
 
-    /// <summary>Create the browser view and the window. UI thread, once CEF's context exists.</summary>
+    /// <summary>Create the browser view and the window. UI thread, once CEF's context exists. Once: the delegates
+    /// are CEF's from here, and freed when it is done with them.</summary>
     public void Open(Uri url, _cef_browser_settings_t* settings)
     {
         var text = url.AbsoluteUri;
@@ -52,8 +53,23 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             var s = CefStrings.View(p, text.Length);
             _browserView = Cef.cef_browser_view_create(Browser.ClientForCef(), &s, settings, null, null, _viewDelegate.ForCef());
         }
-        if (_browserView == null) throw new InvalidOperationException($"CEF would not create the browser view for window '{Name}'.");
-        Cef.cef_window_create_top_level(_delegate.ForCef());
+        // The creator's references: CEF holds its own for as long as it uses them. Kept, the delegates' handles would
+        // root this window, its browser and its bridge for the life of the process.
+        _viewDelegate.Release();
+        if (_browserView == null)
+        {
+            _delegate.Release();
+            Browser.Retire();
+            throw new InvalidOperationException($"CEF would not create the browser view for window '{Name}'.");
+        }
+        // The window CEF returns carries a reference of its own; WindowCreated has kept the one it needs.
+        using var window = new CefRef<_cef_window_t>(Cef.cef_window_create_top_level(_delegate.ForCef()));
+        _delegate.Release();
+        if (window.IsNull)
+        {
+            using (new CefRef<_cef_browser_view_t>(_browserView)) _browserView = null;
+            throw new InvalidOperationException($"CEF would not create the window '{Name}'.");
+        }
     }
 
     // ── what the window commands ask of the window ────────────────────────────────────────────────────

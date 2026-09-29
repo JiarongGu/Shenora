@@ -144,4 +144,32 @@ public unsafe class CefObjectTests
         task.Release();
         Assert.Equal(1, task.Freed);
     }
+
+    // Each CEF object's handle is strong until its count reaches 0, so a reference nobody gives up roots the browser,
+    // its bridge and its window for the life of the process: every closed window stayed in memory.
+    [Fact]
+    public void A_closed_browser_is_freed_once_CEF_lets_go_of_its_client()
+    {
+        var browser = OpenAndClose();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.False(browser.TryGetTarget(out _));
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference<Shenora.Chromium.Host.ChromiumBrowser> OpenAndClose()
+    {
+        var browser = ChromiumDropZonesTests.Window();
+        var client = browser.ClientForCef();   // as the browser is created
+        var clientBase = (_cef_base_ref_counted_t*)client;
+        // CEF asks for a handler, and lets it go.
+        var handler = (_cef_base_ref_counted_t*)client->get_life_span_handler(client);
+        handler->release(handler);
+
+        browser.Retire();                      // the browser closed
+        clientBase->release(clientBase);       // CEF lets go of the client
+        return new WeakReference<Shenora.Chromium.Host.ChromiumBrowser>(browser);
+    }
 }
