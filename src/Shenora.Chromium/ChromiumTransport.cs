@@ -46,14 +46,16 @@ internal static class ChromiumTransport
     }
 
     /// <summary>
-    /// The script that marks a document. Its values are JSON-serialized, never interpolated: the default
+    /// The script that marks a document. Its values are JSON-encoded, never inserted raw: the default
     /// encoder escapes <c>&lt;</c> and <c>&gt;</c>, so nothing in it can close the script element.
     /// </summary>
     /// <param name="ipcPath">The route the page should post to.</param>
     public static string MarkerScript(string ipcPath = DefaultIpcPath)
     {
         ArgumentException.ThrowIfNullOrEmpty(ipcPath);
-        var marker = JsonSerializer.Serialize(new Dictionary<string, string> { [IpcMember] = ipcPath });
+        // JsonEncodedText, not JsonSerializer: the same default encoder, without the serializer's first-use cost on the
+        // first document's path (27 ms of a cold MarkHtml's 30, measured).
+        var marker = $"{{\"{JsonEncodedText.Encode(IpcMember)}\":\"{JsonEncodedText.Encode(ipcPath)}\"}}";
         return $"<script>window.{HostGlobal}={marker};</script>";
     }
 

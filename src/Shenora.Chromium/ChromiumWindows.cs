@@ -108,6 +108,12 @@ public sealed unsafe class ChromiumWindows
         app.Pipeline.ApplyTo(interceptor);   // the app's UseFiles and routes reach every window (D64)
         _serving = new ChromiumServing(_options.ContentRoot, _origins, interceptor,
             isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log);
+        // Chromium takes ~140 ms after navigation starts to route the first request here, and .NET then spends ~50 ms on
+        // first calls serving it (measured). Serving the root document once now, off the UI thread, spends them while
+        // Chromium is busy; the answer is discarded.
+        var serving = _serving;
+        var root = _origins.App;
+        _ = Task.Run(() => AppCallback.Run(() => serving.Warm(root)));
         // Every page's window commands and drop zones, mapped ONCE: each acts on the page that asked, and its
         // window. An app that mapped its own SHENORA.WINDOW wins. The drop zones are under the engine's own name,
         // where each page's requests are addressed, so they always answer this engine's pages: their protocol is

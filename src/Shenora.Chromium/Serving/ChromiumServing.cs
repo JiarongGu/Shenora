@@ -52,6 +52,13 @@ internal sealed class ChromiumServing
         }
     }
 
+    /// <summary>
+    /// Serve the bundle's root document once and discard it: the file read, the marking and the code that does them
+    /// run before the first real request needs them. Nothing when there is no bundle.
+    /// </summary>
+    public void Warm(Uri root) =>
+        TryBundle(new WebViewResourceRequest { Uri = root, Method = "GET", Headers = new Dictionary<string, string>() })?.Content?.Dispose();
+
     /// <summary>The bundle's file for this request, or null to fall through to the pipeline.</summary>
     private WebViewResourceResponse? TryBundle(WebViewResourceRequest request)
     {

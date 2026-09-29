@@ -68,6 +68,13 @@ at the first list and missed five more breaking changes.
 
 ### Changed
 
+- **The Chromium engine's first document is served with warm code.** Chromium takes about 140 ms after navigation
+  starts to route the first request to the kit, and the kit then spent 45–54 ms on first calls serving it, half
+  of that System.Text.Json's first use in the transport marker. The shell and `ChromiumView` now serve the root
+  document once on a background thread as they start, while Chromium is busy, and the marker is encoded without the
+  serializer: the first document now takes 2–3 ms in .NET, and its response completed ~20 ms sooner in an
+  interleaved A/B (8 pairs). Most of a cold start (about 1 s to first paint here) is Chromium's own; the same
+  measurements found no gain from ReadyToRun or from switching off Chrome's background services.
 - **`Shenora.Chromium` pins CEF 154.0.32** (was 154.0.28), the same Chromium 154.0.8037.58 and the same API
   version, so the binding is unchanged. On 154.0.28 a debugging client that opened a tab in an existing window
   crashed the browser process, and CEF's own sample client crashed the same way; 154.0.32 does not.

@@ -172,6 +172,8 @@ public sealed class ChromiumEngine
             _app.Pipeline.ApplyTo(interceptor);
             var serving = new ChromiumServing(_options.ContentRoot, origins, interceptor,
                 _isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log);
+            // As the shell does: the first document's first calls run while Chromium routes its request.
+            _ = Task.Run(() => AppCallback.Run(() => serving.Warm(origins.App)));
             var services = _app.Services;
             var dispatcher = services.GetRequiredService<IMessageDispatcher>();
             // Mapped ONCE, acting on the page that asked, under the engine's own name: the app's WebView2 module, if it
