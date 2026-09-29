@@ -297,6 +297,12 @@ public sealed class DropZoneManager : IDisposable
     /// <summary>Internal seams for tests.</summary>
     internal bool HasZone(string zoneId) => _overlays.ContainsKey(zoneId);
 
+    internal WebView2Control WebView => _options.WebView;
+
+    internal IEventBus EventBus => _options.EventBus;
+
+    internal ILogger<DropZoneManager> Logger => _logger;
+
     internal int ZoneCount => _overlays.Count;
 
     internal DropZoneOverlay? TryGetOverlay(string zoneId) =>

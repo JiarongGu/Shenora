@@ -173,6 +173,15 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A WebView2 page in a second web view registered its drop zones over the MAIN window.** `DropZoneModule` is
+  mapped once over the main web view's `DropZoneManager`, so another page's `REGISTER` placed an overlay over the
+  main window at that page's coordinates, and its own window had no drop target. Measured with a WebView2 page in
+  a `SecondaryWindows` window, before: the overlay on the main window, none on its own; after: on its own, none
+  on the main one. Each other web view now gets a manager of its own over its top-level form, made on its first
+  request and disposed with the web view; a second web view in the main window gets one too, so its zones are no
+  longer measured against the first. Drop events still go out on the one bus, told apart by `zoneId`, which
+  `useDropZone` generates unique unless the page names its zones.
+
 - **A page in a `SecondaryWindows` window commanded the app's main window.** `WindowCommandModule` is mapped
   once, bound to the main form, and it acted there whoever sent the command. Measured with a `ChromiumView` page
   in a secondary window, before: its `MINIMIZE` minimized the main window, and **its `CLOSE` closed the main

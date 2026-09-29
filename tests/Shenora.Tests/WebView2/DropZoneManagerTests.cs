@@ -157,6 +157,69 @@ public class DropZoneManagerTests
         }
     });
 
+    // The module is mapped once, over the main web view's manager. A page in another web view (a SecondaryWindows
+    // window's, or a second one in the main window) gets zones of its own, over its own window, rather than overlays
+    // placed over the main one at its coordinates.
+    [Fact]
+    public async Task A_page_in_another_web_view_gets_zones_of_its_own() => await Task.Run(() => Sta.Run(() =>
+    {
+        var (form, _, _, manager) = CreateFixture();
+        using var other = new Form();
+        var otherWeb = new WebView2Control { Dock = DockStyle.Fill };
+        other.Controls.Add(otherWeb);
+        _ = other.Handle;
+        using (form)
+        using (manager)
+        {
+            var dispatcher = new MessageDispatcher().UseErrorHandler().MapModule(new DropZoneModule(manager));
+            IpcResponse Send(Control page, string type, object payload)
+            {
+                using (PageSender.Enter(page))
+                    return dispatcher.DispatchAsync(new IpcRequest
+                    {
+                        Module = DropZoneManager.Module,
+                        Type = type,
+                        Payload = IpcJson.SerializeToElement(payload),
+                    }).GetAwaiter().GetResult();
+            }
+
+            Assert.True(Send(otherWeb, "REGISTER", new { zoneId = "z1", x = 1, y = 2, width = 30, height = 40 }).Success);
+
+            Assert.False(manager.HasZone("z1"));
+            var overlay = Assert.Single(other.Controls.OfType<DropZoneOverlay>());
+            Assert.Empty(form.Controls.OfType<DropZoneOverlay>());
+
+            // Its web view gone, its zones go with it.
+            otherWeb.Dispose();
+            Assert.True(overlay.IsDisposed);
+        }
+    }));
+
+    [Fact]
+    public async Task A_page_whose_web_view_is_gone_registers_nothing() => await Task.Run(() => Sta.Run(() =>
+    {
+        var (form, _, _, manager) = CreateFixture();
+        var gone = new WebView2Control();
+        gone.Dispose();
+        using (form)
+        using (manager)
+        {
+            var dispatcher = new MessageDispatcher().UseErrorHandler().MapModule(new DropZoneModule(manager));
+            IpcResponse response;
+            using (PageSender.Enter(gone))
+                response = dispatcher.DispatchAsync(new IpcRequest
+                {
+                    Module = DropZoneManager.Module,
+                    Type = "REGISTER",
+                    Payload = IpcJson.SerializeToElement(new { zoneId = "z1", x = 1, y = 2, width = 30, height = 40 }),
+                }).GetAwaiter().GetResult();
+
+            Assert.True(response.Success);
+            Assert.False(manager.HasZone("z1"));
+            Assert.Empty(form.Controls.OfType<DropZoneOverlay>());
+        }
+    }));
+
     [Fact]
     public async Task Facade_routes_the_client_messages() => await Task.Run(() => Sta.Run(() =>
     {
