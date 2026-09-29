@@ -189,19 +189,14 @@ D37 and D51 are corrected in place to point at them.
      without it, through real routing (`WindowFromPoint`).
 3b. **`ChromiumView` in `Shenora.Windows` (D83), what is left.** The control and `UseChromiumEngine()` ship,
    proven in an `OptimizedForm` with the kit's window commands: the caption hole and Snap Layouts, a real
-   `START_DRAG`, drops with real paths, `SecondaryWindows` pages on their own threads, keyboard focus, and Tab
-   out of the page and back in (to its first element).
-   - Shift+Tab, out and in, is unmeasured: a posted key cannot carry Shift's live state, so it needs a real key.
-     Derived: out takes the same path backwards; in, the page likely starts from its first element, where a
-     native control would take its last.
+   `START_DRAG`, drops with real paths, `SecondaryWindows` pages on their own threads, keyboard focus, Tab out
+   of the page and back in (to its first element), Shift+Tab out and back in (to its last, as a native control
+   takes it; real keys), and the page's `-webkit-app-region: drag` bar with the real pointer: a drag of (200, 120)
+   moved the window by exactly that, a still click held the form's thread 16 ms at most, and a double click
+   maximized and restored. The bar keeps working after a renderer crash (posted presses).
    - WinForms' `Focused` stays false while the page has the focus, because it is in CEF's child window, which
      another thread owns.
-   - The page's `-webkit-app-region: drag` area is measured with mouse messages POSTED to Chromium's render
-     widget, the button never really down: a still click asks nothing, a drag past the threshold asks a move (the
-     view declines it, the button being up), a `no-drag` button inside the bar still clicks, a double click
-     maximizes and restores, and a renderer crash leaves it working. Needs a real mouse: the move loop following the
-     pointer, and the window not trailing it (the first-placement correction is the Chromium shell's, measured
-     there, not here). Unmeasured too: the areas under a page's zoom or scroll.
+   - The drag areas under a page's zoom or scroll are unmeasured.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).

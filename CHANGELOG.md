@@ -45,15 +45,15 @@ at the first list and missed five more breaking changes.
   - **`ChromiumView`, a control in `Shenora.Windows`**, with `UseChromiumEngine()` running CEF beside the
     WinForms loop. It keeps `OptimizedForm`, the window commands (`CoordinateSpace` = the view) and
     `SecondaryWindows`, whose pages dispatch on their own threads, and Tab leaves the page for the form's next
-    control (`ChromiumChildBrowserOptions.FocusLeaving`). The page's `-webkit-app-region: drag` area moves the
+    control and Shift+Tab for its previous one, measured with real keys (`ChromiumChildBrowserOptions.FocusLeaving`).
+    The page's `-webkit-app-region: drag` area moves the
     window: a mouse press there is held until the pointer passes the system's drag threshold and then starts the
     OS move loop, a still click does nothing, and a double click maximizes or restores the window
-    (`ChromiumChildBrowserOptions.DragAreaPressed`, `ChromiumDragAreaPress`). Measured with mouse messages
-    posted to Chromium's window, where the button is never really down: a still click asks nothing, a drag asks a
-    move (which the view then declines, the button being up), a `no-drag` button inside the bar still clicks, a
-    double click maximizes and restores, and all of it still works after a renderer crash. A real drag is not
-    measured. Unlike the Chromium shell's caption, a touch, a pen or a right click there is the page's, and a
-    frameless window maximized its own way is not moved. Underneath it is a small public
+    (`ChromiumChildBrowserOptions.DragAreaPressed`, `ChromiumDragAreaPress`). Measured with the real pointer: a
+    drag of (200, 120) moved the window by exactly that, a still click held the form's thread 16 ms at most, and a
+    double click maximized and restored; a `no-drag` button inside the bar still clicks, and the bar keeps working
+    after a renderer crash (both with posted presses). Unlike the Chromium shell's caption, a touch, a pen or a right
+    click there is the page's, and a frameless window maximized its own way is not moved. Underneath it is a small public
     embedding, `ChromiumEngine` + `ChromiumChildBrowser`, which puts a page in any native window.
 
   ⚠ **CEF itself is not in the package**, and that is D81's point: an app that chose WebView2 carries none of
