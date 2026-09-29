@@ -193,7 +193,9 @@ at the first list and missed five more breaking changes.
   configuration-change crash the option exists to prevent.
 
 - **`Shenora.Windows` now depends on `Shenora.Chromium`** (D83), for `ChromiumView`: every Windows app gets its
-  managed assembly (about 300 KB), never CEF, whose bytes arrive only through a direct reference.
+  managed assembly (about 300 KB), never CEF, whose bytes arrive only through a direct reference. An app built
+  with no `RuntimeIdentifier` also carries its macOS twin (about 300 KB more) under `runtimes/osx`, as NuGet gives a
+  portable build every OS's copy.
 
 - **An `OptimizedForm` that paints its caption buttons dims their idle glyphs while the window is inactive**, as the
   system dims its own. Set the colour with the new `CaptionButtonColors.InactiveGlyph`; left out, it is the glyph

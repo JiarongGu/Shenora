@@ -266,7 +266,7 @@ So (owner, 2026-08-02):
   the CEF builds `cef.json` pins (SHA-1-checked), builds `shenora_chromium_shim.dll` for win-x64 and, cross-
   compiled, win-arm64 against their headers and the SDK's static nethost; the `chromium-helper-macos` job builds
   the macOS helper for osx-x64 and osx-arm64 with clang; `publish` `needs:` both and asserts all four, and
-  `dev.mjs pack` compiles the macOS binding it packs as `runtimes/osx-*/lib`. Packing `Shenora.Chromium` without
+  `dev.mjs pack` compiles the macOS binding it packs, once, as `runtimes/osx/lib`. Packing `Shenora.Chromium` without
   any one of them fails, so a Windows-only box cannot pack it: the helpers need a Mac. ⚠ It first runs in CI on the release that first ships the package, so rehearse with
   `dry_run: true`.
 - **A one-platform build proves one platform.** The launcher's POSIX half went uncompiled until the 0.10.0

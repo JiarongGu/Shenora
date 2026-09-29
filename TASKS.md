@@ -197,7 +197,7 @@ D37 and D51 are corrected in place to point at them.
    runtime from C#. CEF's Views works there: the probe's Views window showed its page, visible and painting 60
    frames a second, and it handshook and echoed (100 `invoke`s: median 1.1 ms) and exited cleanly when its window
    closed. Every subprocess ran sandboxed (`sandbox_check`), the network service included; the .NET process does not.
-   **The package carries it**: the macOS binding as `runtimes/osx-*/lib/net10.0/` (compiled on Windows by `dev.mjs
+   **The package carries it**: the macOS binding once, as `runtimes/osx/lib/net10.0/` (compiled on Windows by `dev.mjs
    pack`), the helpers in `tools/osx-*/native/` (a macOS release job builds both with clang), and the layout marks
    each helper executable, since a package keeps no Unix permissions. From a local feed, on the Mac, with nothing
    but a `PackageReference`: the macOS binding reached the app, and the page echoed and exited cleanly. The cookie
