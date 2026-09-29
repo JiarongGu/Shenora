@@ -221,8 +221,9 @@ D37 and D51 are corrected in place to point at them.
      everything; a write the pasteboard could not take threw and left the previous content; `Clear` emptied it. The
      system pasteboard is the same code, unexercised (writing the owner's clipboard needs their yes).
    - The tray (`ChromiumHostOptions.Tray`) is built on Windows and macOS. On Windows a person has opened its menu
-     with a real click and chosen two items, one toggling its state; whether a checkmark and a disabled item render
-     as they should is not yet seen, and on macOS nobody has clicked the status item. The file dialogs are CEF's own
+     with a real click, chosen items, seen a toggled item's state reach each next open and Exit end the app; a
+     disabled item never ran. Whether the checkmark and the grey item LOOK right is the owner's to confirm, and on
+     macOS nobody has clicked the status item. The file dialogs are CEF's own
      and should work, but a dialog needs a
      person to answer it. Code signing; osx-arm64 (no Apple Silicon Mac here).
    - Whether the app comes to the front when started from Finder: from `open` over ssh it stayed behind the
