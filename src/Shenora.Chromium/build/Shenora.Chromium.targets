@@ -138,6 +138,125 @@
     </Task>
   </UsingTask>
 
+  <!-- Windows: <App>.exe is CEF's bootstrap copied in, and presents as CEF ("CEF Bootstrap Application", CEF's icon and
+       version) wherever Windows names a program: Task Manager, Explorer, a pinned taskbar button. So its icon and version
+       resources are replaced by the app's own, copied from <App>.App.dll, which the compiler built from ApplicationIcon,
+       Product, Company and the version: what the .NET SDK does for its own apphost. Its manifest is left alone; CEF's
+       processes need its supportedOS entry. An app with no ApplicationIcon gets no icon rather than CEF's. -->
+  <UsingTask TaskName="ShenoraChromiumStampLauncher" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Executable ParameterType="System.String" Required="true" />
+      <From ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Class" Language="cs"><![CDATA[
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Runtime.InteropServices;
+using Microsoft.Build.Framework;
+using Microsoft.Build.Utilities;
+
+public sealed class ShenoraChromiumStampLauncher : Task
+{
+    [Required] public string Executable { get; set; }
+    [Required] public string From { get; set; }
+
+    private static readonly IntPtr[] Types = { (IntPtr)3 /* RT_ICON */, (IntPtr)14 /* RT_GROUP_ICON */, (IntPtr)16 /* RT_VERSION */ };
+    private const uint AsData = 0x2 | 0x20;   // LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE
+
+    private sealed class Resource { public IntPtr Type; public int Id; public string Name; public ushort Language; public byte[] Data; }
+
+    private delegate bool EnumNames(IntPtr module, IntPtr type, IntPtr name, IntPtr param);
+    private delegate bool EnumLanguages(IntPtr module, IntPtr type, IntPtr name, ushort language, IntPtr param);
+
+    [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)] private static extern IntPtr LoadLibraryEx(string path, IntPtr file, uint flags);
+    [DllImport("kernel32")] private static extern bool FreeLibrary(IntPtr module);
+    [DllImport("kernel32", CharSet = CharSet.Unicode)] private static extern bool EnumResourceNames(IntPtr module, IntPtr type, EnumNames callback, IntPtr param);
+    [DllImport("kernel32", CharSet = CharSet.Unicode)] private static extern bool EnumResourceLanguages(IntPtr module, IntPtr type, IntPtr name, EnumLanguages callback, IntPtr param);
+    [DllImport("kernel32", CharSet = CharSet.Unicode)] private static extern IntPtr FindResourceEx(IntPtr module, IntPtr type, IntPtr name, ushort language);
+    [DllImport("kernel32")] private static extern IntPtr LoadResource(IntPtr module, IntPtr info);
+    [DllImport("kernel32")] private static extern IntPtr LockResource(IntPtr data);
+    [DllImport("kernel32")] private static extern uint SizeofResource(IntPtr module, IntPtr info);
+    [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)] private static extern IntPtr BeginUpdateResource(string path, bool deleteExisting);
+    [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)] private static extern bool UpdateResource(IntPtr update, IntPtr type, IntPtr name, ushort language, byte[] data, uint size);
+    [DllImport("kernel32", SetLastError = true)] private static extern bool EndUpdateResource(IntPtr update, bool discard);
+
+    public override bool Execute()
+    {
+        if (!File.Exists(Executable) || !File.Exists(From)) { Log.LogMessage(MessageImportance.Low, "Nothing to stamp: {0} or {1} is missing.", Executable, From); return true; }
+        var remove = Read(Executable, withData: false);
+        var add = Read(From, withData: true);
+        var update = BeginUpdateResource(Executable, false);
+        if (update == IntPtr.Zero) { Log.LogError("Could not open {0} to give it the app's icon and version (error {1}).", Executable, Marshal.GetLastWin32Error()); return false; }
+        var names = new List<IntPtr>();
+        try
+        {
+            foreach (var r in remove) Write(update, r, null, names);
+            foreach (var r in add) Write(update, r, r.Data, names);
+        }
+        catch (Exception error)
+        {
+            EndUpdateResource(update, true);
+            foreach (var n in names) Marshal.FreeHGlobal(n);
+            Log.LogError("Giving {0} the app's icon and version failed: {1}", Executable, error.Message);
+            return false;
+        }
+        var saved = EndUpdateResource(update, false);
+        foreach (var n in names) Marshal.FreeHGlobal(n);
+        if (!saved) { Log.LogError("Saving {0} with the app's icon and version failed (error {1}).", Executable, Marshal.GetLastWin32Error()); return false; }
+        Log.LogMessage(MessageImportance.Low, "{0} now carries {1}'s icon and version ({2} resource(s)).", Path.GetFileName(Executable), Path.GetFileName(From), add.Count);
+        return true;
+    }
+
+    private static void Write(IntPtr update, Resource r, byte[] data, List<IntPtr> names)
+    {
+        var name = r.Name == null ? (IntPtr)r.Id : Marshal.StringToHGlobalUni(r.Name);
+        if (r.Name != null) names.Add(name);
+        if (!UpdateResource(update, r.Type, name, r.Language, data, data == null ? 0u : (uint)data.Length))
+            throw new InvalidOperationException("updating a resource failed (error " + Marshal.GetLastWin32Error() + ")");
+    }
+
+    // A resource named by a string keeps its string: the pointer the enumeration hands over dies with the call.
+    private static List<Resource> Read(string path, bool withData)
+    {
+        var found = new List<Resource>();
+        var module = LoadLibraryEx(path, IntPtr.Zero, AsData);
+        if (module == IntPtr.Zero) return found;
+        try
+        {
+            foreach (var type in Types)
+            {
+                EnumResourceNames(module, type, (m, t, name, p) =>
+                {
+                    var isId = ((long)name >> 16) == 0;
+                    var id = isId ? (int)(long)name : 0;
+                    var text = isId ? null : Marshal.PtrToStringUni(name);
+                    EnumResourceLanguages(m, t, name, (m2, t2, n2, language, p2) =>
+                    {
+                        var r = new Resource { Type = type, Id = id, Name = text, Language = language };
+                        if (withData)
+                        {
+                            var info = FindResourceEx(m2, t2, n2, language);
+                            var size = SizeofResource(m2, info);
+                            r.Data = new byte[size];
+                            Marshal.Copy(LockResource(LoadResource(m2, info)), r.Data, 0, (int)size);
+                        }
+                        found.Add(r);
+                        return true;
+                    }, IntPtr.Zero);
+                    return true;
+                }, IntPtr.Zero);
+            }
+        }
+        finally { FreeLibrary(module); }
+        return found;
+    }
+}
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
   <!-- Every refusal runs BEFORE the fetch, so a build that cannot be laid out never downloads 165 MB first. -->
   <Target Name="_ShenoraChromiumCheck">
     <Error Condition="'$(ShenoraCefPlatform)' == ''"
@@ -212,6 +331,7 @@
     <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraCefDist)\Release\$(_ShenoraBootstrap)" DestinationFiles="$(OutDir)$(_ShenoraAppExe).exe" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(OutDir)$(_ShenoraAppExe).dll" SkipUnchangedFiles="true" />
+    <ShenoraChromiumStampLauncher Executable="$(OutDir)$(_ShenoraAppExe).exe" From="$(OutDir)$(AssemblyName).dll" />
   </Target>
 
   <Target Name="ShenoraChromiumPublishLayout" AfterTargets="Publish" DependsOnTargets="_ShenoraChromiumLayoutInputs" Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
@@ -219,6 +339,7 @@
     <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(PublishDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraCefDist)\Release\$(_ShenoraBootstrap)" DestinationFiles="$(PublishDir)$(_ShenoraAppExe).exe" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(PublishDir)$(_ShenoraAppExe).dll" SkipUnchangedFiles="true" />
+    <ShenoraChromiumStampLauncher Executable="$(PublishDir)$(_ShenoraAppExe).exe" From="$(PublishDir)$(AssemblyName).dll" />
   </Target>
 
   <!-- An Info.plist, the one piece of a bundle the build has to write rather than copy. -->

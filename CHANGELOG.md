@@ -57,6 +57,15 @@ at the first list and missed five more breaking changes.
   is a build warning. The layout removes nothing, so a folder an earlier build laid out keeps its locales until
   it is cleaned.
 
+### Fixed
+
+- **A Chromium app's own executable presented as CEF on Windows.** `<App>.exe` is CEF's launcher copied in, so
+  Task Manager, Explorer and a pinned taskbar button showed "CEF Bootstrap Application", CEF's icon and CEF's
+  version. The layout now gives it the app's own icon and version, copied from `<App>.App.dll`, which the compiler
+  builds from `ApplicationIcon`, `Product`, `Company`, `AssemblyTitle` and the version, as the .NET SDK does for
+  its own apphost; its manifest, which CEF's processes need, is untouched. An app with no `ApplicationIcon` gets
+  Windows' default icon rather than CEF's.
+
 ### Changed
 
 - **`Shenora.Chromium` pins CEF 154.0.32** (was 154.0.28), the same Chromium 154.0.8037.58 and the same API
