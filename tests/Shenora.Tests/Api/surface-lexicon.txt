@@ -129,6 +129,9 @@ Caption
 Colors
 Icon
 Menu
+# `Item` (2026-09-30) — in `ChromiumTrayMenuItem`, one line of a menu: each platform's own word for it (AppKit's
+# `NSMenuItem`, WinForms' `ToolStripMenuItem`, Win32's `AppendMenu` "menu item").
+Item
 Optimized
 Panel
 # `Placement` (2026-08-16) — in `WindowPlacement`, how a window is sized against its monitor. Win32's

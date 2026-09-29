@@ -58,6 +58,7 @@ static class Shenora.Chromium.ChromiumHostExtensions
   public static Shenora.ShenoraApplicationBuilder UseChromium(Shenora.ShenoraApplicationBuilder builder, Shenora.Chromium.ChromiumHostOptions options)
 sealed class Shenora.Chromium.ChromiumHostOptions
   public .ctor()
+  public Shenora.Chromium.ChromiumTrayOptions? Tray { get; init; }
   public Shenora.Chromium.ChromiumWindowOptions Window { get; init; }
   public Shenora.Core.Ipc.ShellInfo? Shell { get; init; }
   public bool? IsDevelopment { get; init; }
@@ -66,6 +67,24 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public string? ContentRoot { get; init; }
   public string? DevUrl { get; init; }
   public string? UserDataFolder { get; init; }
+sealed class Shenora.Chromium.ChromiumTray
+  public void ExitApplication()
+  public void ShowWindow()
+sealed class Shenora.Chromium.ChromiumTrayMenuItem
+  public .ctor(string text, System.Action onClick)
+  public System.Action? OnClick { get; }
+  public bool Checked { get; init; }
+  public bool Enabled { get; init; }
+  public static Shenora.Chromium.ChromiumTrayMenuItem Separator { get; }
+  public string Text { get; }
+sealed class Shenora.Chromium.ChromiumTrayOptions
+  public .ctor()
+  public System.Func<System.Collections.Generic.IReadOnlyList<Shenora.Chromium.ChromiumTrayMenuItem>>? MenuItems { get; init; }
+  public bool CloseToTray { get; init; }
+  public string ExitMenuItemText { get; init; }
+  public string OpenMenuItemText { get; init; }
+  public string? IconPath { get; init; }
+  public string? Text { get; init; }
 sealed class Shenora.Chromium.ChromiumWindowOptions
   public .ctor()
   public System.Drawing.Color? BackgroundColor { get; init; }

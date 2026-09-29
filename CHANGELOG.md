@@ -42,6 +42,14 @@ at the first list and missed five more breaking changes.
   `UserDataFolder`'s `Default` folder, which must not be another Chromium process's. So an install carries one CEF,
   and on Windows CEF's launcher sandboxes the browser as it does the app. Unlike the app's pages, its pages keep
   Chromium's local-network checks. Measured on Windows and on an Intel Mac.
+- **A tray for the Chromium shell, on Windows and macOS** (`ChromiumHostOptions.Tray`, `ChromiumTray`): the
+  notification area's icon, or a status item in the menu bar, with a menu of Open, the app's own items
+  (`MenuItems`, asked each time the menu opens) and Exit, and close-to-tray for the main window, as the WinForms
+  shell's `TrayIcon` has. `ChromiumTray.ShowWindow` and `ExitApplication` do from code what the menu does. ⚠ While
+  close-to-tray is on, a close from code hides the main window too, as it does under `TrayIcon`. Measured on both:
+  the icon or status item appeared, a close hid the main window with the app still running, the icon's double
+  click (Windows) or `ShowWindow` brought it back, and `ExitApplication` ended the app. A menu opened by a real
+  click is not yet measured. Linux has no tray yet.
 - **`ShenoraChromiumLocales`: lay out only the locales an app speaks.** CEF carries 220 locale files, 49 MB of a
   ~400 MB runtime. `<ShenoraChromiumLocales>zh-CN;fr</ShenoraChromiumLocales>` in the app's project keeps those
   (with their gendered variants) and en-US, Chromium's fallback, on Windows and in the macOS bundle alike; the

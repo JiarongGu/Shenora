@@ -8,7 +8,8 @@ namespace Shenora.Chromium.Host;
 /// <see cref="CefStartup"/> starts it, the app's hooks once CEF's context exists, and after the loop the hooks stop
 /// before CEF shuts down.
 /// </summary>
-internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDispatcher ui, ChromiumWindows windows, ILogger<ChromiumRunner>? log = null)
+internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDispatcher ui, ChromiumWindows windows, ChromiumTray? tray = null,
+    ILogger<ChromiumRunner>? log = null)
     : IShenoraRunner
 {
     public void Run(ShenoraApplication app)
@@ -31,6 +32,8 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
         }
         finally
         {
+            // Still on CEF's UI thread, where the icon was made; before CEF goes, or it lingers until hovered.
+            AppCallback.Run(() => tray?.Stop(), ex => AppCallback.Log(log, () => "[Shenora.Chromium] Removing the tray icon failed", LogLevel.Warning, ex));
             ui.MarkGone();
             AppCallback.Run(app.Stop, ex => AppCallback.Log(log, () => "[Shenora.Chromium] Stopping the app failed", LogLevel.Error, ex));
             Cef.cef_shutdown();
@@ -46,6 +49,8 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
             app.Start();
             windows.Initialize(app, isDevelopment);
             windows.Open(ChromiumWindows.MainWindowName, options.Window);
+            // A tray that cannot be shown costs the tray, never the app.
+            AppCallback.Run(() => tray?.Start(), ex => AppCallback.Log(log, () => "[Shenora.Chromium] The tray icon could not be shown", LogLevel.Error, ex));
         }
         catch (Exception ex)
         {

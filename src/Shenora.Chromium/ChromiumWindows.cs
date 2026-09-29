@@ -77,6 +77,16 @@ public sealed unsafe class ChromiumWindows
     /// <param name="name">The window's name.</param>
     public bool Activate(string name) => _ui.Post(() => { if (_open.TryGetValue(name, out var w)) w?.Activate(); });
 
+    /// <summary>Asked, by window name, before a window closes: false hides it instead (the tray's close-to-tray).
+    /// UI thread.</summary>
+    internal Func<string, bool>? CloseGuard { get; set; }
+
+    /// <summary>Close every open window; the shell quits as the last one goes. Any thread.</summary>
+    internal bool CloseAll() => _ui.Post(() => { foreach (var w in _open.Values) w?.Close(); });
+
+    /// <summary>Is the named window showing? False while it is hidden or not open. UI thread.</summary>
+    internal bool IsShowing(string name) => _open.TryGetValue(name, out var w) && w is { IsVisible: true };
+
     /// <summary>
     /// Show a file dialog over the main window, or over any open window when the main one is not. UI thread.
     /// False when no window is open to own it.
@@ -112,7 +122,8 @@ public sealed unsafe class ChromiumWindows
         try
         {
             if (_serving is null || _origins is null) throw new InvalidOperationException("The Chromium shell has not started.");
-            window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls);
+            window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls,
+                w => CloseGuard?.Invoke(w.Name) ?? true);
             _open[name] = window;
 
             var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };

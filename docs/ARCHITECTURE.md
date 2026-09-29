@@ -215,7 +215,8 @@ Shenora.slnx
 │   │                                          with its IPC bridge, drops, dialogs and recovery, and
 │   │                                          the Views window hosting it, with its commands, the
 │   │                                          frame's hit-test and the caption buttons it can
-│   │                                          paint as overlays; the UI dispatcher;
+│   │                                          paint as overlays; the UI dispatcher; the tray,
+│   │                                          one per OS behind NativeTray;
 │   │                                          CefStartup, shared with the engine below).
 │   │                                          ChromiumEngine + ChromiumChildBrowser are
 │   │                                          the embedding for a host that owns its UI

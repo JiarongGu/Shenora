@@ -42,6 +42,10 @@ public sealed class ChromiumHostOptions
 
     /// <summary>What the ready handshake tells the page this shell is and can do (D36).</summary>
     public ShellInfo? Shell { get; init; }
+
+    /// <summary>A tray icon, on Windows and macOS: its menu, and whether closing the main window hides it there. Null
+    /// means none. The app reaches it as <see cref="ChromiumTray"/>.</summary>
+    public ChromiumTrayOptions? Tray { get; init; }
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

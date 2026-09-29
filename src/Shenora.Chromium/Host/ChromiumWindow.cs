@@ -15,6 +15,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
 {
     private readonly ChromiumWindowOptions _options;
     private readonly Action<ChromiumWindow> _destroyed;
+    private readonly Func<ChromiumWindow, bool>? _mayClose;
     private readonly ILogger? _log;
     private readonly WindowDelegate _delegate;
     private readonly BrowserViewDelegate _viewDelegate = new();
@@ -26,11 +27,14 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     private CaptionButtonPalette? _theme;   // the page's, once it has said; else the system's
     private CaptionButtonPalette? _colors;  // the page's own colours, which win over any theme
 
+    // mayClose is asked before the window closes: false keeps it open and hides it instead (the tray's close-to-tray).
     public ChromiumWindow(string name, ChromiumWindowOptions options, ChromiumServing serving, ChromiumOrigins origins,
-        Func<ChromiumBrowser, ChromiumIpcBridge> bridge, Action<ChromiumWindow> destroyed, ILogger? log, IUrlLauncher? urls = null)
+        Func<ChromiumBrowser, ChromiumIpcBridge> bridge, Action<ChromiumWindow> destroyed, ILogger? log, IUrlLauncher? urls = null,
+        Func<ChromiumWindow, bool>? mayClose = null)
     {
         _options = options;
         _destroyed = destroyed;
+        _mayClose = mayClose;
         _log = log;
         Browser = new ChromiumBrowser(name, serving, origins, bridge, log, urls) { Host = this };
         _delegate = new WindowDelegate(this);
@@ -87,6 +91,16 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     }
 
     public void Activate() { if (_window != null) { _window->show(_window); _window->activate(_window); } }
+    public void Hide() { if (_window != null) _window->hide(_window); }
+    public bool IsVisible => _window != null && ((_cef_view_t*)_window)->is_visible((_cef_view_t*)_window) == 1;
+
+    /// <summary>CEF asks before the window closes. UI thread.</summary>
+    private bool MayClose()
+    {
+        if (_mayClose is null || AppCallback.RunOrDefault(() => _mayClose(this), fallback: true)) return true;
+        Hide();
+        return false;
+    }
 
     /// <summary>True where the shell can open a window's system menu: Windows.</summary>
     public static bool SupportsSystemMenu =>
@@ -334,7 +348,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         private static int CanClose(_cef_window_delegate_t* self, _cef_window_t* window)
         {
             using var w = new CefRef<_cef_window_t>(window);
-            return 1;
+            return From<WindowDelegate>(self)._owner.MayClose() ? 1 : 0;
         }
 
         [UnmanagedCallersOnly]

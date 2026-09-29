@@ -50,7 +50,14 @@ public static class ChromiumHostExtensions
         builder.Services.AddSingleton(sp => new ChromiumWindows(options, sp.GetRequiredService<CefUiDispatcher>(),
             sp.GetRequiredService<IMessageDispatcher>(), sp.GetService<IEventBus>(), sp.GetService<ILogger<ChromiumWindows>>(),
             sp.GetRequiredService<IUrlLauncher>()));
-        builder.Services.AddSingleton<IShenoraRunner, ChromiumRunner>();
+        if (options.Tray is { } tray)
+        {
+            var name = builder.ApplicationName;
+            builder.Services.AddSingleton(sp => new ChromiumTray(tray, sp.GetRequiredService<ChromiumWindows>(),
+                options.Window.Title ?? name, sp.GetService<ILogger<ChromiumTray>>()));
+        }
+        builder.Services.AddSingleton<IShenoraRunner>(sp => new ChromiumRunner(options, sp.GetRequiredService<CefUiDispatcher>(),
+            sp.GetRequiredService<ChromiumWindows>(), sp.GetService<ChromiumTray>(), sp.GetService<ILogger<ChromiumRunner>>()));
         builder.Services.TryAddSingleton<IFileDialogs>(sp => new ChromiumFileDialogs(sp.GetRequiredService<ChromiumWindows>(),
             sp.GetRequiredService<CefUiDispatcher>(), sp.GetService<IFileDialogPathStore>(), sp.GetService<ILogger<ChromiumFileDialogs>>()));
         // The page's route to them, registered where the implementation exists (D64), as UseWindows does.

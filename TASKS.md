@@ -220,8 +220,8 @@ D37 and D51 are corrected in place to point at them.
      files, HTML, PNG, an app's own type and `application/json` round-tripped in one write; `SetText` replaced
      everything; a write the pasteboard could not take threw and left the previous content; `Clear` emptied it. The
      system pasteboard is the same code, unexercised (writing the owner's clipboard needs their yes).
-   - The Chromium shell has no tray on any OS: `TrayIcon` is the WinForms shell's, and a contract the Chromium shell
-     implements per OS waits for an app that asks. The file dialogs are CEF's own and should work, but a dialog needs a
+   - The tray (`ChromiumHostOptions.Tray`) is built on Windows and macOS; a person has not yet opened its menu with a
+     real click on either, or chosen an item. The file dialogs are CEF's own and should work, but a dialog needs a
      person to answer it. Code signing; osx-arm64 (no Apple Silicon Mac here).
    - Whether the app comes to the front when started from Finder: from `open` over ssh it stayed behind the
      active app, which macOS 15's cooperative activation explains and does not settle.
