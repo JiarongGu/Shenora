@@ -43,6 +43,13 @@ public static class MediaSurfaceProbe
     /// fixture, not because this device refuses it (see the remarks above).</summary>
     private const string Clip = "clip-h264-aac.mkv";
 
+    /// <summary>
+    /// The picture when this platform's player refuses <see cref="Clip"/>: iOS's AVPlayer opens no Matroska at all
+    /// (measured on the simulator: <c>MediaPlayerException</c>). The refusal is the REACH answer; the picture still
+    /// needs a clip, or the stage below never runs and the surface goes untested on that shell.
+    /// </summary>
+    private const string Fallback = "clip-faststart.mp4";
+
     /// <summary>How long the picture stays up so a screenshot can catch it. Long enough to aim at,
     /// short enough not to hold the audio session away from the probes that follow.</summary>
     private const int HoldSeconds = 14;
@@ -93,7 +100,7 @@ public static class MediaSurfaceProbe
         string clip;
         try
         {
-            clip = await StageAsync();
+            clip = await StageAsync(Clip);
         }
         catch (Exception ex)
         {
@@ -101,6 +108,7 @@ public static class MediaSurfaceProbe
             return;
         }
 
+        var opened = Clip;
         try
         {
             // A region the page has NOT made transparent yet, so nothing is expected to be visible. It is
@@ -109,8 +117,19 @@ public static class MediaSurfaceProbe
             surface.Show(new MediaSurfaceRegion(0, 0, 320, 180));
             log("SURFACE: region sent (0,0 320x180 css px)");
 
-            await player.OpenAsync(new MediaSource { Uri = clip });
-            log($"SURFACE: opened {Clip} — engine={player.Status.Engine} duration={player.Status.Duration}");
+            try
+            {
+                await player.OpenAsync(new MediaSource { Uri = clip });
+            }
+            catch (MediaPlayerException refused)
+            {
+                // The reach answer, said once; then the picture is tested with a clip this player opens.
+                log($"SURFACE: REACH — this platform's player refuses {Clip} ({refused.Message}); the picture is "
+                    + $"tested with {Fallback}");
+                opened = Fallback;
+                await player.OpenAsync(new MediaSource { Uri = await StageAsync(Fallback) });
+            }
+            log($"SURFACE: opened {opened} — engine={player.Status.Engine} duration={player.Status.Duration}");
 
             await player.PlayAsync();
             await Task.Delay(1500);
@@ -151,7 +170,7 @@ public static class MediaSurfaceProbe
             // the container was "one the WebView refuses" — a premise it never tested, and one the A/B
             // then refuted on this very device. A probe that asserts its own motivation is not evidence.
             log(second > first
-                ? "SURFACE: PASS — the shell's player opened an MKV by path and advanced a real clock"
+                ? $"SURFACE: PASS — the shell's player opened {opened} by path and advanced a real clock"
                 : $"SURFACE: FAIL — the clock did not move (error={player.Status.Error ?? "none"})");
         }
         catch (Exception ex)
@@ -168,15 +187,15 @@ public static class MediaSurfaceProbe
         }
     }
 
-    /// <summary>Copy the bundled clip into the cache, where a native player can open it by PATH.</summary>
-    private static async Task<string> StageAsync()
+    /// <summary>Copy a bundled clip into the cache, where a native player can open it by PATH.</summary>
+    private static async Task<string> StageAsync(string name)
     {
         var root = Path.Combine(FileSystem.CacheDirectory, "media");
         Directory.CreateDirectory(root);
-        var destination = Path.Combine(root, Clip);
+        var destination = Path.Combine(root, name);
         if (File.Exists(destination)) return destination;
 
-        await using var source = await FileSystem.OpenAppPackageFileAsync($"wwwroot/media/{Clip}");
+        await using var source = await FileSystem.OpenAppPackageFileAsync($"wwwroot/media/{name}");
         await using var target = File.Create(destination);
         await source.CopyToAsync(target);
         await target.FlushAsync();

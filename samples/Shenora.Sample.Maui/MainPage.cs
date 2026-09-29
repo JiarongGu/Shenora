@@ -129,8 +129,7 @@ public sealed class MainPage : ContentPage
 		 * are then applied INSIDE an already-inset webview, i.e. twice.
 		 *
 		 * `SafeAreaEdges.None` is what a bare `Content = _webView` used to do.
-		 * ⚠ UNVERIFIED ON iOS from this machine — nothing here compiles that TFM. The safe-area probe is
-		 * what to read on the next Mac run.
+		 * Run on the iOS simulator: the safe-area probe read the device's insets (portrait 62 top, 34 bottom).
 		 */
 		Content = new Grid { SafeAreaEdges = SafeAreaEdges.None, Children = { _mediaSurface, _webView } };
 
@@ -655,9 +654,9 @@ public sealed class MainPage : ContentPage
 					services.GetService<Shenora.Android.AndroidMediaPlayer>(), MauiProgram.Log);
 #elif IOS || MACCATALYST
 				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.iOS.IosMediaPlayer>(), MauiProgram.Log);
-				// ⚠ The SAME ladder on iOS, which has never run there: the layers differ (WKWebView carries a
-				// third one on its scroll view) but the question does not, and passing no stage would leave
-				// the shell honestly unable to show a picture with nothing saying why.
+				// ⚠ The SAME ladder on iOS: the layers differ (WKWebView carries a third one on its scroll view)
+				// but the question does not, and passing no stage would leave the shell honestly unable to show
+				// a picture with nothing saying why. Run on the simulator: the picture shows at rung 5.
 				await MediaSurfaceProbe.RunAsync(services.GetService<Shenora.iOS.IosMediaPlayer>(),
 					services.GetService<Shenora.Modules.Media.IMediaSurface>(), MauiProgram.Log, RunStageLadderAsync);
 				// Same as the Android arm: its own pipeline WITH a log, because the host registers the

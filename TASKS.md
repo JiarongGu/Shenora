@@ -196,20 +196,17 @@ transport })` works today.
 A tab a CDP client opens has no window and raises no event, where Edge 154 on its own profile shows it; a
 session cookie ends with the process, with no setting to keep it.
 
-### 🎬 THE PICTURE SURFACE (D80) — Android is answered, iOS is not
+### 🎬 THE PICTURE SURFACE (D80) — answered on Android and the iOS simulator
 
 Android is done end to end, pixels included: the run, the layer table and the two refutations are in
-`docs/design/media.md`. What is left is all on the other shell.
+`docs/design/media.md`. The iOS simulator ran the same five-rung stage ladder: the picture composites under
+the page (rung 5 shows the clip playing beside the page's magenta). ⚠ AVPlayer refuses the MKV fixture
+outright, so the iOS picture was tested with the MP4.
 
-- [ ] **Re-measure the container delta on iOS and on an older WebView before D52's example is trusted.**
-  It is cited as the thing the media tier exists for, and it now has one device saying otherwise.
-- [ ] **Run the stage ladder on iOS.** The sample drives the same five rungs there and they have never
-  executed — WKWebView carries a THIRD layer the Android chain does not (the scroll view's own
-  background, which `MobileWebViewTransparency` already clears), so the rung that fails, if one does, is
-  the informative outcome. Needs a Mac: nothing on this box compiles the iOS TFM.
-- [ ] **Re-check the safe-area probe on iOS**, and that `Shenora.iOS` compiles at all — nothing on this box
-  does (`dotnet workload list` → `maui-android` alone). The sample's `Content` became a `Grid` (with
-  `SafeAreaEdges.None` to restore edge-to-edge), and that is the property iOS actually reads.
+- [ ] **Re-measure the container delta on an older WebView before D52's example is trusted.** It is cited
+  as the thing the media tier exists for, and it now has one Android device saying otherwise. On iOS the
+  shell's own player cannot open Matroska at all (simulator), so there the surface cannot widen reach for
+  that container whatever WKWebView does — which was not measured.
 
 ### 🟡 THE PLAYBACK HEALTH FIGURES — the adopter has now BUILT them, so this is a harvest call
 
