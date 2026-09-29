@@ -66,15 +66,18 @@ at the first list and missed five more breaking changes.
   brings the code, not CEF, and the engine says so as it starts. Started as `dotnet <App>.App.dll` instead, as an
   IDE may, the app still runs, with the sandbox off and every CEF subprocess run through `<App>.exe`. win-x64
   and win-arm64. ⚠ win-arm64 is built and laid out (an ARM64 launcher, shim and CEF), but has not yet run on
-  ARM64 hardware. **macOS too, osx-x64 and osx-arm64**: the build lays out `bundle/<App>.app`, CEF's framework and
-  five helper apps inside it, and the package carries the macOS binding and helper. Run from a local-feed package
-  on an Intel Mac. A self-contained publish makes `publish/bundle/<App>.app` with the runtime inside, which starts
-  from Finder with no .NET installed; a framework-dependent build needs .NET installed for every user, since a
-  per-user install is not found from Finder. There, `NativeCaptionButtons` shows the system's own traffic lights on
-  the frameless window, and `IClipboardService` is `NSPasteboard` (an app's own media type goes under the type the
-  system names for it). ⚠ osx-arm64 has not run (no Apple Silicon Mac). ⚠ **On macOS the cookie key is Chromium's
-  mock keychain's**, so cookies at rest are encrypted with a fixed key: the real keychain keeps it in an item every
-  CEF app shares ("Chromium Safe Storage"), where a second kit app on a Mac stalled behind a login-password prompt.
+  ARM64 hardware.
+
+  **On macOS (osx-x64, osx-arm64), the shell** runs from an app bundle the build lays out, `bundle/<App>.app`,
+  with CEF's framework and five helper apps inside it, each the kit's helper that sandboxes its subprocess.
+  `dotnet publish --self-contained` makes `publish/bundle/<App>.app` with the runtime inside, which starts from
+  Finder with no .NET installed; a framework-dependent build needs .NET installed for every user, since a
+  per-user install is not found from Finder. `NativeCaptionButtons` there shows the system's own traffic lights
+  on the frameless window, and `IClipboardService` is `NSPasteboard` (an app's own media type goes under the
+  type the system names for it). Run from a local-feed package on an Intel Mac. ⚠ osx-arm64 has not run (no
+  Apple Silicon Mac). ⚠ **On macOS the cookie key is Chromium's mock keychain's (D85)**, so cookies at rest are
+  encrypted with a fixed key: the real keychain keeps it in an item every CEF app shares ("Chromium Safe
+  Storage"), where a second kit app on a Mac stalled behind a login-password prompt.
 
 - **`createChromiumTransport()` in `@shenora/react`, and `createHostTransport()` finds the Chromium hosts**
   (**D83**). They mark each HTML document they serve, the app's own routes' included, with
@@ -137,8 +140,8 @@ at the first list and missed five more breaking changes.
   webview; `MobileMediaSurface.Attach(view, webView, dispatcher)` when the page is built; `view.Player` set to the
   shell's own player; `ShellCapability.MediaSurface` advertised in the app's `ShellInfo`; and a stage in the page
   — a transparent background where the picture belongs **and** its own content out of the way, the half that
-  gets missed. ✅ Photographed on Android; the MAUI page's `BackgroundColor` is deliberately NOT part of the
-  chain (`docs/guides/media.md`).
+  gets missed. Photographed on Android and on the iOS simulator; the MAUI page's `BackgroundColor` is
+  deliberately NOT part of the chain (`docs/guides/media.md`). ⚠ iOS's `AVPlayer` opens no Matroska at all.
 
 - **iOS can hold an orientation now — `MobileWindowOrientation.SupportedInterfaceOrientations`.** **Return the
   mask from your app delegate** and `Lock`/`Unlock` work on both shells. It is EXPORTED, not overridden:

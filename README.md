@@ -18,14 +18,12 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.16.0 — pre-release, stabilising toward 1.0.** Newest in the PUBLISHED version: holding the window
-at an orientation (Android), the notification path's own report of what it accepted, filtered, dropped
-and delivered, and the Android recreation crash. **Landing in the tree ahead of the next release** — see
-`CHANGELOG.md`'s `## Unreleased`, which is the authority — are **`Shenora.Chromium`**, a new package: Chromium
-through CEF for an app that ships its own engine, as a shell of its own (`UseChromium`) or as a `ChromiumView`
-control in the Windows shell; the shell's own **picture surface** on a phone (`useMediaSurface` /
-`useMediaTransport`: the platform's player draws the film under a transparent region the page leaves, no
-transcode, the page keeping every control); and **orientation on iOS**.
+**v0.16.0 — pre-release, stabilising toward 1.0.** The newest arrivals — `CHANGELOG.md` is the authority —
+are **`Shenora.Chromium`**, a new package: Chromium through CEF for an app that ships its own engine, as a
+shell of its own (`UseChromium`, on Windows and macOS) or as a `ChromiumView` control in the Windows shell;
+the shell's own **picture surface** on a phone (`useMediaSurface` / `useMediaTransport`: the platform's player
+draws the film under a transparent region the page leaves, no transcode, the page keeping every control); and
+**orientation on iOS**.
 
 > **The segment/streaming media tier is the newest part of the kit, and the only one not extracted from an
 > application that had already proven it in production.** An August 2026 review found several faults
@@ -65,7 +63,7 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 | `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Modules.Media` — probe, plan, serve, remux, and the shell's own picture surface), file operations (`Shenora.Engine.Files` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.Engine.Compression`). |
 | `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.Engine.Update`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
-| `Shenora.Chromium` | NuGet | `net10.0` (Windows today) | Chromium through CEF, for an app that ships its own browser engine instead of WebView2 (D81): a shell of its own (`UseChromium`), and the embedding `Shenora.Windows` hosts as a `ChromiumView`. **CEF is not in the package** — your app's build fetches the pinned CEF build and lays the app out beside CEF's launcher, so reference it from the app's own project. |
+| `Shenora.Chromium` | NuGet | `net10.0` (Windows and macOS, x64 and arm64) | Chromium through CEF, for an app that ships its own browser engine instead of WebView2 (D81): a shell of its own (`UseChromium`), and the embedding `Shenora.Windows` hosts as a `ChromiumView`. **CEF is not in the package** — your app's build fetches the pinned CEF build and lays the app out (beside CEF's launcher on Windows, as an app bundle on macOS), so reference it from the app's own project. |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell. It SHARES the MAUI-shaped half with `Shenora.Android` (`src/Shenora.Mobile/`: transport, dispatcher, safe area, interception) and owns what is genuinely per-platform — AVPlayer, `MPNowPlayingInfoCenter`, ActivityKit — in its own `Services/`. |
 | `@shenora/react` | npm | ES2022 / ESM · **React ≥ 18** | The client half — bridge, event bus, store, hooks. Built and tested against the LATEST React (19); 18 is supported and the floor is enforced rather than assumed — `verify` type-checks the shipped sources against React 18's types, so an API that does not exist there fails here instead of in your build. 18 is the floor because `useSyncExternalStore` is, and the store is built on it. |
@@ -94,7 +92,7 @@ managed code comes along, and CEF itself only into an app that references `Sheno
                          ↑              (Core · Engine · Modules — the IPC stack is
             ┌────────────┼────────────┬───────────────┐  Shenora.Core.Ipc, a NAMESPACE)
             │            │            │               │
-   Shenora.Windows  Shenora.Android  Shenora.iOS   Shenora.Chromium   net10.0, Windows today
+   Shenora.Windows  Shenora.Android  Shenora.iOS   Shenora.Chromium   net10.0, Windows + macOS
    net10.0-windows  net10.0-android  net10.0-ios      ↑   (D81)
             └─────────────────────────────────────────┘   ChromiumView (D83)
 
