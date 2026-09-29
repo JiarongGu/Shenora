@@ -33,9 +33,12 @@ at the first list and missed five more breaking changes.
 ### Added
 
 - **`ChromiumBrowserProcess`: Chromium as a browser, in a second process of the app's own executable** (D86). The
-  app's `Main` sees an argument of its own and calls `ChromiumBrowserProcess.Run`, which starts CEF with no app page:
-  Chromium's own windows, with their tabs, address bar, history, find, downloads and devtools, and a
-  `RemoteDebuggingPort` that is open in production, because no bridge is in that process. Windows come from
+  app starts it with `ChromiumBrowserProcess.Start`, never `Process.Start`: on Windows that handed the browser a pipe
+  end of Chromium's in 20 launches of 88, and the app then never finished exiting (none in 40 launched with no
+  handle passed on, 20 of them through `Start`; macOS was unaffected, 0 in 12). Its `Main` sees an argument of the
+  app's own and calls `ChromiumBrowserProcess.Run`, which starts CEF with no app page: Chromium's own windows, with
+  their tabs, address bar, history, find, downloads and devtools, and a `RemoteDebuggingPort` that is open in
+  production, because no bridge is in that process. Windows come from
   `StartUrl` or over the port (`Target.createTarget`), and an agent's new tab joins the person's window. The port is
   a relay onto Chromium's own that announces a new tab as a `page` from the start, where Chromium says `other` first
   and Playwright's and Chrome DevTools' MCP servers never take it up (the relay is harvested from an adopter). The

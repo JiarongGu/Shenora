@@ -344,11 +344,15 @@ static int Main(string[] args)
         }, stop.Token);
     }
     // … the app as before; to open the browser:
-    // Process.Start(Environment.ProcessPath!, ["--browser", profileFolder, Environment.ProcessId.ToString()]);
+    // ChromiumBrowserProcess.Start(["--browser", profileFolder, Environment.ProcessId.ToString()]);
 }
 ```
 
-`Environment.ProcessPath` is `MyApp.exe`, CEF's launcher, so the browser is sandboxed as the app is. Its windows come
+`Start` runs `Environment.ProcessPath`, which is `MyApp.exe`, CEF's launcher, so the browser is sandboxed as the app
+is. ⚠ **Not `Process.Start`**: on Windows it hands the browser every handle that is inheritable at that moment, and
+while Chromium starts a process of its own a pipe end of Chromium's is. The browser, which outlives the app, then
+held it, and the app never finished exiting (measured: 20 launches in 88). `Start` passes no handle on. A link opened
+through the shell (`UseShellExecute = true`, as the kit's URL launchers do) passes none either. Its windows come
 from `StartUrl` or over the port (`Target.createTarget`), and it exits when its last window closes, or when `stop`
 fires, after closing them. The port relays Chromium's own and announces a new tab as a `page` from the start, where
 Chromium says `other` first: a client that waits for a `page`, as Playwright's MCP server does, opens tabs through it

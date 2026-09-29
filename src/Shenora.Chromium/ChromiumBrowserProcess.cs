@@ -43,9 +43,9 @@ public sealed class ChromiumBrowserProcessOptions
 /// address bar, history, find, downloads and devtools, and a debugging port that is open in production because no
 /// bridge is in its reach.
 /// <para>
-/// The app runs it as a second process of its OWN executable: it starts <c>Environment.ProcessPath</c> with an
-/// argument of its own, and its <c>Main</c> sees that argument and calls <see cref="Run"/> before anything else. So an
-/// install carries one Chromium, and on Windows CEF's launcher sandboxes this process as it does the app.
+/// The app runs it as a second process of its OWN executable: <see cref="Start"/> starts it with an argument of the
+/// app's own, and its <c>Main</c> sees that argument and calls <see cref="Run"/> before anything else. So an install
+/// carries one Chromium, and on Windows CEF's launcher sandboxes this process as it does the app.
 /// </para>
 /// <para>
 /// ⚠ A page in this browser is the open web, and Chromium's checks stay on, where the app's own pages turn its
@@ -54,6 +54,29 @@ public sealed class ChromiumBrowserProcessOptions
 /// </summary>
 public static class ChromiumBrowserProcess
 {
+    /// <summary>
+    /// Start the browser as a second process of the app's own executable (<see cref="Environment.ProcessPath"/>), with
+    /// <paramref name="arguments"/> its <c>Main</c> answers with <see cref="Run"/>.
+    /// <para>
+    /// ⚠ Start it here, not with <c>Process.Start</c>. On Windows <c>Process.Start</c> hands the new process every handle
+    /// that is inheritable at that moment, and while Chromium starts a process of its own a pipe end of its is. The
+    /// browser, which outlives the app by design, then held it, and the app never returned from Chromium's shutdown
+    /// (measured: 20 launches in 88). This process inherits none.
+    /// </para>
+    /// </summary>
+    /// <param name="arguments">What the browser's <c>Main</c> recognises, such as the argument that routes it, its profile
+    /// folder and the app's process id.</param>
+    /// <returns>The browser's process.</returns>
+    /// <exception cref="InvalidOperationException">The app's executable is unknown, or the browser exited as it
+    /// started.</exception>
+    /// <exception cref="System.ComponentModel.Win32Exception">The OS would not start it.</exception>
+    public static System.Diagnostics.Process Start(IEnumerable<string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        var exe = Environment.ProcessPath ?? throw new InvalidOperationException("The app's executable is unknown.");
+        return NoInheritProcess.Start(exe, arguments);
+    }
+
     /// <summary>
     /// Run this process as the browser, on the calling thread: the app's main thread, <c>[STAThread]</c> on Windows as
     /// a window's thread is. It blocks until the last window closes, once one has opened, or until

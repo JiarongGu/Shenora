@@ -1,4 +1,5 @@
 static class Shenora.Chromium.ChromiumBrowserProcess
+  public static System.Diagnostics.Process Start(System.Collections.Generic.IEnumerable<string> arguments)
   public static int Run(Shenora.Chromium.ChromiumBrowserProcessOptions options, System.Threading.CancellationToken stop = default, Microsoft.Extensions.Logging.ILogger? log = null)
 sealed class Shenora.Chromium.ChromiumBrowserProcessOptions
   public System.Uri? StartUrl { get; init; }

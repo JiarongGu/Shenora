@@ -1227,6 +1227,8 @@ docs cite them — so the number is the column to scan.
     permission prompts that D84's page has the shell answer.
   - **Chromium's local-network checks stay ON there**: its pages are the open web, where D83 turns them off because
     the pages are the app's own. On macOS, D85's mock keychain applies to its sign-ins too.
+  - 🔴 **The app starts it with `ChromiumBrowserProcess.Start`, which passes no handle on.** On Windows, `Process.Start`
+    could hand it a pipe end of the app's Chromium, and the browser outlives the app, whose shutdown then never ended.
   - ⚠ **It needs CEF 154.0.32 or later.** On 154.0.28 a debugging client that opened a TAB in an existing window
     crashed the browser process, in the kit and in CEF's own sample client alike, which is exactly what an agent's
     "new tab" does.
