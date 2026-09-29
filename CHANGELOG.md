@@ -165,6 +165,19 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A page in a `SecondaryWindows` window commanded the app's main window.** `WindowCommandModule` is mapped
+  once, bound to the main form, and it acted there whoever sent the command. Measured with a `ChromiumView` page
+  in a secondary window, before: its `MINIMIZE` minimized the main window, and **its `CLOSE` closed the main
+  window, which ended the app**. Now each command acts on the window whose page sent it. Measured after, with a
+  `ChromiumView` page and with a WebView2 page, each in a plain secondary form: `MINIMIZE` and `CLOSE` act on that
+  window and the main one does not move, and `SET_THEME` and `SET_CAPTION_BUTTONS` answer `NO_ROUTE`, since the
+  main window's `ApplyTheme` is not that window's and a plain form has no caption buttons. Tested on hidden forms,
+  not run: an `OptimizedForm` there maximizes its own way and takes its caption buttons relative to the page,
+  and a window embedded in the main one (an MDI child) still commands the main window. A page whose window has
+  gone commands nothing. A command sent from no page still acts on the main window. In the main window too, a
+  page's caption rectangles are now read against the control that shows it rather than `CoordinateSpace`, which
+  matters in a form with two pages.
+
 - **`OptimizedForm`'s caption buttons hold a press the way the system's do.** A press on a registered
   button now takes the mouse capture until its release: while it is held only that button shows, pressed
   while the pointer is on it, and the release acts only there. Measured with a real cursor on a bare

@@ -47,6 +47,33 @@ public class SecondaryWindowsTests
         WaitUntil(() => !windows.HasWindow("w1"), "window close");
     }
 
+    // A page's request that opens a window hands the new thread its context. The window is not that page's: a window
+    // command its own code sends must not act on the opener's window.
+    [Fact]
+    public void A_window_opened_from_a_pages_request_is_no_pages()
+    {
+        using var windows = new SecondaryWindows();
+        var opener = new Control();
+        bool? isPage = null;
+
+        using (PageSender.Enter(opener))
+        {
+            windows.Open("w-page", new SecondaryWindowOptions
+            {
+                CreateForm = () =>
+                {
+                    isPage = PageSender.IsPage(out _);
+                    return new Form { Text = "w-page", ShowInTaskbar = false, WindowState = FormWindowState.Minimized };
+                },
+            });
+        }
+
+        WaitUntil(() => isPage is not null, "window creation");
+        Assert.False(isPage);
+        windows.Close("w-page");
+        WaitUntil(() => !windows.HasWindow("w-page"), "window close");
+    }
+
     [Fact]
     public void The_entry_survives_until_the_pump_has_finished_tearing_down()
     {

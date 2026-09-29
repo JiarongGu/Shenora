@@ -275,4 +275,266 @@ public class WindowCommandModuleTests
         Assert.Equal(IpcErrorCodes.NoRoute, response.Error!.Code);
         Assert.Equal(WindowCommandModule.Module, response.Error.Parameters!["module"]);
     }
+
+    // The module is mapped once, for the main window, so a page in any other (a SecondaryWindows window's) must
+    // command its own: before, its close button closed the app's main window.
+    [Fact]
+    public async Task A_page_in_another_window_commands_its_own_window()
+    {
+        using var main = CreateForm();
+        using var other = CreateForm();
+        var page = new Control();
+        other.Controls.Add(page);
+        bool mainClosed = false, otherClosed = false;
+        main.FormClosed += (_, _) => mainClosed = true;
+        other.FormClosed += (_, _) => otherClosed = true;
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = main });
+
+        using (PageSender.Enter(page)) await facade.HandleMessageAsync(Request("MINIMIZE"));
+        Application.DoEvents();
+        Assert.Equal(FormWindowState.Minimized, other.WindowState);
+        Assert.Equal(FormWindowState.Normal, main.WindowState);
+
+        using (PageSender.Enter(page)) await facade.HandleMessageAsync(Request("CLOSE"));
+        Application.DoEvents();
+        Assert.True(otherClosed);
+        Assert.False(mainClosed);
+    }
+
+    // A request still in flight as its window closes: its page is out of the window by then, and it must not fall
+    // back to the main one.
+    [Fact]
+    public async Task A_page_whose_window_is_gone_commands_nothing()
+    {
+        using var main = CreateForm();
+        var mainClosed = false;
+        main.FormClosed += (_, _) => mainClosed = true;
+        var page = new Control();
+        page.Dispose();
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = main, IsMaximized = () => true });
+
+        IpcResponse close, maximized;
+        using (PageSender.Enter(page))
+        {
+            close = await facade.HandleMessageAsync(Request("CLOSE"));
+            maximized = await facade.HandleMessageAsync(Request("IS_MAXIMIZED"));
+        }
+        Application.DoEvents();
+
+        Assert.True(close.Success);
+        Assert.False(mainClosed);
+        Assert.False(IpcJson.SerializeToElement(maximized.Data!).GetProperty("maximized").GetBoolean());
+    }
+
+    [Fact]
+    public async Task A_page_whose_window_is_gone_still_has_no_route_for_what_it_never_had()
+    {
+        using var main = CreateForm();
+        var page = new Control();
+        page.Dispose();
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = main, ApplyTheme = _ => { } });
+
+        IpcResponse theme, unknown;
+        using (PageSender.Enter(page))
+        {
+            theme = await facade.HandleMessageAsync(Request("SET_THEME", new { dark = true }));
+            unknown = await facade.HandleMessageAsync(Request("NOPE"));
+        }
+
+        Assert.Equal(IpcErrorCodes.NoRoute, theme.Error!.Code);
+        Assert.Equal(IpcErrorCodes.NoRoute, unknown.Error!.Code);
+    }
+
+    // Held weakly, so work a page started does not keep it alive; once collected, that page is gone, not "no page".
+    [Fact]
+    public async Task A_page_whose_control_was_collected_commands_nothing()
+    {
+        using var main = CreateForm();
+        var mainClosed = false;
+        main.FormClosed += (_, _) => mainClosed = true;
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = main });
+
+        var scope = EnterAsACollectablePage();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        IpcResponse close;
+        using (scope) close = await facade.HandleMessageAsync(Request("CLOSE"));
+        Application.DoEvents();
+
+        Assert.True(close.Success);
+        Assert.False(mainClosed);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static PageSender.Scope EnterAsACollectablePage() => PageSender.Enter(new Control());
+
+    // An MDI child or a TopLevel = false panel is inside the main window: its page commands the main window, with the
+    // options' callbacks, not the embedded form.
+    [Fact]
+    public async Task A_page_in_a_form_embedded_in_the_main_one_commands_the_main_window()
+    {
+        using var main = CreateForm();
+        var embedded = new Form { TopLevel = false };
+        main.Controls.Add(embedded);
+        var page = new Control();
+        embedded.Controls.Add(page);
+        var toggled = 0;
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = main, ToggleMaximize = () => toggled++ });
+
+        using (PageSender.Enter(page)) await facade.HandleMessageAsync(Request("TOGGLE_MAXIMIZE"));
+        Application.DoEvents();
+
+        Assert.Equal(1, toggled);
+        Assert.Equal(FormWindowState.Normal, embedded.WindowState);
+    }
+
+    [Fact]
+    public async Task A_page_in_an_MDI_child_commands_the_MDI_parent()
+    {
+        using var main = CreateForm();
+        main.IsMdiContainer = true;
+        var child = new Form { MdiParent = main };
+        var page = new Control();
+        child.Controls.Add(page);
+        var toggled = 0;
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = main, ToggleMaximize = () => toggled++ });
+
+        using (PageSender.Enter(page)) await facade.HandleMessageAsync(Request("TOGGLE_MAXIMIZE"));
+        Application.DoEvents();
+
+        Assert.Equal(1, toggled);
+    }
+
+    private sealed class AppMaximizedForm : Form, IAppMaximizable
+    {
+        public WindowPlacement AppPlacement => WindowPlacement.Maximized;
+        public Rectangle AppRestoreBounds => Bounds;
+    }
+
+    [Fact]
+    public async Task Another_window_that_maximizes_itself_is_read_by_its_placement()
+    {
+        using var main = CreateForm();
+        using var other = new AppMaximizedForm();
+        _ = other.Handle;
+        var page = new Control();
+        other.Controls.Add(page);
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = main });
+
+        IpcResponse maximized;
+        using (PageSender.Enter(page)) maximized = await facade.HandleMessageAsync(Request("IS_MAXIMIZED"));
+
+        Assert.True(IpcJson.SerializeToElement(maximized.Data!).GetProperty("maximized").GetBoolean());
+    }
+
+    // Two pages in the main window: each one's rectangles are its own, whatever the options' coordinate space.
+    [Fact]
+    public async Task A_page_in_the_main_window_is_read_against_its_own_control()
+    {
+        using var main = CreateForm();
+        var first = new Control { Bounds = new Rectangle(0, 0, 100, 100) };
+        var second = new Control { Bounds = new Rectangle(120, 60, 200, 200) };
+        main.Controls.Add(first);
+        main.Controls.Add(second);
+        _ = first.Handle;
+        _ = second.Handle;
+        IReadOnlyList<CaptionButtonRegion>? received = null;
+        var facade = new WindowCommandModule(new WindowCommandOptions
+        {
+            Window = main,
+            CoordinateSpace = first,
+            SetCaptionButtons = regions => received = regions,
+        });
+
+        using (PageSender.Enter(second))
+            await facade.HandleMessageAsync(Request("SET_CAPTION_BUTTONS",
+                new { buttons = new[] { new { kind = "close", x = 10, y = 0, width = 30, height = 30 } } }));
+        Application.DoEvents();
+
+        var scale = DpiHelper.ScaleFromDeviceDpi(second.DeviceDpi);
+        var expected = main.PointToClient(second.PointToScreen(new Point((int)Math.Round(10 * scale), 0)));
+        Assert.Equal(expected, Assert.Single(received!).Bounds.Location);
+    }
+
+    [Fact]
+    public async Task A_page_in_the_options_window_gets_the_options_callbacks()
+    {
+        using var main = CreateForm();
+        var page = new Control();
+        main.Controls.Add(page);
+        var toggled = 0;
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = main, ToggleMaximize = () => toggled++ });
+
+        using (PageSender.Enter(page)) await facade.HandleMessageAsync(Request("TOGGLE_MAXIMIZE"));
+        Application.DoEvents();
+
+        Assert.Equal(1, toggled);
+    }
+
+    [Fact]
+    public async Task Another_windows_theme_has_no_route_and_never_reaches_the_options_callback()
+    {
+        using var main = CreateForm();
+        using var other = CreateForm();
+        var page = new Control();
+        other.Controls.Add(page);
+        bool? applied = null;
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = main, ApplyTheme = dark => applied = dark });
+
+        IpcResponse response;
+        using (PageSender.Enter(page)) response = await facade.HandleMessageAsync(Request("SET_THEME", new { dark = false }));
+        Application.DoEvents();
+
+        Assert.Equal(IpcErrorCodes.NoRoute, response.Error!.Code);
+        Assert.Null(applied);
+    }
+
+    [Fact]
+    public async Task An_optimized_form_elsewhere_maximizes_and_takes_caption_buttons_its_own_way()
+    {
+        using var main = CreateForm();
+        using var other = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true })
+        {
+            StartPosition = FormStartPosition.Manual,
+            Bounds = new Rectangle(0, 0, 800, 600),
+            ShowInTaskbar = false,
+        };
+        // The page does not fill its window, so its CSS px must be read against the page, not the form.
+        var page = new Control { Bounds = new Rectangle(100, 50, 600, 400) };
+        other.Controls.Add(page);
+        _ = other.Handle;
+        _ = page.Handle;
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = main });
+
+        IpcResponse captions;
+        using (PageSender.Enter(page))
+            captions = await facade.HandleMessageAsync(Request("SET_CAPTION_BUTTONS",
+                new { buttons = new[] { new { kind = "close", x = 10, y = 0, width = 30, height = 30 } } }));
+        Application.DoEvents();
+
+        Assert.True(captions.Success);
+        var scale = DpiHelper.ScaleFromDeviceDpi(page.DeviceDpi);
+        var centre = other.PointToScreen(new Point(100 + (int)(25 * scale), 50 + (int)(15 * scale)));
+        Assert.Equal(20 /* HTCLOSE */, (int)SendMessage(other.Handle, 0x0084 /* WM_NCHITTEST */, IntPtr.Zero,
+            (IntPtr)(((centre.Y & 0xFFFF) << 16) | (centre.X & 0xFFFF))));
+
+        IpcResponse maximized;
+        using (PageSender.Enter(page))
+        {
+            await facade.HandleMessageAsync(Request("TOGGLE_MAXIMIZE"));
+            Application.DoEvents();
+            maximized = await facade.HandleMessageAsync(Request("IS_MAXIMIZED"));
+        }
+
+        // Its manual work-area maximize, which WindowState never shows.
+        Assert.Equal(WindowPlacement.Maximized, other.AppPlacement);
+        Assert.Equal(FormWindowState.Normal, other.WindowState);
+        Assert.True(IpcJson.SerializeToElement(maximized.Data!).GetProperty("maximized").GetBoolean());
+        Assert.Equal(FormWindowState.Normal, main.WindowState);
+        other.SetCaptionButtons(null);
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 }

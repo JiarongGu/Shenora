@@ -91,6 +91,9 @@ public sealed class SecondaryWindows : IDisposable
 
     private void RunWindow(string name, WindowEntry entry, SecondaryWindowOptions options)
     {
+        // The thread inherits the opener's context, often a page's request: the window is not that page's, and its own
+        // pages mark themselves.
+        using var nobody = PageSender.Enter(null);
         Form form;
         try
         {

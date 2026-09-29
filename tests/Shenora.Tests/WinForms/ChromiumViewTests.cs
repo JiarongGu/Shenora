@@ -35,6 +35,62 @@ public class ChromiumViewTests
         });
     }
 
+    // A view's page has its IPC dispatched in work its browser posts to the view's thread, from CEF's, so that work
+    // runs as the view's page and a window command acts on the view's window (WindowCommandModule).
+    [Fact]
+    public void Work_the_views_browser_posts_to_its_thread_runs_as_the_views_page_awaits_included()
+    {
+        Sta.Run(() =>
+        {
+            using var form = new Form();
+            var view = new ChromiumView(new ChromiumEngine());
+            form.Controls.Add(view);
+            _ = form.Handle;
+            _ = view.Handle;
+            var ui = view.BrowserOptions().UiDispatcher!;
+            Control? during = null, afterAwait = null;
+            var done = false;
+
+            var posted = Task.Run(() => ui.Post(async () =>
+            {
+                during = PageSender.Current;
+                await Task.Yield();
+                afterAwait = PageSender.Current;
+                done = true;
+            })).Result;
+            for (var i = 0; i < 400 && !done; i++)
+            {
+                Application.DoEvents();
+                Thread.Sleep(5);
+            }
+
+            Assert.True(posted);
+            Assert.Same(view, during);
+            Assert.Same(view, afterAwait);
+        });
+    }
+
+    // Posted from the view's own thread, the work runs inline, in the caller's context: the mark must end with it.
+    [Fact]
+    public void Work_posted_from_the_views_own_thread_runs_as_its_page_and_leaves_no_mark()
+    {
+        Sta.Run(() =>
+        {
+            using var form = new Form();
+            var page = new Control();
+            form.Controls.Add(page);
+            _ = form.Handle;
+            _ = page.Handle;
+            var ui = new PageUiDispatcher(page);
+            Control? during = null;
+
+            Assert.True(ui.Post(() => during = PageSender.Current));
+
+            Assert.Same(page, during);
+            Assert.False(PageSender.IsPage(out _));
+        });
+    }
+
     [Fact]
     public void UseChromiumEngine_registers_one_engine_in_either_order_with_UseWindows()
     {

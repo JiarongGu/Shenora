@@ -260,9 +260,13 @@ public sealed class WebViewIpcBridge : IDisposable
     /// <summary>
     /// Parse → handshake-or-dispatch → response JSON, via <see cref="IpcHostBridge"/>. Null when the
     /// input wasn't a valid request (nothing to correlate a response to — logged and dropped; the
-    /// client's own timeout surfaces it). Internal seam for tests.
+    /// client's own timeout surfaces it). Internal seam for tests. The request runs as this web view's
+    /// (<see cref="PageSender"/>), so a window command acts on the window showing the page.
     /// </summary>
-    internal Task<string?> HandleIncomingAsync(string json) => _host.HandleIncomingAsync(json);
+    internal Task<string?> HandleIncomingAsync(string json)
+    {
+        using (PageSender.Enter(_webView)) return _host.HandleIncomingAsync(json);
+    }
 
     private void Flush()
     {

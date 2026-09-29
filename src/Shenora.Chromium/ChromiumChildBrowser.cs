@@ -22,6 +22,8 @@ public sealed class ChromiumChildBrowserOptions
     /// The thread the page's IPC is dispatched on, which is the one that owns the parent window. Null means the
     /// app's own <see cref="IUiDispatcher"/>, which is right for the main window only: a window on a thread of its
     /// own (the kit's <c>SecondaryWindows</c>) passes a dispatcher over itself.
+    /// ⚠ A WinForms host uses <c>ChromiumView</c> instead, whose dispatcher also marks the page as its own: the kit's
+    /// window commands find the page's window that way, and a page given a plain dispatcher commands the main window.
     /// </summary>
     public IUiDispatcher? UiDispatcher { get; init; }
 

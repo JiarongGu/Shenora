@@ -41,6 +41,30 @@ public class WebViewIpcBridgeTests
             doc.RootElement.GetProperty("error").GetProperty("code").GetString());
     }
 
+    // What lets a window command act on the window showing the page (WindowCommandModule): the request, and what it
+    // awaits, run as this web view's.
+    [Fact]
+    public async Task A_request_runs_as_the_web_view_that_sent_it()
+    {
+        Control? during = null, afterAwait = null;
+        var dispatcher = new MessageDispatcher();
+        dispatcher.MapModule("APP", routes => routes.RouteAsync("WHO", async (_, _) =>
+        {
+            during = PageSender.Current;
+            await Task.Yield();
+            afterAwait = PageSender.Current;
+            return null;
+        }));
+        var webView = new WebView2Control();
+        var bridge = new WebViewIpcBridge(webView, new WebViewIpcBridgeOptions { Dispatcher = dispatcher });
+
+        await bridge.HandleIncomingAsync(IpcJson.Serialize(new IpcRequest { Id = "r1", Module = "APP", Type = "WHO" }));
+
+        Assert.Same(webView, during);
+        Assert.Same(webView, afterAwait);
+        Assert.Null(PageSender.Current);
+    }
+
     private static string ReadyJson(string id = "h1") =>
         IpcJson.Serialize(new IpcRequest
         {

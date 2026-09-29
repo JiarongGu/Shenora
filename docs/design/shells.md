@@ -107,7 +107,13 @@ Win11 corners. `SC_MAXIMIZE` routes through the same path, so every maximize rou
 is the truth, not `Form.WindowState`** — a manual maximize keeps `WindowState.Normal`.
 
 Chrome commands arrive over IPC on `SHENORA.WINDOW` (`WindowCommandModule` ⇄ `WindowCommands`), and the
-route names are constants on both sides, pinned by `WireMirrorTests`.
+route names are constants on both sides, pinned by `WireMirrorTests`. The module is mapped once, for the main
+window, and each command acts on the window whose page sent it: the page transports (`WebViewIpcBridge`,
+`ChromiumView`) run each dispatch as their control, and the module finds that control's form. A page in
+another window commands that window, as an `OptimizedForm` or a plain form; only the main window has the
+options' callbacks. The Chromium shell's windows also act on the sending page's own window
+(`ChromiumWindowCommands`), but a send from no page does nothing there, and a window that paints its caption
+buttons has `SET_THEME`.
 
 ## Window state, and the DPI rule
 

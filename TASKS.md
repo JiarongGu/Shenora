@@ -199,9 +199,6 @@ D37 and D51 are corrected in place to point at them.
    - Nothing acts on the page's `-webkit-app-region: drag` areas in an embedded browser (`START_DRAG`
      works). Under Views, CEF reports them through `on_draggable_regions_changed`; whether it does for a
      child browser is unmeasured.
-   - ⚠ An app with both engines has ONE `WindowCommandModule`, bound to one form and one `CoordinateSpace`, so a
-     `ChromiumView` in another window would command that one. Read from the source, unmeasured; the drop zones
-     had the same shape and now answer each page by its own engine.
 4. **macOS, on the Mac build host:** CEF on the main thread with its own app integration (a search result
    reported macOS message-pump fixes in CefGlue on 2026-09-22; unconfirmed), and Views support there (an
    old CEF forum post says Views is Windows/Linux only; believed fixed since, unconfirmed).
@@ -233,6 +230,18 @@ Android is done end to end, pixels included: the run, the layer table and the tw
 - [ ] **Re-check the safe-area probe on iOS**, and that `Shenora.iOS` compiles at all — nothing on this box
   does (`dotnet workload list` → `maui-android` alone). The sample's `Content` became a `Grid` (with
   `SafeAreaEdges.None` to restore edge-to-edge), and that is the property iOS actually reads.
+
+### 🟡 A WEBVIEW2 PAGE IN A SECOND WINDOW SHARES THE MAIN WINDOW'S DROP ZONES
+
+`DropZoneModule` is mapped once, over the main web view's `DropZoneManager`, so a WebView2 page in a
+`SecondaryWindows` window registers its zones there: the overlays land over the MAIN window, at the second page's
+coordinates. The same React code uses the same `zoneId`s, so that page's `REGISTER`/`UNREGISTER` also moves or
+removes the main page's overlay, and a new document in the main page clears the other's zones. Its drop events go
+out on the bus, to every page. Read from the source, unmeasured. A `ChromiumView` page is unaffected (its engine
+answers its zones).
+
+- [ ] **A manager per page**, found through the sending page as the window commands find theirs, and drop events
+  addressed to that page alone. D15: no adopter has a WebView2 page in a second window today.
 
 ### 🟡 THE PLAYBACK HEALTH FIGURES — the adopter has now BUILT them, so this is a harvest call
 

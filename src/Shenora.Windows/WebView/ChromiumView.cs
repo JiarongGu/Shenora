@@ -61,14 +61,7 @@ public sealed class ChromiumView : Control
     {
         try
         {
-            _browser = new ChromiumChildBrowser(_engine, Handle, new ChromiumChildBrowserOptions
-            {
-                Name = Name is { Length: > 0 } name ? name : "view",
-                Path = Path,
-                BackgroundColor = BackColor,
-                UiDispatcher = new WinFormsUiDispatcher(this),
-                FocusLeaving = MoveFocusOut,
-            });
+            _browser = new ChromiumChildBrowser(_engine, Handle, BrowserOptions());
         }
         catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException)
         {
@@ -76,6 +69,17 @@ public sealed class ChromiumView : Control
             _log?.LogError(ex, "The Chromium page '{Name}' could not open", Name);
         }
     }
+
+    // Its page's IPC runs on this control's thread, as this control's page, which is how a window command finds the
+    // window it came from.
+    internal ChromiumChildBrowserOptions BrowserOptions() => new()
+    {
+        Name = Name is { Length: > 0 } name ? name : "view",
+        Path = Path,
+        BackgroundColor = BackColor,
+        UiDispatcher = new PageUiDispatcher(this),
+        FocusLeaving = MoveFocusOut,
+    };
 
     // Tab past the page's last element, or Shift+Tab past its first: on to the form's next or previous control, as a
     // Tab from any other control goes. With no other control it wraps back here, and so into the page.

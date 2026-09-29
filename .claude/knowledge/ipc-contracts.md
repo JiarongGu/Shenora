@@ -231,6 +231,10 @@ a rule is read as instructions — this line pointed at a folded package and a r
   transports dispatch on the UI thread and every handler's synchronous segment stays there, even
   after an async fall-through. The transport side interleaves async on the UI thread; never
   `Task.Run`-per-message (the measured pool-starvation freeze).
+- **A `Shenora.Windows` page transport runs each dispatch as its control (`PageSender.Enter`).**
+  `WindowCommandModule` is mapped once and finds the sending page's window through it; a transport that
+  skips it has its page's commands act on the MAIN window — a secondary window's close button closed the
+  app (measured). The module only warns, and only when the command comes from another window's thread.
 
 ### The request lifecycle — tracking, progress, cancellation
 
