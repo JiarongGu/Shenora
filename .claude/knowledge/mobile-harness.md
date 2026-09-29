@@ -294,6 +294,14 @@ the alternative was believed and turned out wrong.
   loop over ssh first, which often produces the diagnosis with nobody touching anything; download-then-run
   rather than `curl | sh` for anything using sudo; and guard on the ACCOUNT, naming the one required, so a
   refusal is visible on the driving side instead of silent.
+- 🔴 **Over ssh, an Apple Event to any app but System Events puts a CONSENT DIALOG on the owner's screen.**
+  `osascript -e 'tell application "Finder" …'` hung, and the Mac showed *"sshd-keygen-wrapper wants access to
+  control Finder"*, which only a person can answer (2026-09-30). System Events' window and process queries
+  answered without one. Read window state through System Events, and never answer a consent dialog for the owner.
+- **A Mac GUI app that waits on nothing is waiting on a DIALOG.** A CEF app's page load hung with every thread
+  idle; the cause was a keychain password prompt from SecurityAgent, readable with
+  `osascript -e 'tell application "System Events" to get value of static texts of every window of process "SecurityAgent"'`
+  (D85). Check SecurityAgent and UserNotificationCenter before theorising about a hang.
 - **⚠ Before changing ANY permission on a Mac's Homebrew tree, read `local/MAC-DIAGNOSTICS.md`.** That
   install is in a mixed-ownership state, a package install fails there in three DIFFERENT ways in
   sequence, and the donor's advice (`sudo chown -R` the tree) is wrong for the first two. The generic
