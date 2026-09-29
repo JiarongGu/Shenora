@@ -54,6 +54,27 @@ function createFixture(box: Box = { left: 10, top: 20, width: 320, height: 180 }
   return { transport, element, view };
 }
 
+// A stage rendered conditionally is not there on the first commit. Keyed on the ref alone, the effect ran once
+// against null, posted a hide, and never bound: the picture had nowhere to go for the component's whole life.
+it('binds a stage that appears after the first render', () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1; });
+  vi.stubGlobal('cancelAnimationFrame', () => {});
+  const transport = new FakeTransport();
+  const bridge = new ShenoraBridge({ transport, eventBus: new ShenoraEventBus() });
+  const ref = { current: null as HTMLElement | null };
+  const view = renderHook(() => useMediaSurface(ref, { bridge }));
+
+  const element = document.createElement('div');
+  document.body.appendChild(element);
+  stubRect(element, { left: 1, top: 2, width: 30, height: 40 });
+  ref.current = element;
+  view.rerender();
+
+  expect(surfaceMessages(transport).at(-1)?.type).toBe(MediaSurfaceCommands.show);
+  vi.unstubAllGlobals();
+});
+
 describe('useMediaSurface', () => {
   beforeEach(() => {
     // ResizeObserver does not exist in jsdom, and the hook constructs one unconditionally.

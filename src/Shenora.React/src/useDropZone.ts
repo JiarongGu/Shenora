@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { getBridge, type ShenoraBridge } from './bridge.js';
 import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
-import { debounce, randomId } from './internal.js';
+import { debounce, randomId, useRefElement } from './internal.js';
 
 /** The reserved module the drop-zone stack speaks (host: `DropZoneManager`/`DropZoneModule`). */
 export const DROP_ZONE_MODULE = 'SHENORA.DROPZONE';
@@ -111,16 +111,8 @@ export function useDropZone(options: UseDropZoneOptions): void {
       ? onErrorRef.current(error, route)
       : console.error(`[shenora] drop-zone ${route} failed:`, error);
 
-  // 🔴 Make the ref's CONTENT reactive. `targetRef` is a stable object, so an effect keyed on it runs
-  // exactly once — and if `targetRef.current` is null on that run (a conditionally-rendered target, or
-  // any order where the ref is attached after the first commit) the effect bails out and NEVER re-runs:
-  // the zone is silently dead for the component's whole life, with no error anywhere. A ref mutation
-  // triggers no render, so this effect has NO dependency array; `setElement` with an unchanged value is
-  // a React no-op, so it cannot loop.
-  const [element, setElement] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    setElement(targetRef.current ?? null);
-  });
+  // 🔴 The ref's CONTENT, reactive: a target rendered after the first commit would otherwise never register.
+  const element = useRefElement(targetRef);
 
   const isRegisteredRef = useRef(false);
   // Whether a REGISTER has ever been SENT for this zone (even if not yet acked). The cleanup

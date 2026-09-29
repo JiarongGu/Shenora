@@ -1,5 +1,6 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { getBridge, type ShenoraBridge } from './bridge.js';
+import { useRefElement } from './internal.js';
 import { MEDIA_PLAYER_MODULE } from './mediaPlayer.js';
 
 /**
@@ -68,9 +69,12 @@ export function useMediaSurface(
   options: UseMediaSurfaceOptions = {},
 ): void {
   const { onTop = false, enabled = true, module = MEDIA_PLAYER_MODULE, bridge } = options;
+  // The ref's CONTENT: a stage rendered after the first commit (conditionally, say) would otherwise never bind.
+  const element = useRefElement(ref);
+  // Whether the shell is drawing for this hook now, so a stage that is not there yet posts no hide.
+  const shown = useRef(false);
 
   useEffect(() => {
-    const element = ref.current;
 
     /* 🔴 NOTHING HERE MAY THROW AT THE PAGE, and the call sites are why.
      *
@@ -85,10 +89,14 @@ export function useMediaSurface(
       } catch { /* a picture is never worth taking the page down for */ }
     };
 
-    const hide = () => post(MediaSurfaceCommands.hide);
+    const hide = () => {
+      if (!shown.current) return;
+      shown.current = false;
+      post(MediaSurfaceCommands.hide);
+    };
 
     if (!element || !enabled) {
-      // Not a no-op: turning the surface off has to reach the shell, or the picture stays where it was.
+      // Not a no-op once shown: turning the surface off has to reach the shell, or the picture stays where it was.
       hide();
       return;
     }
@@ -114,6 +122,7 @@ export function useMediaSurface(
       const key = JSON.stringify(payload);
       if (key === last) return;
       last = key;
+      shown.current = true;
       post(MediaSurfaceCommands.show, payload);
     };
 
@@ -150,5 +159,5 @@ export function useMediaSurface(
       // leaves a native rectangle painted over whatever the page navigates to next.
       hide();
     };
-  }, [ref, onTop, enabled, module, bridge]);
+  }, [element, onTop, enabled, module, bridge]);
 }

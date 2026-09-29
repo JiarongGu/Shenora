@@ -16,6 +16,8 @@ interface FakeHost {
   bridge: ShenoraBridge;
   /** Every (module, type) the hook asked for, oldest first. */
   calls: string[];
+  /** The options of every STATUS ask, oldest first. */
+  statusOptions: Array<{ timeoutMs?: number } | undefined>;
   /** What the next STATUS ask resolves to; a function lets a test defer or vary it. */
   status: () => Promise<Answer>;
   /** What a drive command resolves to. */
@@ -25,14 +27,16 @@ interface FakeHost {
 function createHost(overrides: Partial<Pick<FakeHost, 'status' | 'command'>> = {}): FakeHost {
   const host: FakeHost = {
     calls: [],
+    statusOptions: [],
     status: () => Promise.resolve({ state: 'Paused', position: 1, duration: 10, rate: 1 }),
     command: () => Promise.resolve({ state: 'Playing', position: 1, duration: 10, rate: 1 }),
     ...overrides,
     bridge: undefined as unknown as ShenoraBridge,
   };
   host.bridge = {
-    invoke: (_module: string, type: string) => {
+    invoke: (_module: string, type: string, options?: { timeoutMs?: number }) => {
       host.calls.push(type);
+      if (type === MEDIA_PLAYER_STATUS) host.statusOptions.push(options);
       return type === MEDIA_PLAYER_STATUS ? host.status() : host.command();
     },
   } as unknown as ShenoraBridge;
@@ -123,6 +127,17 @@ describe('useMediaTransport', () => {
    * 🔴 A DEAD POLL HAS NO SYMPTOM OF ITS OWN. The callback stops running, the scrubber keeps its last
    * value, and nothing says the transport is gone — it has to be diagnosed from an ABSENCE otherwise.
    */
+  // A host that goes QUIET fails each ask only at its timeout. Unbounded, that is the bridge's 30 s default,
+  // and eight of them took four minutes; each ask is bounded to four intervals, never under a second.
+  it('bounds every status ask, so a host that goes quiet is noticed in seconds', async () => {
+    const host = createHost();
+
+    renderHook(() => useMediaTransport({ bridge: host.bridge, intervalMs: 250 }));
+
+    await waitFor(() => expect(host.statusOptions.length).toBeGreaterThan(0));
+    expect(host.statusOptions[0]?.timeoutMs).toBe(1000);
+  });
+
   it('says so when the host stops answering, and recovers when it comes back', async () => {
     let alive = false;
     const host = createHost({

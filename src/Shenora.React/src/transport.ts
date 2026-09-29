@@ -71,8 +71,8 @@ export interface ShenoraTransport {
 }
 
 /**
- * True when running inside ANY Shenora host — a WebView2 desktop shell or a MAUI `HybridWebView` — i.e.
- * when a transport to the host exists. In a plain browser this is false and callers should fall back to
+ * True when running inside ANY Shenora host — a WebView2 desktop shell, the Chromium shell or a
+ * `ChromiumView`, or a MAUI `HybridWebView` — i.e. when a transport to the host exists. In a plain browser this is false and callers should fall back to
  * browser-only behavior. The question is "is there a host", never "is it WebView2".
  */
 export function isShenoraAvailable(): boolean {
@@ -159,8 +159,10 @@ export function createChromiumTransport(): ShenoraTransport | null {
   }
   const own = listeners;
   return {
-    // A failed post is left to the bridge's request timeout, which names the call; an unhandled
-    // rejection here would name nothing.
+    // Each message is a request of its own. They reach the host in the order they were posted: measured,
+    // 1,500 of 1,500 one-way posts in order, though no spec promises it. A failed post is swallowed, since an
+    // unhandled rejection here would name nothing: an `invoke` then fails at the bridge's request timeout,
+    // which names the call, and a one-way `post` is lost.
     post: (message) => {
       void fetch(marker.ipc, { method: 'POST', body: message }).catch(() => undefined);
     },

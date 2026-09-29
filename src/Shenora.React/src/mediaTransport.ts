@@ -50,20 +50,27 @@ export interface UseMediaTransportOptions {
 }
 
 /**
- * Consecutive failed asks before {@link MediaTransport.unanswered} goes true — about two seconds at the
- * default interval.
+ * Consecutive failed asks before {@link MediaTransport.unanswered} goes true.
  *
  * ⚠ Counted in TICKS rather than elapsed ms so the threshold means the same thing however fast a caller
  * samples: ONE dropped reply is ordinary, eight in a row is a transport that has gone.
  */
 const UNANSWERED_AFTER_TICKS = 8;
 
+/**
+ * How long one status ask waits: four intervals, and never under a second. Without its own bound an ask
+ * waits the bridge's default of 30 s, and eight of them made a host that went quiet take four minutes to
+ * notice.
+ */
+const askTimeoutMs = (intervalMs: number): number => Math.max(1000, intervalMs * 4);
+
 /** What {@link useMediaTransport} gives you. */
 export interface MediaTransport {
   /** The most recent trustworthy reading, or `null` before the first one lands. */
   status: MediaTransportStatus | null;
   /**
-   * The host has stopped answering — 2 s of consecutive failures.
+   * The host has stopped answering: eight asks in a row failed. About 2 s at the default interval when the
+   * host refuses them, about 10 s when it has gone quiet (each ask waits up to a second).
    *
    * 🔴 **This exists because a dead poll has NO symptom of its own.** The callback simply stops running:
    * the scrubber keeps its last value, the play button keeps whatever the last press set, and nothing
@@ -105,8 +112,8 @@ export interface MediaTransport {
  * so a press updates the UI without waiting up to `intervalMs` for the next sample.
  *
  * ⚠ **Failures are swallowed, deliberately.** A poll that cannot answer is not worth breaking playback
- * over, and the commands reject rather than throw at the render. Watch {@link MediaTransport.unanswered}
- * for the case that matters.
+ * over, and a refused command resolves quietly: it is the host's answer, not a reason to throw at the page.
+ * Watch {@link MediaTransport.unanswered} for the case that matters.
  */
 export function useMediaTransport(options: UseMediaTransportOptions = {}): MediaTransport {
   const { intervalMs = 250, enabled = true, module = MEDIA_PLAYER_MODULE, bridge } = options;
@@ -156,7 +163,7 @@ export function useMediaTransport(options: UseMediaTransportOptions = {}): Media
       let answer: Partial<MediaTransportStatus> | null = null;
       try {
         answer = await (bridge ?? getBridge())
-          .invoke<Partial<MediaTransportStatus> | null>(module, MEDIA_PLAYER_STATUS, {});
+          .invoke<Partial<MediaTransportStatus> | null>(module, MEDIA_PLAYER_STATUS, { timeoutMs: askTimeoutMs(intervalMs) });
       } catch {
         answer = null;
       }
