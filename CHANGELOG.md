@@ -28,6 +28,14 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Changed
+
+- **`Shenora.Chromium` pins CEF 154.0.32** (was 154.0.28), the same Chromium 154.0.8037.58 and the same API
+  version, so the binding is unchanged. On 154.0.28 a debugging client that opened a tab in an existing window
+  crashed the browser process, and CEF's own sample client crashed the same way; 154.0.32 does not.
+
 ## 0.17.1 — 2026-09-29
 
 ### Fixed

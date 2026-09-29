@@ -7,5 +7,5 @@ internal static class CefApi
     public const int Version = 15400;
 
     /// <summary>The CEF build whose headers produced the binding.</summary>
-    public const string Build = "154.0.28+g564dd6c+chromium-154.0.8037.58";
+    public const string Build = "154.0.32+g682c378+chromium-154.0.8037.58";
 }
