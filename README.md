@@ -18,7 +18,7 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.17.0 — pre-release, stabilising toward 1.0.** The newest arrivals — `CHANGELOG.md` is the authority —
+**v0.17.1 — pre-release, stabilising toward 1.0.** The newest arrivals — `CHANGELOG.md` is the authority —
 are **`Shenora.Chromium`**, a new package: Chromium through CEF for an app that ships its own engine, as a
 shell of its own (`UseChromium`, on Windows and macOS) or as a `ChromiumView` control in the Windows shell;
 the shell's own **picture surface** on a phone (`useMediaSurface` / `useMediaTransport`: the platform's player
