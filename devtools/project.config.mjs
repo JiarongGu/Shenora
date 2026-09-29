@@ -96,6 +96,7 @@ export default {
     'README.md',
     'docs/ARCHITECTURE.md',
     'docs/getting-started.md',
+    'TASKS.md',
     'src/Shenora.React/package.json',
     'src/Shenora.Cli/package.json',
   ],

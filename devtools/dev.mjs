@@ -736,6 +736,23 @@ function doctor({ fix = false } = {}) {
     } else fail(`docs/ARCHITECTURE.md status line v${state[1]} != VersionPrefix ${config.version}`);
   }
 
+  // TASKS.md's status paragraph names the release as well, and nothing stamped it: it still said 0.17.1 after
+  // the 0.18.0 cut. Every version in that paragraph is the release's.
+  const tasksPath = path.join(repo, 'TASKS.md');
+  const tasks = fs.readFileSync(tasksPath, 'utf8');
+  const status = tasks.match(/\*\*Status: v[\s\S]*?\n\n/);
+  if (!status) fail('TASKS.md: no "**Status: vX.Y.Z …" paragraph found');
+  else {
+    const VERSION = /\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?/g;
+    const stale = [...status[0].matchAll(VERSION)].filter((m) => m[0] !== config.version);
+    if (stale.length > 0) {
+      if (fix) {
+        fs.writeFileSync(tasksPath, tasks.replace(status[0], status[0].replace(VERSION, config.version)));
+        console.log(`  fixed TASKS.md status paragraph -> ${config.version}`);
+      } else fail(`TASKS.md status paragraph names ${stale[0][0]} != VersionPrefix ${config.version}`);
+    }
+  }
+
   // 🔴 A `PackageReference` shown in a DOC is a copy of the version too, and the least forgiving one:
   // it is the first thing a new adopter pastes. `docs/getting-started.md` sat at 0.10.0 through the
   // 0.11.0 release — step 1 of the guide installed the PREVIOUS release — because the sync list knew

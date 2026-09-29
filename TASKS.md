@@ -11,7 +11,7 @@ verbatim and stay as long as they still steer.
 "would deleting this paragraph lose anything a future session must ACT on?"** If not, the commit that
 landed it is where it lives.
 
-**Status: v0.18.0 is PUBLISHED and VERIFIED LIVE** (tag `v0.18.0`, release commit `9a95ddf`).
+**Status: v0.18.0 is the latest release** (tag `v0.18.0`; the release workflow stamps this paragraph).
 ⚠ `src/Directory.Build.props` must stay at `0.18.0` — the workflow owns the bump, and a hand-bump moves
 the baseline and skips a release. **Cutting the next one? Read `.claude/knowledge/release-discipline.md`
 first**: it carries the by-hand `<Description>` read, the prose-audit-before-the-cut rule, and why a
