@@ -11,8 +11,8 @@ verbatim and stay as long as they still steer.
 "would deleting this paragraph lose anything a future session must ACT on?"** If not, the commit that
 landed it is where it lives.
 
-**Status: v0.17.1 is PUBLISHED and VERIFIED LIVE** (tag `v0.17.1`, release commit `92ededc`).
-⚠ `src/Directory.Build.props` must stay at `0.17.1` — the workflow owns the bump, and a hand-bump moves
+**Status: v0.18.0 is PUBLISHED and VERIFIED LIVE** (tag `v0.18.0`, release commit `9a95ddf`).
+⚠ `src/Directory.Build.props` must stay at `0.18.0` — the workflow owns the bump, and a hand-bump moves
 the baseline and skips a release. **Cutting the next one? Read `.claude/knowledge/release-discipline.md`
 first**: it carries the by-hand `<Description>` read, the prose-audit-before-the-cut rule, and why a
 partial registry read afterwards is lag rather than a half-landed release.
@@ -222,9 +222,8 @@ D37 and D51 are corrected in place to point at them.
      system pasteboard is the same code, unexercised (writing the owner's clipboard needs their yes).
    - The tray (`ChromiumHostOptions.Tray`) is built on Windows and macOS. Windows is done by real clicks: items
      run, a toggled item shows its checkmark on each next open, a disabled item is grey and never runs, and Exit
-     ends the app. On macOS nobody has clicked the status item yet. The file dialogs are CEF's own
-     and should work, but a dialog needs a
-     person to answer it. Code signing; osx-arm64 (no Apple Silicon Mac here).
+     ends the app. On macOS nobody has clicked the status item yet. The file dialogs are CEF's own and should
+     work, but a dialog needs a person to answer it. Code signing; osx-arm64 (no Apple Silicon Mac here).
    - Whether the app comes to the front when started from Finder: from `open` over ssh it stayed behind the
      active app, which macOS 15's cooperative activation explains and does not settle.
 5. **Linux:** the per-OS services are the hard part: a tray over D-Bus (StatusNotifierItem) and file dialogs
