@@ -210,8 +210,13 @@ D37 and D51 are corrected in place to point at them.
      layout is the answer for distribution: `dotnet publish -r osx-x64 --self-contained` makes
      `publish/bundle/<App>.app` with the runtime inside, and it started through `open` with no `DOTNET_ROOT`
      (measured). Not yet: signing and notarizing that bundle, which Gatekeeper needs from a download.
-   - Frameless chrome, drag regions and the caption on macOS (the Windows ones are Win32); the per-OS services
-     (clipboard, dialogs, tray); code signing; osx-arm64 (no Apple Silicon Mac here).
+   - The window on macOS is frameless by default, and `NativeCaptionButtons` gives it the system's own traffic
+     lights (System Events: close, minimize and full-screen buttons with it, none without). `TOGGLE_MAXIMIZE` and
+     `MINIMIZE` do what they say (the page grew to 1680×951 and back to 900×600; the window read back minimized),
+     and `SET_CAPTION_BUTTONS` answers `NO_ROUTE`. **Unmeasured, because it needs a real pointer:** that the page's
+     drag bar moves the window (CEF gets the regions on every OS), and the traffic lights' position over it.
+   - The per-OS services: the clipboard and the tray have no macOS implementation; the file dialogs are CEF's own
+     and should work, but a dialog needs a person to answer it. Code signing; osx-arm64 (no Apple Silicon Mac here).
    - Whether the app comes to the front when started from Finder: from `open` over ssh it stayed behind the
      active app, which macOS 15's cooperative activation explains and does not settle.
 5. **Linux:** the per-OS services are the hard part: a tray over D-Bus (StatusNotifierItem) and file dialogs

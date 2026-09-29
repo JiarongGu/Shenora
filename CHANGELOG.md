@@ -70,7 +70,8 @@ at the first list and missed five more breaking changes.
   five helper apps inside it, and the package carries the macOS binding and helper. Run from a local-feed package
   on an Intel Mac. A self-contained publish makes `publish/bundle/<App>.app` with the runtime inside, which starts
   from Finder with no .NET installed; a framework-dependent build needs .NET installed for every user, since a
-  per-user install is not found from Finder. ⚠ osx-arm64 has not run (no Apple Silicon Mac). ⚠ **On macOS the cookie key is Chromium's
+  per-user install is not found from Finder. There, `NativeCaptionButtons` shows the system's own traffic lights on
+  the frameless window. ⚠ osx-arm64 has not run (no Apple Silicon Mac). ⚠ **On macOS the cookie key is Chromium's
   mock keychain's**, so cookies at rest are encrypted with a fixed key: the real keychain keeps it in an item every
   CEF app shares ("Chromium Safe Storage"), where a second kit app on a Mac stalled behind a login-password prompt.
 

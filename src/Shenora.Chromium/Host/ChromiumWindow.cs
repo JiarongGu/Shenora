@@ -275,7 +275,20 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             Struct->@base.@base.get_preferred_size = &PreferredSize;
             Struct->on_window_activation_changed = &ActivationChanged;
             Struct->on_window_bounds_changed = &BoundsChanged;
+#if CEF_MACOS
+            // macOS's own buttons on a frameless window: the traffic lights, over the page's title bar.
+            Struct->with_standard_window_buttons = &StandardWindowButtons;
+#endif
         }
+
+#if CEF_MACOS
+        [UnmanagedCallersOnly]
+        private static int StandardWindowButtons(_cef_window_delegate_t* self, _cef_window_t* window)
+        {
+            using var w = new CefRef<_cef_window_t>(window);
+            return From<WindowDelegate>(self)._owner._options.NativeCaptionButtons ? 1 : 0;
+        }
+#endif
 
         [UnmanagedCallersOnly]
         private static void ActivationChanged(_cef_window_delegate_t* self, _cef_window_t* window, int active)

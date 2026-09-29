@@ -71,7 +71,11 @@ public sealed class ChromiumWindowOptions
     /// <summary>
     /// The window paints the caption buttons itself, as the system does, over the rectangles the page reserves
     /// with <c>SET_CAPTION_BUTTONS</c>: the platform's glyphs and colours, repainted as the pointer moves. The page
-    /// draws nothing there; an idle button is transparent, so the page's title bar shows through. Windows only.
+    /// draws nothing there; an idle button is transparent, so the page's title bar shows through. On Windows.
+    /// <para>
+    /// On macOS the window shows the system's own traffic lights at the top left of the frameless window instead, and
+    /// the page leaves that corner clear; <c>SET_CAPTION_BUTTONS</c> and the theme do not apply there.
+    /// </para>
     /// <para>
     /// Light or dark follows the page's <c>SET_THEME</c>. Until the page sends one it is the system's app theme, read
     /// as the window opens and not followed afterwards, so a page whose theme can differ from the system's sends it.
