@@ -23,6 +23,11 @@ partial registry read afterwards is lag rather than a half-landed release.
 > **What is deliberately NOT built, and why, is `docs/DECISIONS.md`'s "Anti-goals".** Read it before
 > proposing any of it.
 
+> **DIRECTION (owner, 2026-09-29):** *"for the env we dont have lets just park them (still provide code and
+> make sure it runs for testing) until the day we need them then we do a real device verification"*. An
+> entry that is only a device run stays parked; one whose CODE is missing gets built and run in the nearest
+> environment we have — the simulator, the emulator, the build Mac, WSL, the tests.
+
 **Prefer measuring to filing, and prefer the SIMULATOR to the phone.** A device round trip needs a human
 to look at the glass (there is no `devicectl` screenshot); the simulator answers most questions in
 90 seconds. Read `mobile-harness.md`'s simulator loop before choosing a target.
