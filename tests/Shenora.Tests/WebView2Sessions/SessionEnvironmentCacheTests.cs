@@ -1,3 +1,4 @@
+using Shenora.Core.Sessions;
 using Microsoft.Web.WebView2.Core;
 using Shenora.Windows;
 

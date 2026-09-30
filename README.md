@@ -268,7 +268,7 @@ buffered whole.
 > your app's embedded bundle: navigating an off-screen session to your packaged origin renders
 > WebView2's "can't reach this page". Affects desktop-only apps serving embedded resources; a
 > server-backed app whose pages are already on a loopback origin is unaffected. To serve your bundle
-> into a session deliberately, set `VirtualHost` + `ResourceProvider` on its `SessionBrowserOptions` —
+> into a session deliberately, set `VirtualHost` + `ResourceProvider` on its `WebView2SessionBrowserOptions` —
 > `docs/guides/sessions.md` has the both-or-neither rule and the CORS caveat.
 
 Off-screen and auxiliary browser sessions over the same runtime: a bounded LIFO `RenderSessionPool`,

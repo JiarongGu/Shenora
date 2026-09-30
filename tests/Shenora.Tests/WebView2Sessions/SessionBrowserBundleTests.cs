@@ -1,3 +1,4 @@
+using Shenora.Core.Sessions;
 using Shenora.Windows;
 
 namespace Shenora.Tests.WebView2Sessions;
@@ -20,7 +21,7 @@ public class SessionBrowserBundleTests
         public bool Exists(string virtualPath) => false;
     }
 
-    private static SessionBrowserOptions Options(string? virtualHost, IWebViewResourceProvider? provider) =>
+    private static WebView2SessionBrowserOptions Options(string? virtualHost, IWebViewResourceProvider? provider) =>
         new()
         {
             ProfileDirectory = Path.Combine(Path.GetTempPath(), "shenora-tests", "session-bundle"),
@@ -51,8 +52,8 @@ public class SessionBrowserBundleTests
 
         // Failing at composition is the point (P5.5 H3): the alternative is a session that silently
         // serves nothing, whose symptom is indistinguishable from the bug this seam fixed.
-        Assert.Contains(nameof(SessionBrowserOptions.ResourceProvider), ex.Message, StringComparison.Ordinal);
-        Assert.Contains(nameof(SessionBrowserOptions.VirtualHost), ex.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(WebView2SessionBrowserOptions.ResourceProvider), ex.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(WebView2SessionBrowserOptions.VirtualHost), ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -61,7 +62,7 @@ public class SessionBrowserBundleTests
         var ex = Assert.Throws<InvalidOperationException>(
             () => SessionBrowser.AssertBundleConfigured(Options(null, new StubProvider())));
 
-        Assert.Contains(nameof(SessionBrowserOptions.VirtualHost), ex.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(WebView2SessionBrowserOptions.VirtualHost), ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

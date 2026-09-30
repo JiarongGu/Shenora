@@ -1,3 +1,4 @@
+using Shenora.Core.Sessions;
 using Shenora.Windows;
 
 namespace Shenora.Tests.WebView2Sessions;
@@ -12,7 +13,7 @@ namespace Shenora.Tests.WebView2Sessions;
 /// what these tests pin is that the no-hook answer is the SAFE one.
 /// </para>
 /// <para>
-/// 🔴 <b>WHAT THESE DO NOT COVER.</b> They test <see cref="SessionBrowser.Decide"/> — the decision —
+/// 🔴 <b>WHAT THESE DO NOT COVER.</b> They test <see cref="SessionPolicy.Decide"/> — the decision —
 /// and NOT the wiring that reads its answer and sets <c>e.State</c>/<c>e.Handled</c>/<c>e.Cancel</c> on
 /// the platform's event args. Measured: replacing the permission wiring with a hard
 /// <c>State = Allow</c> still compiles and every test here still passes. That wiring needs a live
@@ -32,7 +33,7 @@ public class SessionHookTests
     [Fact]
     public void With_NO_hook_a_script_dialog_is_dismissed()
     {
-        var dialog = SessionBrowser.Decide<SessionScriptDialog>(
+        var dialog = SessionPolicy.Decide<SessionScriptDialog>(
             null, new SessionScriptDialog("Alert", "https://x/", "are you sure?", ""));
 
         // Not accepting IS the dismiss — the page carries on rather than waiting on a modal nobody sees.
@@ -42,7 +43,7 @@ public class SessionHookTests
     [Fact]
     public void A_hook_can_accept_a_prompt_and_answer_it()
     {
-        var dialog = SessionBrowser.Decide<SessionScriptDialog>(
+        var dialog = SessionPolicy.Decide<SessionScriptDialog>(
             d => { d.Accept = true; d.ResultText = "42"; },
             new SessionScriptDialog("Prompt", "https://x/", "how many?", ""));
 
@@ -57,7 +58,7 @@ public class SessionHookTests
         // this runs inside a WebView2 event where an escaping exception crashes the UI thread.
         Exception? reported = null;
 
-        var dialog = SessionBrowser.Decide<SessionScriptDialog>(
+        var dialog = SessionPolicy.Decide<SessionScriptDialog>(
             _ => throw new InvalidOperationException("hook bug"),
             new SessionScriptDialog("Confirm", "https://x/", "?", ""),
             ex => reported = ex);
@@ -71,7 +72,7 @@ public class SessionHookTests
     [Fact]
     public void With_NO_hook_an_auth_challenge_is_cancelled()
     {
-        var challenge = SessionBrowser.Decide<SessionAuthRequest>(
+        var challenge = SessionPolicy.Decide<SessionAuthRequest>(
             null, new SessionAuthRequest("https://x/secret", "Basic realm=\"x\""));
 
         // Both null = cancel. The load then fails normally instead of hanging on an invisible prompt.
@@ -82,7 +83,7 @@ public class SessionHookTests
     [Fact]
     public void A_hook_can_answer_the_challenge()
     {
-        var challenge = SessionBrowser.Decide<SessionAuthRequest>(
+        var challenge = SessionPolicy.Decide<SessionAuthRequest>(
             c => { c.UserName = "u"; c.Password = "p"; },
             new SessionAuthRequest("https://x/secret", "Basic realm=\"x\""));
 
@@ -95,7 +96,7 @@ public class SessionHookTests
     {
         // A username with no password cannot be sent, and guessing an empty one would send credentials
         // the app did not write. The wiring requires BOTH; this pins the shape the wiring reads.
-        var challenge = SessionBrowser.Decide<SessionAuthRequest>(
+        var challenge = SessionPolicy.Decide<SessionAuthRequest>(
             c => c.UserName = "u", new SessionAuthRequest("https://x/", "Basic"));
 
         Assert.NotNull(challenge.UserName);
@@ -130,7 +131,7 @@ public class SessionHookTests
     [Fact]
     public void With_NO_hook_a_popup_is_suppressed_exactly_as_before()
     {
-        var request = SessionBrowser.Decide<SessionWindowRequest>(
+        var request = SessionPolicy.Decide<SessionWindowRequest>(
             null, new SessionWindowRequest("https://x/popup", UserInitiated: true));
 
         Assert.False(request.Allow);
@@ -139,7 +140,7 @@ public class SessionHookTests
     [Fact]
     public void With_NO_hook_a_permission_is_denied_exactly_as_before()
     {
-        var request = SessionBrowser.Decide<SessionPermissionRequest>(
+        var request = SessionPolicy.Decide<SessionPermissionRequest>(
             null, new SessionPermissionRequest("Camera", "https://x/", UserInitiated: true));
 
         Assert.False(request.Allow);
@@ -148,14 +149,14 @@ public class SessionHookTests
     [Fact]
     public void A_hook_can_allow_a_popup_or_grant_a_permission()
     {
-        Assert.True(SessionBrowser.Decide<SessionWindowRequest>(
+        Assert.True(SessionPolicy.Decide<SessionWindowRequest>(
             r => r.Allow = true, new SessionWindowRequest("https://x/", false)).Allow);
 
         // The realistic shape: grant one capability to the app's own origin, deny everything else.
-        var granted = SessionBrowser.Decide<SessionPermissionRequest>(
+        var granted = SessionPolicy.Decide<SessionPermissionRequest>(
             r => r.Allow = r.Kind == "ClipboardRead" && r.Uri.StartsWith("https://app.local/", StringComparison.Ordinal),
             new SessionPermissionRequest("ClipboardRead", "https://app.local/page", true));
-        var refused = SessionBrowser.Decide<SessionPermissionRequest>(
+        var refused = SessionPolicy.Decide<SessionPermissionRequest>(
             r => r.Allow = r.Kind == "ClipboardRead" && r.Uri.StartsWith("https://app.local/", StringComparison.Ordinal),
             new SessionPermissionRequest("Camera", "https://app.local/page", true));
 
@@ -168,9 +169,9 @@ public class SessionHookTests
     {
         // The safe direction differs from the three wedge hooks: there, safety is "keep going"; here it
         // is "keep refusing". A buggy hook must not become an open door.
-        Assert.False(SessionBrowser.Decide<SessionWindowRequest>(
+        Assert.False(SessionPolicy.Decide<SessionWindowRequest>(
             _ => throw new InvalidOperationException("bug"), new SessionWindowRequest("https://x/", false)).Allow);
-        Assert.False(SessionBrowser.Decide<SessionPermissionRequest>(
+        Assert.False(SessionPolicy.Decide<SessionPermissionRequest>(
             _ => throw new InvalidOperationException("bug"), new SessionPermissionRequest("Camera", "https://x/", true)).Allow);
     }
 
@@ -179,7 +180,7 @@ public class SessionHookTests
     [Fact]
     public void With_NO_hook_a_certificate_request_is_cancelled()
     {
-        var request = SessionBrowser.Decide<SessionCertificateRequest>(
+        var request = SessionPolicy.Decide<SessionCertificateRequest>(
             null, new SessionCertificateRequest("intranet", 443, ["CN=a", "CN=b"]));
 
         // Null index = cancel. ⚠ Deliberately not "continue without one", which prompts the user on
@@ -190,7 +191,7 @@ public class SessionHookTests
     [Fact]
     public void A_hook_can_select_one_of_the_offered_certificates()
     {
-        var request = SessionBrowser.Decide<SessionCertificateRequest>(
+        var request = SessionPolicy.Decide<SessionCertificateRequest>(
             r => r.SelectedIndex = r.Subjects.ToList().FindIndex(s => s == "CN=b"),
             new SessionCertificateRequest("intranet", 443, ["CN=a", "CN=b"]));
 
@@ -203,7 +204,7 @@ public class SessionHookTests
         // Decide itself does not police the index — the wiring bounds-checks before indexing the
         // platform's collection. Pinned here so that check is not "simplified" away: an unchecked
         // index would be an IndexOutOfRange inside a WebView2 event, i.e. a UI-thread crash.
-        var request = SessionBrowser.Decide<SessionCertificateRequest>(
+        var request = SessionPolicy.Decide<SessionCertificateRequest>(
             r => r.SelectedIndex = 99, new SessionCertificateRequest("intranet", 443, ["CN=a"]));
 
         Assert.Equal(99, request.SelectedIndex);

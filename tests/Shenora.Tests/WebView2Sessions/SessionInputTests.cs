@@ -1,3 +1,4 @@
+using Shenora.Core.Sessions;
 using System.Text.Json;
 using Shenora.Windows;
 

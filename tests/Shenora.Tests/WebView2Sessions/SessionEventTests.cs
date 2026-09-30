@@ -1,3 +1,5 @@
+using Shenora.Tests.TestSupport;
+using Shenora.Core.Sessions;
 using Shenora.Core.Events;
 using Shenora.Windows;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
@@ -35,7 +37,7 @@ public class SessionEventTests
         public RenderSessionPool CreatePool() =>
             new(new RenderSessionPoolOptions
             {
-                Anchor = Anchor,
+                Host = new WebView2SessionHost(Anchor),
                 Capacity = 1,   // ONE instance, so the second lease is guaranteed to be the recycled one
                 Browser = new SessionBrowserOptions
                 {
@@ -45,7 +47,7 @@ public class SessionEventTests
             {
                 InstanceFactoryOverride = _ => Task.FromResult(
                     LastInstance = new RenderSessionPool.PoolInstance(
-                        new Form { ShowInTaskbar = false }, new WebView2Control())),
+                        new FakeSessionBrowser())),
                 ResetOverride = _ => Task.FromResult(true),
             };
 
@@ -62,7 +64,7 @@ public class SessionEventTests
     [Fact]
     public void Every_session_id_is_distinct()
     {
-        var ids = Enumerable.Range(0, 100).Select(_ => SessionBrowser.NewSessionId()).ToList();
+        var ids = Enumerable.Range(0, 100).Select(_ => RenderSessionPool.NewSessionId()).ToList();
 
         Assert.Equal(100, ids.Distinct(StringComparer.Ordinal).Count());
         Assert.All(ids, id => Assert.False(string.IsNullOrWhiteSpace(id)));
@@ -116,9 +118,8 @@ public class SessionEventTests
         using var pool = fixture.CreatePool();
 
         // A never-leased instance already has one, so there is no window in which the scope is null.
-        using var spare = new Form { ShowInTaskbar = false };
-        using var spareWeb = new WebView2Control();
-        Assert.False(string.IsNullOrWhiteSpace(new RenderSessionPool.PoolInstance(spare, spareWeb).Scope));
+        var spare = new FakeSessionBrowser();
+        Assert.False(string.IsNullOrWhiteSpace(new RenderSessionPool.PoolInstance(spare).Scope));
 
         // Then the idle state that actually occurs: read the INSTANCE, not a later lease. An earlier
         // version of this test leased a second time and asserted on that — which reassigns the scope

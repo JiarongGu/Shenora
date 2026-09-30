@@ -57,6 +57,24 @@ public interface IUiDispatcher
     bool Post(Func<Task> work);
 
     /// <summary>
+    /// Run <paramref name="work"/> on the UI thread AFTER whatever it is doing now, even when called on it: always a
+    /// post, never inline. For work that must not run inside its caller's stack, such as a body that opens a modal
+    /// window with a nested loop, or one whose caller must return before it starts. Guarded as
+    /// <see cref="Post(Func{Task})"/> is. FALSE when <see cref="State"/> is not <see cref="UiTargetState.Ready"/>.
+    /// <para>
+    /// The kit's dispatchers post it in order behind earlier posts; this default, for any other implementation, hops
+    /// to the thread pool so <see cref="Post(Func{Task})"/> cannot run it inline, and so keeps no order.
+    /// </para>
+    /// </summary>
+    bool Queue(Func<Task> work)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+        if (State is not UiTargetState.Ready) return false;
+        _ = Task.Run(() => Post(work));
+        return true;
+    }
+
+    /// <summary>
     /// Run on the UI thread and await completion. Faults with <see cref="ObjectDisposedException"/>
     /// when the target is <see cref="UiTargetState.Gone"/> and <see cref="InvalidOperationException"/>
     /// when it is <see cref="UiTargetState.NotReady"/> — never a task that simply never completes. The

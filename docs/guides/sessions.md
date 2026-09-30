@@ -6,10 +6,11 @@
 
 ## What this is, in one line
 
-**Extra browsers your app drives, over the same WebView2 runtime the shell already ships** — off-screen
-for scraping and rendering, on-screen for a human, or streamed as frames with synthetic input. Each runs
-its own environment over its own profile, so none of them is your app's page and none of them can see
-your app's cookies.
+**Extra browsers your app drives, made by the shell it runs in** — off-screen for scraping and rendering,
+on-screen for a human, or streamed as frames with synthetic input. Each runs over its own profile, so none of
+them is your app's page and none of them can see your app's cookies. The sessions are written once, in
+`Shenora.Core.Sessions`, over the shell's `ISessionHost` (D91): the WinForms shell's makes WebView2 browsers; the
+Chromium shell's is being built (TASKS).
 
 🔴 **The kit ships the MECHANICS and no scenario.** There is no login flow, no scraper, no co-browse
 product in here — those are a product, not a mechanism (D21). The worked driver lives in the desktop
@@ -28,14 +29,18 @@ same interface, and the decision records why the result would not be the same ca
 | `StreamingSession` | an off-screen session that emits FRAMES and accepts synthetic input | you are showing a remote page inside your own UI |
 
 All three are constructed directly — **there is no `AddSessions()`**, because a session's lifetime is
-yours rather than the container's. All three take a `SessionBrowserOptions` under `Browser`.
+yours rather than the container's. All three take the shell's host under `Host` and a `SessionBrowserOptions`
+under `Browser`. The shell registers the host: `services.GetRequiredService<ISessionHost>()`, or on Windows
+`new WebView2SessionHost(form)` over a control of your own.
 
 ## The off-screen pool
 
 ```csharp
+using Shenora.Core.Sessions;
+
 var pool = new RenderSessionPool(new RenderSessionPoolOptions
 {
-    Anchor  = form,                       // the UI thread everything marshals to
+    Host     = sessionHost,               // the shell's ISessionHost: its browsers, and the UI thread they run on
     Capacity = 3,                         // default
     Browser = new SessionBrowserOptions { ProfileDirectory = profileDir },
     // Your SSRF/allow-list policy. Null means "any http(s) URL", which is rarely what you want.
@@ -61,7 +66,7 @@ var html = await session.GetHtmlAsync(ct);
 ```csharp
 var session = new InteractiveSession(new InteractiveSessionOptions
 {
-    Anchor  = form,
+    Host    = sessionHost,                // the window is modal to the main window and wears its icon
     Browser = new SessionBrowserOptions { ProfileDirectory = accountProfileDir },
     Title   = "Sign in",
 });
@@ -93,7 +98,7 @@ var result = await session.RunAsync(async (controller, ct) =>
 ```csharp
 var stream = await StreamingSession.StartAsync(new StreamingSessionOptions
 {
-    Anchor  = form,
+    Host    = sessionHost,
     Browser = new SessionBrowserOptions { ProfileDirectory = profileDir },
     // 🔴 A dead renderer ends the session with nobody calling stop — dispose it HERE or the
     // off-screen window and its browser process outlive the app, holding the profile lock.
@@ -109,7 +114,7 @@ press/move/release and transpose typed keys, which reads as a flaky page rather 
 
 ## The five hooks — three of them prevent a WEDGE
 
-An off-screen window has nobody to dismiss a modal. Left unhandled, WebView2 raises its OWN prompt and
+An off-screen window has nobody to dismiss a modal. Left unhandled, the browser raises its OWN prompt and
 the page stops **for good** — so the kit handles all three whether or not you supply a hook, and the
 defaults are the safe answer to "nobody is watching".
 
@@ -130,12 +135,12 @@ new SessionBrowserOptions
 }
 ```
 
-- **A throwing hook degrades to the default rather than escaping** — these run inside a WebView2 event,
+- **A throwing hook degrades to the default rather than escaping** — these run inside a browser's callback,
   where an escape is an unhandled UI-thread crash. ⚠ Note the safe direction differs: for the first
   three it keeps the page MOVING, for the last two it keeps REFUSING. A buggy policy must not become an
   open door.
-- ⚠ **A handler that appears to do nothing is doing the load-bearing thing.** Two of these events have no
-  `Handled` property — SUBSCRIBING is what suppresses WebView2's own dialog. Deleting one as dead code
+- ⚠ **A handler that appears to do nothing is doing the load-bearing thing.** On WebView2 two of these events
+  have no `Handled` property — SUBSCRIBING is what suppresses WebView2's own dialog. Deleting one as dead code
   brings the wedge back.
 
 ## Watching what a session does — events, not taps
@@ -179,11 +184,12 @@ What holds, both failing closed:
 ## Serving your own bundle into a session
 
 A session gets its own environment with **none** of the shell's serving set up — so navigating one to
-your packaged origin renders WebView2's "can't reach this page". Pass the host's own two values
-through; the same provider INSTANCE means the session's requests hit a cache the shell already warmed:
+your packaged origin renders WebView2's "can't reach this page". In the WinForms shell, pass the host's own
+two values through `WebView2SessionBrowserOptions` (the options with what only WebView2 has); the same provider
+INSTANCE means the session's requests hit a cache the shell already warmed:
 
 ```csharp
-Browser = new SessionBrowserOptions
+Browser = new WebView2SessionBrowserOptions
 {
     ProfileDirectory = …,
     VirtualHost      = hostOptions.VirtualHost,
@@ -202,4 +208,7 @@ only on a session rendering your own pages. Read it before co-browsing anyone el
 ## If init times out
 
 Almost always a leftover `msedgewebview2` process holding the profile lock. End the stray processes or
-delete the folder; the message says so, and names the directory.
+delete the folder; the message says so, and names the directory. ⚠ Two sessions one after the other on ONE
+profile with different browser arguments (a silent `InteractiveSession`, which keeps its page alive in the
+background, then a revealed one) can also fail to start while the first's browser process is still exiting (measured:
+the second failed at once on the shared profile and ran on a profile of its own). Give them their own profiles.

@@ -56,6 +56,32 @@ public class WinFormsUiDispatcherTests
         });
     }
 
+    /// <summary>
+    /// <see cref="IUiDispatcher.Queue"/> is Post's opposite on the UI thread: never inline, so work that opens a modal
+    /// loop runs outside its caller's stack (the sessions, D91), and in order behind what was posted before it.
+    /// </summary>
+    [Fact]
+    public void Queue_never_runs_inline_and_keeps_order_behind_earlier_posts()
+    {
+        Sta.Run(() =>
+        {
+            using var form = Realized();
+            var dispatcher = new WinFormsUiDispatcher(form);
+            var ran = new List<string>();
+
+            Assert.True(dispatcher.IsOnUiThread);
+            form.BeginInvoke(() => ran.Add("earlier"));
+            Assert.True(dispatcher.Queue(() => { ran.Add("queued"); return Task.CompletedTask; }));
+            Assert.Empty(ran);   // not inline, although this is the UI thread
+
+            for (var i = 0; i < 20 && ran.Count < 2; i++) Application.DoEvents();
+            Assert.Equal(["earlier", "queued"], ran);
+
+            var notReady = new WinFormsUiDispatcher(new Form());
+            Assert.False(notReady.Queue(() => Task.CompletedTask));
+        });
+    }
+
     [Fact]
     public void Post_returns_false_when_not_ready_and_when_gone_and_never_runs_the_work()
     {

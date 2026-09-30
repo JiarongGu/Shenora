@@ -204,6 +204,11 @@ Shenora.slnx
 │   │                                            EventMessage, one of the three cores Build() composes
 │   │                                            unconditionally (D64). In-process pub/sub; a transport
 │   │                                            bridge is what forwards an event to a client.
+│   │                                    Core/Sessions/ namespace Shenora.Core.Sessions — the
+│   │                                            auxiliary browsers (render pool, streaming,
+│   │                                            interactive), written once over ISessionHost, which
+│   │                                            each shell implements (D91); the hooks, events, inputs
+│   │                                            and the rules both engines apply (SessionPolicy).
 │   │                                    ⚠ A RESTRUCTURE UPDATES THE MAP FOR THE FOLDERS ITS OWN COMMITS
 │   │                                    TOUCHED, which is not the same set as the folders it MOVED —
 │   │                                    D65 moved every one and three went missing from this tree.
@@ -270,10 +275,10 @@ Shenora.slnx
 │   │                                          STA dialogs/clipboard, the UI-thread dispatcher),
 │   │                                          WebView/ (hosting, serving, IPC bridge, drop zones,
 │   │                                          window commands; ChromiumView, a Chromium page as a
-│   │                                          control, D83), Sessions/ (render pool, interactive,
-│   │                                          streaming — and a PRODUCER on Core's IEventBus: a session
-│   │                                          publishes what its browser does, scoped by a per-session
-│   │                                          id, rather than owning bespoke subscription taps).
+│   │                                          control, D83), Sessions/ (the WebView2 ISessionHost the
+│   │                                          Core sessions drive, D91 — and a PRODUCER on Core's
+│   │                                          IEventBus: a browser publishes what it does, scoped by a
+│   │                                          per-session id, rather than owning bespoke taps).
 │   │                                          The old split protected a WinForms-without-
 │   │                                          WebView2 consumer that cannot exist in a React-in-a-
 │   │                                          webview kit; D19's package edge is now internal.
@@ -497,8 +502,7 @@ and the dependency rules a reviewer checks.
   too (D88), while `WindowStateManager`, their WinForms applier, stays in `Shenora.Windows`.
   🔴 **The one package-on-package edge above `Shenora` is `Shenora.Windows` → `Shenora.Chromium`** (D83), for
   `ChromiumView`. It carries the engine's managed code, never CEF: the engine's build assets stay private to a
-  direct reference. D37 merged the session stack into `Shenora.Windows`, where it is the `Sessions/` FOLDER, so
-  D14's separation survives as an internal direction rather than an edge a reviewer can check against the
-  csproj files.
+  direct reference. The auxiliary sessions are `Shenora.Core.Sessions` (D91): written once over `ISessionHost`,
+  which `Shenora.Windows`' `Sessions/` folder implements over WebView2, so D14's separation survives as that seam.
 - `src/*` never references `tests/`, `samples/`, or anything app-specific.
 - No Lyntai reference, ever (docs/DECISIONS.md D1).

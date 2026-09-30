@@ -2,8 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
-
-using Shenora.Windows;
+using Shenora.Core.Sessions;
 
 namespace Shenora.Sample.Desktop;
 

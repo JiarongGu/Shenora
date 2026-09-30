@@ -32,6 +32,18 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- **The auxiliary browser sessions moved to `Shenora.Core.Sessions`, over a host the shell registers (D91).**
+  `RenderSessionPool`, `StreamingSession`, `InteractiveSession`, `SessionController`, `SessionBrowserOptions` and
+  every type they use (the hook records, `SessionEvents` and its payloads, the `SessionInput` family,
+  `SessionCookie`) were `Shenora.Windows` types: an app adds `using Shenora.Core.Sessions;`. Each session's
+  options take `Host` (an `ISessionHost`; `UseWindows` registers `WebView2SessionHost`, and
+  `new WebView2SessionHost(control)` makes one over a control of your own) in place of `Anchor`. The fields only
+  WebView2 has (`VirtualHost`, `ResourceProvider`, `FolderMappings`, `AdditionalBrowserArguments`, `IsDevelopment`)
+  moved to `WebView2SessionBrowserOptions`, which derives from `SessionBrowserOptions` and goes where it did.
+  `InteractiveSessionOptions` lost `Icon` and `Owner`: the window wears the main window's icon and is modal to it,
+  and its `ClientSize` and `MinimumSize` are now device-independent pixels, scaled by the display (they were set as
+  physical pixels). `SessionController.ExecuteScriptAsync` answers
+  `Task<string?>`, as `RenderSession`'s did. Wire names (`SHENORA.SESSION` and its event types) are unchanged.
 - **The single-instance guard moved to `Shenora.Core.Shell`, and a later launch reaches the running app over a
   pipe instead of a window message.** `SingleInstanceGuard`, `SingleInstanceResult` and `SingleInstanceHostOptions`
   were `Shenora.Windows` types: a Windows app adds `using Shenora.Core.Shell;`, and `WindowsHostOptions.SingleInstance`
@@ -64,6 +76,16 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`ISessionHost`**, the seam the sessions are written over (D91): the shell's UI thread, a browser made on it
+  (`CreateAsync`, off-screen or a visible development window, its profile shared through `CreateContext`), and an
+  interactive session's window (`OpenWindowAsync`). The WebView2 one is the sessions' behaviour as it was, measured in
+  the desktop sample: a pooled off-screen render (2.8 s cold, 1.3 s on the warm instance), a stream's first frame in
+  2.1 s and its stop, and an interactive session run silently off-screen, run revealed, and closed as its X button
+  closes it (`SC_CLOSE`, posted: held once, the driver's final read returned) or by a bare `WM_CLOSE` (the flow ends
+  cancelled with the window, where a driver waiting on the page would otherwise have held it open). The Chromium shell's host is next (TASKS).
+- **`IUiDispatcher.Queue`**: run work on the UI thread after what it is doing now, never inline, for a body that opens
+  a modal loop or whose caller must return first. The kit's dispatchers keep order behind earlier posts; any other
+  implementation gets a default that hops through the thread pool.
 - **Single instance in the Chromium shell** (`ChromiumHostOptions.SingleInstance`, on by default, as on Windows): a
   later launch has the running app bring its main window forward, shown if hidden, restored if minimized and opened
   again if closed, and exits. Measured on Windows (the minimized window restored every time, and took the

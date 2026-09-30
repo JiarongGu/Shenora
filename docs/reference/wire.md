@@ -254,16 +254,16 @@ What an auxiliary session publishes on the event bus — the 0.11.0 replacement 
 | Constant | Value | |
 |---|---|---|
 | `SessionEvents.Module` | `SHENORA.SESSION` | The module every session event is published under. |
-| `SessionEvents.ResponseReceived` | `RESPONSE_RECEIVED` | A network response arrived — payload SessionResponse. |
-| `SessionEvents.NavigationStarting` | `NAVIGATION_STARTING` | A top-level navigation began — payload SessionSource. |
-| `SessionEvents.NavigationCompleted` | `NAVIGATION_COMPLETED` | A top-level navigation finished, successfully or not — payload SessionNavigationResult. |
-| `SessionEvents.DomContentLoaded` | `DOM_CONTENT_LOADED` | The document exists and is parsed — payload SessionSource. |
-| `SessionEvents.SourceChanged` | `SOURCE_CHANGED` | The address changed WITHOUT a navigation — payload SessionSource. |
-| `SessionEvents.TitleChanged` | `TITLE_CHANGED` | The document title changed — payload SessionSource. |
-| `SessionEvents.WebMessage` | `WEB_MESSAGE` | The page posted a message via chrome.webview.postMessage — payload SessionWebMessage. |
-| `SessionEvents.DownloadStarting` | `DOWNLOAD_STARTING` | The page began a download — payload DownloadHit. |
-| `SessionEvents.WindowCloseRequested` | `WINDOW_CLOSE_REQUESTED` | The page called window.close() — no payload. |
-| `SessionEvents.ProcessFailed` | `PROCESS_FAILED` | A browser process died — payload SessionProcessReport. |
+| `SessionEvents.ResponseReceived` | `RESPONSE_RECEIVED` | A network response arrived; payload SessionResponse. |
+| `SessionEvents.NavigationStarting` | `NAVIGATION_STARTING` | A top-level navigation began; payload SessionSource. |
+| `SessionEvents.NavigationCompleted` | `NAVIGATION_COMPLETED` | A top-level navigation finished, successfully or not; payload SessionNavigationResult. |
+| `SessionEvents.DomContentLoaded` | `DOM_CONTENT_LOADED` | The document exists and is parsed; payload SessionSource. |
+| `SessionEvents.SourceChanged` | `SOURCE_CHANGED` | The address changed WITHOUT a navigation; payload SessionSource. |
+| `SessionEvents.TitleChanged` | `TITLE_CHANGED` | The document title changed; payload SessionSource. |
+| `SessionEvents.WebMessage` | `WEB_MESSAGE` | The page posted a message (WebView2's chrome.webview.postMessage); payload SessionWebMessage. |
+| `SessionEvents.DownloadStarting` | `DOWNLOAD_STARTING` | The page began a download; payload DownloadHit. |
+| `SessionEvents.WindowCloseRequested` | `WINDOW_CLOSE_REQUESTED` | The page called window.close(); no payload. |
+| `SessionEvents.ProcessFailed` | `PROCESS_FAILED` | A browser process died; payload SessionProcessReport. |
 
 ## Interactive session failures
 
@@ -271,11 +271,11 @@ The `code` when an interactive session cannot answer.
 
 | Constant | Value | |
 |---|---|---|
-| `InteractiveSessionErrorCodes.Busy` | `SESSION_BUSY` | Another session is already open — interactive sessions serialize. |
+| `InteractiveSessionErrorCodes.Busy` | `SESSION_BUSY` | Another session is already open: interactive sessions serialize. |
 | `InteractiveSessionErrorCodes.Cancelled` | `SESSION_CANCELLED` | The caller's token tripped, or the user closed before the driver captured. |
 | `InteractiveSessionErrorCodes.Incomplete` | `SESSION_INCOMPLETE` | The driver finished without capturing anything (e.g. |
-| `InteractiveSessionErrorCodes.Error` | `SESSION_ERROR` | The driver (or the window) threw — details stay in the host log. |
-| `InteractiveSessionErrorCodes.Unavailable` | `SESSION_UNAVAILABLE` | The UI-thread anchor is gone (headless / teardown). |
+| `InteractiveSessionErrorCodes.Error` | `SESSION_ERROR` | The driver (or the window) threw; details stay in the host log. |
+| `InteractiveSessionErrorCodes.Unavailable` | `SESSION_UNAVAILABLE` | The shell's UI thread is gone (headless / teardown). |
 
 ## Clipboard media types
 

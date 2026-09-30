@@ -1,3 +1,4 @@
+using Shenora.Core.Sessions;
 using Shenora.Sample.Desktop;
 using Shenora.Windows;
 using Shenora.Core.Ipc;

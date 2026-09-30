@@ -3,6 +3,7 @@ using Shenora;
 using Shenora.Windows;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 using Shenora.Core.Events;
+using Shenora.Core.Sessions;
 using Shenora.Core.Shell;
 using Shenora.Core.Ipc;
 
@@ -36,7 +37,8 @@ public sealed class MainForm : OptimizedForm
     private readonly System.Windows.Forms.Timer _tickTimer;
     private int _tickCount;
 
-    public MainForm(WebViewHostOptions hostOptions, IMessageDispatcher dispatcher, IEventBus eventBus, ShenoraPaths paths)
+    public MainForm(WebViewHostOptions hostOptions, IMessageDispatcher dispatcher, IEventBus eventBus, ShenoraPaths paths,
+        ISessionHost sessionHost)
         : base(new OptimizedFormOptions
         {
             FramelessChrome = true,
@@ -101,8 +103,10 @@ public sealed class MainForm : OptimizedForm
         // SSRF policy seam: session URLs are data-driven, and this demo only renders local pages.
         _renderPool = new RenderSessionPool(new RenderSessionPoolOptions
         {
-            Anchor = this,
-            Browser = new SessionBrowserOptions
+            // The shell's browsers: UseWindows registered WebView2 ones, on this window's thread (D91).
+            Host = sessionHost,
+            // WebView2's own options, since this session serves the app's own bundle (below).
+            Browser = new WebView2SessionBrowserOptions
             {
                 ProfileDirectory = Path.Combine(paths.DataArea("sessions"), "render"),
                 KeepAliveInBackground = true, // off-screen pages must keep their JS running
@@ -192,8 +196,8 @@ public sealed class MainForm : OptimizedForm
 
                     var session = await StreamingSession.StartAsync(new StreamingSessionOptions
                     {
-                        Anchor = this,
-                        Browser = new SessionBrowserOptions
+                        Host = sessionHost,
+                        Browser = new WebView2SessionBrowserOptions
                         {
                             ProfileDirectory = Path.Combine(paths.DataArea("sessions"), "stream"),
                             KeepAliveInBackground = true, // off-screen, but it must keep painting

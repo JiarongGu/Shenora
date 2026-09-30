@@ -53,11 +53,7 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   reaches the OS's controls there.
 - [ ] **The auxiliary browsers on CEF (D91)**, one implementation in `Shenora.Core.Sessions` over `ISessionBrowsers`,
   in phases, each measured before the next:
-  - [ ] **S1, the seam, on Windows alone and with no change in behaviour:** the session types, their data and
-    their pure rules move to Core; the orchestration drives `ISessionBrowser`; `Shenora.Windows` registers the
-    WebView2 browsers. The pool, streaming and interactive tests run against fakes, and the WebView2 tests and the
-    desktop sample's session flows (`CookieLoginDriver`, `StreamViewer`) against the real browsers.
-  - [ ] **S2, the render pool on CEF:** windowless browsers (`windowless_rendering_enabled`), a request context per
+  - [ ] **S2, the render pool on CEF (`ChromiumSessionHost`):** windowless browsers (`windowless_rendering_enabled`), a request context per
     profile, the five hooks, the events, the request filter and the cross-authority cancellation.
   - [ ] **S3, streaming on CEF:** the screencast and input through CEF's DevTools channel.
   - [ ] **S4, the interactive window on CEF:** a Views window over the session's request context, the held close,

@@ -52,18 +52,6 @@ sealed class Shenora.Windows.ClipboardService : Shenora.Core.Shell.IClipboardSer
   public System.Threading.Tasks.Task SetTextAsync(string text)
   public System.Threading.Tasks.Task<Shenora.Core.Shell.ClipboardContent> GetAsync()
   public System.Threading.Tasks.Task<string> GetTextAsync()
-sealed class Shenora.Windows.DownloadHit : System.IEquatable<Shenora.Windows.DownloadHit>
-  public .ctor(string Url, string? FileName)
-  public Shenora.Windows.DownloadHit <Clone>$()
-  public bool Equals(Shenora.Windows.DownloadHit? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.DownloadHit? left, Shenora.Windows.DownloadHit? right)
-  public static bool op_Inequality(Shenora.Windows.DownloadHit? left, Shenora.Windows.DownloadHit? right)
-  public string Url { get; init; }
-  public string? FileName { get; init; }
-  public void Deconstruct(out string Url, out string? FileName)
 static class Shenora.Windows.DpiHelper
   public const double BaseDpi = 96
   public static double ScaleFromDeviceDpi(int deviceDpi)
@@ -133,36 +121,6 @@ interface Shenora.Windows.IWebViewResourceProvider
   public abstract System.IO.Stream? GetResourceStream(string virtualPath)
   public abstract bool Exists(string virtualPath)
   public virtual void BeginWarmup()
-sealed class Shenora.Windows.InteractiveSession
-  public .ctor(Shenora.Windows.InteractiveSessionOptions options)
-  public System.Threading.Tasks.Task<Shenora.Windows.InteractiveSessionResult> RunAsync(System.Func<Shenora.Windows.SessionController, System.Threading.CancellationToken, System.Threading.Tasks.Task<string>> driver, System.Threading.CancellationToken cancellationToken = default)
-  public bool IsBusy { get; }
-  public static bool ClearProfile(string profileDirectory)
-  public static string ComposeProfileDirectory(string root, params string[] segments)
-static class Shenora.Windows.InteractiveSessionErrorCodes
-  public const string Busy = "SESSION_BUSY"
-  public const string Cancelled = "SESSION_CANCELLED"
-  public const string Error = "SESSION_ERROR"
-  public const string Incomplete = "SESSION_INCOMPLETE"
-  public const string Unavailable = "SESSION_UNAVAILABLE"
-sealed class Shenora.Windows.InteractiveSessionOptions
-  public System.Action<bool>? OnLoading { get; init; }
-  public System.Drawing.Color? BackColor { get; init; }
-  public System.Drawing.Icon? Icon { get; init; }
-  public System.Drawing.Size ClientSize { get; init; }
-  public System.Drawing.Size MinimumSize { get; init; }
-  public System.Func<System.Uri, System.Threading.CancellationToken, System.Threading.Tasks.Task<bool>>? NavigationGuard { get; init; }
-  public System.TimeSpan LoadingFallbackTimeout { get; init; }
-  public System.Windows.Forms.Form? Owner { get; init; }
-  public bool RevealImmediately { get; init; }
-  public required Shenora.Windows.SessionBrowserOptions Browser { get; init; }
-  public required System.Windows.Forms.Control Anchor { get; init; }
-  public string Title { get; init; }
-sealed class Shenora.Windows.InteractiveSessionResult
-  public required bool Success { get; init; }
-  public string? Blob { get; init; }
-  public string? ErrorCode { get; init; }
-  public void ThrowIfFailed()
 class Shenora.Windows.OptimizedForm : System.Windows.Forms.Form, Shenora.Windows.IAppMaximizable
   [Browsable(false)] [DesignerSerializationVisibility(0)] public Shenora.Windows.CaptionButtonColors? CaptionButtonColors { get; set; }
   [Browsable(false)] [DesignerSerializationVisibility(0)] public System.Action<Shenora.Windows.CaptionButtonState>? CaptionButtonStateChanged { get; set; }
@@ -194,28 +152,6 @@ sealed class Shenora.Windows.OptimizedFormOptions
   public bool NativeCaptionButtons { get; init; }
   public bool RoundedCorners { get; init; }
   public int TopResizeBorder { get; init; }
-sealed class Shenora.Windows.RenderSession : System.IAsyncDisposable
-  public System.Threading.Tasks.Task NavigateAsync(string url, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task<string> CallDevToolsAsync(string method, string parametersJson, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task<string> ExecuteScriptAsync(string javaScript, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task<string> GetHtmlAsync(System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.ValueTask DisposeAsync()
-  public string Id { get; }
-sealed class Shenora.Windows.RenderSessionPool : System.IDisposable
-  public .ctor(Shenora.Windows.RenderSessionPoolOptions options)
-  public System.Threading.Tasks.Task<Shenora.Windows.RenderSession> LeaseAsync(System.Threading.CancellationToken cancellationToken = default)
-  public void Dispose()
-sealed class Shenora.Windows.RenderSessionPoolOptions
-  public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
-  public System.Drawing.Size OffscreenClientSize { get; init; }
-  public System.Func<System.Uri, System.Threading.CancellationToken, System.Threading.Tasks.Task<bool>>? NavigationGuard { get; init; }
-  public System.TimeSpan NavigationTimeout { get; init; }
-  public System.TimeSpan OpTimeout { get; init; }
-  public System.TimeSpan ResetTimeout { get; init; }
-  public bool VisiblePerSession { get; init; }
-  public int Capacity { get; init; }
-  public required Shenora.Windows.SessionBrowserOptions Browser { get; init; }
-  public required System.Windows.Forms.Control Anchor { get; init; }
 sealed class Shenora.Windows.SecondaryWindowOptions
   public Shenora.Core.Shell.IWindowStateStore? StateStore { get; init; }
   public Shenora.Core.Shell.WindowStateOptions? StateOptions { get; init; }
@@ -228,313 +164,6 @@ sealed class Shenora.Windows.SecondaryWindows : System.IDisposable
   public void Close(string name)
   public void CloseAll()
   public void Dispose()
-sealed class Shenora.Windows.SessionAuthRequest : System.IEquatable<Shenora.Windows.SessionAuthRequest>
-  public .ctor(string Uri, string Challenge)
-  public Shenora.Windows.SessionAuthRequest <Clone>$()
-  public bool Equals(Shenora.Windows.SessionAuthRequest? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionAuthRequest? left, Shenora.Windows.SessionAuthRequest? right)
-  public static bool op_Inequality(Shenora.Windows.SessionAuthRequest? left, Shenora.Windows.SessionAuthRequest? right)
-  public string Challenge { get; init; }
-  public string Uri { get; init; }
-  public string? Password { get; set; }
-  public string? UserName { get; set; }
-  public void Deconstruct(out string Uri, out string Challenge)
-sealed class Shenora.Windows.SessionBrowserOptions : System.IEquatable<Shenora.Windows.SessionBrowserOptions>
-  public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
-  public Shenora.Core.Events.IEventBus? Events { get; init; }
-  public Shenora.Windows.IWebViewResourceProvider? ResourceProvider { get; init; }
-  public Shenora.Windows.SessionBrowserOptions <Clone>$()
-  public System.Action<Shenora.Windows.SessionAuthRequest>? OnAuthRequest { get; init; }
-  public System.Action<Shenora.Windows.SessionCertificateRequest>? OnCertificateRequest { get; init; }
-  public System.Action<Shenora.Windows.SessionPermissionRequest>? OnPermissionRequest { get; init; }
-  public System.Action<Shenora.Windows.SessionScriptDialog>? OnScriptDialog { get; init; }
-  public System.Action<Shenora.Windows.SessionWindowRequest>? OnWindowRequest { get; init; }
-  public System.Collections.Generic.IReadOnlyList<Shenora.Windows.WebViewFolderMapping> FolderMappings { get; init; }
-  public System.Func<System.Uri, System.Uri, bool>? RequestFilter { get; init; }
-  public System.Func<System.Uri, bool>? ObserveResponse { get; init; }
-  public System.TimeSpan InitTimeout { get; init; }
-  public bool Equals(Shenora.Windows.SessionBrowserOptions? other)
-  public bool IsDevelopment { get; init; }
-  public bool KeepAliveInBackground { get; init; }
-  public bool MuteAudio { get; init; }
-  public int ResponseBodySample { get; init; }
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public required string ProfileDirectory { get; init; }
-  public static bool op_Equality(Shenora.Windows.SessionBrowserOptions? left, Shenora.Windows.SessionBrowserOptions? right)
-  public static bool op_Inequality(Shenora.Windows.SessionBrowserOptions? left, Shenora.Windows.SessionBrowserOptions? right)
-  public string? AdditionalBrowserArguments { get; init; }
-  public string? VirtualHost { get; init; }
-sealed class Shenora.Windows.SessionCertificateRequest : System.IEquatable<Shenora.Windows.SessionCertificateRequest>
-  public .ctor(string Host, int Port, System.Collections.Generic.IReadOnlyList<string> Subjects)
-  public Shenora.Windows.SessionCertificateRequest <Clone>$()
-  public System.Collections.Generic.IReadOnlyList<string> Subjects { get; init; }
-  public bool Equals(Shenora.Windows.SessionCertificateRequest? other)
-  public int Port { get; init; }
-  public int? SelectedIndex { get; set; }
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionCertificateRequest? left, Shenora.Windows.SessionCertificateRequest? right)
-  public static bool op_Inequality(Shenora.Windows.SessionCertificateRequest? left, Shenora.Windows.SessionCertificateRequest? right)
-  public string Host { get; init; }
-  public void Deconstruct(out string Host, out int Port, out System.Collections.Generic.IReadOnlyList<string> Subjects)
-sealed class Shenora.Windows.SessionController
-  public System.Threading.CancellationToken WindowClosed { get; }
-  public System.Threading.Tasks.Task NavigateAsync(string url, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.Windows.SessionCookie>> GetCookiesAsync(string origin, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task<string> ExecuteScriptAsync(string javaScript, System.Threading.CancellationToken cancellationToken = default)
-  public string Id { get; }
-  public void FitToBox(int cssWidth, int cssHeight)
-  public void Reveal()
-  public void SetLoading(bool loading)
-sealed class Shenora.Windows.SessionCookie : System.IEquatable<Shenora.Windows.SessionCookie>
-  public .ctor(string Name, string Value, string Domain, string Path)
-  public Shenora.Windows.SessionCookie <Clone>$()
-  public bool Equals(Shenora.Windows.SessionCookie? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionCookie? left, Shenora.Windows.SessionCookie? right)
-  public static bool op_Inequality(Shenora.Windows.SessionCookie? left, Shenora.Windows.SessionCookie? right)
-  public string Domain { get; init; }
-  public string Name { get; init; }
-  public string Path { get; init; }
-  public string Value { get; init; }
-  public void Deconstruct(out string Name, out string Value, out string Domain, out string Path)
-static class Shenora.Windows.SessionEvents
-  public const string DomContentLoaded = "DOM_CONTENT_LOADED"
-  public const string DownloadStarting = "DOWNLOAD_STARTING"
-  public const string Module = "SHENORA.SESSION"
-  public const string NavigationCompleted = "NAVIGATION_COMPLETED"
-  public const string NavigationStarting = "NAVIGATION_STARTING"
-  public const string ProcessFailed = "PROCESS_FAILED"
-  public const string ResponseReceived = "RESPONSE_RECEIVED"
-  public const string SourceChanged = "SOURCE_CHANGED"
-  public const string TitleChanged = "TITLE_CHANGED"
-  public const string WebMessage = "WEB_MESSAGE"
-  public const string WindowCloseRequested = "WINDOW_CLOSE_REQUESTED"
-abstract class Shenora.Windows.SessionInput : System.IEquatable<Shenora.Windows.SessionInput>
-  protected .ctor(Shenora.Windows.SessionInput original)
-  protected virtual System.Type EqualityContract { get; }
-  protected virtual bool PrintMembers(System.Text.StringBuilder builder)
-  public abstract Shenora.Windows.SessionInput <Clone>$()
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool TryParseLegacyJson(string? json, out Shenora.Windows.SessionInput? input)
-  public static bool op_Equality(Shenora.Windows.SessionInput? left, Shenora.Windows.SessionInput? right)
-  public static bool op_Inequality(Shenora.Windows.SessionInput? left, Shenora.Windows.SessionInput? right)
-  public virtual bool Equals(Shenora.Windows.SessionInput? other)
-sealed class Shenora.Windows.SessionKeyInput : Shenora.Windows.SessionInput, System.IEquatable<Shenora.Windows.SessionKeyInput>
-  protected override System.Type EqualityContract { get; }
-  protected override bool PrintMembers(System.Text.StringBuilder builder)
-  public .ctor(string Key)
-  public bool Alt { get; init; }
-  public bool Ctrl { get; init; }
-  public bool Equals(Shenora.Windows.SessionKeyInput? other)
-  public bool Meta { get; init; }
-  public bool Shift { get; init; }
-  public override bool Equals(Shenora.Windows.SessionInput? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionKeyInput? left, Shenora.Windows.SessionKeyInput? right)
-  public static bool op_Inequality(Shenora.Windows.SessionKeyInput? left, Shenora.Windows.SessionKeyInput? right)
-  public string Key { get; init; }
-  public virtual Shenora.Windows.SessionKeyInput <Clone>$()
-  public void Deconstruct(out string Key)
-sealed class Shenora.Windows.SessionNavigationResult : System.IEquatable<Shenora.Windows.SessionNavigationResult>
-  public .ctor(string Uri, bool Success, string Status)
-  public Shenora.Windows.SessionNavigationResult <Clone>$()
-  public bool Equals(Shenora.Windows.SessionNavigationResult? other)
-  public bool Success { get; init; }
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionNavigationResult? left, Shenora.Windows.SessionNavigationResult? right)
-  public static bool op_Inequality(Shenora.Windows.SessionNavigationResult? left, Shenora.Windows.SessionNavigationResult? right)
-  public string Status { get; init; }
-  public string Uri { get; init; }
-  public void Deconstruct(out string Uri, out bool Success, out string Status)
-sealed class Shenora.Windows.SessionPermissionRequest : System.IEquatable<Shenora.Windows.SessionPermissionRequest>
-  public .ctor(string Kind, string Uri, bool UserInitiated)
-  public Shenora.Windows.SessionPermissionRequest <Clone>$()
-  public bool Allow { get; set; }
-  public bool Equals(Shenora.Windows.SessionPermissionRequest? other)
-  public bool UserInitiated { get; init; }
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionPermissionRequest? left, Shenora.Windows.SessionPermissionRequest? right)
-  public static bool op_Inequality(Shenora.Windows.SessionPermissionRequest? left, Shenora.Windows.SessionPermissionRequest? right)
-  public string Kind { get; init; }
-  public string Uri { get; init; }
-  public void Deconstruct(out string Kind, out string Uri, out bool UserInitiated)
-enum Shenora.Windows.SessionPointerAction (int)
-  public const Shenora.Windows.SessionPointerAction Down = 1
-  public const Shenora.Windows.SessionPointerAction Move = 0
-  public const Shenora.Windows.SessionPointerAction Up = 2
-  public int value__
-sealed class Shenora.Windows.SessionPointerInput : Shenora.Windows.SessionInput, System.IEquatable<Shenora.Windows.SessionPointerInput>
-  protected override System.Type EqualityContract { get; }
-  protected override bool PrintMembers(System.Text.StringBuilder builder)
-  public .ctor(Shenora.Windows.SessionPointerAction Action, double X, double Y)
-  public Shenora.Windows.SessionPointerAction Action { get; init; }
-  public bool Equals(Shenora.Windows.SessionPointerInput? other)
-  public double X { get; init; }
-  public double Y { get; init; }
-  public override bool Equals(Shenora.Windows.SessionInput? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionPointerInput? left, Shenora.Windows.SessionPointerInput? right)
-  public static bool op_Inequality(Shenora.Windows.SessionPointerInput? left, Shenora.Windows.SessionPointerInput? right)
-  public virtual Shenora.Windows.SessionPointerInput <Clone>$()
-  public void Deconstruct(out Shenora.Windows.SessionPointerAction Action, out double X, out double Y)
-sealed class Shenora.Windows.SessionProcessReport : System.IEquatable<Shenora.Windows.SessionProcessReport>
-  public .ctor(string Kind, string Reason, int ExitCode, bool Terminal)
-  public Shenora.Windows.SessionProcessReport <Clone>$()
-  public bool Equals(Shenora.Windows.SessionProcessReport? other)
-  public bool Terminal { get; init; }
-  public int ExitCode { get; init; }
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionProcessReport? left, Shenora.Windows.SessionProcessReport? right)
-  public static bool op_Inequality(Shenora.Windows.SessionProcessReport? left, Shenora.Windows.SessionProcessReport? right)
-  public string Kind { get; init; }
-  public string Reason { get; init; }
-  public void Deconstruct(out string Kind, out string Reason, out int ExitCode, out bool Terminal)
-sealed class Shenora.Windows.SessionResponse : System.IEquatable<Shenora.Windows.SessionResponse>
-  public .ctor(string Uri, int StatusCode, string ReasonPhrase, System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string, string>> Headers, string BodySample)
-  public Shenora.Windows.SessionResponse <Clone>$()
-  public System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string, string>> Headers { get; init; }
-  public bool Equals(Shenora.Windows.SessionResponse? other)
-  public int StatusCode { get; init; }
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionResponse? left, Shenora.Windows.SessionResponse? right)
-  public static bool op_Inequality(Shenora.Windows.SessionResponse? left, Shenora.Windows.SessionResponse? right)
-  public string BodySample { get; init; }
-  public string ReasonPhrase { get; init; }
-  public string Uri { get; init; }
-  public void Deconstruct(out string Uri, out int StatusCode, out string ReasonPhrase, out System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string, string>> Headers, out string BodySample)
-sealed class Shenora.Windows.SessionScriptDialog : System.IEquatable<Shenora.Windows.SessionScriptDialog>
-  public .ctor(string Kind, string Uri, string Message, string DefaultText)
-  public Shenora.Windows.SessionScriptDialog <Clone>$()
-  public bool Accept { get; set; }
-  public bool Equals(Shenora.Windows.SessionScriptDialog? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionScriptDialog? left, Shenora.Windows.SessionScriptDialog? right)
-  public static bool op_Inequality(Shenora.Windows.SessionScriptDialog? left, Shenora.Windows.SessionScriptDialog? right)
-  public string DefaultText { get; init; }
-  public string Kind { get; init; }
-  public string Message { get; init; }
-  public string ResultText { get; set; }
-  public string Uri { get; init; }
-  public void Deconstruct(out string Kind, out string Uri, out string Message, out string DefaultText)
-sealed class Shenora.Windows.SessionSource : System.IEquatable<Shenora.Windows.SessionSource>
-  public .ctor(string Uri, string Title)
-  public Shenora.Windows.SessionSource <Clone>$()
-  public bool Equals(Shenora.Windows.SessionSource? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionSource? left, Shenora.Windows.SessionSource? right)
-  public static bool op_Inequality(Shenora.Windows.SessionSource? left, Shenora.Windows.SessionSource? right)
-  public string Title { get; init; }
-  public string Uri { get; init; }
-  public void Deconstruct(out string Uri, out string Title)
-sealed class Shenora.Windows.SessionTextInput : Shenora.Windows.SessionInput, System.IEquatable<Shenora.Windows.SessionTextInput>
-  protected override System.Type EqualityContract { get; }
-  protected override bool PrintMembers(System.Text.StringBuilder builder)
-  public .ctor(string Text)
-  public bool Equals(Shenora.Windows.SessionTextInput? other)
-  public override bool Equals(Shenora.Windows.SessionInput? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionTextInput? left, Shenora.Windows.SessionTextInput? right)
-  public static bool op_Inequality(Shenora.Windows.SessionTextInput? left, Shenora.Windows.SessionTextInput? right)
-  public string Text { get; init; }
-  public virtual Shenora.Windows.SessionTextInput <Clone>$()
-  public void Deconstruct(out string Text)
-struct Shenora.Windows.SessionViewport : System.IEquatable<Shenora.Windows.SessionViewport>
-  public .ctor(int Width, int Height, double DeviceScaleFactor)
-  public bool Equals(Shenora.Windows.SessionViewport other)
-  public double DeviceScaleFactor { get; init; }
-  public int Height { get; init; }
-  public int Width { get; init; }
-  public override bool Equals(object obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionViewport left, Shenora.Windows.SessionViewport right)
-  public static bool op_Inequality(Shenora.Windows.SessionViewport left, Shenora.Windows.SessionViewport right)
-  public void Deconstruct(out int Width, out int Height, out double DeviceScaleFactor)
-sealed class Shenora.Windows.SessionViewportInput : Shenora.Windows.SessionInput, System.IEquatable<Shenora.Windows.SessionViewportInput>
-  protected override System.Type EqualityContract { get; }
-  protected override bool PrintMembers(System.Text.StringBuilder builder)
-  public .ctor(double Width, double Height)
-  public bool Equals(Shenora.Windows.SessionViewportInput? other)
-  public double Height { get; init; }
-  public double Width { get; init; }
-  public double? DeviceScaleFactor { get; init; }
-  public override bool Equals(Shenora.Windows.SessionInput? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionViewportInput? left, Shenora.Windows.SessionViewportInput? right)
-  public static bool op_Inequality(Shenora.Windows.SessionViewportInput? left, Shenora.Windows.SessionViewportInput? right)
-  public virtual Shenora.Windows.SessionViewportInput <Clone>$()
-  public void Deconstruct(out double Width, out double Height)
-sealed class Shenora.Windows.SessionWebMessage : System.IEquatable<Shenora.Windows.SessionWebMessage>
-  public .ctor(string Message)
-  public Shenora.Windows.SessionWebMessage <Clone>$()
-  public bool Equals(Shenora.Windows.SessionWebMessage? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionWebMessage? left, Shenora.Windows.SessionWebMessage? right)
-  public static bool op_Inequality(Shenora.Windows.SessionWebMessage? left, Shenora.Windows.SessionWebMessage? right)
-  public string Message { get; init; }
-  public void Deconstruct(out string Message)
-sealed class Shenora.Windows.SessionWheelInput : Shenora.Windows.SessionInput, System.IEquatable<Shenora.Windows.SessionWheelInput>
-  protected override System.Type EqualityContract { get; }
-  protected override bool PrintMembers(System.Text.StringBuilder builder)
-  public .ctor(double X, double Y, double DeltaY)
-  public bool Equals(Shenora.Windows.SessionWheelInput? other)
-  public double DeltaY { get; init; }
-  public double X { get; init; }
-  public double Y { get; init; }
-  public override bool Equals(Shenora.Windows.SessionInput? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionWheelInput? left, Shenora.Windows.SessionWheelInput? right)
-  public static bool op_Inequality(Shenora.Windows.SessionWheelInput? left, Shenora.Windows.SessionWheelInput? right)
-  public virtual Shenora.Windows.SessionWheelInput <Clone>$()
-  public void Deconstruct(out double X, out double Y, out double DeltaY)
-sealed class Shenora.Windows.SessionWindowRequest : System.IEquatable<Shenora.Windows.SessionWindowRequest>
-  public .ctor(string Uri, bool UserInitiated)
-  public Shenora.Windows.SessionWindowRequest <Clone>$()
-  public bool Allow { get; set; }
-  public bool Equals(Shenora.Windows.SessionWindowRequest? other)
-  public bool UserInitiated { get; init; }
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.SessionWindowRequest? left, Shenora.Windows.SessionWindowRequest? right)
-  public static bool op_Inequality(Shenora.Windows.SessionWindowRequest? left, Shenora.Windows.SessionWindowRequest? right)
-  public string Uri { get; init; }
-  public void Deconstruct(out string Uri, out bool UserInitiated)
 sealed class Shenora.Windows.SplashPanel : System.Windows.Forms.Panel
   protected override void Dispose(bool disposing)
   public .ctor(Shenora.Windows.SplashPanelOptions? options = null)
@@ -547,58 +176,6 @@ sealed class Shenora.Windows.SplashPanelOptions
   public double BarWidthFraction { get; init; }
   public int BarHeight { get; init; }
   public int BarMaxWidth { get; init; }
-sealed class Shenora.Windows.StreamingSession : System.IAsyncDisposable
-  public Shenora.Windows.SessionController Controller { get; }
-  public System.Threading.Channels.ChannelReader<Shenora.Windows.StreamingSessionFrame> Frames { get; }
-  public System.Threading.Tasks.Task DispatchAsync(Shenora.Windows.SessionInput input, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.ValueTask DisposeAsync()
-  public static System.Threading.Tasks.Task<Shenora.Windows.StreamingSession> StartAsync(Shenora.Windows.StreamingSessionOptions options, System.Threading.CancellationToken cancellationToken = default)
-  public string Id { get; }
-enum Shenora.Windows.StreamingSessionEndReason (int)
-  public const Shenora.Windows.StreamingSessionEndReason Disposed = 0
-  public const Shenora.Windows.StreamingSessionEndReason RendererFailed = 1
-  public int value__
-sealed class Shenora.Windows.StreamingSessionEnded : System.IEquatable<Shenora.Windows.StreamingSessionEnded>
-  public .ctor(Shenora.Windows.StreamingSessionEndReason Reason, string? Detail = null)
-  public Shenora.Windows.StreamingSessionEndReason Reason { get; init; }
-  public Shenora.Windows.StreamingSessionEnded <Clone>$()
-  public bool Equals(Shenora.Windows.StreamingSessionEnded? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.StreamingSessionEnded? left, Shenora.Windows.StreamingSessionEnded? right)
-  public static bool op_Inequality(Shenora.Windows.StreamingSessionEnded? left, Shenora.Windows.StreamingSessionEnded? right)
-  public string? Detail { get; init; }
-  public void Deconstruct(out Shenora.Windows.StreamingSessionEndReason Reason, out string? Detail)
-struct Shenora.Windows.StreamingSessionFrame : System.IEquatable<Shenora.Windows.StreamingSessionFrame>
-  public .ctor(byte[] Bytes, Shenora.Windows.StreamingSessionFrameFormat Format, int Width, int Height)
-  public Shenora.Windows.StreamingSessionFrameFormat Format { get; init; }
-  public bool Equals(Shenora.Windows.StreamingSessionFrame other)
-  public byte[] Bytes { get; init; }
-  public int Height { get; init; }
-  public int Width { get; init; }
-  public override bool Equals(object obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.StreamingSessionFrame left, Shenora.Windows.StreamingSessionFrame right)
-  public static bool op_Inequality(Shenora.Windows.StreamingSessionFrame left, Shenora.Windows.StreamingSessionFrame right)
-  public void Deconstruct(out byte[] Bytes, out Shenora.Windows.StreamingSessionFrameFormat Format, out int Width, out int Height)
-enum Shenora.Windows.StreamingSessionFrameFormat (int)
-  public const Shenora.Windows.StreamingSessionFrameFormat Jpeg = 0
-  public const Shenora.Windows.StreamingSessionFrameFormat Png = 1
-  public int value__
-sealed class Shenora.Windows.StreamingSessionOptions
-  public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
-  public Shenora.Windows.SessionViewport InitialViewport { get; init; }
-  public Shenora.Windows.StreamingSessionFrameFormat FrameFormat { get; init; }
-  public System.Action<Shenora.Windows.StreamingSessionEnded>? OnEnded { get; init; }
-  public System.Func<System.Uri, System.Threading.CancellationToken, System.Threading.Tasks.Task<bool>>? NavigationGuard { get; init; }
-  public int FrameBuffer { get; init; }
-  public int FrameQuality { get; init; }
-  public int MaxFrameHeight { get; init; }
-  public int MaxFrameWidth { get; init; }
-  public required Shenora.Windows.SessionBrowserOptions Browser { get; init; }
-  public required System.Windows.Forms.Control Anchor { get; init; }
 sealed class Shenora.Windows.TrayIcon : System.IDisposable
   public .ctor(Shenora.Windows.TrayIconOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Windows.TrayIcon>? logger = null)
   public System.Windows.Forms.ContextMenuStrip Menu { get; }
@@ -623,6 +200,28 @@ sealed class Shenora.Windows.TrayMenuColors
   public required System.Drawing.Color Text { get; init; }
 static class Shenora.Windows.WebView2BuilderExtensions
   public static Shenora.ShenoraApplicationBuilder PrewarmWebView2(Shenora.ShenoraApplicationBuilder builder, System.Func<Shenora.ShenoraApplication, Shenora.Windows.WebViewEnvironmentOptions> options)
+sealed class Shenora.Windows.WebView2SessionBrowserOptions : Shenora.Core.Sessions.SessionBrowserOptions, System.IEquatable<Shenora.Windows.WebView2SessionBrowserOptions>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public Shenora.Windows.IWebViewResourceProvider? ResourceProvider { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Windows.WebViewFolderMapping> FolderMappings { get; init; }
+  public bool Equals(Shenora.Windows.WebView2SessionBrowserOptions? other)
+  public bool IsDevelopment { get; init; }
+  public override bool Equals(Shenora.Core.Sessions.SessionBrowserOptions? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Windows.WebView2SessionBrowserOptions? left, Shenora.Windows.WebView2SessionBrowserOptions? right)
+  public static bool op_Inequality(Shenora.Windows.WebView2SessionBrowserOptions? left, Shenora.Windows.WebView2SessionBrowserOptions? right)
+  public string? AdditionalBrowserArguments { get; init; }
+  public string? VirtualHost { get; init; }
+  public virtual Shenora.Windows.WebView2SessionBrowserOptions <Clone>$()
+sealed class Shenora.Windows.WebView2SessionHost : Shenora.Core.Sessions.ISessionHost
+  public .ctor(System.Windows.Forms.Control anchor)
+  public Shenora.Core.Sessions.ISessionBrowserContext CreateContext()
+  public Shenora.Core.Shell.IUiDispatcher Ui { get; }
+  public System.Threading.Tasks.Task<Shenora.Core.Sessions.ISessionBrowser> CreateAsync(Shenora.Core.Sessions.SessionBrowserDefinition definition, System.Threading.CancellationToken cancellationToken)
+  public System.Threading.Tasks.Task<Shenora.Core.Sessions.ISessionWindow> OpenWindowAsync(Shenora.Core.Sessions.SessionWindowDefinition definition, System.Threading.CancellationToken cancellationToken)
 sealed class Shenora.Windows.WebViewCustomScheme
   public System.Collections.Generic.IReadOnlyList<string> AllowedOrigins { get; init; }
   public bool HasAuthorityComponent { get; init; }

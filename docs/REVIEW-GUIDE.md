@@ -262,7 +262,7 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   payload, WinForms dpi/window-state/single-instance/dialog seams, WebView2 bridge + drop-zone
   seams, React bridge/hooks/services/transport, Sessions pool accounting (via factory/reset seams),
   login gate mechanics, cookie-flow freshness logic, the co-browse protocol builders, and the
-  session request-filter decision (`SessionBrowser.ShouldBlockRequest`).
+  session request-filter decision (`SessionPolicy.ShouldBlockRequest`, in Core since D91).
 - **The missions + `Io` layer is unusually well pinned, and three of its tests exist because a
   sabotage exposed a worthless one** (2026-08-02). The concurrency suite proves exclusion AND
   parallelism in the SAME run, because either alone passes a broken implementation. The chain

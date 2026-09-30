@@ -1,3 +1,4 @@
+using Shenora.Core.Sessions;
 using Shenora.Windows;
 
 namespace Shenora.Tests.WebView2Sessions;
@@ -24,7 +25,7 @@ public class SessionBrowserRequestFilterTests
     public void The_filter_sees_the_request_and_the_page_host()
     {
         (Uri Request, Uri? Page)? seen = null;
-        var blocked = SessionBrowser.ShouldBlockRequest(
+        var blocked = SessionPolicy.ShouldBlockRequest(
             "https://cdn.example.net/a.js", "https://app.example.com/page",
             (request, page) => { seen = (request, page); return false; });
 
@@ -36,14 +37,14 @@ public class SessionBrowserRequestFilterTests
     [Fact]
     public void A_cross_host_subresource_is_blocked_by_a_same_host_policy()
     {
-        Assert.True(SessionBrowser.ShouldBlockRequest(
+        Assert.True(SessionPolicy.ShouldBlockRequest(
             "https://evil.example.net/steal.js", "https://app.example.com/page", BlockCrossHost));
     }
 
     [Fact]
     public void A_same_host_subresource_is_allowed()
     {
-        Assert.False(SessionBrowser.ShouldBlockRequest(
+        Assert.False(SessionPolicy.ShouldBlockRequest(
             "https://app.example.com/main.js", "https://app.example.com/page", BlockCrossHost));
     }
 
@@ -60,7 +61,7 @@ public class SessionBrowserRequestFilterTests
     public void A_non_web_page_source_reaches_the_filter_as_null(string? pageSource)
     {
         Uri? seenPage = new Uri("https://sentinel.invalid"); // must be overwritten with null
-        var blocked = SessionBrowser.ShouldBlockRequest(
+        var blocked = SessionPolicy.ShouldBlockRequest(
             "https://app.example.com/first-document", pageSource,
             (_, page) => { seenPage = page; return false; });
 
@@ -74,9 +75,9 @@ public class SessionBrowserRequestFilterTests
         // The regression this normalization exists for, stated as a behaviour: same policy, same
         // request, only the page source differs — and a blank/about:blank source must not turn the
         // page's own document into a third-party request.
-        Assert.False(SessionBrowser.ShouldBlockRequest(
+        Assert.False(SessionPolicy.ShouldBlockRequest(
             "https://app.example.com/page", "about:blank", BlockCrossHost));
-        Assert.False(SessionBrowser.ShouldBlockRequest(
+        Assert.False(SessionPolicy.ShouldBlockRequest(
             "https://app.example.com/page", "", BlockCrossHost));
     }
 
@@ -90,7 +91,7 @@ public class SessionBrowserRequestFilterTests
     public void An_unparseable_request_uri_is_passed_without_consulting_the_filter(string? requestUri)
     {
         var consulted = false;
-        var blocked = SessionBrowser.ShouldBlockRequest(
+        var blocked = SessionPolicy.ShouldBlockRequest(
             requestUri, "https://app.example.com/page", (_, _) => { consulted = true; return true; });
 
         // Nothing to describe to a policy, so the policy is not asked — and it is NOT blocked, which
@@ -105,7 +106,7 @@ public class SessionBrowserRequestFilterTests
         // Deliberate, and the opposite of the navigation guard's fail-closed stance: this predicate
         // runs on every subresource of every page, so failing closed on a buggy app predicate would
         // present as a blank page with nothing logged. The guard is the boundary that must hold.
-        Assert.False(SessionBrowser.ShouldBlockRequest(
+        Assert.False(SessionPolicy.ShouldBlockRequest(
             "https://evil.example.net/x.js", "https://app.example.com/page",
             (_, _) => throw new InvalidOperationException("app policy blew up")));
     }
@@ -119,7 +120,7 @@ public class SessionBrowserRequestFilterTests
         // allowed; what changed is that somebody is told.
         Exception? reported = null;
 
-        var blocked = SessionBrowser.ShouldBlockRequest(
+        var blocked = SessionPolicy.ShouldBlockRequest(
             "https://evil.example.net/x.js", "https://app.example.com/page",
             (_, _) => throw new InvalidOperationException("app policy blew up"),
             ex => reported = ex);
@@ -135,7 +136,7 @@ public class SessionBrowserRequestFilterTests
         // The quiet direction: a working policy must not look like a broken one.
         var reported = 0;
 
-        SessionBrowser.ShouldBlockRequest(
+        SessionPolicy.ShouldBlockRequest(
             "https://app.example.com/main.js", "https://app.example.com/page", BlockCrossHost,
             _ => reported++);
 
@@ -150,7 +151,7 @@ public class SessionBrowserRequestFilterTests
         var seen = new List<string>();
         foreach (var uri in new[] { "ws://app.example.com/socket", "blob:https://app.example.com/abc", "app://local/x" })
         {
-            SessionBrowser.ShouldBlockRequest(uri, "https://app.example.com/page",
+            SessionPolicy.ShouldBlockRequest(uri, "https://app.example.com/page",
                 (request, _) => { seen.Add(request.Scheme); return false; });
         }
 

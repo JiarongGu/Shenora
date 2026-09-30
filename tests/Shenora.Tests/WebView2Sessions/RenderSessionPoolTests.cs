@@ -1,3 +1,5 @@
+using Shenora.Tests.TestSupport;
+using Shenora.Core.Sessions;
 using Microsoft.Web.WebView2.Core;
 using Shenora.Windows;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
@@ -32,7 +34,7 @@ public class RenderSessionPoolTests
         {
             var pool = new RenderSessionPool(new RenderSessionPoolOptions
             {
-                Anchor = Anchor,
+                Host = new WebView2SessionHost(Anchor),
                 Capacity = capacity,
                 Browser = new SessionBrowserOptions { ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused"), KeepAliveInBackground = true },
                 OpTimeout = opTimeout ?? TimeSpan.FromSeconds(60),
@@ -44,7 +46,7 @@ public class RenderSessionPoolTests
                     Created++;
                     // A dormant WebView2 control (no core) — the seams keep the pool from touching it.
                     Last = new RenderSessionPool.PoolInstance(
-                        new Form { ShowInTaskbar = false }, new WebView2Control());
+                        new FakeSessionBrowser());
                     return Task.FromResult(Last);
                 },
                 ResetOverride = _ => Task.FromResult(!failReset),
@@ -388,7 +390,7 @@ public class RenderSessionPoolTests
         // naming the option that caused it.
         Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionPool(new RenderSessionPoolOptions
         {
-            Anchor = fixture.Anchor,
+            Host = new WebView2SessionHost(fixture.Anchor),
             Browser = browser,
             OpTimeout = which == "OpTimeout" ? bad : TimeSpan.FromSeconds(60),
             NavigationTimeout = which == "NavigationTimeout" ? bad : TimeSpan.FromSeconds(30),
@@ -406,14 +408,14 @@ public class RenderSessionPoolTests
         using var fixture = new Fixture();
         using var pool = new RenderSessionPool(new RenderSessionPoolOptions
         {
-            Anchor = fixture.Anchor,
+            Host = new WebView2SessionHost(fixture.Anchor),
             Capacity = 1,
             Browser = new SessionBrowserOptions { ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused") },
             Log = new ThrowingLogger(),
         })
         {
             InstanceFactoryOverride = _ => Task.FromResult(new RenderSessionPool.PoolInstance(
-                new Form { ShowInTaskbar = false }, new WebView2Control())),
+                new FakeSessionBrowser())),
             ResetOverride = _ => Task.FromResult(false), // force the discard path, which is what logs
         };
 
@@ -449,7 +451,7 @@ public class RenderSessionPoolTests
         // viewport as the cause (P5.5 H3).
         Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionPool(new RenderSessionPoolOptions
         {
-            Anchor = fixture.Anchor,
+            Host = new WebView2SessionHost(fixture.Anchor),
             Browser = new SessionBrowserOptions { ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused") },
             OffscreenClientSize = new Size(0, 0),
         }));
@@ -467,7 +469,8 @@ public class RenderSessionPoolTests
             {
                 ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused"),
                 InitTimeout = TimeSpan.Zero,
-            }));
+            },
+            onProcessFailed: null, sessionScope: null, environmentCache: null));
 
         Assert.Contains(nameof(SessionBrowserOptions.InitTimeout), error.Message, StringComparison.Ordinal);
     }
@@ -512,14 +515,13 @@ public class RenderSessionPoolTests
 
         public Form Form => _form!;
 
-        /// <summary>A dormant instance (no browser core) — nothing in these tests touches it.</summary>
-        public static RenderSessionPool.PoolInstance NewInstance() =>
-            new(new Form { ShowInTaskbar = false }, new WebView2Control());
+        /// <summary>An instance with no engine behind it: nothing in these tests reaches a browser.</summary>
+        public static RenderSessionPool.PoolInstance NewInstance() => new(new FakeSessionBrowser());
 
         public static RenderSessionPool PoolOver(Form anchor, RenderSessionPool.PoolInstance instance, TimeSpan opTimeout) =>
             new(new RenderSessionPoolOptions
             {
-                Anchor = anchor,
+                Host = new WebView2SessionHost(anchor),
                 Capacity = 1,
                 Browser = new SessionBrowserOptions { ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused") },
                 OpTimeout = opTimeout,
@@ -544,13 +546,13 @@ public class RenderSessionPoolTests
         using var fixture = new Fixture();
         using var pool = new RenderSessionPool(new RenderSessionPoolOptions
         {
-            Anchor = fixture.Anchor,
+            Host = new WebView2SessionHost(fixture.Anchor),
             Browser = new SessionBrowserOptions { ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused"), KeepAliveInBackground = true },
             NavigationGuard = (uri, _) => Task.FromResult(!uri.IsLoopback), // the SSRF-shaped policy seam
         })
         {
             InstanceFactoryOverride = _ => Task.FromResult(new RenderSessionPool.PoolInstance(
-                new Form { ShowInTaskbar = false }, new WebView2Control())),
+                new FakeSessionBrowser())),
             ResetOverride = _ => Task.FromResult(true),
         };
         var session = await pool.LeaseAsync();

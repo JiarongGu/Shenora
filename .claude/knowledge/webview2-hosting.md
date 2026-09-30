@@ -62,7 +62,7 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
   folder ⇒ one shared browser process). Mixing threads throws — it broke every secondary window
   in the source app.
 - **Cache an environment per PROFILE, scoped to the owner that opened it — never process-globally**
-  (`SessionEnvironmentCache`, held by `RenderSessionPool`). Two forces meet here and only owner
+  (`SessionEnvironmentCache`, held by the WebView2 host's context for a pool, D91). Two forces meet here and only owner
   scoping satisfies both: a live environment keeps its profile's browser process AND the folder's OS
   lock alive, so a process-lifetime cache makes `InteractiveSession.ClearProfile` (what makes a logout a
   REAL logout) fail every time instead of only while a window is open; and thread affinity above

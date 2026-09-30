@@ -79,6 +79,15 @@ public abstract class UiDispatcherBase : IUiDispatcher
     }
 
     /// <inheritdoc />
+    public bool Queue(Func<Task> work)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+        if (State != UiTargetState.Ready) return false;
+        // TryPost never runs inline, which is the whole difference from Post; the body is guarded as Post's is.
+        return TryPost(() => { _ = RunGuardedAsync(work); }, out _);
+    }
+
+    /// <inheritdoc />
     public Task InvokeAsync(Action work, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(work);

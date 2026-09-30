@@ -1,3 +1,4 @@
+using Shenora.Core.Sessions;
 using System.Globalization;
 using System.Text.Json;
 using Shenora.Windows;
@@ -126,7 +127,7 @@ public class StreamingSessionTests
         using var anchor = new Form { ShowInTaskbar = false };
         StreamingSessionOptions Options(int quality = 72, int buffer = 2, int maxW = 2560) => new()
         {
-            Anchor = anchor,
+            Host = new WebView2SessionHost(anchor),
             Browser = new SessionBrowserOptions { ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused"), KeepAliveInBackground = true },
             FrameQuality = quality,
             FrameBuffer = buffer,
@@ -158,7 +159,7 @@ public class StreamingSessionTests
 
         var start = StreamingSession.StartAsync(new StreamingSessionOptions
         {
-            Anchor = anchor,
+            Host = new WebView2SessionHost(anchor),
             Browser = new SessionBrowserOptions
             {
                 ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "cancelled"),

@@ -262,8 +262,9 @@ ACTIVATES rather than recreating. Threads are **background**, so an exit never h
 window, and everything marshals with non-blocking `BeginInvoke` — a blocking `Invoke` from the IPC thread
 deadlocks the UI.
 
-`Sessions/` is a family of browsers that are not the app's window, sharing one `SessionBrowserOptions`
-(a `record`, so a session can `with`-override only what it owns) and one event catalogue on the app's
+The sessions are a family of browsers that are not the app's window, written ONCE in `Shenora.Core.Sessions`
+over the shell's `ISessionHost` (D91), sharing one `SessionBrowserOptions` (a `record`, so a session can
+`with`-override only what it owns, and a shell's options derive from it) and one event catalogue on the app's
 `IEventBus`:
 
 | Type | Shape |
@@ -273,8 +274,16 @@ deadlocks the UI.
 | `InteractiveSession` | a real window, modal, human-in-the-loop |
 
 A bare `Session…` name means shared by every kind; `InteractiveSession…` / `StreamingSession…` mean one
-kind. ⚠ **`FormClosed` is not the end of a window** — cleanup happens after `Application.Run` returns, or
-a WebView2 child leaves a locked profile folder behind.
+kind. The host is the narrow part a shell adds: make a browser on its UI thread (off-screen, or a watched dev
+window), share a profile across a pool's browsers (`CreateContext`), and open the interactive window. Almost all
+the driving (script, the screencast and its input) is the DevTools protocol, which both engines speak.
+
+This package's `Sessions/` folder is the WebView2 host: parked off-screen forms, one environment per profile
+context, and the interactive window as a modal `ShowDialog`, which it runs in a post of its own (`IUiDispatcher.Queue`)
+so the caller gets the window as it shows and drives it from inside the nested loop. ⚠ **`FormClosed` is not the end
+of a window** — cleanup happens after `Application.Run` returns, or a WebView2 child leaves a locked profile folder
+behind. ⚠ **The interactive flow ends with its window**: a close nobody holds (the app exiting, a bare `WM_CLOSE`)
+takes the window without cancelling `WindowClosed`, so the session stops waiting on the driver then.
 
 ## What is deliberately absent
 

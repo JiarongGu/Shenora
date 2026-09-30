@@ -1,221 +1,51 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using Shenora.Core.Events;
+using Shenora.Core.Sessions;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
 namespace Shenora.Windows;
 
 /// <summary>
-/// Configuration for a session browser (see <see cref="SessionBrowser"/>). A <c>record</c>, so a session
-/// can <c>with</c>-override the one or two fields it OWNS and inherit the rest by construction.
+/// A session browser's options with what only WebView2 has: the app's own bundle served into the session, disk-folder
+/// hosts, and browser arguments per session. Pass it where a session takes <see cref="SessionBrowserOptions"/>; the
+/// Chromium shell refuses these fields, since CEF has no per-browser arguments and serves the app's bundle its own way.
 /// </summary>
-public sealed record SessionBrowserOptions
+public sealed record WebView2SessionBrowserOptions : SessionBrowserOptions
 {
-    /// <summary>
-    /// The persistent profile (user-data folder) this browser runs in, and the session's ISOLATION
-    /// boundary: an interactive session scopes it per provider and per sub-account (a SECURITY
-    /// boundary, see <see cref="InteractiveSession"/>); wiping it discards the session for real.
-    /// </summary>
-    public required string ProfileDirectory { get; init; }
-
-    /// <summary>
-    /// True for an OFF-SCREEN browser: Chromium's occlusion + background-timer throttling would
-    /// otherwise pause the page's JS while nothing shows.
-    /// </summary>
-    public bool KeepAliveInBackground { get; init; }
-
-    /// <summary>Mute all audio and block autoplay without a user gesture (default true).</summary>
-    public bool MuteAudio { get; init; } = true;
-
-    /// <summary>Extra Chromium arguments appended after the preset.</summary>
+    /// <summary>Extra Chromium arguments appended after the session preset, for this session's environment.</summary>
     public string? AdditionalBrowserArguments { get; init; }
 
     /// <summary>
-    /// Request-layer filter: return true to BLOCK a subresource request (answered with an empty 403).
-    /// Receives the request URI and the page's current URI. Runs on the UI thread per request — keep it
-    /// fast. ⚠ The page URI is null before the first navigation commits; NEVER block then, or the page's
-    /// own document can't load.
-    /// </summary>
-    public Func<Uri, Uri?, bool>? RequestFilter { get; init; }
-
-    /// <summary>
-    /// Virtual host the app's OWN packaged bundle is served on inside this session, via
-    /// <see cref="ResourceProvider"/> — the same pair, with the same names, as
-    /// <c>WebViewHostOptions.VirtualHost</c>/<c>ResourceProvider</c>. Both halves or neither: either
-    /// alone throws at initialization. Without it a session can only reach NETWORK-reachable URLs (D38).
+    /// Virtual host the app's OWN packaged bundle is served on inside this session, via <see cref="ResourceProvider"/>:
+    /// the same pair, with the same names, as <c>WebViewHostOptions.VirtualHost</c>/<c>ResourceProvider</c>. Both halves
+    /// or neither: either alone throws at initialization. Without it a session can only reach NETWORK-reachable URLs
+    /// (D38).
     /// </summary>
     public string? VirtualHost { get; init; }
 
     /// <summary>
-    /// The packaged-bundle provider behind <see cref="VirtualHost"/>. Pass the SAME instance the
-    /// shell's <c>WebViewHost</c> uses, so the session's requests hit a warm cache.
+    /// The packaged-bundle provider behind <see cref="VirtualHost"/>. Pass the SAME instance the shell's
+    /// <c>WebViewHost</c> uses, so the session's requests hit a warm cache.
     /// <para>
-    /// ⚠ <b>Only on a session that renders YOUR pages.</b> Bundle responses carry
-    /// <c>Access-Control-Allow-Origin: *</c>, so script in whatever page this session is on could
-    /// <c>fetch</c> your whole bundle; give a co-browse session its own options without them (D38).
+    /// ⚠ <b>Only on a session that renders YOUR pages.</b> Bundle responses carry <c>Access-Control-Allow-Origin: *</c>,
+    /// so script in whatever page this session is on could <c>fetch</c> your whole bundle; give a co-browse session its
+    /// own options without them (D38).
     /// </para>
     /// </summary>
     public IWebViewResourceProvider? ResourceProvider { get; init; }
 
     /// <summary>
-    /// Disk-folder virtual hosts for this session (<c>SetVirtualHostNameToFolderMapping</c>), for an app
-    /// whose bundle or media lives on disk rather than embedded.
+    /// Disk-folder virtual hosts for this session (<c>SetVirtualHostNameToFolderMapping</c>), for an app whose bundle or
+    /// media lives on disk rather than embedded.
     /// </summary>
     public IReadOnlyList<WebViewFolderMapping> FolderMappings { get; init; } = [];
 
     /// <summary>
-    /// Budget for environment creation + core attach; normal init is a few seconds. A profile folder
-    /// still LOCKED by an orphaned WebView2 process otherwise hangs init FOREVER.
-    /// </summary>
-    public TimeSpan InitTimeout { get; init; } = TimeSpan.FromSeconds(25);
-
-    /// <summary>
-    /// True in development: re-appends <c>WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS</c> so a session browser
-    /// is reachable over CDP. Required because setting <c>AdditionalBrowserArguments</c> at all makes
-    /// WebView2 IGNORE that env var.
+    /// True in development: re-appends <c>WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS</c> so a session browser is reachable
+    /// over CDP. Required because setting <c>AdditionalBrowserArguments</c> at all makes WebView2 IGNORE that variable.
     /// </summary>
     public bool IsDevelopment { get; init; }
-
-    /// <summary>Diagnostics. Null = silent.</summary>
-    public ILogger? Log { get; init; }
-
-    /// <summary>
-    /// Where to publish what the browser reports (types and payloads: <see cref="SessionEvents"/>);
-    /// null = publish nothing. The SCOPE is not here — one options object is shared across a pool's
-    /// instances, so the session's identity is a per-instance argument to
-    /// <c>SessionBrowser.InitializeAsync</c>.
-    /// </summary>
-    public IEventBus? Events { get; init; }
-
-    /// <summary>
-    /// Which responses raise <see cref="SessionEvents.ResponseReceived"/>. Null (the default) = NONE.
-    /// A predicate rather than a bool because this event is per-SUBRESOURCE — it is both the on-switch
-    /// and the cost control: <c>uri =&gt; uri.Host == "login.example.com"</c> pays for that host only.
-    /// ⚠ Not <see cref="RequestFilter"/>, whose polarity is the opposite: that one answers "block
-    /// this?", this one "report this?". Neither can affect the other.
-    /// </summary>
-    public Func<Uri, bool>? ObserveResponse { get; init; }
-
-    /// <summary>
-    /// How many characters of an observed response's BODY to include in
-    /// <see cref="SessionResponse.BodySample"/>. 0 (the default) = do not read bodies at all; separate
-    /// from <see cref="ObserveResponse"/>, which decides WHICH responses are reported.
-    /// <para>
-    /// ⚠ A SAMPLE, not a download — clamped to 1,048,576 CHARACTERS, which is about <b>2 MB</b> of memory
-    /// because a .NET <c>char</c> is two bytes. The buffer is allocated at the clamped size per observed
-    /// response, so a large value costs that much per response and not once.
-    /// </para>
-    /// </summary>
-    public int ResponseBodySample { get; init; }
-
-    /// <summary>
-    /// The page opened an <c>alert</c>/<c>confirm</c>/<c>prompt</c>. Null = DISMISS it.
-    /// <para>
-    /// ⚠ <b>The DEFAULT is the fix here.</b> Leaving <c>ScriptDialogOpening</c> unhandled makes WebView2
-    /// show its OWN modal — and a session's window is off-screen, so nothing can ever dismiss it and the
-    /// page stops for good.
-    /// </para>
-    /// </summary>
-    public Action<SessionScriptDialog>? OnScriptDialog { get; init; }
-
-    /// <summary>
-    /// The server asked for HTTP credentials (a 401 challenge). Null = CANCEL, which lets the load fail
-    /// normally. ⚠ Same wedge as <see cref="OnScriptDialog"/>: unhandled, WebView2 raises its own prompt
-    /// against a window nobody can see.
-    /// </summary>
-    public Action<SessionAuthRequest>? OnAuthRequest { get; init; }
-
-    /// <summary>
-    /// The server asked for a CLIENT certificate. Null = CANCEL. ⚠ The third of the blocking three, and
-    /// the one easiest to miss: mutual-TLS is rare until an app meets an intranet that requires it, and
-    /// then the session simply stops.
-    /// </summary>
-    public Action<SessionCertificateRequest>? OnCertificateRequest { get; init; }
-
-    /// <summary>
-    /// The page tried to open a new window (<c>window.open</c>, <c>target="_blank"</c>).
-    /// Null = SUPPRESS it.
-    /// </summary>
-    public Action<SessionWindowRequest>? OnWindowRequest { get; init; }
-
-    /// <summary>
-    /// The page asked for a capability (camera, microphone, geolocation, clipboard read…). Null = DENY:
-    /// an invisible page cannot meaningfully prompt, and an unanswered request stalls whatever asked.
-    /// </summary>
-    public Action<SessionPermissionRequest>? OnPermissionRequest { get; init; }
-}
-
-/// <summary>A new-window request from the page. Allow it, or leave it to be suppressed.</summary>
-/// <param name="Uri">Where the page wanted to open.</param>
-/// <param name="UserInitiated">True when a real gesture triggered it, rather than script alone.</param>
-public sealed record SessionWindowRequest(string Uri, bool UserInitiated)
-{
-    /// <summary>True = let the browser open it. False (the default) = suppress.</summary>
-    public bool Allow { get; set; }
-}
-
-/// <summary>A capability the page asked for. Grant it, or leave it to be denied.</summary>
-/// <param name="Kind">The platform's name for what was asked (<c>Camera</c>, <c>ClipboardRead</c>, …).</param>
-/// <param name="Uri">The page that asked.</param>
-/// <param name="UserInitiated">True when a real gesture triggered it.</param>
-public sealed record SessionPermissionRequest(string Kind, string Uri, bool UserInitiated)
-{
-    /// <summary>True = grant. False (the default) = deny.</summary>
-    public bool Allow { get; set; }
-}
-
-/// <summary>
-/// A script dialog the page opened, and what to do about it. Mutate and return — nothing is awaited.
-/// </summary>
-/// <param name="Kind">Alert, confirm, prompt or beforeunload, as the platform reports it.</param>
-/// <param name="Uri">The page that opened it.</param>
-/// <param name="Message">The text the page passed.</param>
-/// <param name="DefaultText">A <c>prompt</c>'s pre-filled text; empty otherwise.</param>
-public sealed record SessionScriptDialog(string Kind, string Uri, string Message, string DefaultText)
-{
-    /// <summary>
-    /// True = answer as if the user pressed OK. False (the default) = dismiss/cancel.
-    /// ⚠ For <c>beforeunload</c>, accepting lets the navigation proceed.
-    /// </summary>
-    public bool Accept { get; set; }
-
-    /// <summary>What a <c>prompt</c> should answer with. Ignored unless <see cref="Accept"/> is set.</summary>
-    public string ResultText { get; set; } = string.Empty;
-}
-
-/// <summary>An HTTP authentication challenge, and the credentials to answer it with.</summary>
-/// <param name="Uri">The resource being requested.</param>
-/// <param name="Challenge">The scheme and realm the server named.</param>
-public sealed record SessionAuthRequest(string Uri, string Challenge)
-{
-    /// <summary>Set both to answer the challenge; leave them null to CANCEL, which is the default.</summary>
-    public string? UserName { get; set; }
-
-    /// <inheritdoc cref="UserName"/>
-    public string? Password { get; set; }
-
-    /// <summary>
-    /// 🔴 <b>REDACTED, because a record's generated <c>ToString()</c> prints every property.</b> This one
-    /// holds a password, and the generated version would put it in any log line, exception message or
-    /// debugger watch that formats the object.
-    /// </summary>
-    public override string ToString() =>
-        $"{nameof(SessionAuthRequest)} {{ Uri = {Uri}, Challenge = {Challenge}, "
-        + $"UserName = {(UserName is null ? "null" : "***")}, Password = {(Password is null ? "null" : "***")} }}";
-}
-
-/// <summary>A client-certificate request. Select one, or leave it to cancel.</summary>
-/// <param name="Host">The host asking.</param>
-/// <param name="Port">The port it asked on.</param>
-/// <param name="Subjects">The certificate subjects on offer, in the platform's order.</param>
-public sealed record SessionCertificateRequest(string Host, int Port, IReadOnlyList<string> Subjects)
-{
-    /// <summary>
-    /// Index into <see cref="Subjects"/> to present that certificate. Null (the default) CANCELS, which
-    /// fails the load rather than hanging it.
-    /// </summary>
-    public int? SelectedIndex { get; set; }
 }
 
 /// <summary>
@@ -239,39 +69,25 @@ internal static class SessionBrowser
         " --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding";
 
     /// <summary>
-    /// Create the profile's environment, attach the core, and harden the settings. Call on the
-    /// UI thread that owns the control.
+    /// Create the profile's environment, attach the core, and harden the settings. Call on the UI thread that owns the
+    /// control. Reuses <paramref name="environmentCache"/>'s shared environment when the caller makes SEVERAL browsers on
+    /// one profile (a pool's group); see <see cref="SessionEnvironmentCache"/> for why it is owner-scoped.
     /// </summary>
     /// <param name="web">The control to attach a configured browser to.</param>
-    /// <param name="options">Profile, hardening and diagnostics configuration.</param>
+    /// <param name="options">Profile, hardening and diagnostics configuration; a <see cref="WebView2SessionBrowserOptions"/>
+    /// adds what only WebView2 has.</param>
     /// <param name="onProcessFailed">
-    /// Called when this browser's RENDER process dies (crash, OOM, kill). Per-INSTANCE rather than an
-    /// options field, because one options object is shared across a pool's instances. ⚠ Sessions run
-    /// unattended off-screen, so without it a dead renderer is INVISIBLE.
-    /// </param>
-    /// <param name="cancellationToken">
-    /// Abandons the WAIT for initialization, NOT the creation itself — see the body.
+    /// Called when this browser's RENDER process dies (crash, OOM, kill). Per-INSTANCE rather than an options field,
+    /// because one options object is shared across a pool's instances. ⚠ Sessions run unattended off-screen, so without
+    /// it a dead renderer is INVISIBLE.
     /// </param>
     /// <param name="sessionScope">
-    /// This session's identity, the SCOPE of everything published on
-    /// <see cref="SessionBrowserOptions.Events"/>. ⚠ Null = an unscoped GLOBAL broadcast, correct only
-    /// when there is exactly one session. A FUNCTION, not a string, because a pooled browser outlives
-    /// the lease that borrowed it and is read per emit.
+    /// This session's identity, the SCOPE of everything published on <see cref="SessionBrowserOptions.Events"/>. ⚠ Null =
+    /// an unscoped GLOBAL broadcast, correct only when there is exactly one session. A FUNCTION, not a string, because a
+    /// pooled browser outlives the lease that borrowed it and is read per emit.
     /// </param>
-    internal static Task InitializeAsync(WebView2Control web, SessionBrowserOptions options,
-                                         Action<CoreWebView2ProcessFailedEventArgs>? onProcessFailed = null,
-                                         Func<string?>? sessionScope = null,
-                                         CancellationToken cancellationToken = default) =>
-        InitializeAsync(web, options, onProcessFailed, sessionScope, environmentCache: null, cancellationToken);
-
-    /// <summary>A fresh session identity — one shape for every session type.</summary>
-    internal static string NewSessionId() => Guid.NewGuid().ToString("n");
-
-    /// <summary>
-    /// As the overload above, but reusing <paramref name="environmentCache"/>'s shared environment
-    /// when the caller creates SEVERAL browsers on one profile (the render pool). See
-    /// <see cref="SessionEnvironmentCache"/> for why the cache is owner-scoped rather than static.
-    /// </summary>
+    /// <param name="environmentCache">The group's shared environment, or null for a browser of its own.</param>
+    /// <param name="cancellationToken">Abandons the WAIT for initialization, NOT the creation itself; see the body.</param>
     internal static async Task InitializeAsync(WebView2Control web, SessionBrowserOptions options,
                                                Action<CoreWebView2ProcessFailedEventArgs>? onProcessFailed,
                                                Func<string?>? sessionScope,
@@ -289,6 +105,7 @@ internal static class SessionBrowser
                 $"{nameof(SessionBrowserOptions.InitTimeout)} must be positive.");
 
         AssertBundleConfigured(options);
+        var webView2 = options as WebView2SessionBrowserOptions;
 
         Directory.CreateDirectory(options.ProfileDirectory);
 
@@ -299,9 +116,9 @@ internal static class SessionBrowser
             preset: BaseArgs
                 + (options.MuteAudio ? MuteArgs : string.Empty)
                 + (options.KeepAliveInBackground ? BackgroundArgs : string.Empty),
-            isDevelopment: options.IsDevelopment,
+            isDevelopment: webView2?.IsDevelopment ?? false,
             devExtraArguments: Environment.GetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"),
-            additionalArguments: options.AdditionalBrowserArguments);
+            additionalArguments: webView2?.AdditionalBrowserArguments);
 
         var envOptions = new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = arguments };
         Task<CoreWebView2Environment> CreateEnvironment() =>
@@ -352,25 +169,26 @@ internal static class SessionBrowser
     }
 
     /// <summary>
-    /// <see cref="SessionBrowserOptions.VirtualHost"/> and
-    /// <see cref="SessionBrowserOptions.ResourceProvider"/> are both-or-neither: either alone serves
+    /// <see cref="WebView2SessionBrowserOptions.VirtualHost"/> and
+    /// <see cref="WebView2SessionBrowserOptions.ResourceProvider"/> are both-or-neither: either alone serves
     /// nothing, and the symptom would be the session showing "can't reach this page". Fail at
     /// composition instead. Internal + static so the rule is testable without a live browser process.
     /// </summary>
     internal static void AssertBundleConfigured(SessionBrowserOptions options)
     {
-        var hasHost = options.VirtualHost is { Length: > 0 };
-        var hasProvider = options.ResourceProvider is not null;
+        if (options is not WebView2SessionBrowserOptions webView2) return;
+        var hasHost = webView2.VirtualHost is { Length: > 0 };
+        var hasProvider = webView2.ResourceProvider is not null;
         if (hasHost == hasProvider) return;
 
         var missing = hasHost
-            ? nameof(SessionBrowserOptions.ResourceProvider)
-            : nameof(SessionBrowserOptions.VirtualHost);
+            ? nameof(WebView2SessionBrowserOptions.ResourceProvider)
+            : nameof(WebView2SessionBrowserOptions.VirtualHost);
         var present = hasHost
-            ? nameof(SessionBrowserOptions.VirtualHost)
-            : nameof(SessionBrowserOptions.ResourceProvider);
+            ? nameof(WebView2SessionBrowserOptions.VirtualHost)
+            : nameof(WebView2SessionBrowserOptions.ResourceProvider);
         throw new InvalidOperationException(
-            $"{nameof(SessionBrowserOptions)}.{present} is set but {missing} is not, so this session "
+            $"{nameof(WebView2SessionBrowserOptions)}.{present} is set but {missing} is not, so this session "
             + "would serve no bundle at all and a navigation to the app's own origin would come up as "
             + "WebView2's 'can't reach this page'. Set both (pass the same provider instance the "
             + "shell's WebViewHost uses), or neither.");
@@ -405,7 +223,7 @@ internal static class SessionBrowser
                                                        Func<Uri, Uri?, bool>? filter, string? bundlePrefix,
                                                        Action<Exception>? onFilterError = null)
     {
-        if (filter is not null && ShouldBlockRequest(requestUri, pageSource, filter, onFilterError))
+        if (filter is not null && SessionPolicy.ShouldBlockRequest(requestUri, pageSource, filter, onFilterError))
             return SessionRequestAction.Block;
 
         if (bundlePrefix is not null && requestUri is not null
@@ -422,12 +240,13 @@ internal static class SessionBrowser
     private static void AttachResourceHandling(CoreWebView2 core, CoreWebView2Environment env,
                                                SessionBrowserOptions options)
     {
+        var webView2 = options as WebView2SessionBrowserOptions;
         // Handled by WebView2 itself — no interception, so no ordering questions against the below.
-        foreach (var mapping in options.FolderMappings)
+        foreach (var mapping in webView2?.FolderMappings ?? [])
             core.SetVirtualHostNameToFolderMapping(mapping.HostName, mapping.FolderPath, mapping.AccessKind);
 
         var filter = options.RequestFilter;
-        var bundlePrefix = WebViewBundleServing.Prefix(options.VirtualHost, options.ResourceProvider);
+        var bundlePrefix = WebViewBundleServing.Prefix(webView2?.VirtualHost, webView2?.ResourceProvider);
         if (filter is null && bundlePrefix is null) return;
 
         // ONE filter registration, widened only as far as needed: a blocking policy must see every
@@ -458,7 +277,7 @@ internal static class SessionBrowser
                 case SessionRequestAction.ServeBundle:
                     // The SAME implementation the app shell serves its frontend with. The log sink is the
                     // session's own, guarded, because this body runs inside a WebView2 event.
-                    WebViewBundleServing.Serve(e, env, options.ResourceProvider!, uri, bundlePrefix!,
+                    WebViewBundleServing.Serve(e, env, webView2!.ResourceProvider!, uri, bundlePrefix!,
                         message => SessionLog.Try(options.Log, l => l.LogDebug("{Message}", message())));
                     break;
             }
@@ -478,7 +297,7 @@ internal static class SessionBrowser
         // an unhandled UI-thread exception.
         core.NewWindowRequested += (_, e) =>
         {
-            var request = Decide(options.OnWindowRequest,
+            var request = SessionPolicy.Decide(options.OnWindowRequest,
                 new SessionWindowRequest(e.Uri ?? string.Empty, e.IsUserInitiated),
                 ex => SessionLog.Try(options.Log, l => l.LogError(ex, "OnWindowRequest threw; suppressing.")));
 
@@ -497,7 +316,7 @@ internal static class SessionBrowser
                 e.Kind.ToString(), e.Uri ?? string.Empty, e.Message ?? string.Empty,
                 e.DefaultText ?? string.Empty);
 
-            Decide(options.OnScriptDialog, dialog,
+            SessionPolicy.Decide(options.OnScriptDialog, dialog,
                 ex => SessionLog.Try(options.Log, l => l.LogError(ex, "OnScriptDialog threw; dismissing.")));
 
             if (dialog.Accept)
@@ -516,7 +335,7 @@ internal static class SessionBrowser
         core.BasicAuthenticationRequested += (_, e) =>
         {
             var challenge = new SessionAuthRequest(e.Uri ?? string.Empty, e.Challenge ?? string.Empty);
-            Decide(options.OnAuthRequest, challenge,
+            SessionPolicy.Decide(options.OnAuthRequest, challenge,
                 ex => SessionLog.Try(options.Log, l => l.LogError(ex, "OnAuthRequest threw; cancelling.")));
 
             if (challenge.UserName is not null && challenge.Password is not null)
@@ -536,7 +355,7 @@ internal static class SessionBrowser
             var offered = e.MutuallyTrustedCertificates;
             var request = new SessionCertificateRequest(e.Host ?? string.Empty, e.Port,
                 [.. offered.Select(c => c.Subject ?? string.Empty)]);
-            Decide(options.OnCertificateRequest, request,
+            SessionPolicy.Decide(options.OnCertificateRequest, request,
                 ex => SessionLog.Try(options.Log, l => l.LogError(ex, "OnCertificateRequest threw; cancelling.")));
 
             if (request.SelectedIndex is { } index && index >= 0 && index < offered.Count)
@@ -554,7 +373,7 @@ internal static class SessionBrowser
 
         core.PermissionRequested += (_, e) =>
         {
-            var request = Decide(options.OnPermissionRequest,
+            var request = SessionPolicy.Decide(options.OnPermissionRequest,
                 new SessionPermissionRequest(e.PermissionKind.ToString(), e.Uri ?? string.Empty, e.IsUserInitiated),
                 ex => SessionLog.Try(options.Log, l => l.LogError(ex, "OnPermissionRequest threw; denying.")));
 
@@ -694,7 +513,7 @@ internal static class SessionBrowser
 
             // Fire-and-forget: the body arrives asynchronously, so the event is published LATER than the
             // header-only one, and nothing awaits it — the method guards itself throughout.
-            _ = PublishWithBodyAsync(e, Math.Min(options.ResponseBodySample, MaxBodySample));
+            _ = PublishWithBodyAsync(e, Math.Min(options.ResponseBodySample, SessionPolicy.MaxBodySample));
         };
 
         // Headers materialised EAGERLY: the response view is only valid while the handler (and the
@@ -743,35 +562,6 @@ internal static class SessionBrowser
         }
     }
 
-    /// <summary>The hard ceiling on <see cref="SessionBrowserOptions.ResponseBodySample"/> — this buffer
-    /// is allocated per observed response.</summary>
-    private const int MaxBodySample = 1024 * 1024;
-
-    /// <summary>
-    /// Ask a hook what to do, with the SAFE DEFAULT when there is no hook or the hook throws.
-    /// ⚠ A THROWING hook must land on the default, not escape — these run inside a WebView2 event, and
-    /// the default is what keeps the page moving, so a buggy hook degrades to "dismiss/cancel" rather
-    /// than to the wedge.
-    /// </summary>
-    /// <param name="hook">The app's handler, or null.</param>
-    /// <param name="args">The event, which the hook mutates in place.</param>
-    /// <param name="onError">Receives a throw from the hook.</param>
-    internal static T Decide<T>(Action<T>? hook, T args, Action<Exception>? onError = null)
-    {
-        if (hook is null) return args;
-        try
-        {
-            hook(args);
-        }
-        catch (Exception ex)
-        {
-            onError?.Invoke(ex);
-            // Half-mutated args are still readable: every decision field holds its DEFAULT unless the
-            // hook set it before throwing, and a hook that set Accept and then threw meant to accept.
-        }
-        return args;
-    }
-
     /// <summary>
     /// Does this failure mean the SESSION is dead, as opposed to something Chromium recovers from by
     /// itself? An allow-list of two: everything else in the enum is either auxiliary (GPU, utility,
@@ -782,63 +572,4 @@ internal static class SessionBrowser
         kind is CoreWebView2ProcessFailedKind.RenderProcessExited
              or CoreWebView2ProcessFailedKind.BrowserProcessExited;
 
-    /// <summary>
-    /// The request-filter DECISION, split out of the event handler so the rule is unit-testable — this
-    /// one is the app's blocking boundary. Returns true when the request must be answered with the 403.
-    /// </summary>
-    /// <param name="requestUri">The raw <c>e.Request.Uri</c>.</param>
-    /// <param name="pageSource">The raw <c>core.Source</c> — may be empty or <c>about:blank</c>.</param>
-    /// <param name="filter">The app's policy: (request, pageUri) → block?</param>
-    /// <param name="onFilterError">
-    /// Receives a throw from <paramref name="filter"/>. The request is ALLOWED when it throws, so this
-    /// is the only signal that the app's blocking policy stopped blocking.
-    /// </param>
-    internal static bool ShouldBlockRequest(string? requestUri, string? pageSource, Func<Uri, Uri?, bool> filter,
-                                            Action<Exception>? onFilterError = null)
-    {
-        // A request URI we cannot parse is not something we can describe to a policy — pass it.
-        if (!Uri.TryCreate(requestUri, UriKind.Absolute, out var request)) return false;
-
-        // Only an http(s) page source is a real "page host" to compare against. The source is empty
-        // before the first navigation commits, and a reset pool instance sits on `about:blank`; passing
-        // either through would make a same-host filter treat the page's OWN next document as
-        // third-party and 403 it.
-        var pageUri = Uri.TryCreate(pageSource, UriKind.Absolute, out var p)
-                      && p.Scheme is "http" or "https"
-            ? p
-            : null;
-        try
-        {
-            return filter(request, pageUri);
-        }
-        catch (Exception ex)
-        {
-            // A throwing filter must not break page loading — FAIL OPEN, the opposite of the navigation
-            // guard's fail-closed stance, because this runs on every subresource of every page.
-            //
-            // 🔴 BUT IT MUST NOT BE SILENT, WHICH IT WAS. A single NullReferenceException on one edge
-            // case turns an app's blocklist into "allow" for every request that hits it, with nothing
-            // anywhere to notice. The caller reports the FIRST one per session; logging each would flood.
-            onFilterError?.Invoke(ex);
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// The current rendered HTML (<c>document.documentElement.outerHTML</c>), or null.
-    /// ExecuteScriptAsync returns the value JSON-encoded (a quoted string) — this decodes it
-    /// back to raw HTML. Call on the UI thread.
-    /// </summary>
-    internal static async Task<string?> GetHtmlAsync(WebView2Control web)
-    {
-        try
-        {
-            var json = await web.ExecuteScriptAsync("document.documentElement.outerHTML").ConfigureAwait(true);
-            return json is null or "null" ? null : JsonSerializer.Deserialize<string>(json);
-        }
-        catch
-        {
-            return null;
-        }
-    }
 }

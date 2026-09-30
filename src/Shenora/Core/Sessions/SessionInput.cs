@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Shenora.Windows;
+namespace Shenora.Core.Sessions;
 
 /// <summary>What a pointer input does to the streamed page.</summary>
 public enum SessionPointerAction

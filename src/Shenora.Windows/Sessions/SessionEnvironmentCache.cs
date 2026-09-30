@@ -1,10 +1,12 @@
 using Microsoft.Web.WebView2.Core;
+using Shenora.Core.Sessions;
 
 namespace Shenora.Windows;
 
 /// <summary>
 /// ONE <see cref="CoreWebView2Environment"/> shared by the several browsers a single owner creates on
-/// ONE profile — held by that owner (today <see cref="RenderSessionPool"/>), never process-globally.
+/// ONE profile — held by that owner (the <see cref="ISessionBrowserContext"/> a <see cref="RenderSessionPool"/>
+/// creates), never process-globally.
 /// <para>
 /// WHY IT EXISTS: <see cref="SessionBrowserOptions.InitTimeout"/> abandons the <c>await</c> but NOT the
 /// underlying <c>CreateAsync</c>, so with one environment per instance every retried lease against a

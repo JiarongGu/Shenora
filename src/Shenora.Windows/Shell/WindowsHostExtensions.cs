@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Shenora.Modules.Platform;
 using Shenora.Modules.FileDialog;
 using Shenora.Modules.Media;
+using Shenora.Core.Sessions;
 using Shenora.Core.Shell;
 using Shenora.Engine.Files;
 using Shenora.Chromium;
@@ -115,6 +116,10 @@ public static class WindowsHostExtensions
         // creates the form, so anything captured here captures null.
         builder.Services.TryAddSingleton<IUiDispatcher>(sp =>
             new MainFormUiDispatcher(sp.GetRequiredService<IFormInteraction>()));
+        // The browsers the auxiliary sessions drive (D91): WebView2, on the main window's thread, their interactive
+        // window owned by it.
+        builder.Services.TryAddSingleton<ISessionHost>(sp => new WebView2SessionHost(
+            sp.GetRequiredService<IUiDispatcher>(), () => sp.GetRequiredService<IFormInteraction>().GetMainForm()));
         return builder;
     }
 

@@ -1,3 +1,4 @@
+using Shenora.Core.Sessions;
 using Shenora.Windows;
 using Shenora.Core.Ipc;
 
@@ -17,7 +18,7 @@ public class InteractiveSessionTests
 
     private static InteractiveSessionOptions OptionsFor(Control anchor) => new()
     {
-        Anchor = anchor,
+        Host = new WebView2SessionHost(anchor),
         // A whole SessionBrowserOptions, exactly as StreamingSession takes: the session no longer keeps
         // its own copy of two fields, so everything an app can configure on a pooled browser now reaches
         // an interactive one too.
@@ -158,7 +159,7 @@ public class InteractiveSessionTests
     /// A session with every option an app can set. Deliberately every field at a NON-default value, so
     /// the pass-through check below cannot pass vacuously for one of them.
     /// </summary>
-    private static SessionBrowserOptions FullyConfigured() => new()
+    private static WebView2SessionBrowserOptions FullyConfigured() => new()
     {
         ProfileDirectory = @"C:\profiles\acct",
         KeepAliveInBackground = true,
@@ -212,9 +213,11 @@ public class InteractiveSessionTests
         Assert.True(InteractiveSession.ComposeBrowserOptions(app, revealImmediately: false).KeepAliveInBackground);
 
         var composed = InteractiveSession.ComposeBrowserOptions(app, revealImmediately: true);
-        var bare = new SessionBrowserOptions { ProfileDirectory = "unset" };
+        var bare = new WebView2SessionBrowserOptions { ProfileDirectory = "unset" };
         var checkedCount = 0;
-        foreach (var property in typeof(SessionBrowserOptions).GetProperties())
+        // The derived type, so the WebView2 fields are checked too: `with` must keep the options' own type.
+        Assert.IsType<WebView2SessionBrowserOptions>(composed);
+        foreach (var property in typeof(WebView2SessionBrowserOptions).GetProperties())
         {
             if (property.Name == nameof(SessionBrowserOptions.KeepAliveInBackground)) continue;
             if (property.Name == "EqualityContract") continue;   // the record's own generated member
@@ -244,19 +247,22 @@ public class InteractiveSessionTests
         //  • Application.Exit was vetoed too — a session window could keep the whole app alive; and
         //  • EVERY attempt was vetoed, so a driver awaiting something that never completes left a modal
         //    window nothing could close.
-        Assert.True(SessionController.ShouldHoldClose(false, CloseReason.UserClosing, alreadyHeld: false));
+        Assert.True(SessionController.ShouldHoldClose(false, byUser: true, alreadyHeld: false));
 
         // Spent after one use: the second click means the user has said it twice.
-        Assert.False(SessionController.ShouldHoldClose(false, CloseReason.UserClosing, alreadyHeld: true));
+        Assert.False(SessionController.ShouldHoldClose(false, byUser: true, alreadyHeld: true));
 
-        // Never a close the user did not ask for — these must reach the window untouched.
-        Assert.False(SessionController.ShouldHoldClose(false, CloseReason.ApplicationExitCall, false));
-        Assert.False(SessionController.ShouldHoldClose(false, CloseReason.WindowsShutDown, false));
-        Assert.False(SessionController.ShouldHoldClose(false, CloseReason.TaskManagerClosing, false));
-        Assert.False(SessionController.ShouldHoldClose(false, CloseReason.FormOwnerClosing, false));
+        // Never a close the user did not ask for: these must reach the window untouched. On Windows only UserClosing is
+        // the user's.
+        Assert.False(SessionController.ShouldHoldClose(false, byUser: false, false));
+        Assert.True(WebView2SessionWindow.IsByUser(CloseReason.UserClosing));
+        Assert.False(WebView2SessionWindow.IsByUser(CloseReason.ApplicationExitCall));
+        Assert.False(WebView2SessionWindow.IsByUser(CloseReason.WindowsShutDown));
+        Assert.False(WebView2SessionWindow.IsByUser(CloseReason.TaskManagerClosing));
+        Assert.False(WebView2SessionWindow.IsByUser(CloseReason.FormOwnerClosing));
 
         // And once the flow has returned, the host's own close is never held.
-        Assert.False(SessionController.ShouldHoldClose(true, CloseReason.UserClosing, false));
+        Assert.False(SessionController.ShouldHoldClose(true, byUser: true, false));
     }
 
     [Theory]
@@ -266,7 +272,7 @@ public class InteractiveSessionTests
     public void ComputeFitSize_scales_by_dpi_and_clamps_to_the_work_area(
         int cssWidth, int cssHeight, int dpi, int expectedWidth, int expectedHeight)
     {
-        var size = SessionController.ComputeFitSize(cssWidth, cssHeight, dpi, new Size(1920, 1040));
+        var size = WebView2SessionWindow.ComputeFitSize(cssWidth, cssHeight, dpi, new Size(1920, 1040));
 
         Assert.Equal(new Size(expectedWidth, expectedHeight), size);
     }

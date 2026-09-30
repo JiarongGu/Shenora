@@ -567,3 +567,14 @@ Shenora.Windows.IShellLauncher        # -> Shenora.Core.Shell.IShellLauncher (bo
 Shenora.Windows.ShellLauncher         # -> Shenora.Core.Shell.ShellLauncher
 Shenora.Windows.ProcessLaunchOptions  # -> Shenora.Core.Shell.ProcessLaunchOptions
 RestartManagerLockInspector           # -> Shenora.Core.Shell.FileLockInspector (D88: Restart Manager on Windows, the kernel's open files on Linux and macOS)
+Shenora.Windows.RenderSessionPool     # -> Shenora.Core.Sessions.RenderSessionPool (D91: one implementation over ISessionHost)
+Shenora.Windows.RenderSession         # -> Shenora.Core.Sessions.RenderSession
+Shenora.Windows.StreamingSession      # -> Shenora.Core.Sessions.StreamingSession
+Shenora.Windows.InteractiveSession    # -> Shenora.Core.Sessions.InteractiveSession
+Shenora.Windows.SessionController     # -> Shenora.Core.Sessions.SessionController
+Shenora.Windows.SessionBrowserOptions # -> Shenora.Core.Sessions.SessionBrowserOptions (WebView2's own fields: WebView2SessionBrowserOptions)
+Shenora.Windows.SessionEvents         # -> Shenora.Core.Sessions.SessionEvents
+Shenora.Windows.SessionInput          # -> Shenora.Core.Sessions.SessionInput
+SessionBrowser.ShouldBlockRequest     # -> SessionPolicy.ShouldBlockRequest (Core, D91)
+SessionBrowser.Decide                 # -> SessionPolicy.Decide (Core, D91)
+SessionController.ComputeFitSize      # -> WebView2SessionWindow.ComputeFitSize (the Windows window's own)
