@@ -406,8 +406,10 @@ public sealed class SingleInstanceHostOptions
     /// What the RUNNING instance does with a later launch, on the UI thread, once its main window has been brought
     /// forward: the arguments that launch was given, such as a file to open. Null does nothing more.
     /// <para>
-    /// ⚠ Only a launch that starts a second process arrives here. On macOS, Finder's "open with" and a link to a
-    /// registered scheme reach a running app as Apple Events, not as a process with arguments.
+    /// On macOS the Chromium shell brings files and links here too: Finder's "open with", a file dropped on the Dock
+    /// icon and a link to a scheme the bundle declares reach an app as Apple Events rather than arguments, the first
+    /// launch's own included, and arrive as a launch whose arguments are the paths or the URL. The WinForms shell,
+    /// Windows-only, has only launches.
     /// </para>
     /// </summary>
     public Action<ShenoraApplication, SingleInstanceLaunch>? OnActivated { get; init; }

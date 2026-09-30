@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The sample's own entries in its macOS bundle's Info.plist (ShenoraChromiumInfoPlist), merged into the one the build
+  writes. They are what macOS routes to the app: a link to shenora-sample://, and a text file opened with it. Either
+  reaches the running app's SingleInstanceHostOptions.OnActivated, which shows it on the page. "Alternate" leaves the
+  default app for text files as it was.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>Shenora Chromium Sample link</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>shenora-sample</string>
+      </array>
+    </dict>
+  </array>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Text</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.plain-text</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

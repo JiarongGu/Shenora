@@ -31,6 +31,8 @@
     <CodePage>65001</CodePage>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <IsPackable>false</IsPackable>
+    <!-- macOS: the link scheme and the document type the bundle declares, so macOS routes them to the app. -->
+    <ShenoraChromiumInfoPlist>Info.plist</ShenoraChromiumInfoPlist>
   </PropertyGroup>
 
   <ItemGroup>

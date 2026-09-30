@@ -41,12 +41,10 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 > stays the small-app (WebView2) choice on Windows.
 
 What `Shenora.Windows` has and the Chromium shell does not, inventoried from the source, in the order to build:
-- [ ] **A running app told of a file or link by the OS, not by a launch.** On macOS, Finder's "open with" and a
-  registered URL scheme reach a running app as Apple Events (`application:openURLs:`), never as a process with
-  arguments, so `SingleInstanceHostOptions.OnActivated` never sees them there; the shell's `NSApp` subclass would take
-  them. And whether a later launch's window takes the foreground on Linux and macOS was not observed: on Linux a
-  later launch could hand over its activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands
-  over the foreground.
+- [ ] 🅿️ **Whether a later launch's window takes the foreground on Linux and macOS.** Not observed: WSL's desktop and
+  Xvfb enforce no focus-stealing prevention, so they cannot show it. On Linux a later launch could hand over its
+  activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands over the foreground; it needs a
+  real GNOME or KDE session to see whether it is needed.
 - [ ] 🅿️ **A real click on a blocked window, on macOS.** `IUiInteraction` disables the window's Views; on Linux
   that stopped a real click, and on Windows the window itself is disabled. On macOS the page's own `NSView` may
   take a click whatever Views says; it needs real input on the Mac to find out.

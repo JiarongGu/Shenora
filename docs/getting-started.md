@@ -130,9 +130,10 @@ builder.UseChromium(new ChromiumHostOptions
 - **The window opens where it was left** with `WindowState = new WindowStateHostOptions { Store = sp => new
   JsonFileWindowStateStore(...) }`: its size, place and maximized state, per the sample.
 - **One instance per install, by default** (`SingleInstance`): a later launch has the running app bring its window
-  forward, and exits; its arguments reach the running app through `SingleInstanceHostOptions.OnActivated`. On macOS,
-  Finder's "open with" reaches a running app as an Apple Event instead, which the shell does not take yet. An app
-  that runs several instances sets `SingleInstance = null` and gives each its own `UserDataFolder`.
+  forward, and exits; its arguments reach the running app through `SingleInstanceHostOptions.OnActivated`. On macOS
+  the files and links the app is opened with arrive there too, which macOS sends as Apple Events rather than
+  arguments. An app that runs several instances sets `SingleInstance = null` and gives each its own `UserDataFolder`;
+  it then receives no files or links there.
 
 **Run it.** `dotnet build`, then start the app the build laid out:
 
@@ -155,7 +156,10 @@ dev server, and `npm run build:chromium` writes the packaged page into the sampl
 AppIndicator extension, and without one closing the main window ends the app; the clipboard is X11's, where what
 the app copied lasts while it runs unless a clipboard manager keeps a copy; the window's `WM_CLASS` is `MyApp`,
 which a `.desktop` file's `StartupWMClass` names. macOS: the bundle's icon is `ShenoraChromiumBundleIcon`, an
-`.icns`, and the build neither signs nor notarizes it, which Gatekeeper needs of a download. The app's data,
+`.icns`, and the build neither signs nor notarizes it, which Gatekeeper needs of a download. What else the bundle
+declares, such as the link schemes and document types macOS routes to the app, goes in a plist of your own that
+`ShenoraChromiumInfoPlist` names (the sample's `Info.plist` declares both), and what the app is opened with arrives
+at `SingleInstanceHostOptions.OnActivated`, as a later launch's arguments do elsewhere. The app's data,
 Chromium's profile among it, lives in `~/Library/Application Support/<its bundle identifier>` on macOS (D89; the
 identifier is `ShenoraChromiumBundleId`), and in `data/` beside the app elsewhere, as on Windows. An app installed
 where it may not write, such as a Linux one under `/opt`, names its own with `ShenoraApplicationOptions.Paths`'

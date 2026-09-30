@@ -104,9 +104,12 @@ public class ChromiumSingleInstanceTests
         {
             Assert.True(gate.Enter(new SingleInstanceHostOptions(), app.ApplicationName, app.Paths, app.Args, null));
 
-            // Before the main window is open there is nothing to bring forward: CEF's hand-over is dropped.
+            // Before the main window is open, a launch waits for it (on macOS the first launch's own document arrives so).
             gate.Relaunched(new SingleInstanceLaunch(["early"], "."));
+            Assert.Empty(arrived);
             Assert.True(gate.Listen(arrived.Add, null));
+            Assert.True(arrived.TryTake(out var early, TimeSpan.FromSeconds(5)));
+            Assert.Equal(["early"], early!.Arguments);
 
             gate.Relaunched(new SingleInstanceLaunch(["from-cef"], "."));
             Assert.True(arrived.TryTake(out var fromCef, TimeSpan.FromSeconds(5)));
@@ -120,8 +123,10 @@ public class ChromiumSingleInstanceTests
         }
         finally { gate.Release(); }
 
-        // Released: the scope is free, and CEF's hand-over has nowhere to go.
+        // Released: the scope is free, and CEF's hand-over has nowhere to go, then or later.
         gate.Relaunched(new SingleInstanceLaunch(["late"], "."));
+        Assert.False(arrived.TryTake(out _, TimeSpan.FromMilliseconds(200)));
+        gate.Listen(arrived.Add, null);
         Assert.False(arrived.TryTake(out _, TimeSpan.FromMilliseconds(200)));
         using var successor = new ThreadHeldGuard(app.ApplicationName, app.Paths.RootDir);
         Assert.True(successor.Acquired);

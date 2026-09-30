@@ -58,6 +58,8 @@ internal sealed class ChromiumSingleInstance
     private SingleInstanceGuard? _guard;
     private SingleInstanceResult? _result;
     private Action<SingleInstanceLaunch>? _activated;
+    private readonly List<SingleInstanceLaunch> _early = [];
+    private bool _released;
 
     /// <summary>What the gate found; null before it ran, or with none.</summary>
     public SingleInstanceResult? Result
@@ -115,7 +117,14 @@ internal sealed class ChromiumSingleInstance
     /// </summary>
     public bool Listen(Action<SingleInstanceLaunch> activated, ILogger? log)
     {
-        Volatile.Write(ref _activated, activated);
+        SingleInstanceLaunch[] early;
+        lock (_gate)
+        {
+            _activated = activated;
+            early = [.. _early];
+            _early.Clear();
+        }
+        foreach (var launch in early) activated(launch);
         var guard = _guard;
         if (guard is null || _result is not SingleInstanceResult.Acquired) return true;
         try
@@ -131,9 +140,24 @@ internal sealed class ChromiumSingleInstance
         }
     }
 
-    /// <summary>A later launch CEF handed over (CEF's UI thread). Before the main window is open there is nothing to
-    /// bring forward, and it is dropped.</summary>
-    public void Relaunched(SingleInstanceLaunch activation) => Volatile.Read(ref _activated)?.Invoke(activation);
+    /// <summary>A later launch CEF handed over, or files and links the OS asked this app to open (macOS; CEF's UI
+    /// thread). One that arrives before the main window listens, as the first launch's document does on macOS, waits
+    /// for it.</summary>
+    public void Relaunched(SingleInstanceLaunch activation)
+    {
+        Action<SingleInstanceLaunch>? activated;
+        lock (_gate)
+        {
+            if (_released) return;   // the app is ending
+            activated = _activated;
+            if (activated is null)
+            {
+                _early.Add(activation);
+                return;
+            }
+        }
+        activated(activation);
+    }
 
     /// <summary>Let the scope go: last in shutdown, on the thread that took it.</summary>
     public void Release()
@@ -143,7 +167,9 @@ internal sealed class ChromiumSingleInstance
             _guard?.Dispose();
             _guard = null;
             _result = null;
-            Volatile.Write(ref _activated, null);
+            _activated = null;
+            _early.Clear();
+            _released = true;
         }
     }
 }

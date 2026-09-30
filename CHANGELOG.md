@@ -121,9 +121,17 @@ at the first list and missed five more breaking changes.
 - **A later launch's arguments reach the running app, on both desktop shells**
   (`SingleInstanceHostOptions.OnActivated`, with the launch's working directory), such as a file the app was started
   with. The Chromium sample shows them on its page, which is how each OS was measured; the WinForms shell's side is
-  driven through a real form in a test, and its sample restored and took the foreground from a second launch. On
-  macOS, Finder's "open with" reaches a running app as an Apple Event rather than a launch, and the shell does not
-  take those yet.
+  driven through a real form in a test, and its sample restored and took the foreground from a second launch.
+- **On macOS, what the app is opened with reaches it too**: files ("open with", a file dropped on the Dock icon)
+  and links to a scheme the bundle declares come to an app as Apple Events rather than arguments, and the Chromium
+  shell hands them to `SingleInstanceHostOptions.OnActivated` as a launch whose arguments are the paths or the URL,
+  the first launch's own document included. `ShenoraChromiumInfoPlist` names a plist of the app's own whose entries
+  the build merges into the bundle's `Info.plist`, such as `CFBundleURLTypes` and `CFBundleDocumentTypes`; an entry
+  replaces the build's own key, except the executable, the package type and the identifier
+  (`ShenoraChromiumBundleId`), which fail the build. Measured on an Intel Mac through LaunchServices (`open`), with the
+  sample declaring `shenora-sample://` and plain text: two files opened with the running app arrived as one launch
+  (their `/private/tmp` paths), a link arrived as itself, the declared scheme was routed to the app with none named,
+  and an app LaunchServices started to open a file received it once its window was up. No second process ran.
 
 - **The Chromium shell on Linux** (`linux-x64`; `linux-arm64` is built and not yet run). Measured on WSL (Ubuntu
   24.04, X11), from a package-only app and from the repo, and under a real window manager (openbox) on a virtual X

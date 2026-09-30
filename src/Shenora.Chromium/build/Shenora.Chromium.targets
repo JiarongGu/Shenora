@@ -416,30 +416,81 @@ public sealed class ShenoraChromiumStampLauncher : Task
       <IconFile ParameterType="System.String" />
       <DisplayName ParameterType="System.String" />
       <Copyright ParameterType="System.String" />
+      <!-- A plist of the app's own whose top-level entries are merged in (ShenoraChromiumInfoPlist). -->
+      <Entries ParameterType="System.String" />
     </ParameterGroup>
     <Task>
-      <Code Type="Fragment" Language="cs"><![CDATA[
+      <!-- A method, not a fragment: a fragment's Execute answers true whatever it logged, so a refused entry printed
+           an error and the build still passed (measured). -->
+      <Code Type="Method" Language="cs"><![CDATA[
+      public override bool Execute()
+      {
         string E(string s) => System.Security.SecurityElement.Escape(s);
-        string Optional(string key, string value) =>
-          string.IsNullOrEmpty(value) ? "" : "  <key>" + key + "</key><string>" + E(value) + "</string>\n";
-        var plist = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-          + "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-          + "<plist version=\"1.0\">\n<dict>\n"
-          + "  <key>CFBundleExecutable</key><string>" + E(Executable) + "</string>\n"
-          + "  <key>CFBundleIdentifier</key><string>" + E(Identifier) + "</string>\n"
-          + "  <key>CFBundleName</key><string>" + E(Executable) + "</string>\n"
-          + Optional("CFBundleDisplayName", DisplayName)
-          + Optional("CFBundleIconFile", IconFile)
-          + Optional("NSHumanReadableCopyright", Copyright)
-          + "  <key>CFBundlePackageType</key><string>APPL</string>\n"
-          + "  <key>CFBundleShortVersionString</key><string>" + E(Version) + "</string>\n"
-          + "  <key>CFBundleVersion</key><string>" + E(Version) + "</string>\n"
-          + "  <key>LSMinimumSystemVersion</key><string>12.0</string>\n"
-          + "  <key>NSHighResolutionCapable</key><true/>\n"
-          + (Helper ? "  <key>LSUIElement</key><true/>\n" : "  <key>NSSupportsAutomaticGraphicsSwitching</key><true/>\n")
-          + "</dict>\n</plist>\n";
-        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(File));
-        System.IO.File.WriteAllText(File, plist);
+        var entries = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, string>>();
+        void Add(string key, string value) => entries.Add(new System.Collections.Generic.KeyValuePair<string, string>(key, value));
+        void Text(string key, string value) { if (!string.IsNullOrEmpty(value)) Add(key, "<string>" + E(value) + "</string>"); }
+        Text("CFBundleExecutable", Executable);
+        Text("CFBundleIdentifier", Identifier);
+        Text("CFBundleName", Executable);
+        Text("CFBundleDisplayName", DisplayName);
+        Text("CFBundleIconFile", IconFile);
+        Text("NSHumanReadableCopyright", Copyright);
+        Text("CFBundlePackageType", "APPL");
+        Text("CFBundleShortVersionString", Version);
+        Text("CFBundleVersion", Version);
+        Text("LSMinimumSystemVersion", "12.0");
+        Add("NSHighResolutionCapable", "<true/>");
+        if (Helper) Add("LSUIElement", "<true/>"); else Add("NSSupportsAutomaticGraphicsSwitching", "<true/>");
+
+        // The app's own entries, such as the document types and URL schemes it opens: each replaces the key of the same
+        // name, except the three that make the bundle what it is.
+        if (!string.IsNullOrEmpty(Entries))
+        {
+          var doc = new System.Xml.XmlDocument();
+          using (var reader = System.Xml.XmlReader.Create(Entries, new System.Xml.XmlReaderSettings { DtdProcessing = System.Xml.DtdProcessing.Ignore }))
+            doc.Load(reader);
+          var dict = doc.DocumentElement != null && doc.DocumentElement.Name == "plist" ? doc.DocumentElement.SelectSingleNode("dict") : null;
+          if (dict == null) Log.LogError(Entries + " is not a property list with a dictionary at its top (<plist><dict>...</dict></plist>).");
+          else
+          {
+            string key = null;
+            foreach (System.Xml.XmlNode node in dict.ChildNodes)
+            {
+              if (!(node is System.Xml.XmlElement element)) continue;
+              if (key == null)
+              {
+                if (element.Name == "key") { key = element.InnerText; continue; }
+                Log.LogError(Entries + ": a <" + element.Name + "> where a <key> belongs.");
+                break;
+              }
+              var name = key;
+              key = null;
+              if (name == "CFBundleExecutable" || name == "CFBundlePackageType")
+                Log.LogError(Entries + " sets " + name + ", which the layout writes: the bundle runs the app's own executable.");
+              else if (name == "CFBundleIdentifier")
+                Log.LogError(Entries + " sets CFBundleIdentifier, which is ShenoraChromiumBundleId: set that instead.");
+              else
+              {
+                var at = entries.FindIndex(p => p.Key == name);
+                var pair = new System.Collections.Generic.KeyValuePair<string, string>(name, element.OuterXml);
+                if (at >= 0) entries[at] = pair; else entries.Add(pair);
+              }
+            }
+          }
+        }
+        if (!Log.HasLoggedErrors)
+        {
+          var plist = new System.Text.StringBuilder()
+            .Append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+            .Append("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n")
+            .Append("<plist version=\"1.0\">\n<dict>\n");
+          foreach (var pair in entries) plist.Append("  <key>").Append(E(pair.Key)).Append("</key>").Append(pair.Value).Append('\n');
+          plist.Append("</dict>\n</plist>\n");
+          System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(File));
+          System.IO.File.WriteAllText(File, plist.ToString());
+        }
+        return !Log.HasLoggedErrors;
+      }
       ]]></Code>
     </Task>
   </UsingTask>
@@ -502,9 +553,13 @@ public sealed class ShenoraChromiumStampLauncher : Task
       <_ShenoraBundleIconFile Condition="'$(ShenoraChromiumBundleIcon)' != ''">$(_ShenoraAppExe).icns</_ShenoraBundleIconFile>
       <!-- The SDK defaults Product to the assembly's name, which is no name a person should see. -->
       <_ShenoraBundleDisplayName Condition="'$(Product)' != '$(AssemblyName)'">$(Product)</_ShenoraBundleDisplayName>
+      <!-- The app's own Info.plist entries (ShenoraChromiumInfoPlist): the document types and URL schemes macOS routes
+           to it, a usage description the OS asks it for. Relative to the project. -->
+      <_ShenoraInfoPlistEntries Condition="'$(ShenoraChromiumInfoPlist)' != ''">$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(ShenoraChromiumInfoPlist)'))</_ShenoraInfoPlistEntries>
     </PropertyGroup>
     <ShenoraMacPlist File="$(_ShenoraContents)/Info.plist" Executable="$(_ShenoraAppExe)" Identifier="$(ShenoraChromiumBundleId)" Version="$(_ShenoraBundleVersion)"
-                     IconFile="$(_ShenoraBundleIconFile)" DisplayName="$(_ShenoraBundleDisplayName)" Copyright="$(Copyright)" />
+                     IconFile="$(_ShenoraBundleIconFile)" DisplayName="$(_ShenoraBundleDisplayName)" Copyright="$(Copyright)"
+                     Entries="$(_ShenoraInfoPlistEntries)" />
     <Copy SourceFiles="@(_ShenoraCefFramework)" DestinationFolder="$(_ShenoraContents)/Frameworks/Chromium Embedded Framework.framework/%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(_ShenoraContents)/Frameworks/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant).app/Contents/MacOS/$(_ShenoraAppExe) Helper%(_ShenoraHelper.Variant)" SkipUnchangedFiles="true" />
     <!-- A NuGet package keeps no Unix permissions, so the helper arrives from one without its executable bit. -->
