@@ -23,6 +23,10 @@ public sealed class ChromiumTrayOptions
     /// True (the default): closing the main window hides it, and the app keeps running until Exit, or
     /// <see cref="ChromiumTray.ExitApplication"/>. False: the tray only reopens the window.
     /// <para>
+    /// Only while the icon is shown: where there is no tray to show it in (a Linux desktop with no tray host), closing
+    /// the main window closes it, and the app ends, rather than leaving it running with no way back.
+    /// </para>
+    /// <para>
     /// ⚠ A close from code hides it too (<see cref="ChromiumWindows.Close"/>, or the page's own close command): CEF
     /// asks the same question for both, so exit with <see cref="ChromiumTray.ExitApplication"/>.
     /// </para>
@@ -108,8 +112,9 @@ public sealed class ChromiumTray
 
     internal string? IconPath => _options.IconPath;
 
-    /// <summary>Only the main window hides, and only until Exit.</summary>
-    internal bool MayClose(string name) => _exiting || !_options.CloseToTray || name != ChromiumWindows.MainWindowName;
+    /// <summary>Only the main window hides, only until Exit, and only while its icon is shown to bring it back.</summary>
+    internal bool MayClose(string name) =>
+        _exiting || !_options.CloseToTray || name != ChromiumWindows.MainWindowName || _native is not { Shown: true };
 
     /// <summary>The menu as it opens: Open, the app's items, a separator, Exit. App items that throw are left out, and
     /// logged.</summary>
@@ -133,10 +138,11 @@ public sealed class ChromiumTray
         AppCallback.Run(run, ex => AppCallback.Log(_log, () => $"[Shenora.Chromium] The tray item '{entry.Text}' threw", LogLevel.Error, ex));
     }
 
-    /// <summary>Show the icon. UI thread, once the main window is open.</summary>
-    internal void Start()
+    /// <summary>Show the icon. UI thread, once the main window is open. <paramref name="create"/> stands in for the
+    /// platform's tray in tests.</summary>
+    internal void Start(Func<ChromiumTray, ILogger?, NativeTray?>? create = null)
     {
-        _native = NativeTray.Create(this, _log);
+        _native = (create ?? NativeTray.Create)(this, _log);
         if (_native is null) AppCallback.Log(_log, () => "[Shenora.Chromium] This platform has no tray yet; ChromiumHostOptions.Tray is ignored", LogLevel.Warning);
     }
 

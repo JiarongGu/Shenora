@@ -67,6 +67,10 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **Closing the main window hides it only while the tray's icon is shown**, in the Chromium shell. With
+  `CloseToTray` (the default) it hid wherever the icon could not be shown, leaving the app running with no window
+  and no way back: on Linux, which had no tray at all, and on a Linux desktop with no tray host (GNOME without its
+  AppIndicator extension). There the window now closes, and the app ends.
 - **A file dialog in the Chromium shell starts in the folder it was asked for.** CEF's file-dialog code, the same on
   every OS, passes on none of a dialog's default path but a save's file name, so each dialog opened wherever
   Chromium last picked for the profile, and neither `DefaultPath` nor the remembered folder did anything. The kit

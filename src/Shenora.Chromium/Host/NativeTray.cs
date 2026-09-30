@@ -19,5 +19,11 @@ internal abstract class NativeTray : IDisposable
 #endif
     }
 
+    /// <summary>
+    /// Whether the icon is where the user can reach it. Closing the main window hides it only then: a desktop with no
+    /// tray to show the icon in would otherwise leave an app running with no window and no way back to it.
+    /// </summary>
+    public virtual bool Shown => true;
+
     public abstract void Dispose();
 }

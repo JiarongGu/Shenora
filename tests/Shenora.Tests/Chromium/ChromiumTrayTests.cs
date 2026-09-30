@@ -73,10 +73,19 @@ public class ChromiumTrayTests
         Assert.Equal(["throws"], ran);
     }
 
+    // An icon of the test's own, so no platform tray is created.
+    private sealed class FakeIcon(bool shown) : NativeTray
+    {
+        public bool Disposed { get; private set; }
+        public override bool Shown => shown;
+        public override void Dispose() => Disposed = true;
+    }
+
     [Fact]
     public void Close_to_tray_keeps_only_the_main_window_and_only_until_Exit()
     {
         var (tray, windows, posted) = Tray(new ChromiumTrayOptions());
+        tray.Start((_, _) => new FakeIcon(shown: true));
 
         Assert.False(windows.CloseGuard!(ChromiumWindows.MainWindowName));
         Assert.True(windows.CloseGuard!("second"));
@@ -90,9 +99,26 @@ public class ChromiumTrayTests
     [Fact]
     public void Without_close_to_tray_the_main_window_closes()
     {
-        var (_, windows, _) = Tray(new ChromiumTrayOptions { CloseToTray = false });
+        var (tray, windows, _) = Tray(new ChromiumTrayOptions { CloseToTray = false });
+        tray.Start((_, _) => new FakeIcon(shown: true));
 
         Assert.True(windows.CloseGuard!(ChromiumWindows.MainWindowName));
+    }
+
+    // With nowhere to show the icon, hiding the window would leave the app running with no way back to it: the Linux
+    // shell had no tray at all and hid the window anyway.
+    [Theory]
+    [InlineData(false)]   // no platform tray (Linux, before its own)
+    [InlineData(true)]    // a tray with no host to show it (a desktop with no tray)
+    public void With_no_icon_shown_the_main_window_closes(bool hasTray)
+    {
+        var (tray, windows, _) = Tray(new ChromiumTrayOptions());
+        var icon = new FakeIcon(shown: false);
+        tray.Start((_, _) => hasTray ? icon : null);
+
+        Assert.True(windows.CloseGuard!(ChromiumWindows.MainWindowName));
+        tray.Stop();
+        Assert.Equal(hasTray, icon.Disposed);
     }
 
     [Fact]
@@ -108,7 +134,7 @@ public class ChromiumTrayTests
         using var app = with.Build();
         var tray = app.Services.GetRequiredService<ChromiumTray>();
         Assert.Equal("Tray", tray.Text);   // no window title: the app's name
-        Assert.False(app.Services.GetRequiredService<ChromiumWindows>().CloseGuard!(ChromiumWindows.MainWindowName));
+        Assert.NotNull(app.Services.GetRequiredService<ChromiumWindows>().CloseGuard);
     }
 
     [Theory]
