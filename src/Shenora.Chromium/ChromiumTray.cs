@@ -5,7 +5,8 @@ namespace Shenora.Chromium;
 
 /// <summary>
 /// The Chromium shell's tray icon (<see cref="ChromiumHostOptions.Tray"/>): the notification area on Windows, a status
-/// item in the menu bar on macOS. Its menu is Open, the app's own items, and Exit. The names match the WinForms shell's
+/// item in the menu bar on macOS, and a StatusNotifierItem on Linux, which KDE and most panels show, and GNOME with its
+/// AppIndicator extension. Its menu is Open, the app's own items, and Exit. The names match the WinForms shell's
 /// <c>TrayIcon</c> where the concept is the same.
 /// </summary>
 public sealed class ChromiumTrayOptions
@@ -15,7 +16,9 @@ public sealed class ChromiumTrayOptions
 
     /// <summary>
     /// The icon's file: an <c>.ico</c> on Windows, an image macOS reads (such as a PNG) on macOS, drawn at the menu
-    /// bar's size. Null means the app's own icon: its executable's on Windows, its bundle's on macOS.
+    /// bar's size, and a PNG or SVG on Linux, which the panel reads from its folder by its name. Null means the app's
+    /// own icon: its executable's on Windows, its bundle's on macOS, and on Linux the desktop's generic one for an
+    /// application.
     /// </summary>
     public string? IconPath { get; init; }
 
@@ -40,7 +43,7 @@ public sealed class ChromiumTrayOptions
     public string ExitMenuItemText { get; init; } = "Exit";
 
     /// <summary>The app's own items, between Open and Exit. Asked each time the menu opens, on the UI thread, so they
-    /// can change.</summary>
+    /// can change; on Linux, each time the panel lays the menu out, which is also when it first learns of the icon.</summary>
     public Func<IReadOnlyList<ChromiumTrayMenuItem>>? MenuItems { get; init; }
 }
 
@@ -115,6 +118,15 @@ public sealed class ChromiumTray
     /// <summary>Only the main window hides, only until Exit, and only while its icon is shown to bring it back.</summary>
     internal bool MayClose(string name) =>
         _exiting || !_options.CloseToTray || name != ChromiumWindows.MainWindowName || _native is not { Shown: true };
+
+    /// <summary>
+    /// The icon can no longer bring the window back (the panel showing it quit): a main window hidden in the tray is
+    /// shown, since nothing else could show it now. UI thread.
+    /// </summary>
+    internal void IconGone()
+    {
+        if (!_exiting && !_windows.IsShowing(ChromiumWindows.MainWindowName)) ShowWindow();
+    }
 
     /// <summary>The menu as it opens: Open, the app's items, a separator, Exit. App items that throw are left out, and
     /// logged.</summary>

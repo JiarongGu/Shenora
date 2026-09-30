@@ -52,8 +52,14 @@ at the first list and missed five more breaking changes.
   copied-files list, and any other media type under its own name. Measured against xclip both ways, byte for byte,
   a 20 MB picture read in parts (INCR) among them, and against Chromium's own clipboard (a copy in the page read, a
   paste of the kit's copy). What the app copied lasts while it runs, unless a clipboard manager keeps a copy, and a
-  format larger than one X request (about 16 MB) is refused. Not yet: a tray;
-  and on WSL a window could take 8–12 s to close, with Chromium's GL over WSL's own, where software GL closed at once.
+  format larger than one X request (about 16 MB) is refused. The tray is a StatusNotifierItem with its menu over
+  dbusmenu, through GIO's D-Bus, which CEF needs too, answered on the UI thread. Measured against a scripted watcher
+  and panel on a session bus of its own: the item and its menu as a panel reads them, a click running the app's
+  item and none running a disabled one, the page's close hiding the window, the icon bringing it back, and Exit;
+  a panel that starts after the app, which the icon joins; and one that quits with the window hidden in it, which
+  brings the window back. A real panel (KDE's, GNOME's AppIndicator extension) is unmeasured, and so is whether
+  its window manager raises the window when the icon is clicked. On WSL a window could take 8–12 s to close,
+  with Chromium's GL over WSL's own, where software GL closed at once.
 
 ### Changed
 

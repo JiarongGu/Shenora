@@ -105,6 +105,21 @@ public class ChromiumTrayTests
         Assert.True(windows.CloseGuard!(ChromiumWindows.MainWindowName));
     }
 
+    // The icon went away with the window hidden in it (a panel quit): the window is shown, since nothing else can.
+    [Fact]
+    public void When_the_icon_is_gone_a_hidden_main_window_is_shown_unless_the_app_is_exiting()
+    {
+        var (tray, _, posted) = Tray(new ChromiumTrayOptions());
+
+        tray.IconGone();
+        Assert.Single(posted);   // the main window shown, on the UI thread
+
+        tray.ExitApplication();
+        var before = posted.Count;
+        tray.IconGone();
+        Assert.Equal(before, posted.Count);
+    }
+
     // With nowhere to show the icon, hiding the window would leave the app running with no way back to it: the Linux
     // shell had no tray at all and hid the window anyway.
     [Theory]

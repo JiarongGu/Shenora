@@ -290,7 +290,8 @@ opens in the system browser exactly once.
    the build `bzip2` and binutils' `strip`, without which `libcef.so` keeps 1.2 GB of debug information, and the
    window's X11 `WM_CLASS` is the app's name, `MyApp`, however it was started, which is what a `.desktop` file's
    `StartupWMClass` names; the clipboard is X11's, where what the app copied lasts while it runs unless a clipboard
-   manager keeps a copy),
+   manager keeps a copy; the tray icon needs a panel that shows StatusNotifierItems, which GNOME does only with its
+   AppIndicator extension, and without one the main window closes rather than hides),
    and name the app's assembly `<App>.App` (`<AssemblyName>MyApp.App</AssemblyName>`). The build fetches the pinned
    CEF build and lays the app out as `MyApp.exe`, which is CEF's launcher, starting `MyApp.App.dll`. `MyApp.exe`
    carries the app's `ApplicationIcon`, `Product`, `Company` and version, as an apphost would; a macOS bundle takes
