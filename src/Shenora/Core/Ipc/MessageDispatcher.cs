@@ -370,7 +370,7 @@ public sealed class ModuleRouteBuilder
     {
         ArgumentNullException.ThrowIfNull(handler);
         _dispatcher.UseRoute(_module, type, async (request, ct) =>
-            IpcResponse.CreateSuccess(request.Id, await handler(request, ct)));
+            IpcResponse.CreateSuccess(request.Id, await RouteAnswer.SettleAsync(await handler(request, ct), request)));
         return this;
     }
 }

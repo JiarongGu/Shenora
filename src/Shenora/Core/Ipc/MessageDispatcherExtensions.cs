@@ -102,7 +102,7 @@ public static class MessageDispatcherExtensions
     {
         ArgumentNullException.ThrowIfNull(handler);
         return dispatcher.UseRoute(module, type,
-            (request, _) => Task.FromResult(IpcResponse.CreateSuccess(request.Id, handler(request))));
+            async (request, _) => IpcResponse.CreateSuccess(request.Id, await RouteAnswer.SettleAsync(handler(request), request)));
     }
 
     /// <summary>Map a route table for one module (see <see cref="ModuleRouteBuilder"/>).</summary>

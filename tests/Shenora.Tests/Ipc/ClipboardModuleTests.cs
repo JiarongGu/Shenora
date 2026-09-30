@@ -79,6 +79,7 @@ public class ClipboardModuleTests
         }));
 
         Assert.True(write.Success);
+        Assert.Null(write.Data);   // it once answered with the Task itself, which serialized onto the wire
         Assert.Equal("beside the bytes", clipboard.Written!.Text);
         Assert.Equal(payload, clipboard.Written.Formats["application/x-test"].ToArray());
 
@@ -118,6 +119,18 @@ public class ClipboardModuleTests
         Assert.DoesNotContain(SecretInTheShellsMessage, wire, StringComparison.Ordinal);
         Assert.DoesNotContain("NotSupportedException", wire, StringComparison.Ordinal);
         Assert.DoesNotContain("test-shell", wire, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Clear_answers_nothing()
+    {
+        var clipboard = new RecordingClipboard();
+
+        var clear = await DispatchAsync(clipboard, Request(ClipboardModule.ClearType));
+
+        Assert.True(clear.Success);
+        Assert.Null(clear.Data);
+        Assert.True(clipboard.Cleared);
     }
 
     [Fact]

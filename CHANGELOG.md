@@ -79,6 +79,11 @@ at the first list and missed five more breaking changes.
   `Infinity` for no limit, and so does any delay longer than a timer holds (2^31−1 ms), which `setTimeout` used to
   fire at once. A host that never answers a dialog is now a page that waits: on Android that is an app that does
   not forward `OnActivityResult` to `ActivityResultRelay.Deliver`, which used to end in a `TIMEOUT`.
+- **The clipboard route's `WRITE` and `CLEAR` answer nothing**, on every shell. They answered with a serialized
+  `Task` (`{"id":1,"status":"ranToCompletion",…}`): an `async` route's `return Done();` makes the task itself the
+  answer. Every route path now settles its answer (`ModuleBase`, `MapRoute` and a route table's routes): the
+  `Task<object?>` that `Done()` returns is awaited, so `Done()` is right in an `async` route too, and any other task,
+  one the route never awaited, is an error instead of the task's fields.
 - **`CANCEL` answers true when it cancelled, and the request is recorded as cancelled.** A route that unwound on the
   cancel's own signal before `Cancel` recorded it, inside the signal where it resumes inline or on another thread,
   answered `OPERATION_CANCELLED`, which was recorded as a failure, and `IIpcRequestTracker.Cancel`, and so the

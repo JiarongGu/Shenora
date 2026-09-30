@@ -19,6 +19,36 @@ public class ModuleBaseTests
         };
     }
 
+    // An async route, where `return Done();` makes the task itself the answer, and one that forgets an await.
+    private sealed class AsyncFacade() : ModuleBase
+    {
+        public override string ModuleName => "ASYNC";
+
+        protected override async Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            return request.Type == "DONE" ? Done() : Task.Delay(1, cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task An_async_routes_Done_answers_nothing()
+    {
+        var response = await new AsyncFacade().HandleMessageAsync(IpcRequests.Create("ASYNC", "DONE"));
+
+        Assert.True(response.Success);
+        Assert.Null(response.Data);
+    }
+
+    [Fact]
+    public async Task A_route_answering_with_a_task_it_never_awaited_is_an_error_not_the_tasks_fields()
+    {
+        var response = await new AsyncFacade().HandleMessageAsync(IpcRequests.Create("ASYNC", "FORGOT"));
+
+        Assert.False(response.Success);
+        Assert.Equal(IpcErrorCodes.UnknownError, response.Error!.Code);
+    }
+
     private static IpcRequest Request(string type) => IpcRequests.Create("ECHO", type);
 
     [Fact]

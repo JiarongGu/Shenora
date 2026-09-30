@@ -55,7 +55,7 @@ public abstract class ModuleBase : IIpcModule
 
             // No ConfigureAwait(false): the dispatch path preserves the synchronization context, because
             // a facade routing a WINDOW command must resume on the UI thread.
-            var data = await RouteMessageAsync(request, context, cancellationToken);
+            var data = await RouteAnswer.SettleAsync(await RouteMessageAsync(request, context, cancellationToken), request);
             return IpcResponse.CreateSuccess(request.Id, data);
         }
         catch (Exception ex)
@@ -64,7 +64,7 @@ public abstract class ModuleBase : IIpcModule
         }
     }
 
-    /// <summary>A route that returns nothing.</summary>
+    /// <summary>A route that returns nothing, from a route that is not <c>async</c> (in one, <c>return null;</c>).</summary>
     protected static Task<object?> Done() => Task.FromResult<object?>(null);
 
     /// <summary>

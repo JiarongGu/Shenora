@@ -77,11 +77,11 @@ public sealed class ClipboardModule : ModuleBase
                     await _clipboard.SetAsync(content).ConfigureAwait(false);
                     return (object?)null;
                 }).ConfigureAwait(false);
-                return Done();
+                return null;
 
             case ClearType:
                 await _clipboard.ClearAsync().ConfigureAwait(false);
-                return Done();
+                return null;
 
             default:
                 throw UnknownType(request);
