@@ -189,6 +189,10 @@ public sealed class ShenoraChromiumStampLauncher : Task
 
     public override bool Execute()
     {
+        // Absolute before any native call: a relative path is resolved by each API its own way (LoadLibraryEx by its
+        // search order, not the project's folder), and the stamp failed with error 2 on a path the checks below found.
+        Executable = Path.GetFullPath(Executable);
+        From = Path.GetFullPath(From);
         if (!File.Exists(Executable) || !File.Exists(From)) { Log.LogMessage(MessageImportance.Low, "Nothing to stamp: {0} or {1} is missing.", Executable, From); return true; }
         var remove = Read(Executable, withData: false);
         var add = Read(From, withData: true);

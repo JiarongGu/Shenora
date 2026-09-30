@@ -112,6 +112,11 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A Windows build of a Chromium app could fail giving its launcher the app's icon and version** ("failed (error
+  2)"). The build handed the stamping relative paths, which the Windows calls behind it resolve their own way, and
+  it failed at once with error 2, which it does not retry. It now makes them absolute first. Measured on Windows:
+  three builds in a row failed on error 2; with absolute paths the first attempt found the new launcher busy
+  (error 110, held by whatever scans new executables), and the retry the stamping already has passed.
 - **A second launch of a Chromium-shell app crashed, and the running one opened a Chrome window on the app's
   profile.** CEF runs one process per data folder and hands a later launch to it, and the kit neither answered that
   hand-over nor recognised the launch CEF turned away. So the later launch threw (`Chromium did not start (CEF exit
