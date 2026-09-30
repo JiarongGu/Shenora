@@ -147,6 +147,7 @@ docs cite them — so the number is the column to scan.
 | **D88** | `SHENORA.CHROMIUM` ALONE IS A COMPLETE DESKTOP SHELL, ON EVERY OS, WINDOWS INCLUDED. |
 | **D89** | A MACOS APP'S DATA DEFAULTS TO ITS APPLICATION SUPPORT FOLDER; EVERY OTHER APP KEEPS ITS DATA BESIDE IT. |
 | **D90** | IN THE CHROMIUM SHELL THE PAGE'S MEDIA SESSION IS THE OS'S; THE KIT BUILDS NO NATIVE MEDIA THERE UNTIL AN APP NEEDS IT. |
+| **D91** | THE AUXILIARY BROWSERS ARE ONE IMPLEMENTATION IN CORE, OVER BROWSERS EACH SHELL MAKES. |
 
 <!-- decisions-index:end -->
 
@@ -1306,6 +1307,22 @@ docs cite them — so the number is the column to scan.
     when such an app asks, not before.
   - **The constraint:** code that resolves `IPlaybackSession` or a native player finds none in the Chromium shell,
     and a Chromium page's policy names only what Chromium decodes.
+
+- **D91 — THE AUXILIARY BROWSERS ARE ONE IMPLEMENTATION IN CORE, OVER BROWSERS EACH SHELL MAKES.**
+  `RenderSessionPool`, `StreamingSession`, `InteractiveSession` and their types live in `Shenora.Core.Sessions`; a
+  shell registers `ISessionBrowsers`, which makes the browser a session drives (WebView2 in `Shenora.Windows`, CEF in
+  `Shenora.Chromium`). Owner, 2026-10-01: *"Port them now"*, under D88's rule that what both shells use lives in
+  Core, over parallel types in each shell.
+  - 🔴 **Why one implementation:** the sessions' hard-won rules (a lease's permit freed on every path, a wedged
+    operation poisoning its instance, a guard-approved URL's redirect to another authority cancelled, the busy gate
+    owned by whoever owns the window, a start cancelled mid-init leaving nothing behind) are the value, and two
+    copies would diverge. What a shell adds is narrow: make a browser on its UI thread, drive it, report what it does.
+  - **Most of the driving is the DevTools protocol, which both engines speak:** script, screencast frames and
+    synthetic input already went through it on WebView2.
+  - **The constraints it imposes:** a session names the shell's browsers (`Anchor`, a WinForms control, is gone);
+    options that only one engine can honour say so and are refused by the other (WebView2's per-session browser
+    arguments; in CEF switches are the process's); and in the Chromium shell a session's profile must lie inside the
+    shell's `UserDataFolder`, since CEF places every request context's cache under its root.
 
 ## Anti-goals — deliberately NOT built
 
