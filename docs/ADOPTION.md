@@ -283,19 +283,11 @@ opens in the system browser exactly once.
 (D83): `OptimizedForm`, the window commands, native caption buttons with Snap Layouts, `SecondaryWindows`.
 
 1. **Reference `Shenora.Chromium` from the app's own project** with `<RuntimeIdentifier>win-x64</RuntimeIdentifier>`
-   (or `win-arm64`, which is built but not yet run on ARM64 hardware; on a Mac `osx-x64` or `osx-arm64`, where the
-   build makes `bundle/<App>.app` and `dotnet publish --self-contained` makes one that runs with no .NET installed
-   — see TASKS for what macOS still lacks; on Linux `linux-x64`, or `linux-arm64`, built but not yet run, where the
-   build lays the app out flat as `MyApp` beside `MyApp-helper`, the machine needs `libnss3` and `libasound2`, and
-   the build `bzip2` and binutils' `strip`, without which `libcef.so` keeps 1.2 GB of debug information, and the
-   window's X11 `WM_CLASS` is the app's name, `MyApp`, however it was started, which is what a `.desktop` file's
-   `StartupWMClass` names; the clipboard is X11's, where what the app copied lasts while it runs unless a clipboard
-   manager keeps a copy; the tray icon needs a panel that shows StatusNotifierItems, which GNOME does only with its
-   AppIndicator extension, and without one the main window closes rather than hides),
-   and name the app's assembly `<App>.App` (`<AssemblyName>MyApp.App</AssemblyName>`). The build fetches the pinned
+   (or `win-arm64`, which is built but not yet run on ARM64 hardware), and name the app's assembly `<App>.App`
+   (`<AssemblyName>MyApp.App</AssemblyName>`). The same app on macOS or Linux is the Chromium shell of its own rather
+   than a WinForms form: [getting-started's 2b](getting-started.md#2b-a-window-on-macos-or-linux). The build fetches the pinned
    CEF build and lays the app out as `MyApp.exe`, which is CEF's launcher, starting `MyApp.App.dll`. `MyApp.exe`
-   carries the app's `ApplicationIcon`, `Product`, `Company` and version, as an apphost would; a macOS bundle takes
-   its icon from `ShenoraChromiumBundleIcon`, an `.icns`. A reference
+   carries the app's `ApplicationIcon`, `Product`, `Company` and version, as an apphost would. A reference
    through `Shenora.Windows` alone brings the code and not CEF, and the engine says so as it starts.
 2. **Compose the engine beside the shell:** `builder.UseChromiumEngine(new ChromiumEngineOptions { ContentRoot =
    …, DevUrl = … })` next to `UseWindows`. Its options say where every view's page comes from: `ContentRoot`,

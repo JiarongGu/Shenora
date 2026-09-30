@@ -126,9 +126,9 @@ mission layer, the mobile shells, media, file dialogs, the IO fold — is narrat
 Layout: `src/` (the packable projects — the authoritative set is the table at the top of
 `docs/DECISIONS.md` — plus `Shenora.React/` and `Shenora.Cli/`, the two npm packages, and
 `Shenora.Mobile/`, which is SOURCE with no csproj compiled into both mobile packages),
-`tests/Shenora.Tests` (one project, folders mirror src), `samples/` (FOUR: `Sample.Logic` — the
+`tests/Shenora.Tests` (one project, folders mirror src), `samples/` (FIVE: `Sample.Logic` — the
 portable `net10.0` project that turns red if a Windows type reaches app logic, the D20 tripwire — plus
-desktop, web and MAUI; the e2e subject), `devtools/` (one-entry dev loop).
+desktop, Chromium, web and MAUI; the e2e subject), `devtools/` (one-entry dev loop).
 
 ⚠ **Those directories were removed: a review looking for `src/Shenora.Media/`, `src/Shenora.IO/` or
 `src/Shenora.Ipc/` finds nothing,

@@ -64,6 +64,15 @@ at the first list and missed five more breaking changes.
   - **Not yet measured:** a real desktop's panel (KDE's, GNOME's AppIndicator extension) and whether its window
     manager raises the window when the icon is clicked; and on WSL a window could take 8–12 s to close, with
     Chromium's GL over WSL's own, where software GL closed at once.
+- **A new app on macOS or Linux has a path, and a sample to copy.** `docs/getting-started.md`'s 2b walks through
+  `samples/Shenora.Sample.Chromium`: one project for macOS, Linux and Windows, running `UseChromium`, the portable
+  logic the other samples run, and a tray item, under a page with its own title bar, native dialogs, the
+  clipboard, drop zones and missions. `dev.mjs verify` compiles it. It ran on each OS. On Linux (WSL, X11, under
+  openbox), in development mode and driven from the page: the handshake, an echo, a GTK file pick, the clipboard
+  both ways against xclip, four missions, a tray item clicked through a scripted panel, and the page's close. On
+  Windows and an Intel Mac, in development mode, the handshake, the echo, the missions and the close, and not their
+  clipboards, dialogs or trays, which are in use. On Linux and the Mac the app also started from its layout in
+  production and exited cleanly.
 
 ### Changed
 

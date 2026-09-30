@@ -1144,10 +1144,11 @@ switch (cmd) {
     // ⚠ `dev.mjs build --strict` after a `-t:Rebuild`, or on a clean clone, is the auditing form.
     const strict = args.includes('--strict');
     let warnings = null;
+    let buildOut = '';
     const ok = buildEnv !== null && absent.length === 0
       && await step('dotnet build', async () => {
         const r = await runTee('dotnet', ['build', config.solution, '-v', 'minimal'], { env: buildEnv });
-        warnings = summarizeBuildWarnings(r.out);
+        buildOut += r.out;
         return r.ok;
       })
       // The update-probe is OUTSIDE the solution but INSIDE the release path — the launcher job
@@ -1161,6 +1162,15 @@ switch (cmd) {
       && ['MacOS', 'Linux'].every((os) => step(`dotnet build (Shenora.Chromium as ${os})`, () => run('dotnet',
         ['build', path.join('src', 'Shenora.Chromium', 'Shenora.Chromium.csproj'), `-p:CefOs=${os}`, '-v', 'minimal',
           '--artifacts-path', path.join('devtools', '_build', `chromium-${os.toLowerCase()}`)])))
+      // The Chromium sample is outside the solution, because its layout fetches CEF. Compiled without the layout, so
+      // the app docs/getting-started.md (2b) walks through still builds against the surface it names; its warnings
+      // join the solution's, which is what --strict reads.
+      && await step('dotnet build (Chromium sample, no layout)', async () => {
+        const r = await runTee('dotnet', ['build', path.join('samples', 'Shenora.Sample.Chromium', 'Shenora.Sample.Chromium.csproj'),
+          '-p:ShenoraChromiumLayout=false', '-v', 'minimal', '--artifacts-path', path.join('devtools', '_build', 'chromium-sample')]);
+        buildOut += r.out;
+        return r.ok;
+      })
       // EVERY npm package, from the config — see `pack` for the release this shape cost.
       && config.npmPackages.every((dir) => {
         const abs = path.join(repo, ...dir.split('/'));
@@ -1169,6 +1179,7 @@ switch (cmd) {
 
     // Reported on EVERY build, strict or not — the point is that the number stops being something you
     // have to go looking for. `--strict` is what turns it from a report into a gate.
+    if (buildOut) warnings = summarizeBuildWarnings(buildOut);
     let warningsOk = true;
     if (ok && warnings !== null) {
       const { lines, codes, declared } = warnings;

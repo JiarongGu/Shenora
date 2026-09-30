@@ -226,6 +226,15 @@ D37 and D51 are corrected in place to point at them.
      work, but a dialog needs a person to answer it. Code signing; osx-arm64 (no Apple Silicon Mac here).
    - Whether the app comes to the front when started from Finder: from `open` over ssh it stayed behind the
      active app, which macOS 15's cooperative activation explains and does not settle.
+   - **The app's data is written inside its bundle** (Linux: beside the app, wherever it is installed).
+     `ShenoraPaths` roots `data/` beside the executable, the portable layout the Windows apps chose, which in a bundle
+     is `Contents/MacOS/data`: the Chromium sample wrote `chromium`, `journal`, `locks` and `work-demo` there
+     (measured). A signed bundle must not change, and an app installed where its user cannot write (`/Applications`
+     for a non-admin, a root-owned Linux install) cannot start its profile. The overrides today are
+     `ChromiumHostOptions.UserDataFolder` for Chromium's profile, and for the rest an environment variable
+     (`ShenoraPathsOptions.DataEnvironmentVariable`) or `ExplicitRoot`, which moves `res/` too. Undecided: whether
+     these OSes default to their own homes (`~/Library/Application Support/<App>`, `$XDG_DATA_HOME/<App>`), or the
+     options gain a data folder of their own.
 5. **Linux: the shell RUNS, and the package carries it** (WSL Ubuntu 24.04 with WSLg, X11, CEF 154, 2026-09-30). An app
    built with `-r linux-x64` is laid out flat: CEF's runtime and resources beside the app, the .NET apphost also as
    `<App>`, and the kit's `helper_linux.c` as `<App>-helper`, which every subprocess runs, since the zygote forks the

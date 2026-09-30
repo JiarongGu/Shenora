@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shenora Chromium Sample</title>
+    <style>
+      /* The window's own BackgroundColor (Program.cs), so nothing flashes white before the page paints. */
+      html, body { margin: 0; background: #1e1e1e; color: #e8e8e8; font-family: system-ui, sans-serif; }
+      /* The frameless window's title bar: the shell hands the page's drag regions to CEF, which moves the window from
+         them. Its buttons are taken back out of it, or they would drag instead of click. */
+      .drag { -webkit-app-region: drag; }
+      .no-drag { -webkit-app-region: no-drag; }
+      /* What useDropZone's dropClassName toggles while a native drag is over the zone. */
+      .drop-hover { border-color: #4ea1ff !important; background: rgba(78, 161, 255, 0.12); }
+      button { background: #2c2c2c; color: #eceaf2; border: 1px solid #555; border-radius: 6px; padding: 0.35rem 0.8rem; }
+      button:disabled { opacity: 0.4; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/chromium/main.tsx"></script>
+  </body>
+</html>

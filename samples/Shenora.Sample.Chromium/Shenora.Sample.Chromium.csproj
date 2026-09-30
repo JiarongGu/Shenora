@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Chromium shell on its own: how an app starts on macOS or Linux, and the same project runs on Windows.
+    docs/getting-started.md (2b, "A window on macOS or Linux") walks through it.
+
+    samples/ sits OUTSIDE src/, so src/Directory.Build.props does not apply: shared build properties are restated
+    (samples must never inherit packability).
+
+    NOT in Shenora.slnx: a build with the layout on fetches CEF (hundreds of MB) and lays the app out, which the
+    solution build must not do on every run. `dev.mjs verify` compiles it with ShenoraChromiumLayout=false.
+  -->
+  <PropertyGroup>
+    <!-- WinExe: on Windows the layout's launcher is then CEF's GUI one, with no console window beside the app; on
+         macOS and Linux it is the same as Exe. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Named <App>.App: the layout runs it as <App>, Shenora.Sample.Chromium (with .exe on Windows). -->
+    <AssemblyName>Shenora.Sample.Chromium.App</AssemblyName>
+    <RootNamespace>Shenora.Sample.Chromium</RootNamespace>
+    <!-- The machine it builds on, unless the command line names another (dotnet build -r osx-arm64). Spelled out
+         rather than the SDK's own RID, which a distribution's .NET gives as ubuntu.24.04-x64. -->
+    <_SampleArch>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant())</_SampleArch>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">win-$(_SampleArch)</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">osx-$(_SampleArch)</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Linux'))">linux-$(_SampleArch)</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <CodePage>65001</CodePage>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- In an app of your own this is one line, <PackageReference Include="Shenora.Chromium" />: the package brings
+         its build targets, and NuGet picks the OS's binding by the app's RuntimeIdentifier. Here the project is
+         referenced, so the targets are imported below, and the RuntimeIdentifier is handed on: set in a project file
+         it is not a global property, so it does not reach a reference by itself, and a Linux build then got the
+         engine's Windows binding (measured). -->
+    <ProjectReference Include="..\..\src\Shenora.Chromium\Shenora.Chromium.csproj" AdditionalProperties="RuntimeIdentifier=$(RuntimeIdentifier)" />
+    <!-- The app's portable logic, the same assembly the Windows and MAUI samples run. -->
+    <ProjectReference Include="..\Shenora.Sample.Logic\Shenora.Sample.Logic.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The page: `npm run build:chromium` in samples/Shenora.Sample.Web emits here (a gitignored build artifact).
+         Empty in a fresh clone: run the dev server instead, or build the page first. -->
+    <None Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Import Project="..\..\src\Shenora.Chromium\build\Shenora.Chromium.targets" />
+
+</Project>

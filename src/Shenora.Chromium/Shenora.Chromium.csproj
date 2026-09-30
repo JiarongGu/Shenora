@@ -20,6 +20,9 @@
     <!-- An app's RuntimeIdentifier reaches this project only because it is NOT rid-agnostic: the SDK strips the RID
          from a reference to a library that is, and a macOS app then got the Windows binding (measured). -->
     <IsRidAgnostic>false</IsRidAgnostic>
+    <!-- Restored for each, so a project that references this one (rather than the package) and hands on its own
+         RuntimeIdentifier builds it: without them the assets have no target for that RID (NETSDK1047). -->
+    <RuntimeIdentifiers>win-x64;win-arm64;osx-x64;osx-arm64;linux-x64;linux-arm64</RuntimeIdentifiers>
     <CefOs Condition="'$(CefOs)' == '' and $(RuntimeIdentifier.StartsWith('osx'))">MacOS</CefOs>
     <CefOs Condition="'$(CefOs)' == '' and $(RuntimeIdentifier.StartsWith('linux'))">Linux</CefOs>
     <CefOs Condition="'$(CefOs)' == ''">Windows</CefOs>

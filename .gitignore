@@ -12,6 +12,7 @@ src/Shenora.Cli/dist/
 
 # Sample packaged frontend (built by `npm run build` in samples/Shenora.Sample.Web)
 samples/Shenora.Sample.Desktop/wwwroot/
+samples/Shenora.Sample.Chromium/wwwroot/
 
 # Pack/publish output
 publish/

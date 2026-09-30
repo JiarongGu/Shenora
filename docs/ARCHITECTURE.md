@@ -325,11 +325,19 @@ Shenora.slnx
     │                                            SampleModule → MessageDispatcher → WebViewIpcBridge,
     │                                            1 Hz IEventBus tick source); embeds wwwroot
     │                                            (built by the web sample, gitignored)
+    ├── Shenora.Sample.Chromium net10.0 + RID   — the Chromium shell on its own (UseChromium), one project
+    │                                            for macOS, Linux and Windows: the host OS's RID, the
+    │                                            engine as a project reference handed that RID, the
+    │                                            engine's targets imported. OUTSIDE the solution (its
+    │                                            layout fetches CEF); `verify` compiles it with the layout
+    │                                            off. Runs the portable logic below, a tray item, and
+    │                                            serves wwwroot (built by the web sample, gitignored)
     ├── Shenora.Sample.Logic    net10.0         — the PORTABILITY PROOF (H4.3): one facade that picks
     │                                            a file, reads the clipboard and opens a URL through
     │                                            the Core contracts only (IUrlLauncher, NOT the
     │                                            Windows IShellLauncher). Plain net10.0 with no
-    │                                            Windows reference, referenced by the desktop sample
+    │                                            Windows reference, referenced by the desktop, Chromium
+    │                                            and MAUI samples
     │                                            and in the solution — so a Windows type dragged into
     │                                            a portable contract turns the build RED instead of
     │                                            leaving D20's portability merely asserted. Also the
@@ -346,8 +354,10 @@ Shenora.slnx
     │                                            whose file landings go through one IFileUpdateQueue
     │                                            partition (proven live 2026-08-02 — both staged at
     │                                            the same millisecond, both landed through the queue)
-    ├── Shenora.Sample.Web      Vite + React    — consumes @shenora/react (file:), port 3900, builds
-    │                                            into the desktop sample's wwwroot; page-owned title
+    ├── Shenora.Sample.Web      Vite + React    — consumes @shenora/react (file:); two pages: index.html
+    │                                            (port 3900, into the desktop sample's wwwroot) and, under
+    │                                            `--mode chromium`, chromium.html (port 3901, into the
+    │                                            Chromium sample's). The desktop page: page-owned title
     │                                            bar (WindowCommands + useWindowMaximized), notifyReady,
     │                                            useShenoraQuery echo, useShenoraEvent tick, useDropZone
     │                                            target, secondary-window controls, dev interceptor
