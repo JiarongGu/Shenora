@@ -41,6 +41,9 @@ public static class ChromiumHostExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
         options.Window.Validate(nameof(options));
+        if (options.Window.StateStore is not null)
+            throw new ArgumentException($"The main window keeps its state through {nameof(ChromiumHostOptions)}.{nameof(ChromiumHostOptions.WindowState)}, "
+                + $"not {nameof(ChromiumWindowOptions)}.{nameof(ChromiumWindowOptions.StateStore)}.", nameof(options));
 
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton(sp => new CefUiDispatcher(

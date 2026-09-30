@@ -112,6 +112,12 @@ at the first list and missed five more breaking changes.
   own button on Linux and the Mac, the system's on Windows) and closed, reopened maximized over the bounds it had
   before; closing a centred window saved where it showed; and a place off every display opened centred. On macOS a
   zoom's animation frames, which report a normal window's bounds, are not taken for the size to restore to.
+- **A Chromium window opened by name keeps its own size and place** (`ChromiumWindowOptions.StateStore` and
+  `StateOptions`, as the WinForms shell's `SecondaryWindowOptions` has them): the main window's rules, in the store it
+  was opened with. The main window keeps using `ChromiumHostOptions.WindowState`, and refuses a store of its own.
+  Measured on Windows at 200% with a framed window opened from the sample: it opened at its own size with nothing
+  saved, reopened exactly where it was moved and sized, and closed maximized it reopened maximized over those bounds,
+  while the main window kept its own state.
 - **A later launch's arguments reach the running app, on both desktop shells**
   (`SingleInstanceHostOptions.OnActivated`, with the launch's working directory), such as a file the app was started
   with. The Chromium sample shows them on its page, which is how each OS was measured; the WinForms shell's side is

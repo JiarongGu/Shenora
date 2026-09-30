@@ -164,7 +164,8 @@ created wherever Windows first places the form (typically the primary monitor), 
 An off-screen saved position is discarded and the window re-centres; a size saved on a bigger display
 shrinks to the target's work area.
 
-**The Chromium shell restores the same state** (`ChromiumHostOptions.WindowState`, the main window only), with none of
+**The Chromium shell restores the same state** (`ChromiumHostOptions.WindowState` for the main window, and
+`ChromiumWindowOptions.StateStore` for a window opened by name, as `SecondaryWindowOptions.StateStore` is), with none of
 that DPI arithmetic: CEF's Views measure in device-independent pixels on every OS, and the saved rect goes through as
 is, as the window's initial bounds (`get_initial_bounds`); a maximized one opens maximized (`get_initial_show_state`).
 It is checked first against every display's WORK AREA (the WinForms shell checks screen bounds), and when dropped the

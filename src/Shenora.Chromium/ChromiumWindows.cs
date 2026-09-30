@@ -58,6 +58,8 @@ public sealed unsafe class ChromiumWindows
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(options);
         options.Validate(nameof(options));   // here, since the window itself is made on CEF's thread
+        if (name == MainWindowName && options.StateStore is not null)
+            throw new ArgumentException($"The main window keeps its state through {nameof(ChromiumHostOptions)}.{nameof(ChromiumHostOptions.WindowState)}.", nameof(options));
         if (Volatile.Read(ref _serving) is null) return false;   // not started: the post would only log
         if (!_open.TryAdd(name, null))
         {
@@ -144,12 +146,8 @@ public sealed unsafe class ChromiumWindows
         try
         {
             if (_serving is null || _origins is null) throw new InvalidOperationException("The Chromium shell has not started.");
-            // The main window keeps its size and place across launches when the app has a store for them.
-            var geometry = name == MainWindowName && _windowStore is { } store
-                ? new ChromiumWindowGeometry(store, _options.WindowState!.Options ?? new WindowStateOptions(), _log)
-                : null;
             window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls,
-                w => CloseGuard?.Invoke(w.Name) ?? true, geometry);
+                w => CloseGuard?.Invoke(w.Name) ?? true, GeometryFor(name, options));
             _open[name] = window;
 
             var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
@@ -167,6 +165,13 @@ public sealed unsafe class ChromiumWindows
             throw;
         }
     }
+
+    /// <summary>A window keeps its size and place across launches when the app has a store for it: the main window's
+    /// from the host's options, any other's from its own. Null when it has none.</summary>
+    internal ChromiumWindowGeometry? GeometryFor(string name, ChromiumWindowOptions options) =>
+        name == MainWindowName
+            ? _windowStore is { } store ? new ChromiumWindowGeometry(store, _options.WindowState!.Options ?? new WindowStateOptions(), _log) : null
+            : options.StateStore is { } own ? new ChromiumWindowGeometry(own, options.StateOptions ?? new WindowStateOptions(), _log) : null;
 
     private Uri PageUrl(ChromiumWindowOptions options)
     {

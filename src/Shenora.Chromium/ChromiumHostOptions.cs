@@ -129,6 +129,19 @@ public sealed class ChromiumWindowOptions
     /// </summary>
     public bool NativeCaptionButtons { get; init; }
 
+    /// <summary>
+    /// This window's size, position and maximized state, saved as it closes and restored as it opens, as the main
+    /// window's are through <see cref="ChromiumHostOptions.WindowState"/>; null (the default) keeps none. For a window
+    /// opened with <see cref="ChromiumWindows.Open"/>, with one store per window name (a
+    /// <see cref="JsonFileWindowStateStore"/> per file, say). The main window keeps its through
+    /// <see cref="ChromiumHostOptions.WindowState"/> and refuses this.
+    /// </summary>
+    public IWindowStateStore? StateStore { get; init; }
+
+    /// <summary>The minimum size and the visibility rule for <see cref="StateStore"/>. Null means the defaults, whose
+    /// minimum is 800 × 600: a smaller window sets its own.</summary>
+    public WindowStateOptions? StateOptions { get; init; }
+
     /// <summary>Refuse a combination that cannot work, where the caller can see why.</summary>
     internal void Validate(string parameter)
     {

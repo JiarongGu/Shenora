@@ -34,6 +34,9 @@ internal sealed unsafe class ChromiumWindowGeometry(IWindowStateStore store, Win
     /// <summary>The window's minimum size, which a restored size is floored at too.</summary>
     public Size Minimum => new(options.MinWidth, options.MinHeight);
 
+    /// <summary>Where this window's state is kept.</summary>
+    internal IWindowStateStore Store => store;
+
     /// <summary>
     /// The plan for a window whose own size is <paramref name="width"/>×<paramref name="height"/>, against the
     /// displays' work areas, primary first. Size: a saved one, else the window's own, never below the options'

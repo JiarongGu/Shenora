@@ -47,8 +47,6 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   them. And whether a later launch's window takes the foreground on Linux and macOS was not observed: on Linux a
   later launch could hand over its activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands
   over the foreground.
-- [ ] **Secondary windows' own size and place.** The WinForms shell's `SecondaryWindows` restores each window's
-  state (`SecondaryWindowOptions.StateStore`); the Chromium shell restores the main window's only.
 - [ ] 🅿️ **A real click on a blocked window, on macOS.** `IUiInteraction` disables the window's Views; on Linux
   that stopped a real click, and on Windows the window itself is disabled. On macOS the page's own `NSView` may
   take a click whatever Views says; it needs real input on the Mac to find out.

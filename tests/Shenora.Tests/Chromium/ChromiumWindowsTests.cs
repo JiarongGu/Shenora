@@ -40,4 +40,44 @@ public class ChromiumWindowsTests
         Assert.False(windows.Open("b", new ChromiumWindowOptions()));
         Assert.False(windows.HasWindow("b"));   // a refused open keeps no name
     }
+
+    private sealed class Store : IWindowStateStore
+    {
+        public WindowState? Load() => null;
+        public void Save(WindowState state) { }
+    }
+
+    /// <summary>
+    /// Each window keeps its state in its own store: the main window in the host's, any other in the one it was opened
+    /// with, with its own minimum size. The main window refuses one of its own, so there is one place to set it.
+    /// </summary>
+    [Fact]
+    public void Each_window_restores_from_its_own_store()
+    {
+        var mainStore = new Store();
+        var builder = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions { ApplicationName = "Windows test" });
+        var options = new ChromiumHostOptions { WindowState = new WindowStateHostOptions { Store = _ => mainStore } };
+        builder.UseChromium(options);
+        using var app = builder.Build();
+        var ui = new CefUiDispatcher(_ => true, () => false);
+        var windows = new ChromiumWindows(options, ui, app.Services.GetRequiredService<IMessageDispatcher>(), null, null,
+            new ShellLauncher());
+        windows.Initialize(app, isDevelopment: false);
+
+        Assert.Same(mainStore, windows.GeometryFor(ChromiumWindows.MainWindowName, options.Window)!.Store);
+
+        var panelStore = new Store();
+        var panel = windows.GeometryFor("panel", new ChromiumWindowOptions
+        {
+            StateStore = panelStore, StateOptions = new WindowStateOptions { MinWidth = 320, MinHeight = 240 },
+        })!;
+        Assert.Same(panelStore, panel.Store);
+        Assert.Equal(new System.Drawing.Size(320, 240), panel.Minimum);
+        Assert.Null(windows.GeometryFor("plain", new ChromiumWindowOptions()));   // no store, nothing kept
+
+        ui.MarkReady();
+        Assert.Throws<ArgumentException>(() => windows.Open(ChromiumWindows.MainWindowName, new ChromiumWindowOptions { StateStore = panelStore }));
+        Assert.Throws<ArgumentException>(() => ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions { ApplicationName = "Windows test" })
+            .UseChromium(new ChromiumHostOptions { Window = new ChromiumWindowOptions { StateStore = panelStore } }));
+    }
 }

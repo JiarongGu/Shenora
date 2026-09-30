@@ -94,6 +94,8 @@ sealed class Shenora.Chromium.ChromiumTrayOptions
   public string? Text { get; init; }
 sealed class Shenora.Chromium.ChromiumWindowOptions
   public .ctor()
+  public Shenora.Core.Shell.IWindowStateStore? StateStore { get; init; }
+  public Shenora.Core.Shell.WindowStateOptions? StateOptions { get; init; }
   public System.Drawing.Color? BackgroundColor { get; init; }
   public bool FramelessChrome { get; init; }
   public bool NativeCaptionButtons { get; init; }
