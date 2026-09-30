@@ -82,7 +82,7 @@ public static class ChromiumHostExtensions
         // The browsers the auxiliary sessions drive (D91): windowless CEF browsers, each profile in a request context.
         var dataFolder = options.UserDataFolder ?? builder.Paths.DataArea("chromium");
         builder.Services.TryAddSingleton(sp => new ChromiumSessionHost(sp.GetRequiredService<CefUiDispatcher>(), dataFolder,
-            options.OffscreenSessions));
+            options.OffscreenSessions, () => sp.GetService<IUiInteraction>()));
         builder.Services.TryAddSingleton<ISessionHost>(sp => sp.GetRequiredService<ChromiumSessionHost>());
         // Taking the main window's input while something modal runs, as the WinForms shell disables its form.
         builder.Services.TryAddSingleton<IUiInteraction>(sp => new ChromiumUiInteraction(sp.GetRequiredService<ChromiumWindows>()));

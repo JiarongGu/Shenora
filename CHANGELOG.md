@@ -83,10 +83,12 @@ at the first list and missed five more breaking changes.
   2.1 s and its stop, and an interactive session run silently off-screen, run revealed, and closed as its X button
   closes it (`SC_CLOSE`, posted: held once, the driver's final read returned) or by a bare `WM_CLOSE` (the flow ends
   cancelled with the window, where a driver waiting on the page would otherwise have held it open).
-- **The render pool and streaming sessions run in the Chromium shell, on every desktop** (`ChromiumSessionHost`,
-  which `UseChromium` registers as `ISessionHost`). Start the shell with `ChromiumHostOptions.OffscreenSessions`,
-  since CEF renders off-screen only if it started that way. Each browser is windowless, in a request context over its
-  own profile, and its hooks keep their defaults and run on the UI thread, as WebView2's do. A profile must be a
+- **The auxiliary sessions run in the Chromium shell, on every desktop** (`ChromiumSessionHost`, which `UseChromium`
+  registers as `ISessionHost`). The pool's and a stream's browsers are windowless, so start the shell with
+  `ChromiumHostOptions.OffscreenSessions`, since CEF renders off-screen only if it started that way; an interactive
+  session's browser is in a CEF window of its own, and so is the pool's development browser (`VisiblePerSession`).
+  Each is in a request context over its own profile, and its hooks keep their defaults and run on the UI thread, as
+  WebView2's do. A profile must be a
   folder directly inside the shell's data folder (`ProfilesDirectory`): CEF opens any other path off the record and
   keeps nothing, so a nested one is refused. Unlike WebView2, a subresource the filter blocks is cancelled rather
   than answered 403, and answering credentials pauses each of that session's requests once, since CEF fails a
@@ -108,8 +110,15 @@ at the first list and missed five more breaking changes.
   - A page's `chrome.webview.postMessage` was published, and a frame's was not (WebView2 documents its own event as
     the top document's alone).
   - A cookie was kept across reopening its profile.
+  - An interactive session revealed at once showed its window, took the main window's input until the window
+    closed, opened at the content size asked, fitted its content to a page's box, and returned the cookie its page
+    set. A silent one never showed a window, read that cookie from the profile, and its page ran as fast as a shown
+    one's (about 90 timers and 60 frames a second on Windows and the Mac). One revealed by its driver showed then, and
+    took the main window's input then. A person's close (a posted `SC_CLOSE` on Windows, openbox's Alt+F4 on Linux,
+    `performClose:` on the Mac) was held once: the driver's final read got through, then the window went.
 
-  The interactive session's window is not built yet (TASKS).
+  On Linux's virtual display a page in the first window revealed after the app started got few or no animation frames
+  for some seconds, as the app's own main window did at the same time; later windows got 50 to 60 a second.
 - **`IUiDispatcher.Queue`**: run work on the UI thread after what it is doing now, never inline, for a body that opens
   a modal loop or whose caller must return first. The kit's dispatchers keep order behind earlier posts; any other
   implementation gets a default that hops through the thread pool.
@@ -236,6 +245,14 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A Chromium app could freeze behind Chrome's own "Profile error occurred" dialog.** Opening a profile whose
+  preferences it cannot read ("Your preferences cannot be read"), Chrome shows a modal message box, and while it
+  shows, CEF's UI thread runs nothing else, the app's own timeouts included, until someone answers it. The shell now
+  starts Chromium with its error dialogs off (`noerrdialogs`), and such a profile opens with its defaults, as the
+  dialog says it would. It came up opening a session's profile moments after the previous session on it closed, as
+  the closing one wrote its preferences. Measured on Windows with the profile's preferences file held open: before,
+  the dialog showed and the profile opened only when it went (after 61 s); after, no dialog, and the session ran in
+  under a second.
 - **A streaming session's pointer moves reached the page as drags** (`SessionPointerInput` with `Move`): a move with
   no button held was sent naming the left button, which Chromium reads as held, so a viewer's hover arrived as a
   `pointermove` with `buttons` 1. It now names none. Measured in the Chromium shell on Windows, Linux and an Intel

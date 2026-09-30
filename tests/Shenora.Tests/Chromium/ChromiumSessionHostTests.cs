@@ -19,7 +19,8 @@ public class ChromiumSessionHostTests
 
     private static ChromiumSessionHost Host(bool offscreen = true)
     {
-        var ui = new CefUiDispatcher(_ => true, () => false);
+        // Nothing the refusals reach is ever posted; a post that ran would call CEF, which a test has none of.
+        var ui = new CefUiDispatcher(_ => false, () => false);
         ui.MarkReady();
         return new ChromiumSessionHost(ui, Root, offscreen);
     }
@@ -72,11 +73,26 @@ public class ChromiumSessionHostTests
 
         var notStarted = await Assert.ThrowsAsync<InvalidOperationException>(() => Host(offscreen: false).CreateAsync(Definition(plain), default));
         Assert.Contains(nameof(ChromiumHostOptions.OffscreenSessions), notStarted.Message);
+        var other = new OtherEngineOptions { ProfileDirectory = profile };
+        await Assert.ThrowsAsync<NotSupportedException>(() => Host().CreateAsync(Definition(other), default));
+        // A window renders on screen, so it needs no off-screen rendering; what it cannot honour is refused all the same.
+        await Assert.ThrowsAsync<NotSupportedException>(() => Host(offscreen: false).CreateAsync(Definition(other, visibleTitle: "watch"), default));
         await Assert.ThrowsAsync<NotSupportedException>(() =>
-            Host().CreateAsync(Definition(new OtherEngineOptions { ProfileDirectory = profile }), default));
-        await Assert.ThrowsAsync<NotSupportedException>(() => Host().CreateAsync(Definition(plain, visibleTitle: "watch"), default));
-        await Assert.ThrowsAsync<NotSupportedException>(() => Host().OpenWindowAsync(new SessionWindowDefinition { Options = plain, Scope = () => null }, default));
+            Host(offscreen: false).OpenWindowAsync(new SessionWindowDefinition { Options = other, Scope = () => null }, default));
+        var nested = new SessionBrowserOptions { ProfileDirectory = Path.Combine(Root, "provider", "account") };
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            Host(offscreen: false).OpenWindowAsync(new SessionWindowDefinition { Options = nested, Scope = () => null }, default));
         Assert.False(Directory.Exists(profile));   // refused before the profile was made
+    }
+
+    /// <summary>An interactive window fitted to its page's content: the CSS box, within the display's work area less a
+    /// margin for the frame, as the WinForms window fits.</summary>
+    [Fact]
+    public void A_window_fits_its_content_within_the_display()
+    {
+        Assert.Equal(new Size(500, 360), ChromiumSessionWindow.FitContent(500, 360, new Size(1920, 1040)));
+        Assert.Equal(new Size(1880, 980), ChromiumSessionWindow.FitContent(3000, 3000, new Size(1920, 1040)));
+        Assert.Equal(new Size(1, 1), ChromiumSessionWindow.FitContent(0, 0, new Size(20, 20)));
     }
 
     // ── registration ────────────────────────────────────────────────────────────────────────────────────

@@ -31,6 +31,14 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
     /// </summary>
     internal static readonly string[] BrowserSwitches = ["no-first-run", "no-default-browser-check"];
 
+    /// <summary>
+    /// No Chrome error dialogs in a process with the app's pages. Chrome shows a MODAL one while it opens a profile it cannot
+    /// fully read ("Your preferences cannot be read"), and while it shows, CEF's UI thread runs nothing else: the app froze,
+    /// the session's own timeout included, until someone answered it (measured: a session profile whose Preferences was
+    /// held open). The profile opens with its defaults instead, as Chrome's dialog says it does.
+    /// </summary>
+    internal const string NoErrorDialogs = "noerrdialogs";
+
     private readonly ProcessHandler _process;
     private readonly bool _appPages;
 
@@ -87,6 +95,7 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
                         commandLine->append_switch_with_value(commandLine, &switchName, &switchValue);
                     }
                 }
+                AppendSwitch(commandLine, NoErrorDialogs);
             }
             else
             {

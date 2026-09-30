@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Runtime.InteropServices;
 using Shenora.Chromium.Host;
 using Shenora.Chromium.Interop;
@@ -7,9 +8,10 @@ using Shenora.Core.Shell;
 namespace Shenora.Chromium;
 
 /// <summary>
-/// The Chromium shell's session browsers (D91): windowless CEF browsers, so a session renders with no window at all,
-/// each profile in a request context of its own. <c>UseChromium</c> registers it as <see cref="ISessionHost"/>; the
-/// shell must be started with <see cref="ChromiumHostOptions.OffscreenSessions"/> for it to make one.
+/// The Chromium shell's session browsers (D91), each profile in a request context of its own: windowless CEF browsers
+/// for the pool and the stream, which render with no window at all, and a window of its own for an interactive session.
+/// <c>UseChromium</c> registers it as <see cref="ISessionHost"/>; the shell must be started with
+/// <see cref="ChromiumHostOptions.OffscreenSessions"/> for it to make a windowless one.
 /// <para>
 /// ⚠ <b>A session's profile must be a folder directly inside the shell's data folder</b>, the only place CEF keeps a
 /// profile (compose it with one segment under <see cref="ProfilesDirectory"/>), and must not be the app's own.
@@ -20,12 +22,15 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
     private readonly CefUiDispatcher _ui;
     private readonly string _root;
     private readonly bool _offscreen;
+    private readonly Func<IUiInteraction?> _mainWindow;
 
-    internal ChromiumSessionHost(CefUiDispatcher ui, string dataFolder, bool offscreen)
+    // mainWindow: the main window's input, which an interactive session's window takes while it shows.
+    internal ChromiumSessionHost(CefUiDispatcher ui, string dataFolder, bool offscreen, Func<IUiInteraction?>? mainWindow = null)
     {
         _ui = ui;
         _root = Path.GetFullPath(dataFolder);
         _offscreen = offscreen;
+        _mainWindow = mainWindow ?? (() => null);
     }
 
     /// <inheritdoc />
@@ -48,19 +53,40 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (definition.VisibleTitle is not null)
-                throw new NotSupportedException(
-                    "The Chromium shell's session browsers render off-screen only; a visible one comes with its session window (D91, S4).");
-            var profile = Admit(definition.Options);
+            var visible = definition.VisibleTitle is not null;
+            var profile = Admit(definition.Options, windowless: !visible);
             // The profile opens first: a profile on disk is ready only once CEF says so, and a browser asked for before
             // then is refused (measured: create_browser_sync answered null).
             var shared = definition.Context as Context;
             var (context, ready) = shared is not null ? shared.For(profile) : Open(profile);
-            return SessionCalls.WhenReady(ready, profile, definition.Options.InitTimeout, cancellationToken, _ui,
-                () => shared?.IsDisposed == true
-                    ? throw new ObjectDisposedException(nameof(ISessionBrowserContext), "The pool let its profile go while a browser waited for it.")
-                    : Create(definition, profile, (_cef_request_context_t*)context, owned: shared is null),
-                abandon: () => { if (shared is null) Release((_cef_request_context_t*)context); });
+            Action abandon = () => { if (shared is null) Release((_cef_request_context_t*)context); };
+            void Alive()
+            {
+                if (shared?.IsDisposed == true)
+                    throw new ObjectDisposedException(nameof(ISessionBrowserContext), "The pool let its profile go while a browser waited for it.");
+            }
+            if (visible)
+            {
+                // Development: a window per browser, to watch the pool work, cascaded so several are watchable.
+                var n = shared is null ? 0 : shared.Visible++;
+                return SessionCalls.Browser(SessionCalls.Made(ready, profile, definition.Options.InitTimeout, cancellationToken, _ui,
+                    () =>
+                    {
+                        Alive();
+                        return OpenWindow(definition.Options, definition.Scope, definition.OnGone, definition.VisibleTitle!,
+                            new Size(760, 940), new Size(300, 340), revealed: true, modal: false, background: null, profile,
+                            (_cef_request_context_t*)context, owned: shared is null, place: new Point(40 + n * 40, 40 + n * 30));
+                    },
+                    window => window.Opened, TearDown, abandon));
+            }
+            return SessionCalls.Made<ISessionBrowser>(ready, profile, definition.Options.InitTimeout, cancellationToken, _ui,
+                () =>
+                {
+                    Alive();
+                    return Create(definition, profile, (_cef_request_context_t*)context, owned: shared is null);
+                },
+                browser => ((ChromiumSessionBrowser)browser).Ready,
+                browser => _ui.InvokeAsync(browser.Close, CancellationToken.None), abandon);
         }
         catch (Exception ex)
         {
@@ -69,14 +95,34 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
     }
 
     /// <inheritdoc />
-    public Task<ISessionWindow> OpenWindowAsync(SessionWindowDefinition definition, CancellationToken cancellationToken) =>
-        Task.FromException<ISessionWindow>(new NotSupportedException(
-            "The Chromium shell's interactive session window is not built yet (D91, S4). Its pool and streaming sessions run."));
+    public Task<ISessionWindow> OpenWindowAsync(SessionWindowDefinition definition, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var profile = Admit(definition.Options, windowless: false);
+            var (context, ready) = Open(profile);
+            return SessionCalls.Made<ISessionWindow>(ready, profile, definition.Options.InitTimeout, cancellationToken, _ui,
+                () => OpenWindow(definition.Options, definition.Scope, onGone: null, definition.Title, definition.ClientSize, definition.MinimumSize,
+                    definition.Revealed, modal: true, definition.BackColor, profile, (_cef_request_context_t*)context, owned: true, place: null),
+                window => ((ChromiumSessionWindow)window).Opened, window => TearDown((ChromiumSessionWindow)window),
+                () => Release((_cef_request_context_t*)context));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromException<ISessionWindow>(ex);
+        }
+    }
+
+    // A cancelled or failed open answers only once its window, and its hold on the profile, are gone.
+    private Task TearDown(ChromiumSessionWindow window) =>
+        SessionCalls.After(_ui.InvokeAsync(window.Close, CancellationToken.None), () => window.Closed);
 
     // What this host refuses, before anything opens: the profile's full path when it takes the session.
-    private string Admit(SessionBrowserOptions options)
+    private string Admit(SessionBrowserOptions options, bool windowless)
     {
-        if (!_offscreen)
+        if (windowless && !_offscreen)
             throw new InvalidOperationException(
                 $"A session's browser renders off-screen, which this shell was not started for: set {nameof(ChromiumHostOptions)}."
                 + $"{nameof(ChromiumHostOptions.OffscreenSessions)} to true.");
@@ -116,6 +162,28 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         // A browser of its own lets its profile go as it closes; a pool's context lets go when the pool does.
         if (owned) browser.WhenClosed(() => Release(context));
         return browser;
+    }
+
+    // CEF's UI thread, once the profile is ready: a session browser in a window of its own. An owned context is released
+    // as the browser goes, or here if the window cannot be made.
+    private ChromiumSessionWindow OpenWindow(SessionBrowserOptions options, Func<string?> scope, Action<SessionProcessReport>? onGone, string title,
+        Size size, Size minimum, bool revealed, bool modal, Color? background, string profile, _cef_request_context_t* context, bool owned,
+        Point? place)
+    {
+        var browser = new ChromiumSessionBrowser(options, scope, onGone, size, _ui, windowless: false);
+        var window = new ChromiumSessionWindow(browser, title, size, minimum, revealed, modal ? _mainWindow() : null, place);
+        try
+        {
+            window.Open(context, background);
+        }
+        catch (Exception ex)
+        {
+            browser.NeverMade();   // its client, which nothing will close now
+            if (owned) Release(context);
+            throw new InvalidOperationException($"Chromium would not open a session window (profile '{profile}').", ex);
+        }
+        if (owned) browser.WhenClosed(() => Release(context));
+        return window;
     }
 
     /// <summary>
@@ -189,6 +257,9 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         private string? _profile;
         private nint _context;
         private Task _ready = Task.CompletedTask;
+
+        /// <summary>How many development windows its browsers have opened, to cascade the next.</summary>
+        public int Visible;
 
         public bool IsDisposed { get; private set; }
 

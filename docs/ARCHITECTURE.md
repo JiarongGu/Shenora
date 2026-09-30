@@ -234,8 +234,9 @@ Shenora.slnx
 │   │                                          windows, a debugging port in production,
 │   │                                          relayed (Host/CdpRelay) so a tab is a page.
 │   │                                          ChromiumSessionHost is the ISessionHost the Core
-│   │                                          sessions drive (D91): windowless browsers
-│   │                                          (Host/ChromiumSessionBrowser), each profile a request
+│   │                                          sessions drive (D91): browsers (Host/ChromiumSessionBrowser),
+│   │                                          windowless or in a window of their own
+│   │                                          (Host/ChromiumSessionWindow), each profile a request
 │   │                                          context directly under the data folder, driven through
 │   │                                          the in-process DevTools channel (Host/DevToolsChannel).
 │   │                                          Serving/ answers the app's origin (the bundle, marked,

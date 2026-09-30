@@ -51,12 +51,6 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
 - [ ] 🅿️ **Native media in the Chromium shell** (D90): a player per OS for H.264, AAC and HEVC, its
   `IPlaybackSession` and `IMediaCapability`, when an app on the shell needs them. The page's own media session already
   reaches the OS's controls there.
-- [ ] **The auxiliary browsers on CEF (D91)**, one implementation in `Shenora.Core.Sessions` over `ISessionHost`,
-  in phases, each measured before the next. The render pool and the streaming session run on `ChromiumSessionHost`,
-  their input included.
-  - [ ] **S4, the interactive window on CEF:** a Views window over the session's request context, the held close,
-    reveal-on-demand and the loading hook; and the pool's visible development browser (`VisiblePerSession`), which
-    `ChromiumSessionHost` refuses until then.
 
 ### 🅿️ RE-SIGNING AN EXPIRED iOS BUILD — built; its signing half is parked
 

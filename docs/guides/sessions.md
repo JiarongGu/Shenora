@@ -10,8 +10,7 @@
 on-screen for a human, or streamed as frames with synthetic input. Each runs over its own profile, so none of
 them is your app's page and none of them can see your app's cookies. The sessions are written once, in
 `Shenora.Core.Sessions`, over the shell's `ISessionHost` (D91): the WinForms shell's makes WebView2 browsers, and the
-Chromium shell's makes windowless CEF browsers on every desktop ([In the Chromium shell](#in-the-chromium-shell); its
-interactive window is still being built, TASKS).
+Chromium shell's makes CEF browsers on every desktop ([In the Chromium shell](#in-the-chromium-shell)).
 
 🔴 **The kit ships the MECHANICS and no scenario.** There is no login flow, no scraper, no co-browse
 product in here — those are a product, not a mechanism (D21). The worked driver lives in the desktop
@@ -210,8 +209,10 @@ only on a session rendering your own pages. Read it before co-browsing anyone el
 
 `UseChromium` registers `ChromiumSessionHost` as the `ISessionHost`. Three things differ from the WinForms shell:
 
-- **Start the shell with `ChromiumHostOptions.OffscreenSessions = true`.** CEF renders off-screen only if it started
-  that way, so a session in a shell started without it is refused, naming the option.
+- **For the pool and streaming, start the shell with `ChromiumHostOptions.OffscreenSessions = true`.** Their browsers
+  are windowless, and CEF renders off-screen only if it started that way, so one asked for in a shell started without
+  it is refused, naming the option. An interactive session's window, and the pool's development window
+  (`VisiblePerSession`), need nothing: they are CEF windows of their own.
 - 🔴 **A profile is ONE folder directly inside `ChromiumSessionHost.ProfilesDirectory`**, the shell's data folder:
   `ComposeProfileDirectory(host.ProfilesDirectory, $"{provider}.{account}")`. CEF opens a profile nowhere else, and
   opens any other path off the record with nothing kept, so a nested path is refused, as is the app's own profile.
@@ -225,8 +226,12 @@ The rest behaves as on WebView2, with small differences:
 - `MuteAudio` mutes the browser and leaves autoplay to Chromium's own policy.
 - Answering credentials pauses each of that session's requests once, through the DevTools Fetch domain, since CEF
   fails a challenge without asking. Only a session with `OnAuthRequest` pays that cost.
-- A popup `OnWindowRequest` allows opens off-screen, as the session's browser is, with nobody driving it. It closes
-  with the session, and its navigations and events are not the session's. In WebView2 it opens as a window of its own.
+- A popup `OnWindowRequest` allows from the pool or a stream opens off-screen, as their browsers are, with nobody
+  driving it. It closes with the session, and its navigations and events are not the session's. In WebView2 it opens
+  as a window of its own.
+- An interactive session's window takes the main window's input while it shows, through the shell's
+  `IUiInteraction` (an app's own registration of it wins). A silent one is never shown, and its page still ran as fast
+  as a shown one's (measured on Windows, Linux and the Mac), so `KeepAliveInBackground` has nothing to do here.
 
 ⚠ **In both shells a permission decision is kept in the profile.** Later requests from that origin are answered from
 the profile without asking the hook again. In the Chromium shell this was measured for a denial: geolocation on a

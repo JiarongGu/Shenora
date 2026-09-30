@@ -9,8 +9,8 @@ using Shenora.Core.Sessions;
 namespace Shenora.Chromium.Host;
 
 /// <summary>
-/// A browser a session drives in the Chromium shell (D91): windowless (CEF's off-screen rendering), in its profile's
-/// request context, with no window and nothing of the app's own. Its policies are the session's hooks with their safe
+/// A browser a session drives in the Chromium shell (D91), in its profile's request context and with nothing of the
+/// app's own: windowless (CEF's off-screen rendering), or in a window of its own (<see cref="ChromiumSessionWindow"/>). Its policies are the session's hooks with their safe
 /// defaults, and what it does is published as <see cref="SessionEvents"/>. Everything runs on CEF's UI thread except the
 /// request filter, which CEF asks on its IO thread: it marshals there and answers CEF asynchronously, so the app's hooks
 /// all run on the UI thread, as they do in the WinForms shell.
@@ -28,9 +28,11 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
     private readonly List<IDisposable> _subscriptions = [];
     private int _filterErrorReported;
     private Action? _closed;
+    private readonly bool _windowless;
 
+    // windowless: off-screen, as the pool's and a stream's are; false for one in a window.
     public ChromiumSessionBrowser(SessionBrowserOptions options, Func<string?> scope, Action<SessionProcessReport>? onGone, Size viewport,
-        CefUiDispatcher ui)
+        CefUiDispatcher ui, bool windowless = true)
     {
         _options = options;
         _scope = scope;
@@ -38,14 +40,28 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
         _viewport = viewport;
         _surface = viewport;
         _ui = ui;
+        _windowless = windowless;
         _client = new Client(this);
     }
+
+    /// <summary>Closes the window this browser is in, past its hold; set by that window. Null for a windowless one.</summary>
+    internal Action? CloseWindow { get; set; }
 
     /// <summary>The client to create the browser with, with the reference CEF takes added.</summary>
     public _cef_client_t* ClientForCef() => _client.ForCef();
 
-    /// <summary>Called once the browser has gone, so its context can let the profile go. UI thread.</summary>
-    public void WhenClosed(Action closed) => _closed = closed;
+    /// <summary>Called once the browser has gone: its context lets the profile go, its window knows. UI thread.</summary>
+    public void WhenClosed(Action closed) => _closed += closed;
+
+    /// <summary>The browser was never made (its window went first): what waits for it to go runs now. UI thread.</summary>
+    internal void NeverMade()
+    {
+        if (_browser != null) return;
+        var closed = _closed;
+        _closed = null;
+        _client.Release();
+        closed?.Invoke();
+    }
 
     // The session's own browser, by CEF's id for it. A popup the page opens gets this browser's client too, so every
     // callback asks whose browser it is about: a popup's must never be taken for the session's (its close, above all,
@@ -66,7 +82,7 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
         using var host = new CefRef<_cef_browser_host_t>(browser->get_host(browser));
         _devTools = new DevToolsChannel(host.Ptr);
         if (_options.MuteAudio) host.Ptr->set_audio_muted(host.Ptr, 1);
-        host.Ptr->was_hidden(host.Ptr, 0);   // painting and timers run, as for a page on screen
+        if (_windowless) host.Ptr->was_hidden(host.Ptr, 0);   // painting and timers run, as for a page on screen
         AnswerCredentialsThroughDevTools();
         ObserveThroughDevTools();
     }
@@ -137,6 +153,7 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
     /// </summary>
     private void FollowEmulatedDevice(string method, string parametersJson)
     {
+        if (!_windowless) return;   // a window's page emulates inside the window, as WebView2's does
         Size surface;
         float scale;
         if (method == "Emulation.clearDeviceMetricsOverride")
@@ -199,14 +216,24 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
 
     public void Close()
     {
-        if (_browser == null || _closing) return;
+        if (!BeginClose()) return;
+        foreach (var popup in _popups.Values.ToArray()) ForceClose((_cef_browser_t*)popup);
+        // A browser in a window goes with its window, which closes it.
+        if (CloseWindow is { } closeWindow) closeWindow();
+        else ForceClose(_browser);
+    }
+
+    /// <summary>The close is the session's (or its window's): nothing more is reported or asked of the page, and CEF's
+    /// close is not taken for the page's own <c>window.close()</c>. False when it was already closing. UI thread.</summary>
+    internal bool BeginClose()
+    {
+        if (_browser == null || _closing) return false;
         _closing = true;
         foreach (var subscription in _subscriptions) subscription.Dispose();
         _subscriptions.Clear();
         _devTools?.Dispose();
         _devTools = null;
-        foreach (var popup in _popups.Values.ToArray()) ForceClose((_cef_browser_t*)popup);
-        ForceClose(_browser);
+        return true;
     }
 
     // Forced: a session's page has no one to ask.
@@ -514,7 +541,7 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
         private readonly Dialogs _dialogs;
         private readonly Permissions _permissions;
         private readonly Downloads _downloads;
-        private readonly Render _render;
+        private readonly Render? _render;   // off-screen only
 
         public Client(ChromiumSessionBrowser owner)
         {
@@ -525,7 +552,7 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
             _dialogs = new Dialogs(owner);
             _permissions = new Permissions(owner);
             _downloads = new Downloads(owner);
-            _render = new Render(owner);
+            if (owner._windowless) _render = new Render(owner);
             Struct->get_life_span_handler = &GetLifeSpan;
             Struct->get_load_handler = &GetLoad;
             Struct->get_display_handler = &GetDisplay;
@@ -545,7 +572,7 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
             _dialogs.Release();
             _permissions.Release();
             _downloads.Release();
-            _render.Release();
+            _render?.Release();
         }
 
         [UnmanagedCallersOnly] private static _cef_life_span_handler_t* GetLifeSpan(_cef_client_t* self) => From<Client>(self)._lifeSpan.ForCef();
@@ -555,7 +582,8 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
         [UnmanagedCallersOnly] private static _cef_jsdialog_handler_t* GetDialogs(_cef_client_t* self) => From<Client>(self)._dialogs.ForCef();
         [UnmanagedCallersOnly] private static _cef_permission_handler_t* GetPermissions(_cef_client_t* self) => From<Client>(self)._permissions.ForCef();
         [UnmanagedCallersOnly] private static _cef_download_handler_t* GetDownloads(_cef_client_t* self) => From<Client>(self)._downloads.ForCef();
-        [UnmanagedCallersOnly] private static _cef_render_handler_t* GetRender(_cef_client_t* self) => From<Client>(self)._render.ForCef();
+        [UnmanagedCallersOnly]
+        private static _cef_render_handler_t* GetRender(_cef_client_t* self) => From<Client>(self)._render is { } render ? render.ForCef() : null;
     }
 
     private sealed class LifeSpan : CefObject<_cef_life_span_handler_t>
@@ -1083,15 +1111,16 @@ internal static class SessionCalls
     public static async Task<TOut> Map<TOut>(Task<string> call, Func<string, TOut> map) => map(await call.ConfigureAwait(true));
 
     /// <summary>
-    /// Make the browser on the UI thread once its profile is <paramref name="ready"/>, and hand it over once its own setup
-    /// is, all within <paramref name="budget"/>; <paramref name="abandon"/> when the profile faults, or the wait is
-    /// cancelled or runs out first.
+    /// Make a session's browser (or its window) on the UI thread once its profile is <paramref name="profileReady"/>, and
+    /// hand it over once it is <paramref name="ready"/> itself, all within <paramref name="budget"/>.
+    /// <paramref name="abandon"/> when the profile faults, or the wait is cancelled or runs out first; once made, what
+    /// fails is torn down (<paramref name="tearDown"/>) before the call answers, never handed to nobody.
     /// </summary>
-    public static async Task<ISessionBrowser> WhenReady(Task ready, string profile, TimeSpan budget, CancellationToken cancellationToken,
-        CefUiDispatcher ui, Func<ChromiumSessionBrowser> make, Action abandon)
+    public static async Task<T> Made<T>(Task profileReady, string profile, TimeSpan budget, CancellationToken cancellationToken,
+        CefUiDispatcher ui, Func<T> make, Func<T, Task> ready, Func<T, Task> tearDown, Action abandon)
     {
         var deadline = DateTime.UtcNow + budget;
-        try { await ready.WaitAsync(budget, cancellationToken).ConfigureAwait(false); }
+        try { await profileReady.WaitAsync(budget, cancellationToken).ConfigureAwait(false); }
         catch (TimeoutException)
         {
             AppCallback.Run(abandon);
@@ -1102,16 +1131,25 @@ internal static class SessionCalls
             AppCallback.Run(abandon);
             throw;
         }
-        var browser = await ui.InvokeAsync(() => Task.FromResult(make()), CancellationToken.None).ConfigureAwait(false);
+        var made = await ui.InvokeAsync(() => Task.FromResult(make()), CancellationToken.None).ConfigureAwait(false);
         var left = deadline - DateTime.UtcNow;
         Exception? failed = null;
-        try { await browser.Ready.WaitAsync(left > TimeSpan.Zero ? left : TimeSpan.Zero, cancellationToken).ConfigureAwait(false); }
+        try { await ready(made).WaitAsync(left > TimeSpan.Zero ? left : TimeSpan.Zero, cancellationToken).ConfigureAwait(false); }
         catch (TimeoutException) { failed = new TimeoutException($"The session browser over '{profile}' was not ready within {budget}."); }
-        catch (OperationCanceledException ex) { failed = ex; }
-        if (failed is null) return browser;
-        // Made, but the caller gave up on it or it ran out of time: torn down, never handed to nobody.
-        await ui.InvokeAsync(browser.Close, CancellationToken.None).ConfigureAwait(false);
+        catch (Exception ex) { failed = ex; }
+        if (failed is null) return made;
+        await tearDown(made).ConfigureAwait(false);
         throw failed;
+    }
+
+    /// <summary>The browser in the window once it is open.</summary>
+    public static async Task<ISessionBrowser> Browser(Task<ChromiumSessionWindow> opening) => (await opening.ConfigureAwait(false)).Browser;
+
+    /// <summary><paramref name="first"/>, then what <paramref name="then"/> answers.</summary>
+    public static async Task After(Task first, Func<Task> then)
+    {
+        await first.ConfigureAwait(false);
+        await then().ConfigureAwait(false);
     }
 
     /// <summary>Run <paramref name="then"/> with the answer, or <paramref name="failed"/> with what refused it; a throw

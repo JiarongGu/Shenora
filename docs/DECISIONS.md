@@ -1310,7 +1310,7 @@ docs cite them — so the number is the column to scan.
 
 - **D91 — THE AUXILIARY BROWSERS ARE ONE IMPLEMENTATION IN CORE, OVER BROWSERS EACH SHELL MAKES.**
   `RenderSessionPool`, `StreamingSession`, `InteractiveSession` and their types live in `Shenora.Core.Sessions`; a
-  shell registers `ISessionBrowsers`, which makes the browser a session drives (WebView2 in `Shenora.Windows`, CEF in
+  shell registers `ISessionHost`, which makes the browser a session drives (WebView2 in `Shenora.Windows`, CEF in
   `Shenora.Chromium`). Owner, 2026-10-01: *"Port them now"*, under D88's rule that what both shells use lives in
   Core, over parallel types in each shell.
   - 🔴 **Why one implementation:** the sessions' hard-won rules (a lease's permit freed on every path, a wedged
@@ -1321,8 +1321,9 @@ docs cite them — so the number is the column to scan.
     synthetic input already went through it on WebView2.
   - **The constraints it imposes:** a session names the shell's browsers (`Anchor`, a WinForms control, is gone);
     options that only one engine can honour say so and are refused by the other (WebView2's per-session browser
-    arguments; in CEF switches are the process's); and in the Chromium shell a session's profile must lie inside the
-    shell's `UserDataFolder`, since CEF places every request context's cache under its root.
+    arguments; in CEF switches are the process's); and in the Chromium shell a session's profile must be a folder
+    directly inside the shell's data folder, since CEF opens a profile nowhere else and opens any other path off the
+    record.
 
 ## Anti-goals — deliberately NOT built
 
