@@ -337,6 +337,13 @@ answer (`ipc-contracts.md`). Two mobile paths are unverified:
 - [ ] **Android**: an app that does not forward `OnActivityResult` to `ActivityResultRelay.Deliver` used to end in
   a `TIMEOUT` and now never answers. The relay could notice a result that never arrived once the activity resumes.
 
+### 🟡 The CLI package's vitest run failed once on "Channel closed"
+
+Once in five `verify` runs (2026-10-01), `vitest (cli package)` ended on an unhandled rejection from its worker pool,
+`Error: Channel closed` (`ERR_IPC_CHANNEL_CLOSED`, tinypool's `ProcessWorker.send`), with every test passed; alone it
+passed 5 of 5. A forks-pool worker whose IPC channel closed under load, unattributed. If it recurs: count it under
+`verify` and alone, then try `pool: 'threads'` in `src/Shenora.Cli/vitest.config.ts` as the A/B.
+
 ### 🟡 A request that completed as a cancel landed is recorded as cancelled
 
 A route that has already answered, whose `CANCEL` lands before the dispatcher ends its scope, is recorded
