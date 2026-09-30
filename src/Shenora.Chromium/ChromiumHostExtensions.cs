@@ -19,7 +19,7 @@ public static class ChromiumHostExtensions
     /// ends when the last window closes. Unless the app registered its own first, it registers the shell's
     /// <see cref="IUrlLauncher"/> (the user's browser, http/https only; a page's popups go there) and
     /// <see cref="IFileDialogs"/> (CEF's native dialogs over the main window), with the page's route to the dialogs,
-    /// and on Windows and macOS <see cref="IClipboardService"/>.
+    /// and <see cref="IClipboardService"/>.
     /// <para>
     /// ⚠ On Windows, Chromium's sandbox exists only when the app starts through CEF's <c>bootstrap.exe</c> and
     /// the kit's shim (D82). Started any other way it runs, and logs a warning that the sandbox is off.
@@ -53,6 +53,8 @@ public static class ChromiumHostExtensions
         builder.Services.TryAddSingleton<IClipboardService, Win32Clipboard>();
 #elif CEF_MACOS
         builder.Services.TryAddSingleton<IClipboardService, MacClipboard>();
+#elif CEF_LINUX
+        builder.Services.TryAddSingleton<IClipboardService, LinuxClipboard>();
 #endif
         builder.Services.AddSingleton(sp => new ChromiumWindows(options, sp.GetRequiredService<CefUiDispatcher>(),
             sp.GetRequiredService<IMessageDispatcher>(), sp.GetService<IEventBus>(), sp.GetService<ILogger<ChromiumWindows>>(),

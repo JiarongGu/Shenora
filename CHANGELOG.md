@@ -47,8 +47,12 @@ at the first list and missed five more breaking changes.
   WSLg's own window manager ignores a minimize, xdotool's as well as the page's. The window is named for the app
   (`MyApp`, whether started as `MyApp` or `MyApp.App`), as X11's `WM_CLASS` and the Wayland app id, so a dock can
   match it to the app's `.desktop` file; it had no `WM_CLASS` at all. File dialogs are GTK's, over the window, named
-  the same. On a Wayland session CEF draws through XWayland (the app id is set but unmeasured). Not yet: a tray, the
-  clipboard;
+  the same. On a Wayland session CEF draws through XWayland (the app id is set but unmeasured). The clipboard is
+  X11's, on a connection of the kit's own: text as Chromium offers it, HTML, PNG, files as a URI list and as GNOME's
+  copied-files list, and any other media type under its own name. Measured against xclip both ways, byte for byte,
+  a 20 MB picture read in parts (INCR) among them, and against Chromium's own clipboard (a copy in the page read, a
+  paste of the kit's copy). What the app copied lasts while it runs, unless a clipboard manager keeps a copy, and a
+  format larger than one X request (about 16 MB) is refused. Not yet: a tray;
   and on WSL a window could take 8–12 s to close, with Chromium's GL over WSL's own, where software GL closed at once.
 
 ### Changed

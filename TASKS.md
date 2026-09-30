@@ -245,9 +245,10 @@ D37 and D51 are corrected in place to point at them.
    - Wayland: CEF drew through XWayland even with `WAYLAND_DISPLAY` set, and could not reach WSLg's Wayland socket
      when asked to (`--ozone-platform=wayland`) from a `wsl.exe` shell. The Wayland app id is set and unmeasured.
    - WSLg's own window manager (Weston) ignores minimize, xdotool's as well as the page's.
-   - A tray (D-Bus StatusNotifierItem; WSLg has no tray host), the clipboard (no Linux `IClipboardService`),
-     linux-arm64 (its helper is built, never run), and a real desktop's dialogs (unmeasured: Chromium may use the XDG
-     desktop portal where one runs, and WSL has none).
+   - A tray (D-Bus StatusNotifierItem; WSLg has no tray host), linux-arm64 (its helper is built, never run), and a
+     real desktop's dialogs (unmeasured: Chromium may use the XDG desktop portal where one runs, and WSL has none).
+   - The clipboard hands no copy to a clipboard manager at exit (the freedesktop `SAVE_TARGETS` handover), so a copy
+     leaves with the app where no manager copies on change; and it writes no format larger than one X request.
    - The machine: WSL had no `sudo`-free gcc, NSS, `bzip2` or binutils; the runs used `apt-get download`ed packages
      (with an index refreshed into user-owned folders) on `LD_LIBRARY_PATH` and `PATH`, and zig as `CC`.
 
