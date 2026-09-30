@@ -51,11 +51,12 @@ public class StreamingSessionTests
     }
 
     [Theory]
-    [InlineData(SessionPointerAction.Down, false, "mousePressed", 1)]
-    [InlineData(SessionPointerAction.Up, false, "mouseReleased", 0)]
-    [InlineData(SessionPointerAction.Move, false, "mouseMoved", 0)]   // a free move — no button held
-    [InlineData(SessionPointerAction.Move, true, "mouseMoved", 1)]    // a DRAG move — the held button carries through (else drags can't work)
-    public void Mouse_json_maps_events_and_scales_fractions_to_css_px(SessionPointerAction action, bool buttonHeld, string cdpType, int buttons)
+    [InlineData(SessionPointerAction.Down, false, "mousePressed", 1, "left")]
+    [InlineData(SessionPointerAction.Up, false, "mouseReleased", 0, "left")]
+    [InlineData(SessionPointerAction.Move, false, "mouseMoved", 0, "none")]   // a free move: no button, or Chromium reads it as held
+    [InlineData(SessionPointerAction.Move, true, "mouseMoved", 1, "left")]    // a DRAG move — the held button carries through (else drags can't work)
+    public void Mouse_json_maps_events_and_scales_fractions_to_css_px(SessionPointerAction action, bool buttonHeld, string cdpType, int buttons,
+        string button)
     {
         using var doc = JsonDocument.Parse(StreamingSession.BuildMouseEventJson(action, 0.5, 0.25, 1280, 860, buttonHeld));
         var root = doc.RootElement;
@@ -64,7 +65,7 @@ public class StreamingSessionTests
         Assert.Equal(buttons, root.GetProperty("buttons").GetInt32());
         Assert.Equal(640, root.GetProperty("x").GetDouble());  // 0.5 × 1280
         Assert.Equal(215, root.GetProperty("y").GetDouble());  // 0.25 × 860
-        Assert.Equal("left", root.GetProperty("button").GetString());
+        Assert.Equal(button, root.GetProperty("button").GetString());
     }
 
     [Fact]
@@ -94,6 +95,25 @@ public class StreamingSessionTests
         Assert.Equal('A', down.RootElement.GetProperty("windowsVirtualKeyCode").GetInt32()); // Ctrl+A works
         Assert.Equal("KeyA", down.RootElement.GetProperty("code").GetString());
         Assert.Equal("a", down.RootElement.GetProperty("key").GetString()); // DOM key stays as sent
+    }
+
+    /// <summary>On a macOS host a Command shortcut names its editing command on the keyDown alone; elsewhere, and for any
+    /// other combination, no command is named.</summary>
+    [Theory]
+    [InlineData("a", false, true, "selectAll")]
+    [InlineData("z", false, true, "undo")]
+    [InlineData("Z", true, true, "redo")]
+    [InlineData("a", false, false, null)]   // not a macOS host: Ctrl or Cmd edit there with no command
+    [InlineData("c", false, true, null)]    // the clipboard's shortcuts are not named
+    public void A_macOS_hosts_command_shortcut_names_its_editing_command(string key, bool shift, bool macHost, string? command)
+    {
+        var pair = StreamingSession.BuildKeyEventJsons(key, alt: false, ctrl: false, meta: true, shift: shift, macHost: macHost);
+        using var down = JsonDocument.Parse(pair[0]);
+        using var up = JsonDocument.Parse(pair[1]);
+        if (command is null) Assert.False(down.RootElement.TryGetProperty("commands", out _));
+        else Assert.Equal(command, down.RootElement.GetProperty("commands")[0].GetString());
+        Assert.False(up.RootElement.TryGetProperty("commands", out _));
+        Assert.Null(StreamingSession.MacEditingCommand("a", alt: false, ctrl: true, meta: true, shift: false));   // Ctrl+Cmd+A is not select-all
     }
 
     [Fact]

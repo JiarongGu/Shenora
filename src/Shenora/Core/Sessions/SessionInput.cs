@@ -148,7 +148,9 @@ public sealed record SessionTextInput(string Text) : SessionInput;
 /// <summary>
 /// A key that acts rather than types — navigation/editing keys (arrows, Home/End, Delete, Enter) and
 /// shortcuts (Ctrl/Meta combos). Sent as a real keyDown/keyUp pair with the modifier bitmask and the
-/// Windows virtual-key code, which CDP needs for these to take effect at all.
+/// Windows virtual-key code, which CDP needs for these to take effect at all. On a macOS host, where Chromium takes
+/// editing shortcuts from key bindings a synthetic key never reaches, Cmd+A, Cmd+Z and Cmd+Shift+Z also name their
+/// editing command.
 /// </summary>
 /// <param name="Key">The DOM key name, e.g. <c>"ArrowLeft"</c>, <c>"Enter"</c>, <c>"a"</c>.</param>
 public sealed record SessionKeyInput(string Key) : SessionInput

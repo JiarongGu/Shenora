@@ -361,7 +361,7 @@ public sealed class StreamingSession : IAsyncDisposable
                 {
                     // A key that ACTS rather than types; plain characters go through SessionTextInput. The protocol needs
                     // the modifier bitmask, the virtual-key code and the DOM code for those to take effect at all.
-                    foreach (var payload in BuildKeyEventJsons(key.Key, key.Alt, key.Ctrl, key.Meta, key.Shift))
+                    foreach (var payload in BuildKeyEventJsons(key.Key, key.Alt, key.Ctrl, key.Meta, key.Shift, OperatingSystem.IsMacOS()))
                         await _browser.CallDevToolsAsync("Input.dispatchKeyEvent", payload).ConfigureAwait(true);
                     break;
                 }
@@ -459,25 +459,29 @@ public sealed class StreamingSession : IAsyncDisposable
     /// moves (Chromium reads held state from <c>buttons</c>, so drags need buttons:1 on move).</summary>
     internal static string BuildMouseEventJson(SessionPointerAction action, double fx, double fy, double vw, double vh, bool buttonHeld)
     {
-        var (cdp, buttons) = action switch
+        // A move names a button only while one is held: Chromium reads a move's "left" as the button being down, so a
+        // hover arrived at the page as a drag (measured: pointermove with buttons 1 before every press).
+        var (cdp, buttons, button) = action switch
         {
-            SessionPointerAction.Down => ("mousePressed", 1),
-            SessionPointerAction.Up => ("mouseReleased", 0),
-            _ => ("mouseMoved", buttonHeld ? 1 : 0),
+            SessionPointerAction.Down => ("mousePressed", 1, "left"),
+            SessionPointerAction.Up => ("mouseReleased", 0, "left"),
+            _ => ("mouseMoved", buttonHeld ? 1 : 0, buttonHeld ? "left" : "none"),
         };
         return string.Create(CultureInfo.InvariantCulture,
-            $"{{\"type\":\"{cdp}\",\"x\":{fx * vw:F0},\"y\":{fy * vh:F0},\"button\":\"left\",\"buttons\":{buttons},\"clickCount\":1}}");
+            $"{{\"type\":\"{cdp}\",\"x\":{fx * vw:F0},\"y\":{fy * vh:F0},\"button\":\"{button}\",\"buttons\":{buttons},\"clickCount\":1}}");
     }
 
     internal static string BuildWheelEventJson(double fx, double fy, double dy, double vw, double vh) =>
         string.Create(CultureInfo.InvariantCulture,
             $"{{\"type\":\"mouseWheel\",\"x\":{fx * vw:F0},\"y\":{fy * vh:F0},\"deltaX\":0,\"deltaY\":{dy:F0}}}");
 
-    /// <summary>The keyDown/keyUp pair for one non-text key (modifiers: alt=1, ctrl=2, meta=4, shift=8).</summary>
-    internal static string[] BuildKeyEventJsons(string key, bool alt, bool ctrl, bool meta, bool shift)
+    /// <summary>The keyDown/keyUp pair for one non-text key (modifiers: alt=1, ctrl=2, meta=4, shift=8). On a macOS
+    /// host (<paramref name="macHost"/>) the keyDown also names the editing command its shortcut stands for.</summary>
+    internal static string[] BuildKeyEventJsons(string key, bool alt, bool ctrl, bool meta, bool shift, bool macHost = false)
     {
         var modifiers = (alt ? 1 : 0) | (ctrl ? 2 : 0) | (meta ? 4 : 0) | (shift ? 8 : 0);
         var (vk, code) = KeyInfo(key);
+        var command = macHost ? MacEditingCommand(key, alt, ctrl, meta, shift) : null;
         var pair = new string[2];
         var i = 0;
         foreach (var kt in new[] { "keyDown", "keyUp" })
@@ -485,10 +489,25 @@ public sealed class StreamingSession : IAsyncDisposable
             var payload = new Dictionary<string, object> { ["type"] = kt, ["key"] = key, ["modifiers"] = modifiers };
             if (vk != 0) { payload["windowsVirtualKeyCode"] = vk; payload["nativeVirtualKeyCode"] = vk; }
             if (code is not null) payload["code"] = code;
+            if (command is not null && kt == "keyDown") payload["commands"] = new[] { command };
             pair[i++] = JsonSerializer.Serialize(payload);
         }
         return pair;
     }
+
+    /// <summary>
+    /// The editing command a Command shortcut stands for on macOS, where Chromium takes it from the browser's key
+    /// bindings, which a synthetic key never reaches: Cmd+A reached the page and selected nothing (measured), while the
+    /// same keys with Ctrl edit on Windows and Linux with no command named.
+    /// </summary>
+    internal static string? MacEditingCommand(string key, bool alt, bool ctrl, bool meta, bool shift) =>
+        !meta || alt || ctrl ? null : (key.ToLowerInvariant(), shift) switch
+        {
+            ("a", false) => "selectAll",
+            ("z", false) => "undo",
+            ("z", true) => "redo",
+            _ => null,
+        };
 
     // A DOM key name → its Windows virtual-key code + DOM `code`. 0 = no VK (CDP infers from `key`).
     internal static (int Vk, string? Code) KeyInfo(string key) => key switch

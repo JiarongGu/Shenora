@@ -52,10 +52,8 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   `IPlaybackSession` and `IMediaCapability`, when an app on the shell needs them. The page's own media session already
   reaches the OS's controls there.
 - [ ] **The auxiliary browsers on CEF (D91)**, one implementation in `Shenora.Core.Sessions` over `ISessionHost`,
-  in phases, each measured before the next. The render pool runs on `ChromiumSessionHost`, and a stream's frames and
-  its viewport input too.
-  - [ ] **S3, streaming on CEF:** the pointer and key input a stream dispatches, measured against a page that
-    reports what it received.
+  in phases, each measured before the next. The render pool and the streaming session run on `ChromiumSessionHost`,
+  their input included.
   - [ ] **S4, the interactive window on CEF:** a Views window over the session's request context, the held close,
     reveal-on-demand and the loading hook; and the pool's visible development browser (`VisiblePerSession`), which
     `ChromiumSessionHost` refuses until then.

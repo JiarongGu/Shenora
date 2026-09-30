@@ -94,7 +94,10 @@ at the first list and missed five more breaking changes.
   and closes with the session, where WebView2 opens a window. Permission kinds carry WebView2's names. Measured on
   Windows, Linux (WSL, a virtual display) and an Intel Mac against pages of the probe's own:
   - A warm pooled render of the sample's page took 160 to 225 ms (1.3 to 3 s under WSL's software rendering).
-  - A stream's first frame arrived, and its surface followed an emulated 800×600.
+  - A stream's first frame arrived, and its surface followed an emulated 800×600. Its input reached the page at the
+    coordinates it named: a click that focused a text field, typed text with accents and CJK, Backspace, Delete, the
+    arrows, Home and Shift+End, select-all, undo and redo, a drag with the button held throughout, and a wheel that
+    scrolled 240 px.
   - An alert was dismissed, and a confirm and a prompt answered.
   - Credentials were answered from the hook, and the load failed without one.
   - A script-opened popup was asked of the hook and suppressed. Once allowed, it ran without one event reaching the
@@ -233,6 +236,14 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A streaming session's pointer moves reached the page as drags** (`SessionPointerInput` with `Move`): a move with
+  no button held was sent naming the left button, which Chromium reads as held, so a viewer's hover arrived as a
+  `pointermove` with `buttons` 1. It now names none. Measured in the Chromium shell on Windows, Linux and an Intel
+  Mac, where every hover before a press read as a drag and now reads as a hover. The WinForms shell sends the same
+  protocol message, and was not measured.
+- **On a macOS host, a stream's Cmd+A selected nothing**: the page received the key, but Chromium takes its editing
+  shortcuts from key bindings a synthetic key never reaches. Cmd+A, Cmd+Z and Cmd+Shift+Z now name their editing
+  command with the key. Measured on an Intel Mac: select-all, then undo and redo of a deletion, each one step.
 - **A Windows build of a Chromium app could fail giving its launcher the app's icon and version** ("failed (error
   2)"). The build handed the stamping relative paths, which the Windows calls behind it resolve their own way, and
   it failed at once with error 2, which it does not retry. It now makes them absolute first. Measured on Windows:
