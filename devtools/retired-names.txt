@@ -310,7 +310,7 @@ ConvertWith            # -> MediaContainerWriterExtensions.ToConverter (wrapping
 Mp4RemuxerResult       # -> MediaRemuxerResult (the result is the CONTRACT's, not one implementation's)
 Mp4RemuxerOutcome      # -> MediaRemuxerOutcome
 IMediaRenderTarget     # never shipped — the chain ends at IMediaPlayer; cited by D58 as if it existed
-RestartManagerFileLockInspector # never existed — the class is RestartManagerLockInspector
+RestartManagerFileLockInspector # never existed — the class was RestartManagerLockInspector, now FileLockInspector
 OperationLifecycleInvariantTests # -> IpcRequestStateInvariantTests (died with D66; D23 claimed it still ran)
 
 # Added 2026-08-09/10: the activity drawing vocabulary, renamed TWICE before shipping (D69). None of
@@ -566,3 +566,4 @@ RevealInExplorer                      # -> IShellLauncher.RevealInFileManager (D
 Shenora.Windows.IShellLauncher        # -> Shenora.Core.Shell.IShellLauncher (both desktop shells register it)
 Shenora.Windows.ShellLauncher         # -> Shenora.Core.Shell.ShellLauncher
 Shenora.Windows.ProcessLaunchOptions  # -> Shenora.Core.Shell.ProcessLaunchOptions
+RestartManagerLockInspector           # -> Shenora.Core.Shell.FileLockInspector (D88: Restart Manager on Windows, the kernel's open files on Linux and macOS)

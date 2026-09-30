@@ -20,7 +20,8 @@ remembered:
 
 **The direction is `WebView/` → `Shell/`, never the reverse** (D19). Every portable CONTRACT
 (`IClipboardService`, `IFileDialogs`, `IUrlLauncher`, `IUiInteraction`, `IUiDispatcher`,
-`IFileLockInspector`) lives in `Shenora`; only the Windows implementation lives here (D20). That is what
+`IFileLockInspector`) lives in `Shenora`; only the Windows implementation lives here (D20), and where one
+implementation serves every desktop (`ShellLauncher`, `FileLockInspector`) it lives in `Shenora` too (D88). That is what
 lets app logic compile with no Windows reference, and `samples/Shenora.Sample.Logic` is a `net10.0`
 project that turns red if it stops being true.
 

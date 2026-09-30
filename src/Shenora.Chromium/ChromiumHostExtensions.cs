@@ -20,7 +20,8 @@ public static class ChromiumHostExtensions
     /// <see cref="IShellLauncher"/> and its face <see cref="IUrlLauncher"/> (the user's browser, http/https only; a
     /// page's popups go there) and
     /// <see cref="IFileDialogs"/> (CEF's native dialogs over the main window), with the page's route to the dialogs,
-    /// <see cref="IClipboardService"/>, and <see cref="IUiInteraction"/> (the main window takes no input while blocked).
+    /// <see cref="IClipboardService"/>, <see cref="IUiInteraction"/> (the main window takes no input while blocked), and
+    /// <see cref="IFileLockInspector"/>.
     /// <para>
     /// ⚠ On Windows, Chromium's sandbox exists only when the app starts through CEF's <c>bootstrap.exe</c> and
     /// the kit's shim (D82). Started any other way it runs, and logs a warning that the sandbox is off.
@@ -52,6 +53,9 @@ public static class ChromiumHostExtensions
         // instance under both, as UseWindows registers them.
         builder.Services.TryAddSingleton<IShellLauncher, ShellLauncher>();
         builder.Services.TryAddSingleton<IUrlLauncher>(sp => sp.GetRequiredService<IShellLauncher>());
+        // Who holds a file open, which the file engine asks when a change fails; unregistered, it could only answer
+        // "cannot tell".
+        builder.Services.TryAddSingleton<IFileLockInspector, FileLockInspector>();
         // The page's route to it stays the app's opt-in (AddShenoraClipboard), as with the WebView2 shell.
 #if CEF_WINDOWS
         builder.Services.TryAddSingleton<IClipboardService, Win32Clipboard>();

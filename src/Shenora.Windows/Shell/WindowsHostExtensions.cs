@@ -81,12 +81,12 @@ public static class WindowsHostExtensions
         builder.Services.TryAddSingleton<IPlaybackSession>(sp =>
             new WindowsPlaybackSession(sp.GetService<ILogger<WindowsPlaybackSession>>()));
 
-        // "Who is holding this file open?" — the Restart Manager, hence a portable contract and a Windows
-        // implementation (D19/D20).
+        // "Who is holding this file open?" — a portable contract answered differently per OS (D19/D20); both
+        // desktop shells register it (D88).
         // ⚠ REGISTERING IT IS THE WHOLE POINT: unregistered, FileUpdateQueueOptions.LockInspector stays
         // null and a locked file reports "cannot tell" instead of naming the process — and since empty
         // legitimately MEANS "cannot tell", the degraded answer is indistinguishable from the honest one.
-        builder.Services.TryAddSingleton<IFileLockInspector, RestartManagerLockInspector>();
+        builder.Services.TryAddSingleton<IFileLockInspector, FileLockInspector>();
 
         // What THIS MACHINE decodes and encodes — the kit ships the QUESTION, never a codec list (D42).
         // Singleton because it caches.

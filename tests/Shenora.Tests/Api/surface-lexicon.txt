@@ -354,7 +354,6 @@ Replace
 # activity (encoding, compiling) instead of the thing, and would have drifted the moment someone
 # used it for something that is not a transform.
 Replacement
-Restart
 Update
 
 # ── Data shapes ───────────────────────────────────────────────────────────────────────────────────

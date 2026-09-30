@@ -216,9 +216,6 @@ sealed class Shenora.Windows.RenderSessionPoolOptions
   public int Capacity { get; init; }
   public required Shenora.Windows.SessionBrowserOptions Browser { get; init; }
   public required System.Windows.Forms.Control Anchor { get; init; }
-sealed class Shenora.Windows.RestartManagerLockInspector : Shenora.Core.Shell.IFileLockInspector
-  public .ctor()
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.Shell.FileLockHolder> WhoHolds(string path)
 sealed class Shenora.Windows.SecondaryWindowOptions
   public Shenora.Core.Shell.IWindowStateStore? StateStore { get; init; }
   public Shenora.Core.Shell.WindowStateOptions? StateOptions { get; init; }

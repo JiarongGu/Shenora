@@ -109,7 +109,7 @@ remaining cases need different tools. Reaching for the wrong one is the mistake 
 new FileUpdateQueue(new FileUpdateQueueOptions
 {
     Locker        = new FilePathLocker(new FilePathLockerOptions { LockDirectory = paths.DataArea("locks") }),
-    LockInspector = new RestartManagerLockInspector(),   // Shenora.Windows
+    LockInspector = new FileLockInspector(),   // Shenora.Core.Shell; both desktop shells register it
 });
 
 // Or hold one yourself around a tool that knows nothing about any of this:
@@ -127,9 +127,11 @@ file" becomes "held by 3DMigoto (12345)", which an app can retry against or show
 > over a share → a directory ON the share. This is the setting that fails silently: everything works
 > until two machines write the same file.
 
-> ⚠ **`WhoHolds` returning empty means "cannot tell", not "nobody".** Restart Manager asks the local
-> machine only, so a file held open from another machine over a share is invisible to it — that answer
-> exists only on the server.
+> ⚠ **`WhoHolds` returning empty means "cannot tell", not "nobody".** It asks the local machine only
+> (Restart Manager on Windows, the kernel's open files on Linux and macOS), so a file held open from
+> another machine over a share is invisible to it — that answer exists only on the server. On Linux and
+> macOS it sees only this user's processes, and a file held open there locks nothing: another process may
+> still replace or delete it.
 
 > ⚠ **Over a network share, a lease released by a CRASH comes back in tens of seconds, not instantly** —
 > the server frees the handle when the session times out. Bounded and self-healing, but size your

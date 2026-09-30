@@ -48,6 +48,9 @@ at the first list and missed five more breaking changes.
   `RevealInExplorer` is `RevealInFileManager`**: both desktop shells register them now (D88), and the file manager
   is Finder or the Linux desktop's as well as Explorer. A Windows app renames the call; the other members are as they
   were.
+- **`RestartManagerLockInspector` is `FileLockInspector`, in `Shenora.Core.Shell`**: the same Restart Manager answer
+  on Windows, and an answer on Linux and macOS too, since both desktop shells register it now (D88). `UseWindows`
+  registered it already, so only an app that constructed it by name changes.
 - **`UnhandledExceptionReport` and `UnhandledExceptionSource` moved to `Shenora.Core.Shell`**, since the Chromium shell
   reports them too (D88); `WinFormsBootstrapOptions.OnUnhandledException` takes the same type, under the same
   `using Shenora.Core.Shell;` as the other moved shell types.
@@ -88,6 +91,14 @@ at the first list and missed five more breaking changes.
   Linux a real click (the X server's, in a virtual display) while blocked queued nothing and the same click once
   unblocked ran; on Windows the window read disabled while blocked (disabled already when first seen, when blocked
   before it opened) and enabled after. A real click on macOS was not tried.
+- **Who holds a file open, on Linux and macOS, and in the Chromium shell** (`FileLockInspector`, registered as
+  `IFileLockInspector` by both desktop shells, so a failed file change names its holder there as well). Linux reads
+  each process's open files and executable from `/proc`; macOS asks the kernel through `libproc`, as `lsof` does;
+  Windows asks the Restart Manager as before. There, open files are found only in the processes the user may inspect,
+  and a file held open locks nothing, so a holder rarely explains a failure. Measured with a probe against a process of its
+  own holding a file in a folder with a space: found by the path, through a linked folder, through `..`, by its
+  executable's full name past the 15 characters Linux keeps, and on the Mac through `/tmp` (a link) and in the wrong
+  case; empty once it let go. A query took 1 to 16 ms on Linux (WSL, a few dozen processes) and 32 to 51 ms on a Mac running 1,311.
 - **`ShenoraPathsOptions.DataDirectory`**: the data folder itself, for an app installed where it may not write
   (under `Program Files`, a Linux `/opt`, a signed macOS bundle). It wins over every default; the data variable, the
   host's agreement with the processes it starts, still wins over it.

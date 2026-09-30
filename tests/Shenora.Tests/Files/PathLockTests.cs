@@ -1,5 +1,5 @@
 using Shenora;
-using Shenora.Windows;
+using Shenora.Core.Shell;
 using Shenora.Engine.Files;
 
 namespace Shenora.Tests.Io;
@@ -148,12 +148,10 @@ public class PathLockTests : IDisposable
     public void The_inspector_names_a_process_that_really_holds_the_file()
     {
         // The whole point of the inspector: turn "the process cannot access the file" into a NAME.
-        // Proven against a real handle, because the only way to test Restart Manager is to use it.
-        if (!OperatingSystem.IsWindows()) return;
-
+        // Proven against a real handle, because the only way to test the OS's answer is to ask it.
         var target = Path.Combine(_root, "held.dds");
         File.WriteAllText(target, "content");
-        var inspector = new RestartManagerLockInspector();
+        var inspector = new FileLockInspector();
 
         Assert.Empty(inspector.WhoHolds(target));   // nothing holds it yet
 
@@ -169,8 +167,7 @@ public class PathLockTests : IDisposable
     [Fact]
     public void The_inspector_is_a_diagnostic_and_never_throws()
     {
-        if (!OperatingSystem.IsWindows()) return;
-        var inspector = new RestartManagerLockInspector();
+        var inspector = new FileLockInspector();
 
         // A path that cannot exist, and one on a share that is not there: both answer "cannot tell".
         Assert.Empty(inspector.WhoHolds(Path.Combine(_root, "nope", "missing.dds")));

@@ -52,7 +52,6 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
 - [ ] 🅿️ **A real click on a blocked window, on macOS.** `IUiInteraction` disables the window's Views; on Linux
   that stopped a real click, and on Windows the window itself is disabled. On macOS the page's own `NSView` may
   take a click whatever Views says; it needs real input on the Mac to find out.
-- [ ] **Who holds a file open** (`IFileLockInspector`): the Restart Manager on Windows; Linux and macOS to design.
 - [ ] **Media:** what the machine decodes (`IMediaCapability`), the system's media controls (`IPlaybackSession`:
   SMTC, Now Playing, MPRIS) and a native player. SMTC is WinRT, which a plain `net10.0` package reaches only
   through COM.

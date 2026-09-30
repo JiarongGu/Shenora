@@ -335,6 +335,9 @@ struct Shenora.Core.Shell.FileLockHolder : System.IEquatable<Shenora.Core.Shell.
   public static bool op_Inequality(Shenora.Core.Shell.FileLockHolder left, Shenora.Core.Shell.FileLockHolder right)
   public string ProcessName { get; init; }
   public void Deconstruct(out int ProcessId, out string ProcessName)
+sealed class Shenora.Core.Shell.FileLockInspector : Shenora.Core.Shell.IFileLockInspector
+  public .ctor()
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.Shell.FileLockHolder> WhoHolds(string path)
 interface Shenora.Core.Shell.IClipboardService
   public abstract System.Threading.Tasks.Task ClearAsync()
   public abstract System.Threading.Tasks.Task SetAsync(Shenora.Core.Shell.ClipboardContent content)

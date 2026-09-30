@@ -221,9 +221,6 @@ Shenora.Windows.RenderSessionPoolOptions
   property OpTimeout
   property ResetTimeout
   property VisiblePerSession
-Shenora.Windows.RestartManagerLockInspector
-  method .ctor
-  method WhoHolds
 Shenora.Windows.SecondaryWindowOptions
   method .ctor
   property CreateForm
