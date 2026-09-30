@@ -145,6 +145,7 @@ docs cite them — so the number is the column to scan.
 | **D86** | CHROMIUM ALSO RUNS AS A BROWSER, IN A PROCESS THAT HOLDS NONE OF THE APP. |
 | **D87** | THE CHROMIUM SHELL STARTS CEF WHILE THE APP IS COMPOSED. |
 | **D88** | `SHENORA.CHROMIUM` ALONE IS A COMPLETE DESKTOP SHELL, ON EVERY OS, WINDOWS INCLUDED. |
+| **D89** | A MACOS APP'S DATA DEFAULTS TO ITS APPLICATION SUPPORT FOLDER; EVERY OTHER APP KEEPS ITS DATA BESIDE IT. |
 
 <!-- decisions-index:end -->
 
@@ -1271,6 +1272,25 @@ docs cite them — so the number is the column to scan.
     before CEF starts at all (no GPU process, no data-folder lock), it carries the launch's arguments where CEF's
     hand-over carries none, its scope is the install rather than wherever the data folder is, it waits out a
     `--restarted` predecessor, and it is the same gate the WinForms shell runs.
+
+- **D89 — A MACOS APP'S DATA DEFAULTS TO ITS APPLICATION SUPPORT FOLDER; EVERY OTHER APP KEEPS ITS DATA BESIDE IT.**
+  Run from its bundle (`X.app/Contents/MacOS`, and no root the app or its launcher chose), an app's `ShenoraPaths`
+  data folder is `~/Library/Application Support/<its CFBundleIdentifier>`; everywhere else it stays `<root>/data`,
+  the portable layout. And every app may name its own (`ShenoraPathsOptions.DataDirectory`). Owner, 2026-10-01,
+  choosing it over each OS's own folder everywhere (which would move every existing Windows app's data) and over the
+  option alone (which leaves a macOS app that forgets it writing into its own bundle).
+  - 🔴 **Why: beside the executable is inside the bundle.** A signed bundle must not change, and an app in
+    `/Applications` may not be able to write there; the Chromium sample wrote its profile, its journal, its locks and
+    its window state into `Contents/MacOS/data` before (measured).
+  - **The bundle identifier names it,** as macOS apps' Application Support folders conventionally are: the kit's
+    layout writes `com.shenora.app.<App>` unless the app sets `ShenoraChromiumBundleId`, and the bundle's own name
+    stands in when the plist names none. An identifier that is not a plain name is not used as a folder.
+  - **What stays in the bundle:** the root and `res/`, the install's read-only side, and so the single-instance scope
+    (the install root), which is unchanged.
+  - **The constraints it imposes:** a macOS app upgrading past it finds its data in a new place, with nothing moved;
+    one that must keep the old place sets `DataDirectory` to it. And two installs of one app (one bundle identifier)
+    share its data, and so Chromium's one-process-per-data-folder rule (D88): the second install's launch is handed to
+    the first, as macOS itself treats one identifier as one app.
 
 ## Anti-goals — deliberately NOT built
 

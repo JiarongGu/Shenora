@@ -155,10 +155,11 @@ dev server, and `npm run build:chromium` writes the packaged page into the sampl
 AppIndicator extension, and without one closing the main window ends the app; the clipboard is X11's, where what
 the app copied lasts while it runs unless a clipboard manager keeps a copy; the window's `WM_CLASS` is `MyApp`,
 which a `.desktop` file's `StartupWMClass` names. macOS: the bundle's icon is `ShenoraChromiumBundleIcon`, an
-`.icns`, and the build neither signs nor notarizes it, which Gatekeeper needs of a download. ⚠ Both: the app's
-data, Chromium's profile among it, lives in `data/` beside the app as it does on Windows, which on macOS is inside
-the bundle. Fine while you develop; a signed or installed app moves it (`ChromiumHostOptions.UserDataFolder` for
-the profile, `ShenoraApplicationOptions.Paths` for the rest), and a default of each OS's own is open in `TASKS.md`.
+`.icns`, and the build neither signs nor notarizes it, which Gatekeeper needs of a download. The app's data,
+Chromium's profile among it, lives in `~/Library/Application Support/<its bundle identifier>` on macOS (D89; the
+identifier is `ShenoraChromiumBundleId`), and in `data/` beside the app elsewhere, as on Windows. An app installed
+where it may not write, such as a Linux one under `/opt`, names its own with `ShenoraApplicationOptions.Paths`'
+`DataDirectory`.
 
 **What ships with the engine**, on every OS: the app now redistributes Chromium, whose license and notices are the
 app's to ship; its pages play no H.264, AAC or HEVC; and `ShenoraChromiumLocales` trims the locales it lays out.

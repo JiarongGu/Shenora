@@ -2110,6 +2110,7 @@ sealed class Shenora.ShenoraPathsOptions : System.IEquatable<Shenora.ShenoraPath
   public static bool op_Inequality(Shenora.ShenoraPathsOptions? left, Shenora.ShenoraPathsOptions? right)
   public string DataFolderName { get; init; }
   public string ResourcesFolderName { get; init; }
+  public string? DataDirectory { get; init; }
   public string? DataEnvironmentVariable { get; init; }
   public string? ExplicitRoot { get; init; }
   public string? RootEnvironmentVariable { get; init; }

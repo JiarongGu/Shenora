@@ -44,6 +44,11 @@ at the first list and missed five more breaking changes.
   `WindowStateOptions`, `IWindowStateStore`, `JsonFileWindowStateStore` and `WindowStateHostOptions`, since the
   Chromium shell restores them as well (D88). The same `using Shenora.Core.Shell;` covers them; `WindowStateManager`,
   the WinForms half, stays in `Shenora.Windows`, and a saved state file reads as before.
+- **A macOS app run from its bundle keeps its data in `~/Library/Application Support/<bundle identifier>`** (D89),
+  not beside its executable, which is inside the bundle. Its Chromium profile, window state and the rest of
+  `ShenoraPaths.DataDir` are found there after the upgrade, and nothing is moved: an app that must keep the old place
+  sets `ShenoraPathsOptions.DataDirectory` to `<bundle>/Contents/MacOS/data`. A root the app or its launcher chose
+  (`--app-root`, the root variable, a `libs/` layout) keeps its data in it, as on every other OS.
 - **The Chromium shell is single-instance by default** (`ChromiumHostOptions.SingleInstance`). An app that runs
   several instances, each with its own `UserDataFolder`, sets it to null to keep doing so.
 
@@ -55,6 +60,9 @@ at the first list and missed five more breaking changes.
   foreground in 5 runs of 6 started from a script), Linux (a later launch from another session, through `setsid`)
   and an Intel Mac: the later launch exited within a second (175 to 876 ms). Whether the window takes the foreground on Linux and macOS was not observed: there the OS decides.
   `ChromiumWindows.Activate` and the tray's Open restore a minimized window too.
+- **`ShenoraPathsOptions.DataDirectory`**: the data folder itself, for an app installed where it may not write
+  (under `Program Files`, a Linux `/opt`, a signed macOS bundle). It wins over every default; the data variable, the
+  host's agreement with the processes it starts, still wins over it.
 - **The Chromium shell's main window opens where it was left** (`ChromiumHostOptions.WindowState`, with the same
   store as the WinForms shell's): its size, its place, and maximized or not, with the bounds it restores to kept
   through a close while maximized, minimized or hidden. A place no display shows any more is dropped and the window
