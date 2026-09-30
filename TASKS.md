@@ -48,14 +48,9 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
 - [ ] 🅿️ **A real click on a blocked window, on macOS.** `IUiInteraction` disables the window's Views; on Linux
   that stopped a real click, and on Windows the window itself is disabled. On macOS the page's own `NSView` may
   take a click whatever Views says; it needs real input on the Mac to find out.
-- [ ] **Media:** what the machine decodes (`IMediaCapability`), the system's media controls (`IPlaybackSession`:
-  SMTC, Now Playing, MPRIS) and a native player. SMTC is WinRT, which a plain `net10.0` package reaches only
-  through COM. ⚠ **For the page's own media the web platform already does it here**: in the Chromium shell a page's
-  `navigator.mediaSession` reached Windows' media controls (session `<App>.exe`, the page's title, artist and album,
-  Playing then Paused) and Linux's MPRIS (`org.mpris.MediaPlayer2.chromium.instanceN`), and the OS's Pause reached the
-  page's `pause` handler on both (measured 2026-10-01 in the sample, a silent looping clip; macOS not observed). On
-  Linux the player's `Identity` reads `Chromium` and `DesktopEntry` is empty. What is left is NATIVE playback, and the
-  gap that earns it: this Chromium plays no H.264, AAC or HEVC. Direction is the owner's.
+- [ ] 🅿️ **Native media in the Chromium shell** (D90): a player per OS for H.264, AAC and HEVC, its
+  `IPlaybackSession` and `IMediaCapability`, when an app on the shell needs them. The page's own media session already
+  reaches the OS's controls there.
 - [ ] **The auxiliary browsers** (`RenderSessionPool`, `InteractiveSession`, `StreamingSession`: 3,456 lines on
   WebView2), on CEF: off-screen rendering, request contexts for isolated profiles, and input.
 

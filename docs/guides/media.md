@@ -109,7 +109,9 @@ the device cannot decode it either, there is nothing to bridge and the honest an
 MP3 play. So a
 Chromium page cannot play the MP4 that container repair produces, and its policy names only what it decodes. In
 the WinForms shell a `ChromiumView` app still has `WindowsMediaPlayer`, which uses the platform's codecs; the
-Chromium shell (`UseChromium`) has no native player of its own.
+Chromium shell (`UseChromium`) has no native player of its own, and registers no `IPlaybackSession` (D90): there the
+page's own `navigator.mediaSession` reaches the OS's media controls, its metadata out and the controls' commands back
+to its action handlers (measured on Windows and Linux).
 
 > **Need playback the page element cannot give you?** Resolve the shell's NATIVE player instead —
 > `IosMediaPlayer` on iOS, `AndroidMediaPlayer` on Android, `WindowsMediaPlayer` on the desktop. On iOS the gap is absolute: the system

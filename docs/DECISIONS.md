@@ -146,6 +146,7 @@ docs cite them — so the number is the column to scan.
 | **D87** | THE CHROMIUM SHELL STARTS CEF WHILE THE APP IS COMPOSED. |
 | **D88** | `SHENORA.CHROMIUM` ALONE IS A COMPLETE DESKTOP SHELL, ON EVERY OS, WINDOWS INCLUDED. |
 | **D89** | A MACOS APP'S DATA DEFAULTS TO ITS APPLICATION SUPPORT FOLDER; EVERY OTHER APP KEEPS ITS DATA BESIDE IT. |
+| **D90** | IN THE CHROMIUM SHELL THE PAGE'S MEDIA SESSION IS THE OS'S; THE KIT BUILDS NO NATIVE MEDIA THERE UNTIL AN APP NEEDS IT. |
 
 <!-- decisions-index:end -->
 
@@ -1291,6 +1292,20 @@ docs cite them — so the number is the column to scan.
     one that must keep the old place sets `DataDirectory` to it. And two installs of one app (one bundle identifier)
     share its data, and so Chromium's one-process-per-data-folder rule (D88): the second install's launch is handed to
     the first, as macOS itself treats one identifier as one app.
+
+- **D90 — IN THE CHROMIUM SHELL THE PAGE'S MEDIA SESSION IS THE OS'S; THE KIT BUILDS NO NATIVE MEDIA THERE UNTIL AN APP
+  NEEDS IT.** `UseChromium` registers no `IPlaybackSession`, `IMediaPlayer` of its own or `IMediaCapability`. Owner,
+  2026-10-01, choosing it over building native playback per OS now.
+  - 🔴 **Why: the web platform already does it here (D54).** Chromium's content layer publishes a page's
+    `navigator.mediaSession` to Windows' media controls and to Linux's MPRIS, metadata out and the controls' commands
+    back to the page's action handlers (measured in the sample; macOS not observed). A kit session beside it would be
+    a second one for the same audio. On Linux the player's identity reads `Chromium`, and `CHROME_DESKTOP` did not set
+    its desktop entry (measured).
+  - **What would earn native media:** this Chromium plays no H.264, AAC or HEVC (the media guide), so an app whose
+    files are those needs a native player, its session and the platform's codec query per OS. That is D88's to build
+    when such an app asks, not before.
+  - **The constraint:** code that resolves `IPlaybackSession` or a native player finds none in the Chromium shell,
+    and a Chromium page's policy names only what Chromium decodes.
 
 ## Anti-goals — deliberately NOT built
 
