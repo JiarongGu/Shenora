@@ -432,6 +432,24 @@ enum Shenora.Core.Shell.UiTargetState (int)
   public const Shenora.Core.Shell.UiTargetState NotReady = 0
   public const Shenora.Core.Shell.UiTargetState Ready = 1
   public int value__
+sealed class Shenora.Core.Shell.UnhandledExceptionReport : System.IEquatable<Shenora.Core.Shell.UnhandledExceptionReport>
+  public .ctor(System.Exception Exception, Shenora.Core.Shell.UnhandledExceptionSource Source, bool IsTerminating)
+  public Shenora.Core.Shell.UnhandledExceptionReport <Clone>$()
+  public Shenora.Core.Shell.UnhandledExceptionSource Source { get; init; }
+  public System.Exception Exception { get; init; }
+  public bool Equals(Shenora.Core.Shell.UnhandledExceptionReport? other)
+  public bool IsTerminating { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.Shell.UnhandledExceptionReport? left, Shenora.Core.Shell.UnhandledExceptionReport? right)
+  public static bool op_Inequality(Shenora.Core.Shell.UnhandledExceptionReport? left, Shenora.Core.Shell.UnhandledExceptionReport? right)
+  public void Deconstruct(out System.Exception Exception, out Shenora.Core.Shell.UnhandledExceptionSource Source, out bool IsTerminating)
+enum Shenora.Core.Shell.UnhandledExceptionSource (int)
+  public const Shenora.Core.Shell.UnhandledExceptionSource AppDomain = 1
+  public const Shenora.Core.Shell.UnhandledExceptionSource UiThread = 0
+  public const Shenora.Core.Shell.UnhandledExceptionSource UnobservedTask = 2
+  public int value__
 enum Shenora.Core.Shell.WindowOrientation (int)
   public const Shenora.Core.Shell.WindowOrientation Landscape = 1
   public const Shenora.Core.Shell.WindowOrientation Portrait = 0

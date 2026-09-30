@@ -638,24 +638,6 @@ sealed class Shenora.Windows.TrayMenuColors
   public required System.Drawing.Color Hover { get; init; }
   public required System.Drawing.Color Surface { get; init; }
   public required System.Drawing.Color Text { get; init; }
-sealed class Shenora.Windows.UnhandledExceptionReport : System.IEquatable<Shenora.Windows.UnhandledExceptionReport>
-  public .ctor(System.Exception Exception, Shenora.Windows.UnhandledExceptionSource Source, bool IsTerminating)
-  public Shenora.Windows.UnhandledExceptionReport <Clone>$()
-  public Shenora.Windows.UnhandledExceptionSource Source { get; init; }
-  public System.Exception Exception { get; init; }
-  public bool Equals(Shenora.Windows.UnhandledExceptionReport? other)
-  public bool IsTerminating { get; init; }
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Windows.UnhandledExceptionReport? left, Shenora.Windows.UnhandledExceptionReport? right)
-  public static bool op_Inequality(Shenora.Windows.UnhandledExceptionReport? left, Shenora.Windows.UnhandledExceptionReport? right)
-  public void Deconstruct(out System.Exception Exception, out Shenora.Windows.UnhandledExceptionSource Source, out bool IsTerminating)
-enum Shenora.Windows.UnhandledExceptionSource (int)
-  public const Shenora.Windows.UnhandledExceptionSource AppDomain = 1
-  public const Shenora.Windows.UnhandledExceptionSource UiThread = 0
-  public const Shenora.Windows.UnhandledExceptionSource UnobservedTask = 2
-  public int value__
 static class Shenora.Windows.WebView2BuilderExtensions
   public static Shenora.ShenoraApplicationBuilder PrewarmWebView2(Shenora.ShenoraApplicationBuilder builder, System.Func<Shenora.ShenoraApplication, Shenora.Windows.WebViewEnvironmentOptions> options)
 sealed class Shenora.Windows.WebViewCustomScheme
@@ -740,7 +722,7 @@ static class Shenora.Windows.WinFormsBootstrap
   public static void Initialize(Shenora.Windows.WinFormsBootstrapOptions? options = null)
 sealed class Shenora.Windows.WinFormsBootstrapOptions
   public .ctor()
-  public System.Action<Shenora.Windows.UnhandledExceptionReport>? OnUnhandledException { get; init; }
+  public System.Action<Shenora.Core.Shell.UnhandledExceptionReport>? OnUnhandledException { get; init; }
   public System.Windows.Forms.HighDpiMode HighDpiMode { get; init; }
   public bool ObserveUnobservedTaskExceptions { get; init; }
   public bool ShowCrashDialog { get; init; }

@@ -74,6 +74,19 @@ public sealed class ChromiumHostOptions
     /// minimum size while it runs too, so it never reopens larger than it was left.
     /// </summary>
     public WindowStateHostOptions? WindowState { get; init; }
+
+    /// <summary>
+    /// Receives every unhandled exception, as the WinForms shell's <c>WinFormsBootstrapOptions</c> does: work posted to
+    /// the UI thread (an <c>async void</c> continuation there included), which the loop survives; any other thread,
+    /// where the process is usually ending (<see cref="UnhandledExceptionReport.IsTerminating"/>); and a faulted task
+    /// nobody observed. Log it here. A throwing handler is swallowed. No dialog is shown; what the user sees is the
+    /// app's.
+    /// </summary>
+    public Action<UnhandledExceptionReport>? OnUnhandledException { get; init; }
+
+    /// <summary>Mark an unobserved faulted task observed, so it never escalates; it still reaches
+    /// <see cref="OnUnhandledException"/>.</summary>
+    public bool ObserveUnobservedTaskExceptions { get; init; } = true;
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

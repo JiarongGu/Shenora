@@ -47,6 +47,8 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
         if (single.Result is SingleInstanceResult.Unverified)
             AppCallback.Log(log, () => "[Shenora.Chromium] The single-instance gate could not tell whether another instance runs; this one starts unguarded",
                 LogLevel.Warning);
+        // The process's exception channels, from here on the app's OnUnhandledException (as WinFormsBootstrap wires them).
+        ChromiumUnhandledExceptions.Install(options);
 
         try
         {

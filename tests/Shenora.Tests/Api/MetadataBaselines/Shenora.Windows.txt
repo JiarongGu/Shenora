@@ -630,23 +630,6 @@ Shenora.Windows.TrayMenuColors
   property Hover
   property Surface
   property Text
-Shenora.Windows.UnhandledExceptionReport
-  method .ctor
-  method Deconstruct
-  method Equals
-  method Equals
-  method GetHashCode
-  method ToString
-  method op_Equality
-  method op_Inequality
-  property Exception
-  property IsTerminating
-  property Source
-Shenora.Windows.UnhandledExceptionSource
-  field AppDomain
-  field UiThread
-  field UnobservedTask
-  field value__
 Shenora.Windows.WebView2BuilderExtensions
   method PrewarmWebView2
 Shenora.Windows.WebViewCustomScheme

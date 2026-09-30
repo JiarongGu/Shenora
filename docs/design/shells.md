@@ -72,6 +72,12 @@ It wires all three unhandled-exception channels to one app callback: `Applicatio
 `TaskScheduler.UnobservedTaskException` (observed by default, still reported). The app's handler runs
 through `AppCallback.Run` — the crash handler must never crash.
 
+The Chromium shell reports the same three to `ChromiumHostOptions.OnUnhandledException`, with the same
+`UnhandledExceptionReport` (Core's, D88), wired once per process by its runner after the single-instance gate. Its
+UI-thread channel is the dispatcher's: work posted to CEF's UI thread, an `async void` continuation there included,
+is caught and the loop goes on, as WinForms' `CatchException` mode does. There is no last-resort dialog: the shell has
+no portable one, and what the user sees is the app's.
+
 ⚠ **The last-resort dialog has a per-thread re-entrancy guard.** `MessageBox.Show` runs its own message
 loop, so a recurring UI-thread exception is dispatched again while the dialog is up; without the guard
 the app accumulates modal dialogs faster than a user can dismiss them.

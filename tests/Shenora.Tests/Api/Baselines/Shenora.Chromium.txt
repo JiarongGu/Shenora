@@ -65,6 +65,8 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public Shenora.Core.Ipc.ShellInfo? Shell { get; init; }
   public Shenora.Core.Shell.SingleInstanceHostOptions? SingleInstance { get; init; }
   public Shenora.Core.Shell.WindowStateHostOptions? WindowState { get; init; }
+  public System.Action<Shenora.Core.Shell.UnhandledExceptionReport>? OnUnhandledException { get; init; }
+  public bool ObserveUnobservedTaskExceptions { get; init; }
   public bool? IsDevelopment { get; init; }
   public int DevToolsPort { get; init; }
   public string VirtualHost { get; init; }

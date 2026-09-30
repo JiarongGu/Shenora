@@ -44,6 +44,9 @@ at the first list and missed five more breaking changes.
   `WindowStateOptions`, `IWindowStateStore`, `JsonFileWindowStateStore` and `WindowStateHostOptions`, since the
   Chromium shell restores them as well (D88). The same `using Shenora.Core.Shell;` covers them; `WindowStateManager`,
   the WinForms half, stays in `Shenora.Windows`, and a saved state file reads as before.
+- **`UnhandledExceptionReport` and `UnhandledExceptionSource` moved to `Shenora.Core.Shell`**, since the Chromium shell
+  reports them too (D88); `WinFormsBootstrapOptions.OnUnhandledException` takes the same type, under the same
+  `using Shenora.Core.Shell;` as the other moved shell types.
 - **A macOS app run from its bundle keeps its data in `~/Library/Application Support/<bundle identifier>`** (D89),
   not beside its executable, which is inside the bundle. Its Chromium profile, window state and the rest of
   `ShenoraPaths.DataDir` are found there after the upgrade, and nothing is moved: an app that must keep the old place
@@ -60,6 +63,12 @@ at the first list and missed five more breaking changes.
   foreground in 5 runs of 6 started from a script), Linux (a later launch from another session, through `setsid`)
   and an Intel Mac: the later launch exited within a second (175 to 876 ms). Whether the window takes the foreground on Linux and macOS was not observed: there the OS decides.
   `ChromiumWindows.Activate` and the tray's Open restore a minimized window too.
+- **The Chromium shell hands the app its unhandled exceptions** (`ChromiumHostOptions.OnUnhandledException`, and
+  `ObserveUnobservedTaskExceptions`, on by default), the three the WinForms bootstrap wires: work posted to the UI
+  thread, an `async void` continuation there included, which the loop survives; any other thread, where the process is
+  ending; and a faulted task nobody observed. No dialog: what the user sees is the app's. Measured on Windows in the
+  sample: a throwing posted work item and an unobserved faulted task reached the handler and the app ran on and
+  exited 0; a background thread's throw reached it as terminating, and no process of the app was left.
 - **`ShenoraPathsOptions.DataDirectory`**: the data folder itself, for an app installed where it may not write
   (under `Program Files`, a Linux `/opt`, a signed macOS bundle). It wins over every default; the data variable, the
   host's agreement with the processes it starts, still wins over it.

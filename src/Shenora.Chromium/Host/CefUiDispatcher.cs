@@ -19,8 +19,14 @@ internal sealed class CefUiDispatcher : UiDispatcherBase
     private readonly Action<Exception> _failed;
     private int _state = (int)UiTargetState.NotReady;
 
+    // A posted body that throws is an unhandled UI-thread exception, as WinForms' Application.ThreadException is: the
+    // loop goes on, the log has it, and so does the app's OnUnhandledException.
     public CefUiDispatcher(Func<Action, bool> post, Func<bool> onUiThread, ILogger? log = null)
-        : this(post, onUiThread, ex => AppCallback.Log(log, () => "[Shenora.Chromium] Posted UI work failed", LogLevel.Warning, ex))
+        : this(post, onUiThread, ex =>
+        {
+            AppCallback.Log(log, () => "[Shenora.Chromium] Posted UI work failed", LogLevel.Warning, ex);
+            ChromiumUnhandledExceptions.Report(ex, UnhandledExceptionSource.UiThread, isTerminating: false);
+        })
     {
     }
 

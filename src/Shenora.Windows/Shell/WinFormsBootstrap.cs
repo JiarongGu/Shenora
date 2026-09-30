@@ -1,20 +1,6 @@
+using Shenora.Core.Shell;
+
 namespace Shenora.Windows;
-
-/// <summary>Where an unhandled exception surfaced.</summary>
-public enum UnhandledExceptionSource
-{
-    /// <summary>WinForms UI-thread exception (<c>Application.ThreadException</c>) — recoverable.</summary>
-    UiThread,
-
-    /// <summary>Any other thread (<c>AppDomain.UnhandledException</c>) — the process is usually dying.</summary>
-    AppDomain,
-
-    /// <summary>A faulted Task nobody observed (<c>TaskScheduler.UnobservedTaskException</c>).</summary>
-    UnobservedTask,
-}
-
-/// <summary>An unhandled exception delivered to <see cref="WinFormsBootstrapOptions.OnUnhandledException"/>.</summary>
-public sealed record UnhandledExceptionReport(Exception Exception, UnhandledExceptionSource Source, bool IsTerminating);
 
 /// <summary>Options for <see cref="WinFormsBootstrap.Initialize"/>.</summary>
 public sealed class WinFormsBootstrapOptions
