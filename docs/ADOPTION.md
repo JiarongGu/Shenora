@@ -512,10 +512,10 @@ adapter, which needed no Windows reference either):
    | `Control.Invoke` / `BeginInvoke` / `InvokeRequired` | `IUiDispatcher` |
    | Enabling/disabling the window while busy | `IUiInteraction` |
    | App root, data and resource paths | `ShenoraPaths` |
-4. **Leave the genuinely platform-bound routes behind** in the desktop project. Reveal-in-Explorer,
-   secondary windows on their own STA threads, tray behaviour, window geometry — these are desktop
-   concepts, and a phone has no expression for them. (Window state's TYPES are in `Shenora` because the
-   Windows and Chromium shells both restore it, D88; restoring it is still the shell's job, not app logic's.)
+4. **Leave the genuinely platform-bound routes behind** in the desktop project. Revealing a file in the file
+   manager, secondary windows on their own STA threads, tray behaviour, window geometry — these are desktop
+   concepts, and a phone has no expression for them. (`IShellLauncher` and window state's TYPES are in `Shenora`
+   because the Windows and Chromium shells both use them, D88; a phone shell registers neither.)
    `Shenora.Sample.Logic` and the desktop sample's own facade split exactly along that line.
 5. **Register nothing extra.** `UseWindows` registers both faces of each contract — the Windows one
    (`IShellLauncher`, `IFormInteraction`) and the portable one (`IUrlLauncher`, `IUiInteraction`) —

@@ -129,10 +129,6 @@ interface Shenora.Windows.IFormInteraction : Shenora.Core.Shell.IUiInteraction
   public abstract System.IntPtr GetMainFormHandle()
   public abstract System.Windows.Forms.Form? GetMainForm()
   public abstract void SetMainForm(System.Windows.Forms.Form form)
-interface Shenora.Windows.IShellLauncher : Shenora.Core.Shell.IUrlLauncher
-  public abstract int? LaunchProcess(Shenora.Windows.ProcessLaunchOptions options)
-  public abstract void OpenDirectory(string directoryPath)
-  public abstract void RevealInExplorer(string filePath)
 interface Shenora.Windows.IWebViewResourceProvider
   public abstract System.IO.Stream? GetResourceStream(string virtualPath)
   public abstract bool Exists(string virtualPath)
@@ -198,10 +194,6 @@ sealed class Shenora.Windows.OptimizedFormOptions
   public bool NativeCaptionButtons { get; init; }
   public bool RoundedCorners { get; init; }
   public int TopResizeBorder { get; init; }
-sealed class Shenora.Windows.ProcessLaunchOptions
-  public required string ExecutablePath { get; init; }
-  public string? Arguments { get; init; }
-  public string? WorkingDirectory { get; init; }
 sealed class Shenora.Windows.RenderSession : System.IAsyncDisposable
   public System.Threading.Tasks.Task NavigateAsync(string url, System.Threading.CancellationToken cancellationToken = default)
   public System.Threading.Tasks.Task<string> CallDevToolsAsync(string method, string parametersJson, System.Threading.CancellationToken cancellationToken = default)
@@ -546,12 +538,6 @@ sealed class Shenora.Windows.SessionWindowRequest : System.IEquatable<Shenora.Wi
   public static bool op_Inequality(Shenora.Windows.SessionWindowRequest? left, Shenora.Windows.SessionWindowRequest? right)
   public string Uri { get; init; }
   public void Deconstruct(out string Uri, out bool UserInitiated)
-sealed class Shenora.Windows.ShellLauncher : Shenora.Core.Shell.IUrlLauncher, Shenora.Windows.IShellLauncher
-  public .ctor()
-  public int? LaunchProcess(Shenora.Windows.ProcessLaunchOptions options)
-  public void OpenDirectory(string directoryPath)
-  public void OpenUrl(string url)
-  public void RevealInExplorer(string filePath)
 sealed class Shenora.Windows.SplashPanel : System.Windows.Forms.Panel
   protected override void Dispose(bool disposing)
   public .ctor(Shenora.Windows.SplashPanelOptions? options = null)

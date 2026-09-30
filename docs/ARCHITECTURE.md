@@ -335,7 +335,7 @@ Shenora.slnx
     ├── Shenora.Sample.Logic    net10.0         — the PORTABILITY PROOF (H4.3): one facade that picks
     │                                            a file, reads the clipboard and opens a URL through
     │                                            the Core contracts only (IUrlLauncher, NOT the
-    │                                            Windows IShellLauncher). Plain net10.0 with no
+    │                                            desktop IShellLauncher). Plain net10.0 with no
     │                                            Windows reference, referenced by the desktop, Chromium
     │                                            and MAUI samples
     │                                            and in the solution — so a Windows type dragged into

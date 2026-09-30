@@ -44,6 +44,10 @@ at the first list and missed five more breaking changes.
   `WindowStateOptions`, `IWindowStateStore`, `JsonFileWindowStateStore` and `WindowStateHostOptions`, since the
   Chromium shell restores them as well (D88). The same `using Shenora.Core.Shell;` covers them; `WindowStateManager`,
   the WinForms half, stays in `Shenora.Windows`, and a saved state file reads as before.
+- **`IShellLauncher`, `ShellLauncher` and `ProcessLaunchOptions` moved to `Shenora.Core.Shell`, and
+  `RevealInExplorer` is `RevealInFileManager`**: both desktop shells register them now (D88), and the file manager
+  is Finder or the Linux desktop's as well as Explorer. A Windows app renames the call; the other members are as they
+  were.
 - **`UnhandledExceptionReport` and `UnhandledExceptionSource` moved to `Shenora.Core.Shell`**, since the Chromium shell
   reports them too (D88); `WinFormsBootstrapOptions.OnUnhandledException` takes the same type, under the same
   `using Shenora.Core.Shell;` as the other moved shell types.
@@ -69,6 +73,14 @@ at the first list and missed five more breaking changes.
   ending; and a faulted task nobody observed. No dialog: what the user sees is the app's. Measured on Windows in the
   sample: a throwing posted work item and an unobserved faulted task reached the handler and the app ran on and
   exited 0; a background thread's throw reached it as terminating, and no process of the app was left.
+- **The Chromium shell registers `IShellLauncher`** (and `IUrlLauncher`, the same instance), so revealing a file,
+  opening a folder and launching a process work on macOS and Linux too. Revealing selects the file in Explorer
+  (`/select`), in Finder (`open -R`), or on Linux through the freedesktop file manager interface
+  (`FileManager1.ShowItems`), opening its folder where nothing answers that; a Linux machine with nothing to open a
+  folder with (no `xdg-open`) is named as such rather than reported as a missing file. Measured on Linux against a
+  scripted file manager on a private session bus: `ShowItems` received the file's URI, a space and a comma in it
+  encoded; with none on the bus, the folder was asked for. The Windows and macOS commands are checked, not run: they
+  would open a file manager on the machine running them.
 - **`ShenoraPathsOptions.DataDirectory`**: the data folder itself, for an app installed where it may not write
   (under `Program Files`, a Linux `/opt`, a signed macOS bundle). It wins over every default; the data variable, the
   host's agreement with the processes it starts, still wins over it.

@@ -1,3 +1,4 @@
+using Shenora.Core.Shell;
 using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Shenora.Chromium;
@@ -60,7 +61,7 @@ public class ChromiumFileDialogsTests : IDisposable
         var posted = new ConcurrentQueue<Action>();
         var ui = new CefUiDispatcher(work => { posted.Enqueue(work); return true; }, () => false);
         ui.MarkReady();
-        var windows = new ChromiumWindows(host, ui, app.Services.GetRequiredService<IMessageDispatcher>(), null, null, new ChromiumUrlLauncher());
+        var windows = new ChromiumWindows(host, ui, app.Services.GetRequiredService<IMessageDispatcher>(), null, null, new ShellLauncher());
         var dialogs = new ChromiumFileDialogs(windows, ui, null, null);
 
         var first = dialogs.OpenFileAsync();

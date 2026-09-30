@@ -16,8 +16,9 @@ public static class ChromiumHostExtensions
     /// <summary>
     /// Run the app in the Chromium shell: CEF's own windows, the page served from the app's origin, and IPC over
     /// a transport with no code in the renderer (D83). The main window opens once CEF has started, and the app
-    /// ends when the last window closes. Unless the app registered its own first, it registers the shell's
-    /// <see cref="IUrlLauncher"/> (the user's browser, http/https only; a page's popups go there) and
+    /// ends when the last window closes. Unless the app registered its own first, it registers
+    /// <see cref="IShellLauncher"/> and its face <see cref="IUrlLauncher"/> (the user's browser, http/https only; a
+    /// page's popups go there) and
     /// <see cref="IFileDialogs"/> (CEF's native dialogs over the main window), with the page's route to the dialogs,
     /// and <see cref="IClipboardService"/>.
     /// <para>
@@ -47,7 +48,10 @@ public static class ChromiumHostExtensions
             sp.GetService<ILogger<CefUiDispatcher>>()));
         builder.Services.TryAddSingleton<IUiDispatcher>(sp => sp.GetRequiredService<CefUiDispatcher>());
         // The native services, TryAdd so an app's own registration wins.
-        builder.Services.TryAddSingleton<IUrlLauncher, ChromiumUrlLauncher>();
+        // Revealing a file, opening a folder, launching a process, and the portable face that only opens links: one
+        // instance under both, as UseWindows registers them.
+        builder.Services.TryAddSingleton<IShellLauncher, ShellLauncher>();
+        builder.Services.TryAddSingleton<IUrlLauncher>(sp => sp.GetRequiredService<IShellLauncher>());
         // The page's route to it stays the app's opt-in (AddShenoraClipboard), as with the WebView2 shell.
 #if CEF_WINDOWS
         builder.Services.TryAddSingleton<IClipboardService, Win32Clipboard>();

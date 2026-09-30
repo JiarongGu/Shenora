@@ -562,3 +562,7 @@ Shenora.Windows.JsonFileWindowStateStore  # -> Shenora.Core.Shell.JsonFileWindow
 Shenora.Windows.WindowStateHostOptions    # -> Shenora.Core.Shell.WindowStateHostOptions
 Shenora.Windows.UnhandledExceptionReport  # -> Shenora.Core.Shell.UnhandledExceptionReport (D88: both desktop shells report it)
 Shenora.Windows.UnhandledExceptionSource  # -> Shenora.Core.Shell.UnhandledExceptionSource
+RevealInExplorer                      # -> IShellLauncher.RevealInFileManager (D88: Explorer, Finder or the Linux desktop's)
+Shenora.Windows.IShellLauncher        # -> Shenora.Core.Shell.IShellLauncher (both desktop shells register it)
+Shenora.Windows.ShellLauncher         # -> Shenora.Core.Shell.ShellLauncher
+Shenora.Windows.ProcessLaunchOptions  # -> Shenora.Core.Shell.ProcessLaunchOptions

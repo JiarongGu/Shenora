@@ -28,7 +28,7 @@ public sealed class WebViewHost
     private readonly ILogger? _log;
     private readonly Shenora.Core.Shell.IUiDispatcher _ui;
     // The one open-a-URL implementation (D19).
-    private readonly Shenora.Core.Shell.IUrlLauncher _urls = new Shenora.Windows.ShellLauncher();
+    private readonly Shenora.Core.Shell.IUrlLauncher _urls = new Shenora.Core.Shell.ShellLauncher();
     private readonly WebView2Interceptor _interceptor = new();
     private DateTime _lastAutoReloadUtc = DateTime.MinValue;
     private int _autoReloadCount;            // terminal state for the crash-reload loop

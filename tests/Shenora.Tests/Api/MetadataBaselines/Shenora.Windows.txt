@@ -131,10 +131,6 @@ Shenora.Windows.IFormInteraction
   method GetMainForm
   method GetMainFormHandle
   method SetMainForm
-Shenora.Windows.IShellLauncher
-  method LaunchProcess
-  method OpenDirectory
-  method RevealInExplorer
 Shenora.Windows.IWebViewResourceProvider
   method BeginWarmup
   method Exists
@@ -202,11 +198,6 @@ Shenora.Windows.OptimizedFormOptions
   property NativeCaptionButtons
   property RoundedCorners
   property TopResizeBorder
-Shenora.Windows.ProcessLaunchOptions
-  method .ctor
-  property Arguments
-  property ExecutablePath
-  property WorkingDirectory
 Shenora.Windows.RenderSession
   method CallDevToolsAsync
   method DisposeAsync
@@ -536,12 +527,6 @@ Shenora.Windows.SessionWindowRequest
   property Allow
   property Uri
   property UserInitiated
-Shenora.Windows.ShellLauncher
-  method .ctor
-  method LaunchProcess
-  method OpenDirectory
-  method OpenUrl
-  method RevealInExplorer
 Shenora.Windows.SplashPanel
   method .ctor
   method Dispose

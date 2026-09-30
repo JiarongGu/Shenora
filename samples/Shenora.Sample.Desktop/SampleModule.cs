@@ -68,7 +68,7 @@ internal sealed class SampleModule(
 
             // Reveal the picked path in Explorer (P4.3) — manual demo.
             case "REVEAL":
-                shell.RevealInExplorer(PayloadHelper.GetRequiredValue<string>(request.Payload, "path"));
+                shell.RevealInFileManager(PayloadHelper.GetRequiredValue<string>(request.Payload, "path"));
                 return null;
 
             // Secondary window on its own STA thread (P4.5) — driven by the e2e over CDP.

@@ -49,7 +49,6 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   over the foreground.
 - [ ] **Secondary windows' own size and place.** The WinForms shell's `SecondaryWindows` restores each window's
   state (`SecondaryWindowOptions.StateStore`); the Chromium shell restores the main window's only.
-- [ ] **Revealing a file and opening a folder** (`IShellLauncher`'s two members) on every OS.
 - [ ] **Blocking the window during a modal operation** (`IUiInteraction`).
 - [ ] **Who holds a file open** (`IFileLockInspector`): the Restart Manager on Windows; Linux and macOS to design.
 - [ ] **Media:** what the machine decodes (`IMediaCapability`), the system's media controls (`IPlaybackSession`:

@@ -1,3 +1,4 @@
+using Shenora.Core.Shell;
 using Microsoft.Extensions.DependencyInjection;
 using Shenora.Chromium;
 using Shenora.Chromium.Host;
@@ -23,7 +24,7 @@ public class ChromiumWindowsTests
         var accepting = true;
         var ui = new CefUiDispatcher(work => { if (accepting) posted.Add(work); return accepting; }, () => false);
         var windows = new ChromiumWindows(options, ui, app.Services.GetRequiredService<IMessageDispatcher>(), null, null,
-            new ChromiumUrlLauncher());
+            new ShellLauncher());
 
         Assert.False(windows.Open("a", new ChromiumWindowOptions()));   // the shell has not started
         Assert.False(windows.HasWindow("a"));

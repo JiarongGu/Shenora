@@ -1,3 +1,4 @@
+using Shenora.Core.Shell;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
 using Shenora.Chromium;
@@ -21,7 +22,7 @@ public class ChromiumTrayTests
         var posted = new List<Action>();
         var ui = new CefUiDispatcher(work => { posted.Add(work); return true; }, () => false);
         ui.MarkReady();
-        var windows = new ChromiumWindows(host, ui, app.Services.GetRequiredService<IMessageDispatcher>(), null, null, new ChromiumUrlLauncher());
+        var windows = new ChromiumWindows(host, ui, app.Services.GetRequiredService<IMessageDispatcher>(), null, null, new ShellLauncher());
         return (new ChromiumTray(options, windows, "Tray test", null), windows, posted);
     }
 

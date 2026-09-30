@@ -343,6 +343,10 @@ interface Shenora.Core.Shell.IClipboardService
   public abstract System.Threading.Tasks.Task<string> GetTextAsync()
 interface Shenora.Core.Shell.IFileLockInspector
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.Shell.FileLockHolder> WhoHolds(string path)
+interface Shenora.Core.Shell.IShellLauncher : Shenora.Core.Shell.IUrlLauncher
+  public abstract int? LaunchProcess(Shenora.Core.Shell.ProcessLaunchOptions options)
+  public abstract void OpenDirectory(string directoryPath)
+  public abstract void RevealInFileManager(string filePath)
 interface Shenora.Core.Shell.IUiDispatcher
   public abstract Shenora.Core.Shell.UiTargetState State { get; }
   public abstract System.Threading.Tasks.Task InvokeAsync(System.Action work, System.Threading.CancellationToken cancellationToken = default)
@@ -367,6 +371,10 @@ sealed class Shenora.Core.Shell.JsonFileWindowStateStore : Shenora.Core.Shell.IW
   public .ctor(string filePath)
   public Shenora.Core.Shell.WindowState? Load()
   public void Save(Shenora.Core.Shell.WindowState state)
+sealed class Shenora.Core.Shell.ProcessLaunchOptions
+  public required string ExecutablePath { get; init; }
+  public string? Arguments { get; init; }
+  public string? WorkingDirectory { get; init; }
 static class Shenora.Core.Shell.ShellCapability
   public const string BackNavigation = "backNavigation"
   public const string ClipboardFiles = "clipboardFiles"
@@ -381,6 +389,12 @@ static class Shenora.Core.Shell.ShellCapability
   public const string WindowChrome = "windowChrome"
   public const string WindowOrientation = "windowOrientation"
   public static System.NotSupportedException NotSupported(string capability, string shell, string? alternative = null)
+sealed class Shenora.Core.Shell.ShellLauncher : Shenora.Core.Shell.IShellLauncher, Shenora.Core.Shell.IUrlLauncher
+  public .ctor()
+  public int? LaunchProcess(Shenora.Core.Shell.ProcessLaunchOptions options)
+  public void OpenDirectory(string directoryPath)
+  public void OpenUrl(string url)
+  public void RevealInFileManager(string filePath)
 sealed class Shenora.Core.Shell.SingleInstanceGuard : System.IDisposable
   public .ctor(string applicationName, string? scope = null, Microsoft.Extensions.Logging.ILogger? log = null)
   public Shenora.Core.Shell.SingleInstanceResult TryAcquire()

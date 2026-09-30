@@ -4,12 +4,13 @@ using System.Text.Json.Serialization;
 namespace Shenora.Core.Shell;
 
 // Portable slices of the native-service contracts (D20). The test for what lands here is not "the
-// signature happens to be platform-neutral" but "app logic must be able to compile off Windows".
+// signature happens to be platform-neutral" but "app logic must be able to compile off Windows, or a second
+// shell uses it" (D88).
 
 /// <summary>
-/// Open a URL in the user's browser. Depend on this from app logic; depend on
-/// <c>Shenora.Windows.IShellLauncher</c> only for the desktop-only operations (reveal in file manager,
-/// launch a process).
+/// Open a URL in the user's browser. Depend on this from app logic; depend on <see cref="IShellLauncher"/> only
+/// for the desktop-only operations (reveal in the file manager, open a folder, launch a process), which a phone
+/// shell does not register.
 /// </summary>
 public interface IUrlLauncher
 {
