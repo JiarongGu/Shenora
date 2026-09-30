@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Shenora.Chromium;
 using Shenora.Chromium.Host;
@@ -47,6 +48,34 @@ public class ChromiumFileDialogsTests : IDisposable
     [InlineData(@"C:\out\report", null, @"C:\out\report")]
     public void The_default_extension_is_added_only_when_the_user_typed_none(string picked, string? extension, string expected) =>
         Assert.Equal(expected, ChromiumFileDialogs.WithDefaultExtension(picked, extension));
+
+    [Fact]
+    public async Task A_dialog_asked_for_while_one_is_open_waits_for_it()
+    {
+        // CEF answered such a second dialog as cancelled itself, and then never answered the FIRST (measured on Windows).
+        var builder = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions { ApplicationName = "Dialogs test" });
+        var host = new ChromiumHostOptions();
+        builder.UseChromium(host);
+        using var app = builder.Build();
+        var posted = new ConcurrentQueue<Action>();
+        var ui = new CefUiDispatcher(work => { posted.Enqueue(work); return true; }, () => false);
+        ui.MarkReady();
+        var windows = new ChromiumWindows(host, ui, app.Services.GetRequiredService<IMessageDispatcher>(), null, null, new ChromiumUrlLauncher());
+        var dialogs = new ChromiumFileDialogs(windows, ui, null, null);
+
+        var first = dialogs.OpenFileAsync();
+        var second = dialogs.SaveFileAsync();
+
+        Assert.Single(posted);
+        Assert.False(second.IsCompleted);
+        // The first ends (no window is open to own it), and then the second reaches CEF.
+        Assert.True(posted.TryDequeue(out var shown));
+        shown();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => first);
+        var until = DateTime.UtcNow.AddSeconds(5);
+        while (posted.IsEmpty && DateTime.UtcNow < until) await Task.Delay(10);
+        Assert.Single(posted);
+    }
 
     [Fact]
     public async Task The_start_folder_is_the_remembered_one_then_the_default_then_Documents()

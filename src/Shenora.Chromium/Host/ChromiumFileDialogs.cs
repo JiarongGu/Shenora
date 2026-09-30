@@ -17,12 +17,18 @@ namespace Shenora.Chromium.Host;
 /// desktop hints (existence and name checks, the overwrite prompt) are the OS dialog's own.
 /// </para>
 /// <para>
+/// One dialog at a time: another asked for while one is open waits for it, then shows. On Windows CEF itself
+/// answered such a second dialog as cancelled and then never answered the first.
+/// </para>
+/// <para>
 /// The start folder is Chromium's own last-used folder for the profile, set before each dialog, because CEF passes
 /// on no folder of its own; so a page's own <c>&lt;input type="file"&gt;</c> afterwards opens there too.
 /// </para>
 /// </summary>
 internal sealed class ChromiumFileDialogs(ChromiumWindows windows, CefUiDispatcher ui, IFileDialogPathStore? store, ILogger? log) : IFileDialogs
 {
+    private readonly SemaphoreSlim _one = new(1, 1);
+
     public Task<FileDialogResult> OpenFileAsync(OpenFileOptions? options = null) =>
         ShowAsync(options, cef_file_dialog_mode_t.FILE_DIALOG_OPEN, options?.Title ?? "Select File", options?.FileName, options?.Filters,
             picked => (picked, Path.GetDirectoryName(picked)));
@@ -51,21 +57,34 @@ internal sealed class ChromiumFileDialogs(ChromiumWindows windows, CefUiDispatch
     private async Task<FileDialogResult> ShowAsync(FileDialogOptions? options, cef_file_dialog_mode_t mode, string title, string? fileName,
         IReadOnlyList<FileDialogFilter>? filters, Func<string, (string Path, string? Directory)> accept)
     {
-        var initial = await ResolveInitialPathAsync(options).ConfigureAwait(false);
-        var picked = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var accepted = AcceptFilters(filters);
-        var posted = ui.Post(() =>
+        await _one.WaitAsync().ConfigureAwait(false);
+        try
         {
-            if (!windows.RunFileDialog(mode, title, initial, fileName, accepted, files => picked.TrySetResult(files)))
-                picked.TrySetException(new InvalidOperationException("No Chromium window is open to own the file dialog."));
-        });
-        if (!posted) throw new InvalidOperationException("The Chromium shell is not running.");
+            var initial = await ResolveInitialPathAsync(options).ConfigureAwait(false);
+            var picked = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var accepted = AcceptFilters(filters);
+            var posted = ui.Post(() =>
+            {
+                // Answered on every path: the page waits on a person with no timeout, and the next dialog on this one.
+                try
+                {
+                    if (!windows.RunFileDialog(mode, title, initial, fileName, accepted, files => picked.TrySetResult(files)))
+                        picked.TrySetException(new InvalidOperationException("No Chromium window is open to own the file dialog."));
+                }
+                catch (Exception ex) { picked.TrySetException(ex); }
+            });
+            if (!posted) throw new InvalidOperationException("The Chromium shell is not running.");
 
-        var files = await picked.Task.ConfigureAwait(false);
-        if (files.Length == 0 || string.IsNullOrWhiteSpace(files[0])) return FileDialogResult.Cancelled();
-        var (path, directory) = accept(files[0]);
-        await RememberAsync(options, directory).ConfigureAwait(false);
-        return FileDialogResult.Selected(path);
+            var files = await picked.Task.ConfigureAwait(false);
+            if (files.Length == 0 || string.IsNullOrWhiteSpace(files[0])) return FileDialogResult.Cancelled();
+            var (path, directory) = accept(files[0]);
+            await RememberAsync(options, directory).ConfigureAwait(false);
+            return FileDialogResult.Selected(path);
+        }
+        finally
+        {
+            _one.Release();
+        }
     }
 
     internal async Task<string> ResolveInitialPathAsync(FileDialogOptions? options)

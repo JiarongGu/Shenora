@@ -65,6 +65,9 @@ at the first list and missed five more breaking changes.
   Before, on Linux all three opened in the home folder; on Windows the folder dialog opened in Documents and the
   open dialog could not find its file. The folder dialog's accept button reads "Upload" on both, which is CEF's one
   folder mode.
+- **One file dialog at a time in the Chromium shell.** Another asked for while one is open waits for it and then
+  shows, and both answer. CEF answered such a second dialog as cancelled itself and then never answered the first,
+  so the page waiting on it waited for good (measured on Windows).
 
 ## 0.18.0 — 2026-09-29
 
