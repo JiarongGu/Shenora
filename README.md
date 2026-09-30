@@ -19,11 +19,11 @@ depend on each other.
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
 **v0.18.0 — pre-release, stabilising toward 1.0.** The newest arrivals — `CHANGELOG.md` is the authority —
-are **`Shenora.Chromium`**, a new package: Chromium through CEF for an app that ships its own engine, as a
-shell of its own (`UseChromium`, on Windows and macOS) or as a `ChromiumView` control in the Windows shell;
-the shell's own **picture surface** on a phone (`useMediaSurface` / `useMediaTransport`: the platform's player
-draws the film under a transparent region the page leaves, no transcode, the page keeping every control); and
-**orientation on iOS**.
+are the Chromium shell on **Linux** (`UseChromium` with `-r linux-x64`: frameless windows, native file dialogs,
+the X11 clipboard and a StatusNotifierItem tray), file dialogs in the Chromium shell that start in the folder
+asked for on every OS, and **`Shenora.Chromium`** itself, before it: Chromium through CEF for an app that ships
+its own engine, as a shell of its own (`UseChromium`, on Windows, macOS and Linux) or as a `ChromiumView`
+control in the Windows shell.
 
 > **The segment/streaming media tier is the newest part of the kit, and the only one not extracted from an
 > application that had already proven it in production.** An August 2026 review found several faults
@@ -92,7 +92,7 @@ managed code comes along, and CEF itself only into an app that references `Sheno
                          ↑              (Core · Engine · Modules — the IPC stack is
             ┌────────────┼────────────┬───────────────┐  Shenora.Core.Ipc, a NAMESPACE)
             │            │            │               │
-   Shenora.Windows  Shenora.Android  Shenora.iOS   Shenora.Chromium   net10.0, Windows + macOS
+   Shenora.Windows  Shenora.Android  Shenora.iOS   Shenora.Chromium   net10.0, Windows + macOS + Linux
    net10.0-windows  net10.0-android  net10.0-ios      ↑   (D81)
             └─────────────────────────────────────────┘   ChromiumView (D83)
 

@@ -32,34 +32,37 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
-- **The Chromium shell on Linux** (`linux-x64`; `linux-arm64` is built and not yet run). An app built with
-  `-r linux-x64` is laid out flat: CEF's runtime and resources beside the app, which also runs as `<App>`, and the
-  kit's helper as `<App>-helper`, which every Chromium subprocess runs. It is native because Chromium's zygote
-  forks the renderers, and a process running .NET must not be forked. Chromium's sandbox is on: the renderers ran in
-  their own user and PID namespaces under seccomp, with no setuid `chrome-sandbox`. The machine needs `libnss3`
-  and `libasound2`; the build extracts CEF with `bzip2` and strips `libcef.so` with binutils' `strip`, which takes
-  it from 1,455 MB to 272 MB (a layout of 363 MB where it was 1.5 GB) and warns, keeping it whole, where there is no
-  `strip`. `dotnet publish --self-contained` makes a folder that runs with no .NET installed. Measured on WSL
-  (Ubuntu 24.04, X11), from a package-only app: the page loaded from the app's origin, handshook and echoed (50
-  calls, median 3.2 ms; 1.6 ms in another run from the repo), and the app exited cleanly. Under a window manager
-  (openbox, on a virtual X display, driven by xdotool) the frameless window has no frame, its drag region moves it,
-  its edges and corner resize it, a double-click on it maximizes, and the page's minimize, maximize and restore work;
-  WSLg's own window manager ignores a minimize, xdotool's as well as the page's. The window is named for the app
-  (`MyApp`, whether started as `MyApp` or `MyApp.App`), as X11's `WM_CLASS` and the Wayland app id, so a dock can
-  match it to the app's `.desktop` file; it had no `WM_CLASS` at all. File dialogs are GTK's, over the window, named
-  the same. On a Wayland session CEF draws through XWayland (the app id is set but unmeasured). The clipboard is
-  X11's, on a connection of the kit's own: text as Chromium offers it, HTML, PNG, files as a URI list and as GNOME's
-  copied-files list, and any other media type under its own name. Measured against xclip both ways, byte for byte,
-  a 20 MB picture read in parts (INCR) among them, and against Chromium's own clipboard (a copy in the page read, a
-  paste of the kit's copy). What the app copied lasts while it runs, unless a clipboard manager keeps a copy, and a
-  format larger than one X request (about 16 MB) is refused. The tray is a StatusNotifierItem with its menu over
-  dbusmenu, through GIO's D-Bus, which CEF needs too, answered on the UI thread. Measured against a scripted watcher
-  and panel on a session bus of its own: the item and its menu as a panel reads them, a click running the app's
-  item and none running a disabled one, the page's close hiding the window, the icon bringing it back, and Exit;
-  a panel that starts after the app, which the icon joins; and one that quits with the window hidden in it, which
-  brings the window back. A real panel (KDE's, GNOME's AppIndicator extension) is unmeasured, and so is whether
-  its window manager raises the window when the icon is clicked. On WSL a window could take 8–12 s to close,
-  with Chromium's GL over WSL's own, where software GL closed at once.
+- **The Chromium shell on Linux** (`linux-x64`; `linux-arm64` is built and not yet run). Measured on WSL (Ubuntu
+  24.04, X11), from a package-only app and from the repo, and under a real window manager (openbox) on a virtual X
+  display driven by xdotool, with a private session bus for the tray.
+  - **Layout.** An app built with `-r linux-x64` is laid out flat: CEF's runtime and resources beside the app, which
+    also runs as `<App>`, and the kit's helper as `<App>-helper`, which every Chromium subprocess runs. It is native
+    because Chromium's zygote forks the renderers, and a process running .NET must not be forked. Chromium's sandbox
+    is on: the renderers ran in their own user and PID namespaces under seccomp, with no setuid `chrome-sandbox`. The
+    machine needs `libnss3` and `libasound2`; the build extracts CEF with `bzip2` and strips `libcef.so` with
+    binutils' `strip`, which takes it from 1,455 MB to 272 MB (a layout of 363 MB where it was 1.5 GB), and warns,
+    keeping it whole, where there is no `strip`. `dotnet publish --self-contained` makes a folder that runs with no
+    .NET installed. The page loaded from the app's origin, handshook and echoed (50 calls, median 3.2 ms; 1.6 ms in
+    another run), and the app exited cleanly.
+  - **The window.** Frameless, its drag region moves it, its edges and corner resize it, a double-click on it
+    maximizes, and the page's minimize, maximize and restore work (WSLg's own window manager ignores a minimize,
+    xdotool's as well as the page's). It is named for the app (`MyApp`, whether started as `MyApp` or
+    `MyApp.App`), as X11's `WM_CLASS` and the Wayland app id, so a dock can match it to the app's `.desktop` file;
+    it had no `WM_CLASS` at all. On a Wayland session CEF draws through XWayland (the app id is set but unmeasured).
+  - **File dialogs** are GTK's, over the window, named the same.
+  - **The clipboard** is X11's, on a connection of the kit's own: text as Chromium offers it, HTML, PNG, files as a
+    URI list and as GNOME's copied-files list, and any other media type under its own name. Measured against xclip
+    both ways, byte for byte, a 20 MB picture read in parts (INCR) among them, and against Chromium's own clipboard
+    (a copy in the page read, a paste of the kit's copy). What the app copied lasts while it runs, unless a
+    clipboard manager keeps a copy, and a format larger than one X request (about 16 MB) is refused.
+  - **The tray** is a StatusNotifierItem with its menu over dbusmenu, through GIO's D-Bus, which CEF needs too,
+    answered on the UI thread. Measured against a scripted watcher and panel: the item and its menu as a panel
+    reads them, a click running the app's item and none running a disabled one, the page's close hiding the window,
+    the icon bringing it back, and Exit; a panel that starts after the app, which the icon joins; and one that quits
+    with the window hidden in it, which brings the window back.
+  - **Not yet measured:** a real desktop's panel (KDE's, GNOME's AppIndicator extension) and whether its window
+    manager raises the window when the icon is clicked; and on WSL a window could take 8–12 s to close, with
+    Chromium's GL over WSL's own, where software GL closed at once.
 
 ### Changed
 
