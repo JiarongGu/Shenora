@@ -176,6 +176,26 @@ public class IpcRequestTrackerTests
     }
 
     /// <summary>
+    /// The other half of the race above: the signal's own callback ends the request as CANCELLED — a body that
+    /// unwinds on the token and disposes its scope, inline in the signal (no synchronization context) or on another
+    /// thread. That is this cancel landing, and must not report false. Found as an intermittent failure of the
+    /// dispatch test, whose route unwound on another thread under the full suite's load.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]    // announced: the entry stays, as history
+    [InlineData(false)]   // inside the grace period: the entry leaves the table
+    public void Cancel_reports_true_when_its_own_signal_ended_the_request(bool announced)
+    {
+        var (tracker, _, clock) = Build();
+        var scope = tracker.Begin(Request(id: "req-own"));
+        if (announced) clock.Advance(TimeSpan.FromMilliseconds(50));
+        scope.CancellationToken.Register(scope.Dispose);
+
+        Assert.True(tracker.Cancel("req-own"));
+        Assert.Equal(announced ? [IpcRequestState.Cancelled] : [], tracker.GetAll().Select(r => r.State));
+    }
+
+    /// <summary>
     /// A body that unwound on cancellation must not be recorded as COMPLETED just because its scope
     /// disposed — that would report success for work that stopped.
     /// </summary>

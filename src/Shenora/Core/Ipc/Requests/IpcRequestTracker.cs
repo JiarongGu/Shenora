@@ -177,9 +177,10 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(requestId);
 
         CancellationTokenSource? cts;
+        Entry? entry;
         lock (_lock)
         {
-            if (!_entries.TryGetValue(requestId, out var entry) || entry.State != IpcRequestState.Running) return false;
+            if (!_entries.TryGetValue(requestId, out entry) || entry.State != IpcRequestState.Running) return false;
             cts = entry.Cts;
         }
 
@@ -192,7 +193,13 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
         // Two lock acquisitions, because CancellationTokenSource.Cancel must not run under the lock (its
         // callbacks re-enter this type). So the SECOND one's outcome is the only one still true here:
         // report it, never the first check's.
-        return Finish(requestId, IpcRequestState.Cancelled, null);
+        if (Finish(requestId, IpcRequestState.Cancelled, null)) return true;
+
+        // Unless the signal itself ended it: a body that unwinds on the token, inline in the signal or on another
+        // thread, ends its scope as Cancelled first (its OPERATION_CANCELLED answer, or the scope's dispose). That is
+        // this cancel landing, and the entry says so even when an unannounced one has left the table; any other ending
+        // is another outcome.
+        lock (_lock) return entry.State == IpcRequestState.Cancelled;
     }
 
     /// <inheritdoc />
@@ -356,7 +363,11 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
         {
             ArgumentNullException.ThrowIfNull(error);
             if (Interlocked.Exchange(ref _finished, 1) == 1) return;
-            tracker.Finish(RequestId, IpcRequestState.Failed, error);
+            // A body that unwound on its cancelled token answers OPERATION_CANCELLED: a cancel, not a failure.
+            if (CancellationToken.IsCancellationRequested && error.Code == IpcErrorCodes.OperationCancelled)
+                tracker.Finish(RequestId, IpcRequestState.Cancelled, null);
+            else
+                tracker.Finish(RequestId, IpcRequestState.Failed, error);
         }
 
         /// <summary>Completes the request if nothing else finished it.</summary>

@@ -79,6 +79,10 @@ at the first list and missed five more breaking changes.
   `Infinity` for no limit, and so does any delay longer than a timer holds (2^31−1 ms), which `setTimeout` used to
   fire at once. A host that never answers a dialog is now a page that waits: on Android that is an app that does
   not forward `OnActivityResult` to `ActivityResultRelay.Deliver`, which used to end in a `TIMEOUT`.
+- **`CANCEL` answers true when it cancelled, and the request is recorded as cancelled.** A route that unwound on the
+  cancel's own signal before `Cancel` recorded it, inside the signal where it resumes inline or on another thread,
+  answered `OPERATION_CANCELLED`, which was recorded as a failure, and `IIpcRequestTracker.Cancel`, and so the
+  page's `CANCEL`, answered false.
 
 ## 0.18.0 — 2026-09-29
 

@@ -407,6 +407,12 @@ not thread-pool tasks**.
   **So report `Finish`'s answer, never the first check's.** A caller that returns `true` once its OWN
   check passed is trusting that the gap cannot change the outcome — but a concurrent transition landing
   inside it makes `Finish` correctly refuse while the caller still reports success to whoever asked.
+  ⚠ **Unless the transition that beat `Finish` is the one this call CAUSED.** The signal's own callbacks can
+  end the request first — a body that unwinds on the token answers `OPERATION_CANCELLED`, inside the signal
+  when it resumes inline (a plain `TaskCompletionSource`) or on another thread — and reporting `false` there
+  tells a page its cancel failed when it landed. So a cancelled token's `OPERATION_CANCELLED` records
+  `Cancelled`, not `Failed`, and `Cancel` reads the ending from the entry captured under the first lock,
+  never the table, which an unannounced entry has already left.
   ⚠ **A race test for a window this narrow needs REAL THREADS** — thread-pool tasks do not reliably hit
   it, so the test passes without ever entering the gap.
   **The general rule:** when a permission check and the mutation it gates are split across two lock

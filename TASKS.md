@@ -297,6 +297,14 @@ answer (`ipc-contracts.md`). Two mobile paths are unverified:
 - [ ] **Android**: an app that does not forward `OnActivityResult` to `ActivityResultRelay.Deliver` used to end in
   a `TIMEOUT` and now never answers. The relay could notice a result that never arrived once the activity resumes.
 
+### 🟡 A request that completed as a cancel landed is recorded as cancelled
+
+A route that has already answered, whose `CANCEL` lands before the dispatcher ends its scope, is recorded
+`Cancelled`: the scope's `Dispose` reads only the token, and the page has its result. Narrow, and it needs the
+dispatcher to tell the scope the request SUCCEEDED, which `IIpcRequestScope` (a public seam) has no member for.
+
+- [ ] Decide whether a success-aware end is worth the seam change (found in review, not seen live).
+
 ### 📱 WHAT IS LEFT ON ANDROID NEEDS A PHONE'S ENCODER, NOT AN EMULATOR'S
 
 The segment tier is answered on all three shells (`docs/design/media.md`), and the encoder's ARITHMETIC is

@@ -182,6 +182,37 @@ public class IpcRequestDispatchTests
     }
 
     /// <summary>
+    /// The path the dispatch test below raced on, made certain: the route resumes INSIDE the cancel's signal (it
+    /// awaits a plain completion source the token completes, with no synchronization context to post to), so the
+    /// dispatcher records its OPERATION_CANCELLED before Cancel's own transition. Cancel answered false there, and the
+    /// request was recorded as Failed. On another thread the same ending races Cancel instead of preceding it.
+    /// </summary>
+    [Fact]
+    public async Task Cancel_answers_true_when_the_route_unwinds_inside_the_signal()
+    {
+        var (tracker, _, clock) = Tracking();
+        var dispatcher = new MessageDispatcher(requests: tracker)
+            .MapModule("SLOW", routes => routes.RouteAsync("WORK", async (_, ct) =>
+            {
+                var cancelled = new TaskCompletionSource();
+                using var registration = ct.Register(() => cancelled.TrySetCanceled(ct));
+                await cancelled.Task;
+                return null;
+            }));
+        Task<IpcResponse>? dispatch = null;
+        // A statement, so Task.Run takes it as an Action: an expression returning the dispatch would be awaited.
+        await Task.Run(() => { dispatch = dispatcher.DispatchAsync(Request(id: "req-6")); }).WaitAsync(TimeSpan.FromSeconds(5));
+        clock.Advance(TimeSpan.FromMilliseconds(50));
+
+        Assert.True(tracker.Cancel("req-6"));
+
+        Assert.True(dispatch!.IsCompleted);   // it unwound inside the signal, the path this test exists for
+        var response = await Bounded(dispatch);
+        Assert.Equal(IpcErrorCodes.OperationCancelled, response.Error!.Code);
+        Assert.Equal(IpcRequestState.Cancelled, tracker.GetAll().Single().State);
+    }
+
+    /// <summary>
     /// CANCEL by request id reaches the token the ROUTE observes — which only works because the dispatcher
     /// hands the scope's token down the pipeline rather than the caller's. Bounded, per the standing rule.
     /// </summary>
