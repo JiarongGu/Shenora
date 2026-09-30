@@ -30,6 +30,21 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Added
+
+- **The Chromium shell on Linux** (`linux-x64`; `linux-arm64` is built and not yet run). An app built with
+  `-r linux-x64` is laid out flat: CEF's runtime and resources beside the app, which also runs as `<App>`, and the
+  kit's helper as `<App>-helper`, which every Chromium subprocess runs. It is native because Chromium's zygote
+  forks the renderers, and a process running .NET must not be forked. Chromium's sandbox is on: the renderers ran in
+  their own user and PID namespaces under seccomp, with no setuid `chrome-sandbox`. The machine needs `libnss3`
+  and `libasound2`; the build extracts CEF with `bzip2` and strips `libcef.so` with binutils' `strip`, which takes
+  it from 1,455 MB to 272 MB (a layout of 363 MB where it was 1.5 GB) and warns, keeping it whole, where there is no
+  `strip`. `dotnet publish --self-contained` makes a folder that runs with no .NET installed. Measured on WSL
+  (Ubuntu 24.04, X11), from a package-only app: the page loaded from the app's origin, handshook and echoed (50
+  calls, median 3.2 ms; 1.6 ms in another run from the repo), and the app exited cleanly. Not yet: frameless chrome
+  and the drag bar, a tray, the clipboard;
+  and on WSL a window could take 8–12 s to close, with Chromium's GL over WSL's own, where software GL closed at once.
+
 ### Changed
 
 - **The ready handshake answers without the JSON serializer's first-use cost.** Every shell's bridge read its first

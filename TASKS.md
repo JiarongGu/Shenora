@@ -111,7 +111,7 @@ D37 and D51 are corrected in place to point at them.
      - 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles here (the PE header says ARM64), and an app built
        with `-r win-arm64` lays out an ARM64 launcher, shim and `libcef.dll`. Running it needs ARM64 hardware or
        a `windows-11-arm` CI runner. ⚠ The release job's cross-compile on `windows-latest` is untried until it runs.
-     - the Linux layout runs from the repo but is not packaged, see 5; macOS's is built and packaged, see 4.
+     - the Linux and macOS layouts are built and packaged, see 5 and 4.
    - **The page bridge needs no renderer code, and the kit's IPC runs over it unchanged** (prototype,
      2026-09-28, sandboxed through the shim). The page `fetch`es `POST /__shenora/ipc` on its own origin,
      the browser process answers from the resource handler on CEF's IO thread, and the host pushes with
@@ -226,26 +226,26 @@ D37 and D51 are corrected in place to point at them.
      work, but a dialog needs a person to answer it. Code signing; osx-arm64 (no Apple Silicon Mac here).
    - Whether the app comes to the front when started from Finder: from `open` over ssh it stayed behind the
      active app, which macOS 15's cooperative activation explains and does not settle.
-5. **Linux: the shell RUNS from the repo** (WSL Ubuntu 24.04 with WSLg, X11, CEF 154, 2026-09-30). An app built with
-   `-r linux-x64` is laid out flat: CEF's runtime and resources beside the app, the .NET apphost also as `<App>`, and
-   the kit's `helper_linux.c` as `<App>-helper`, which every subprocess runs, since the zygote forks the renderers
-   and a .NET process must not be forked. The page loaded from the app's origin, handshook and echoed (50 `invoke`s:
-   median 1.6 ms), and the app exited cleanly when its window closed. Chromium's sandbox is on without a setuid
-   `chrome-sandbox`: the renderers and the storage service run in their own user and PID namespaces under seccomp.
+5. **Linux: the shell RUNS, and the package carries it** (WSL Ubuntu 24.04 with WSLg, X11, CEF 154, 2026-09-30). An app
+   built with `-r linux-x64` is laid out flat: CEF's runtime and resources beside the app, the .NET apphost also as
+   `<App>`, and the kit's `helper_linux.c` as `<App>-helper`, which every subprocess runs, since the zygote forks the
+   renderers and a .NET process must not be forked. The page loaded from the app's origin, handshook and echoed (50
+   `invoke`s: median 1.6 ms), and the app exited cleanly when its window closed. Chromium's sandbox is on without a
+   setuid `chrome-sandbox`: the renderers and the storage service run in their own user and PID namespaces under
+   seccomp. **Packaged**: the binding as `runtimes/linux/lib`, both helpers in `tools/linux-*/native` (the release's
+   `chromium-helper-linux` job builds them with zig for glibc 2.28: they need `GLIBC_2.2.5` and `GLIBC_2.17`), and
+   from a local feed an app with nothing but a `PackageReference` built, ran, and self-contained-published a folder
+   that ran with no .NET installed. The build strips `libcef.so` in the cache (1,455 MB to 272 MB).
    **Left:**
-   - Packaging: the Linux binding under `runtimes/linux/lib` (compiled on Windows as `CefOs=Linux`), the helper in
-     `tools/linux-*/native`, and a Linux release job. Until then a Linux app's build on the package stops at the
-     missing helper, with a message saying Linux is not packaged yet.
-   - `libcef.so` is 1.45 GB with its symbols; the layout is 1.5 GB. Stripping it is the obvious cut, unmeasured.
+   - The `chromium-helper-linux` job has not run in CI yet; its steps were rehearsed on WSL.
    - ⚠ **On WSL the window's close took 8–12 s** in development mode (every run) and in about one production run in
      five, with Chromium's GL on WSL's own (`ZINK: failed to choose pdev` on every run); with SwiftShader or no GPU it
      closed in 15–190 ms. A real Linux desktop with working GL is unmeasured (none here).
    - Wayland: Chromium could not reach WSLg's Wayland socket from a `wsl.exe` shell; X11 is what ran.
    - Frameless chrome and the drag bar, the per-OS services (a tray over D-Bus StatusNotifierItem, file dialogs,
-     clipboard), linux-arm64 (the helper cross-compiles with `aarch64-linux-gnu-gcc`, never run).
-   - The machine: WSL has no `sudo`-free gcc or NSS; the run used `apt-get download` libraries on `LD_LIBRARY_PATH`
-     and `CC="zig cc -target x86_64-linux-gnu.2.28"`. A Linux app's own machine needs `libnss3` and `libasound2`
-     (and `bzip2` for the build to extract CEF).
+     clipboard), linux-arm64 (its helper is built, never run).
+   - The machine: WSL had no `sudo`-free gcc, NSS, `bzip2` or binutils; the runs used `apt-get download`ed packages
+     (with an index refreshed into user-owned folders) on `LD_LIBRARY_PATH` and `PATH`, and zig as `CC`.
 
 **The first adopter moves off `OptimizedForm` and `SecondaryWindows`** onto the new shell's window type.
 What it keeps (modules, dispatcher, event bus, `ShenoraPaths`) lives in `Shenora` and is engine-neutral

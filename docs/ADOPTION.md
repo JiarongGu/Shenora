@@ -285,7 +285,9 @@ opens in the system browser exactly once.
 1. **Reference `Shenora.Chromium` from the app's own project** with `<RuntimeIdentifier>win-x64</RuntimeIdentifier>`
    (or `win-arm64`, which is built but not yet run on ARM64 hardware; on a Mac `osx-x64` or `osx-arm64`, where the
    build makes `bundle/<App>.app` and `dotnet publish --self-contained` makes one that runs with no .NET installed
-   — see TASKS for what macOS still lacks),
+   — see TASKS for what macOS still lacks; on Linux `linux-x64`, or `linux-arm64`, built but not yet run, where the
+   build lays the app out flat as `MyApp` beside `MyApp-helper`, the machine needs `libnss3` and `libasound2`, and
+   the build `bzip2` and binutils' `strip`, without which `libcef.so` keeps 1.2 GB of debug information),
    and name the app's assembly `<App>.App` (`<AssemblyName>MyApp.App</AssemblyName>`). The build fetches the pinned
    CEF build and lays the app out as `MyApp.exe`, which is CEF's launcher, starting `MyApp.App.dll`. `MyApp.exe`
    carries the app's `ApplicationIcon`, `Product`, `Company` and version, as an apphost would; a macOS bundle takes

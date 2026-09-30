@@ -63,7 +63,7 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 | `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Modules.Media` — probe, plan, serve, remux, and the shell's own picture surface), file operations (`Shenora.Engine.Files` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.Engine.Compression`). |
 | `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.Engine.Update`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
-| `Shenora.Chromium` | NuGet | `net10.0` (Windows and macOS, x64 and arm64) | Chromium through CEF, for an app that ships its own browser engine instead of WebView2 (D81): a shell of its own (`UseChromium`), and the embedding `Shenora.Windows` hosts as a `ChromiumView`. **CEF is not in the package** — your app's build fetches the pinned CEF build and lays the app out (beside CEF's launcher on Windows, as an app bundle on macOS), so reference it from the app's own project. |
+| `Shenora.Chromium` | NuGet | `net10.0` (Windows, macOS and Linux, x64 and arm64) | Chromium through CEF, for an app that ships its own browser engine instead of WebView2 (D81): a shell of its own (`UseChromium`), and the embedding `Shenora.Windows` hosts as a `ChromiumView`. **CEF is not in the package** — your app's build fetches the pinned CEF build and lays the app out (beside CEF's launcher on Windows, as an app bundle on macOS, beside the kit's helper on Linux), so reference it from the app's own project. |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell. It SHARES the MAUI-shaped half with `Shenora.Android` (`src/Shenora.Mobile/`: transport, dispatcher, safe area, interception) and owns what is genuinely per-platform — AVPlayer, `MPNowPlayingInfoCenter`, ActivityKit — in its own `Services/`. |
 | `@shenora/react` | npm | ES2022 / ESM · **React ≥ 18** | The client half — bridge, event bus, store, hooks. Built and tested against the LATEST React (19); 18 is supported and the floor is enforced rather than assumed — `verify` type-checks the shipped sources against React 18's types, so an API that does not exist there fails here instead of in your build. 18 is the floor because `useSyncExternalStore` is, and the store is built on it. |
@@ -304,9 +304,10 @@ name its assembly `<App>.App`.** Its build fetches the pinned CEF build once per
 to download, SHA-1-checked) and lays the app out as `<App>.exe`, CEF's launcher, which creates Chromium's
 sandbox and starts `<App>.App.dll`. The build refuses a layout that could not start, and an engine with no
 CEF beside it says which package to reference. A reference that arrives only through `Shenora.Windows`
-carries the code, not CEF. Windows and macOS, where the build makes an app bundle. Run from that layout,
-`UseChromium` starts Chromium itself, so Chromium sets up while the rest of the app is composed and the first
-frame comes sooner (D87): call it on the thread that runs the app.
+carries the code, not CEF. Windows, macOS, where the build makes an app bundle, and Linux, where the machine
+needs `libnss3` and `libasound2`. Run from that layout, `UseChromium` starts Chromium itself, so Chromium sets up
+while the rest of the app is composed and the first frame comes sooner (D87): call it on the thread that runs the
+app.
 
 ### `@shenora/react` — the client half
 

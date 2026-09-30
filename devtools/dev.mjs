@@ -1431,8 +1431,11 @@ switch (cmd) {
     // built for a RID that over lib/, the Windows binding; osx-x64 and osx-arm64 both fall back to osx, so one copy
     // serves both, and a Windows app built with no RID, which carries every runtimes/ copy, carries one. Managed
     // code, so it compiles here, into an artifacts path of its own as in verify; the macOS helper is built on a Mac.
-    if (selected.includes('src/Shenora.Chromium'))
+    if (selected.includes('src/Shenora.Chromium')) {
       ok = step("stage the Chromium engine's macOS binding", () => stageChromiumBinding('MacOS', ['osx']));
+      // Linux's the same way: linux-x64 and linux-arm64 both fall back to runtimes/linux.
+      ok = step("stage the Chromium engine's Linux binding", () => stageChromiumBinding('Linux', ['linux'])) && ok;
+    }
     for (const proj of selected) {
       ok = step(`pack ${proj}`, () => run('dotnet', ['pack', proj, '-c', 'Release', '-o', out,
         `-p:Version=${config.version}`, '-v', 'minimal', '-clp:ErrorsOnly'], { env: packEnv })) && ok;

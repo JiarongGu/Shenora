@@ -182,8 +182,43 @@ jobs:
           path: src/Shenora.Chromium/artifacts/
           if-no-files-found: error
 
+  chromium-helper-linux:
+    runs-on: ubuntu-latest
+    name: chromium helper (linux-x64, linux-arm64)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Zig as the C compiler, for its glibc target: the helper then needs glibc 2.28 at the most, where the runner's
+      # gcc would tie it to the runner's own (2.39 on ubuntu-24.04), and linux-arm64 cross-compiles with no other
+      # toolchain. Pinned, and checked against ziglang.org's index.
+      - name: Install zig
+        run: |
+          curl -sSfL -o zig.tar.xz https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz
+          echo "24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c  zig.tar.xz" | sha256sum -c -
+          tar -xJf zig.tar.xz
+          echo "$PWD/zig-x86_64-linux-0.14.1" >> "$GITHUB_PATH"
+
+      - name: Build the linux-x64 helper
+        run: node devtools/dev.mjs cef-native --rid linux-x64
+        env:
+          CC: zig cc -target x86_64-linux-gnu.2.28
+
+      - name: Build the linux-arm64 helper
+        run: node devtools/dev.mjs cef-native --rid linux-arm64
+        env:
+          CC: zig cc -target aarch64-linux-gnu.2.28
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chromium-helper-linux
+          path: src/Shenora.Chromium/artifacts/
+          if-no-files-found: error
+
   publish:
-    needs: [launcher, chromium-shim, chromium-helper-macos]
+    needs: [launcher, chromium-shim, chromium-helper-macos, chromium-helper-linux]
     runs-on: windows-latest   # net10.0-windows targets need Windows to build
     env:
       # This job IS the release, so the bump it makes is authorised. `doctor`'s version-authorship
@@ -337,11 +372,18 @@ jobs:
           name: chromium-helper-macos
           path: src/Shenora.Chromium/artifacts
 
+      - name: Download the Chromium Linux helper
+        uses: actions/download-artifact@v4
+        with:
+          name: chromium-helper-linux
+          path: src/Shenora.Chromium/artifacts
+
       - name: Assert every Chromium native half is present
         shell: pwsh
         run: |
           $native = @{ 'win-x64' = 'shenora_chromium_shim.dll'; 'win-arm64' = 'shenora_chromium_shim.dll';
-                       'osx-x64' = 'shenora_chromium_helper'; 'osx-arm64' = 'shenora_chromium_helper' }
+                       'osx-x64' = 'shenora_chromium_helper'; 'osx-arm64' = 'shenora_chromium_helper';
+                       'linux-x64' = 'shenora_chromium_helper'; 'linux-arm64' = 'shenora_chromium_helper' }
           foreach ($rid in $native.Keys) {
             $file = "src/Shenora.Chromium/artifacts/runtimes/$rid/native/$($native[$rid])"
             if (-not (Test-Path $file)) { throw "Chromium native half missing at $file — its job did not deliver it" }

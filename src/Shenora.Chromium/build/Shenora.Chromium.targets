@@ -51,6 +51,7 @@
     <_ShenoraTar Condition="'$(_ShenoraTar)' == ''">tar</_ShenoraTar>
     <ShenoraCefCache Condition="'$(ShenoraCefCache)' == '' and '$(OS)' == 'Windows_NT'">$(LOCALAPPDATA)\Shenora\cef</ShenoraCefCache>
     <ShenoraCefCache Condition="'$(ShenoraCefCache)' == ''">$(HOME)/.cache/shenora/cef</ShenoraCefCache>
+    <ShenoraChromiumStrip Condition="'$(ShenoraChromiumStrip)' == ''">strip --strip-all</ShenoraChromiumStrip>
     <ShenoraCefRoot>$([System.IO.Path]::Combine('$(ShenoraCefCache)', '$(ShenoraCefBuild)', '$(ShenoraCefPlatform)'))</ShenoraCefRoot>
     <ShenoraCefDist>$([System.IO.Path]::Combine('$(ShenoraCefRoot)', 'dist'))</ShenoraCefDist>
 
@@ -326,6 +327,15 @@ public sealed class ShenoraChromiumStampLauncher : Task
     <Delete Condition="'$(_ShenoraCefNeeded)' == 'true'" Files="$(_ShenoraCefArchive)" />
     <RemoveDir Condition="'$(_ShenoraCefNeeded)' == 'true' and '$(_ShenoraCefTar)' != '0'" Directories="$(ShenoraCefRoot)\$(_ShenoraCefStaging)" />
     <Error Condition="'$(_ShenoraCefNeeded)' == 'true' and '$(_ShenoraCefTar)' != '0'" Text="Extracting the CEF build failed (tar exited $(_ShenoraCefTar)); nothing was kept, so the next build starts again." />
+    <!-- Linux: CEF's libcef.so carries its debug information, 1,183 of its 1,455 MB at CEF 154 (272 MB stripped, and the
+         shell ran the same on both), which no app ships. Stripped once, here in the cache, with ShenoraChromiumStrip
+         (binutils' strip by default; `false` keeps it whole), and kept whole, with a warning, where it cannot be. -->
+    <Exec Condition="'$(_ShenoraCefNeeded)' == 'true' and $(ShenoraCefPlatform.StartsWith('linux')) and '$(ShenoraChromiumStrip)' != 'false'"
+          ContinueOnError="true" WorkingDirectory="$(ShenoraCefRoot)" Command="$(ShenoraChromiumStrip) $(_ShenoraCefStaging)/Release/libcef.so">
+      <Output TaskParameter="ExitCode" PropertyName="_ShenoraCefStripped" />
+    </Exec>
+    <Warning Condition="'$(_ShenoraCefNeeded)' == 'true' and $(ShenoraCefPlatform.StartsWith('linux')) and '$(ShenoraChromiumStrip)' != 'false' and '$(_ShenoraCefStripped)' != '0'"
+             Text="libcef.so keeps its debug information, about 1.2 GB of it: `$(ShenoraChromiumStrip)` exited $(_ShenoraCefStripped). Install binutils, or set ShenoraChromiumStrip to a strip of this machine's, and delete $(ShenoraCefRoot) to fetch it again; or set it to false to keep the symbols." />
     <ShenoraCefPublish Condition="'$(_ShenoraCefNeeded)' == 'true'" Source="$(ShenoraCefRoot)\$(_ShenoraCefStaging)" Destination="$(ShenoraCefDist)" />
   </Target>
 
