@@ -88,6 +88,20 @@ public sealed unsafe class ChromiumWindows
     /// <summary>Is the named window showing? False while it is hidden or not open. UI thread.</summary>
     internal bool IsShowing(string name) => _open.TryGetValue(name, out var w) && w is { IsVisible: true };
 
+    // IUiInteraction's state for the main window, kept so a main window opened while blocked opens blocked.
+    private volatile bool _mainEnabled = true;
+
+    /// <summary>Whether the main window takes input: what it opens with, and what the last change asked.</summary>
+    internal bool MainEnabled => _mainEnabled;
+
+    /// <summary>Take or give back the main window's input (IUiInteraction). Any thread; applied on the UI thread, in
+    /// the order asked.</summary>
+    internal void SetMainEnabled(bool enabled)
+    {
+        _mainEnabled = enabled;
+        _ui.Post(() => { if (_open.TryGetValue(MainWindowName, out var w)) w?.SetEnabled(enabled); });
+    }
+
     /// <summary>
     /// Show a file dialog over the main window, or over any open window when the main one is not. UI thread.
     /// False when no window is open to own it.
@@ -141,6 +155,7 @@ public sealed unsafe class ChromiumWindows
             var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
             if ((options.BackgroundColor ?? _options.Window.BackgroundColor) is { } color) settings.background_color = (uint)color.ToArgb();
             window.Open(PageUrl(options), &settings);
+            if (name == MainWindowName && !_mainEnabled) window.SetEnabled(false);
         }
         catch
         {

@@ -237,6 +237,11 @@ face beside the Windows one, resolving to the same singleton** (D20). Everything
 `WindowsPlaybackSession` or a `WindowsMediaPlayer` builds real machinery, and an app that never plays
 anything must not pay for it by calling `UseWindows`.
 
+**The Chromium shell's `IUiInteraction` disables the main window's Views** (the window and its browser view),
+and a main window opened while blocked opens blocked. ⚠ **On Windows it disables the HWND as well**: Views stops
+the page's input, not the frame's, and the kit's caption hit-test would still drag the window and press its
+caption buttons.
+
 ⚠ **The native player is OPT-IN, by name.** Registering it as `IMediaPlayer` would move audio out of the
 page's own element and leave `PLAYER_REPORT` landing on a player with no `Report` to take — nothing would
 fail, it would quietly stop working.

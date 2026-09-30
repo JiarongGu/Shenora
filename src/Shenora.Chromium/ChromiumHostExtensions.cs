@@ -20,7 +20,7 @@ public static class ChromiumHostExtensions
     /// <see cref="IShellLauncher"/> and its face <see cref="IUrlLauncher"/> (the user's browser, http/https only; a
     /// page's popups go there) and
     /// <see cref="IFileDialogs"/> (CEF's native dialogs over the main window), with the page's route to the dialogs,
-    /// and <see cref="IClipboardService"/>.
+    /// <see cref="IClipboardService"/>, and <see cref="IUiInteraction"/> (the main window takes no input while blocked).
     /// <para>
     /// ⚠ On Windows, Chromium's sandbox exists only when the app starts through CEF's <c>bootstrap.exe</c> and
     /// the kit's shim (D82). Started any other way it runs, and logs a warning that the sandbox is off.
@@ -71,6 +71,8 @@ public static class ChromiumHostExtensions
         }
         builder.Services.AddSingleton<IShenoraRunner>(sp => new ChromiumRunner(options, sp.GetRequiredService<CefUiDispatcher>(),
             sp.GetRequiredService<ChromiumWindows>(), sp.GetService<ChromiumTray>(), sp.GetService<ILogger<ChromiumRunner>>()));
+        // Taking the main window's input while something modal runs, as the WinForms shell disables its form.
+        builder.Services.TryAddSingleton<IUiInteraction>(sp => new ChromiumUiInteraction(sp.GetRequiredService<ChromiumWindows>()));
         builder.Services.TryAddSingleton<IFileDialogs>(sp => new ChromiumFileDialogs(sp.GetRequiredService<ChromiumWindows>(),
             sp.GetRequiredService<CefUiDispatcher>(), sp.GetService<IFileDialogPathStore>(), sp.GetService<ILogger<ChromiumFileDialogs>>()));
         // The page's route to them, registered where the implementation exists (D64), as UseWindows does.

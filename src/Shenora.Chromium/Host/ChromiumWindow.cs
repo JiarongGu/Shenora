@@ -104,6 +104,23 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         _window->activate(_window);
     }
     public void Hide() { if (_window != null) _window->hide(_window); }
+
+    /// <summary>Take or give back the window's input (IUiInteraction). UI thread.</summary>
+    public void SetEnabled(bool enabled)
+    {
+        if (_window == null) return;
+        ((_cef_view_t*)_window)->set_enabled((_cef_view_t*)_window, enabled ? 1 : 0);
+        if (_browserView != null) ((_cef_view_t*)_browserView)->set_enabled((_cef_view_t*)_browserView, enabled ? 1 : 0);
+#if CEF_WINDOWS
+        // Views stops the page's input, not the frame's: the caption hit-test would still drag the window and press
+        // its caption buttons. A disabled HWND takes neither, as a disabled WinForms form.
+        EnableWindow(_window->get_window_handle(_window), enabled ? 1 : 0);
+#endif
+    }
+
+#if CEF_WINDOWS
+    [DllImport("user32")] private static extern int EnableWindow(nint hwnd, int enable);
+#endif
     public bool IsVisible => _window != null && ((_cef_view_t*)_window)->is_visible((_cef_view_t*)_window) == 1;
 
     /// <summary>CEF asks before the window closes. UI thread.</summary>

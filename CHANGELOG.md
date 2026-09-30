@@ -81,6 +81,13 @@ at the first list and missed five more breaking changes.
   scripted file manager on a private session bus: `ShowItems` received the file's URI, a space and a comma in it
   encoded; with none on the bus, the folder was asked for. The Windows and macOS commands are checked, not run: they
   would open a file manager on the machine running them.
+- **The Chromium shell registers `IUiInteraction`**, so something modal takes the main window's input as the
+  WinForms shell's disabled form does: nested, and a main window opened while blocked opens blocked. On Windows the
+  window itself is disabled too, so its drag area and caption buttons stop with the page (the OS gives a disabled
+  window no input; no click was tried). Measured in the sample: on
+  Linux a real click (the X server's, in a virtual display) while blocked queued nothing and the same click once
+  unblocked ran; on Windows the window read disabled while blocked (disabled already when first seen, when blocked
+  before it opened) and enabled after. A real click on macOS was not tried.
 - **`ShenoraPathsOptions.DataDirectory`**: the data folder itself, for an app installed where it may not write
   (under `Program Files`, a Linux `/opt`, a signed macOS bundle). It wins over every default; the data variable, the
   host's agreement with the processes it starts, still wins over it.
