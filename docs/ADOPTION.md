@@ -542,14 +542,14 @@ shell, and the iOS deploy loop: **[guides/mobile.md](guides/mobile.md)**.
 
 ## Not stages — capabilities you can adopt on their own
 
-These three said *"not a stage"* in their own opening lines while living inside a staged migration, which
-is what made this file 1,400 lines and gave a reader who only wanted one of them no way in. They are
-**[guides](guides/)** now, moved verbatim:
+None of these is a step of the migration above: adopt any of them on its own, whenever it fits, from its
+**[guide](guides/)**:
 
 | Guide | Adopt it when |
 |---|---|
 | [The mission scheduler](guides/missions.md) | you have a job queue, a worker pool, or a "don't let these two touch the same path" rule |
 | [The file-update queue](guides/file-updates.md) | path claims are too coarse — you need staged writes, an undo journal, or another process holds your files |
+| [Auxiliary browser sessions](guides/sessions.md) | you drive browsers of your own beside the app's page — pages rendered off-screen, a sign-in window your code watches, a page streamed into your UI — on either desktop shell (`Shenora.Core.Sessions`, over the shell's `ISessionHost`) |
 | [Media playback](guides/media.md) | a file your user picked will not play, or you want the lifecycle in .NET rather than in the page — **and on a phone, when you want the SHELL to draw the picture** under a hole the page leaves, so a film the webview refuses plays with no transcode while your page keeps every control (`useMediaSurface` + `useMediaTransport`) |
 
 ## What stays yours, permanently
