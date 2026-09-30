@@ -360,6 +360,13 @@ interface Shenora.Core.Shell.IUrlLauncher
 interface Shenora.Core.Shell.IWindowOrientation
   public abstract void Lock(Shenora.Core.Shell.WindowOrientation orientation)
   public abstract void Unlock()
+interface Shenora.Core.Shell.IWindowStateStore
+  public abstract Shenora.Core.Shell.WindowState? Load()
+  public abstract void Save(Shenora.Core.Shell.WindowState state)
+sealed class Shenora.Core.Shell.JsonFileWindowStateStore : Shenora.Core.Shell.IWindowStateStore
+  public .ctor(string filePath)
+  public Shenora.Core.Shell.WindowState? Load()
+  public void Save(Shenora.Core.Shell.WindowState state)
 static class Shenora.Core.Shell.ShellCapability
   public const string BackNavigation = "backNavigation"
   public const string ClipboardFiles = "clipboardFiles"
@@ -429,6 +436,37 @@ enum Shenora.Core.Shell.WindowOrientation (int)
   public const Shenora.Core.Shell.WindowOrientation Landscape = 1
   public const Shenora.Core.Shell.WindowOrientation Portrait = 0
   public int value__
+enum Shenora.Core.Shell.WindowPlacement (int)
+  public const Shenora.Core.Shell.WindowPlacement Maximized = 1
+  public const Shenora.Core.Shell.WindowPlacement Normal = 0
+  public int value__
+sealed class Shenora.Core.Shell.WindowState : System.IEquatable<Shenora.Core.Shell.WindowState>
+  public .ctor(int? Width, int? Height, int? X, int? Y, Shenora.Core.Shell.WindowPlacement Placement)
+  public Shenora.Core.Shell.WindowPlacement Placement { get; init; }
+  public Shenora.Core.Shell.WindowState <Clone>$()
+  public bool Equals(Shenora.Core.Shell.WindowState? other)
+  public int? Height { get; init; }
+  public int? Width { get; init; }
+  public int? X { get; init; }
+  public int? Y { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.Shell.WindowState? left, Shenora.Core.Shell.WindowState? right)
+  public static bool op_Inequality(Shenora.Core.Shell.WindowState? left, Shenora.Core.Shell.WindowState? right)
+  public void Deconstruct(out int? Width, out int? Height, out int? X, out int? Y, out Shenora.Core.Shell.WindowPlacement Placement)
+sealed class Shenora.Core.Shell.WindowStateHostOptions
+  public Shenora.Core.Shell.WindowStateOptions? Options { get; init; }
+  public required System.Func<System.IServiceProvider, Shenora.Core.Shell.IWindowStateStore> Store { get; init; }
+sealed class Shenora.Core.Shell.WindowStateOptions
+  public .ctor()
+  public bool MaxToWorkArea { get; init; }
+  public int DefaultHeight { get; init; }
+  public int DefaultWidth { get; init; }
+  public int MinHeight { get; init; }
+  public int MinVisibleHeight { get; init; }
+  public int MinVisibleWidth { get; init; }
+  public int MinWidth { get; init; }
 interface Shenora.Core.WebView.IWebViewInterceptor
   public abstract Shenora.Core.WebView.WebViewRangeDelivery RangeDelivery { get; }
   public abstract System.IDisposable Use(Shenora.Core.WebView.WebViewResourceMiddleware middleware)

@@ -26,13 +26,17 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     private NativeCaptionButtons? _nativeCaptions;
     private CaptionButtonPalette? _theme;   // the page's, once it has said; else the system's
     private CaptionButtonPalette? _colors;  // the page's own colours, which win over any theme
+    private readonly ChromiumWindowGeometry? _geometry;
+    private ChromiumWindowGeometry.Plan? _plan;
 
     // mayClose is asked before the window closes: false keeps it open and hides it instead (the tray's close-to-tray).
+    // geometry, for the main window when the app keeps its state: restored as it opens, saved as it closes.
     public ChromiumWindow(string name, ChromiumWindowOptions options, ChromiumServing serving, ChromiumOrigins origins,
         Func<ChromiumBrowser, ChromiumIpcBridge> bridge, Action<ChromiumWindow> destroyed, ILogger? log, IUrlLauncher? urls = null,
-        Func<ChromiumWindow, bool>? mayClose = null)
+        Func<ChromiumWindow, bool>? mayClose = null, ChromiumWindowGeometry? geometry = null)
     {
         _options = options;
+        _geometry = geometry;
         _destroyed = destroyed;
         _mayClose = mayClose;
         _log = log;
@@ -52,6 +56,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     /// are CEF's from here, and freed when it is done with them.</summary>
     public void Open(Uri url, _cef_browser_settings_t* settings)
     {
+        _plan = _geometry?.Restore(_options.Width, _options.Height);
         var text = url.AbsoluteUri;
         fixed (char* p = text)
         {
@@ -237,8 +242,12 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         ((_cef_base_ref_counted_t*)_browserView)->add_ref((_cef_base_ref_counted_t*)_browserView);
         window->@base.add_child_view(&window->@base, &_browserView->@base);
         if (_options.Title is { } title) SetTitle(title);
-        var size = new _cef_size_t { width = _options.Width, height = _options.Height };
-        window->center_window(window, &size);
+        // A restored position was CEF's initial bounds already; anything else is centred, at the restored size if any.
+        if (_plan is not { X: not null, Y: not null })
+        {
+            var size = new _cef_size_t { width = _plan?.Width ?? _options.Width, height = _plan?.Height ?? _options.Height };
+            window->center_window(window, &size);
+        }
         window->show(window);
 #if CEF_WINDOWS
         // Before the page can ask for anything: the drag area needs the frame's hit-test from the start.
@@ -296,6 +305,15 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             Struct->@base.@base.get_preferred_size = &PreferredSize;
             Struct->on_window_activation_changed = &ActivationChanged;
             Struct->on_window_bounds_changed = &BoundsChanged;
+            if (owner._geometry is not null)
+            {
+                Struct->get_initial_bounds = &InitialBounds;
+                Struct->get_initial_show_state = &InitialShowState;
+                Struct->on_window_closing = &Closing;
+                // The minimum a restored size is floored at holds while the window runs too, or a window dragged
+                // smaller would come back larger than it was left.
+                Struct->@base.@base.get_minimum_size = &MinimumSize;
+            }
 #if CEF_MACOS
             // macOS's own buttons on a frameless window: the traffic lights, over the page's title bar.
             Struct->with_standard_window_buttons = &StandardWindowButtons;
@@ -340,12 +358,51 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             AppCallback.Run(() => From<WindowDelegate>(self)._owner._nativeCaptions?.Activated(active == 1));
         }
 
-        // A maximize or a restore resizes the window: maximize's glyph follows.
+        // A maximize or a restore resizes the window: maximize's glyph follows, and the saved state keeps its bounds.
         [UnmanagedCallersOnly]
         private static void BoundsChanged(_cef_window_delegate_t* self, _cef_window_t* window, _cef_rect_t* bounds)
         {
             using var w = new CefRef<_cef_window_t>(window);
-            AppCallback.Run(() => From<WindowDelegate>(self)._owner._nativeCaptions?.WindowSized());
+            var owner = From<WindowDelegate>(self)._owner;
+            AppCallback.Run(() => owner._nativeCaptions?.WindowSized());
+            var changed = *bounds;
+            AppCallback.Run(() => owner._geometry?.Changed(window, changed));
+        }
+
+        // The restored position, in DIP screen coordinates; empty lets CEF place the window, which is then centred.
+        [UnmanagedCallersOnly]
+        private static _cef_rect_t InitialBounds(_cef_window_delegate_t* self, _cef_window_t* window)
+        {
+            using var w = new CefRef<_cef_window_t>(window);
+            return From<WindowDelegate>(self)._owner._plan is { X: { } x, Y: { } y } plan
+                ? new _cef_rect_t { x = x, y = y, width = plan.Width, height = plan.Height }
+                : default;
+        }
+
+        [UnmanagedCallersOnly]
+        private static cef_show_state_t InitialShowState(_cef_window_delegate_t* self, _cef_window_t* window)
+        {
+            using var w = new CefRef<_cef_window_t>(window);
+            return From<WindowDelegate>(self)._owner._plan is { Maximized: true }
+                ? cef_show_state_t.CEF_SHOW_STATE_MAXIMIZED
+                : cef_show_state_t.CEF_SHOW_STATE_NORMAL;
+        }
+
+        [UnmanagedCallersOnly]
+        private static _cef_size_t MinimumSize(_cef_view_delegate_t* self, _cef_view_t* view)
+        {
+            using var v = new CefRef<_cef_view_t>(view);
+            var minimum = From<WindowDelegate>(self)._owner._geometry!.Minimum;
+            return new _cef_size_t { width = minimum.Width, height = minimum.Height };
+        }
+
+        // Still whole: its bounds can be read, and the state is saved for the next launch.
+        [UnmanagedCallersOnly]
+        private static void Closing(_cef_window_delegate_t* self, _cef_window_t* window)
+        {
+            using var w = new CefRef<_cef_window_t>(window);
+            var owner = From<WindowDelegate>(self)._owner;
+            AppCallback.Run(() => owner._geometry?.Save(window));
         }
 
         [UnmanagedCallersOnly]

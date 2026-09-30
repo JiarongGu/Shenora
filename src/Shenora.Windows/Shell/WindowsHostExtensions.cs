@@ -12,19 +12,6 @@ using Shenora.Chromium;
 
 namespace Shenora.Windows;
 
-/// <summary>Main-window state persistence for <see cref="WindowsHostOptions.WindowState"/>.</summary>
-public sealed class WindowStateHostOptions
-{
-    /// <summary>
-    /// Where the state lives (e.g. a <see cref="JsonFileWindowStateStore"/> under one of the
-    /// app's data areas). Required — the framework does not invent a storage location.
-    /// </summary>
-    public required Func<IServiceProvider, IWindowStateStore> Store { get; init; }
-
-    /// <summary>Sizing defaults/minimums. Null = <see cref="WindowStateOptions"/> defaults.</summary>
-    public WindowStateOptions? Options { get; init; }
-}
-
 /// <summary>Inputs for <see cref="WindowsHostExtensions.UseWindows"/>.</summary>
 public sealed class WindowsHostOptions
 {

@@ -157,6 +157,20 @@ created wherever Windows first places the form (typically the primary monitor), 
 An off-screen saved position is discarded and the window re-centres; a size saved on a bigger display
 shrinks to the target's work area.
 
+**The Chromium shell restores the same state** (`ChromiumHostOptions.WindowState`, the main window only), with none of
+that DPI arithmetic: CEF's Views measure in device-independent pixels on every OS, and the saved rect goes through as
+is, as the window's initial bounds (`get_initial_bounds`); a maximized one opens maximized (`get_initial_show_state`).
+It is checked first against every display's WORK AREA (the WinForms shell checks screen bounds), and when dropped the
+window is centred on the primary display, so it always opens with bounds to restore to. On one display, or displays
+of one scale, the two shells' numbers agree; across monitors of different scales their positions do not carry over,
+and a position that lands nowhere is centred. `WindowStateOptions.MinWidth`/`MinHeight` are the window's live
+minimum too (`get_minimum_size`), as they are the WinForms form's `MinimumSize`.
+
+CEF has no restore bounds, so the shell keeps the bounds the window last SETTLED at while normal (held 300 ms) and
+saves those as it closes (`on_window_closing`), with the maximized flag it last showed. Settled, because macOS
+animates a zoom and reports each frame as a normal window's bounds: before the rule, a maximize from the page saved a
+frame of the animation (1673×949) as the size to restore to.
+
 ## The WebView2 host
 
 `WebViewHost` is the ONE place a WebView2 is configured. `WebViewEnvironment` is separate and built once

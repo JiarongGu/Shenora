@@ -11,8 +11,8 @@ own logic can compile off Windows (D19/D20), and moving a contract later is a br
 ## Steps
 
 1. **Place the CONTRACT before writing anything.** The bar is *"app logic must be able to compile
-   off Windows"*, NOT "the signature happens to be platform-neutral" — which is why the whole
-   window-state stack correctly stays in `Shenora.Windows`. Portable → `Shenora`. Partly
+   off Windows, or a second shell uses it"* (D20, D88), NOT "the signature happens to be
+   platform-neutral". Portable → `Shenora`. Partly
    portable → SPLIT it: the portable slice in Core, the desktop-only operations on an interface
    deriving from it (`IShellLauncher : IUrlLauncher`, `IFormInteraction : IUiInteraction`).
    Windows-only concept → `Shenora.Windows` alone. Never a new package (D2).

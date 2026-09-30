@@ -514,17 +514,18 @@ adapter, which needed no Windows reference either):
    | App root, data and resource paths | `ShenoraPaths` |
 4. **Leave the genuinely platform-bound routes behind** in the desktop project. Reveal-in-Explorer,
    secondary windows on their own STA threads, tray behaviour, window geometry — these are desktop
-   concepts and forcing them through a portable contract only produces a contract nobody else can
-   implement. `Shenora.Sample.Logic` and the desktop sample's own facade split exactly along that line.
+   concepts, and a phone has no expression for them. (Window state's TYPES are in `Shenora` because the
+   Windows and Chromium shells both restore it, D88; restoring it is still the shell's job, not app logic's.)
+   `Shenora.Sample.Logic` and the desktop sample's own facade split exactly along that line.
 5. **Register nothing extra.** `UseWindows` registers both faces of each contract — the Windows one
    (`IShellLauncher`, `IFormInteraction`) and the portable one (`IUrlLauncher`, `IUiInteraction`) —
    against one implementation, so injecting the portable face just works.
 
-**What is deliberately NOT portable, so you do not go looking:** the window-state stack
-(`WindowStateManager`, `IWindowStateStore`) stays in `Shenora.Windows`. Its signatures happen to look
-platform-neutral, and that is not the bar — window geometry is a desktop concept, and the bar is "app
-logic must be able to compile off Windows". Same for `OptimizedForm`, `TrayIcon`, `SplashPanel` and
-`SecondaryWindows`.
+**What is deliberately NOT portable, so you do not go looking:** `WindowStateManager`, the WinForms half of window
+state, stays in `Shenora.Windows`; the state and its store (`WindowState`, `IWindowStateStore`,
+`JsonFileWindowStateStore`) are `Shenora.Core.Shell`'s, because the Chromium shell restores them too (D88). The bar
+is "app logic must be able to compile off Windows, or a second shell uses it", not signatures that happen to look
+platform-neutral. Same for `OptimizedForm`, `TrayIcon`, `SplashPanel` and `SecondaryWindows`.
 
 **If a contract does not fit**, say so — that is the feedback D20 wants. The portable set was derived
 from what the surveyed apps actually needed, so a capability you cannot express through it is a real

@@ -1,3 +1,4 @@
+using Shenora.Core.Shell;
 using Shenora.Windows;
 using Shenora.Tests.TestSupport;
 using Shenora.Core.Ipc;

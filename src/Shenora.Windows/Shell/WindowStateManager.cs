@@ -1,3 +1,5 @@
+using Shenora.Core.Shell;
+
 namespace Shenora.Windows;
 
 /// <summary>

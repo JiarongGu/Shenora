@@ -31,6 +31,7 @@ public sealed unsafe class ChromiumWindows
     private ChromiumServing? _serving;
     private ChromiumOrigins? _origins;
     private bool _isDevelopment;
+    private IWindowStateStore? _windowStore;   // the main window's saved state, when the app keeps it
 
     internal ChromiumWindows(ChromiumHostOptions options, CefUiDispatcher ui, IMessageDispatcher dispatcher, IEventBus? events, ILogger? log,
         IUrlLauncher urls)
@@ -103,6 +104,7 @@ public sealed unsafe class ChromiumWindows
     internal void Initialize(ShenoraApplication app, bool isDevelopment)
     {
         _isDevelopment = isDevelopment;
+        _windowStore = _options.WindowState?.Store(app.Services);
         _origins = ChromiumOrigins.For(_options.VirtualHost, _options.DevUrl, isDevelopment);
         var interceptor = new ChromiumInterceptor();
         app.Pipeline.ApplyTo(interceptor);   // the app's UseFiles and routes reach every window (D64)
@@ -128,8 +130,12 @@ public sealed unsafe class ChromiumWindows
         try
         {
             if (_serving is null || _origins is null) throw new InvalidOperationException("The Chromium shell has not started.");
+            // The main window keeps its size and place across launches when the app has a store for them.
+            var geometry = name == MainWindowName && _windowStore is { } store
+                ? new ChromiumWindowGeometry(store, _options.WindowState!.Options ?? new WindowStateOptions(), _log)
+                : null;
             window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls,
-                w => CloseGuard?.Invoke(w.Name) ?? true);
+                w => CloseGuard?.Invoke(w.Name) ?? true, geometry);
             _open[name] = window;
 
             var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };

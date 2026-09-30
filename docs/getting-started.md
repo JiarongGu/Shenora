@@ -127,6 +127,8 @@ builder.UseChromium(new ChromiumHostOptions
   `NativeCaptionButtons` gives it the system's own buttons instead.
 - **`Shell` is what the page is told**: `getBridge().notifyReady()` answers with it, so the page shows what the app
   composed rather than guessing from the OS.
+- **The window opens where it was left** with `WindowState = new WindowStateHostOptions { Store = sp => new
+  JsonFileWindowStateStore(...) }`: its size, place and maximized state, per the sample.
 - **One instance per install, by default** (`SingleInstance`): a later launch has the running app bring its window
   forward, and exits; its arguments reach the running app through `SingleInstanceHostOptions.OnActivated`. On macOS,
   Finder's "open with" reaches a running app as an Apple Event instead, which the shell does not take yet. An app

@@ -40,6 +40,10 @@ at the first list and missed five more breaking changes.
   that broadcast calls `guard.ActivateRunning(app.Args)`. Both desktop shells run the guard now (D88), on every OS.
   On Windows its mutex is still the logon session's, and now the user's alone within it; on Linux and macOS it is
   the user's and not the session's, since a session there is one terminal.
+- **The window-state types moved to `Shenora.Core.Shell` too**: `WindowState`, `WindowPlacement`,
+  `WindowStateOptions`, `IWindowStateStore`, `JsonFileWindowStateStore` and `WindowStateHostOptions`, since the
+  Chromium shell restores them as well (D88). The same `using Shenora.Core.Shell;` covers them; `WindowStateManager`,
+  the WinForms half, stays in `Shenora.Windows`, and a saved state file reads as before.
 - **The Chromium shell is single-instance by default** (`ChromiumHostOptions.SingleInstance`). An app that runs
   several instances, each with its own `UserDataFolder`, sets it to null to keep doing so.
 
@@ -51,6 +55,16 @@ at the first list and missed five more breaking changes.
   foreground in 5 runs of 6 started from a script), Linux (a later launch from another session, through `setsid`)
   and an Intel Mac: the later launch exited within a second (175 to 876 ms). Whether the window takes the foreground on Linux and macOS was not observed: there the OS decides.
   `ChromiumWindows.Activate` and the tray's Open restore a minimized window too.
+- **The Chromium shell's main window opens where it was left** (`ChromiumHostOptions.WindowState`, with the same
+  store as the WinForms shell's): its size, its place, and maximized or not, with the bounds it restores to kept
+  through a close while maximized, minimized or hidden. A place no display shows any more is dropped and the window
+  centred, a size saved on a bigger display shrinks to its display, and `WindowStateOptions.MinWidth`/`MinHeight`
+  hold while the window runs, so it never reopens larger than it was left. Measured on Windows at 200% scaling, on
+  Linux (openbox) and on an Intel Mac: a written state restored exactly, in device-independent pixels; a maximized
+  one opened maximized and restored to its saved bounds; a window opened normal, maximized during the run (the page's
+  own button on Linux and the Mac, the system's on Windows) and closed, reopened maximized over the bounds it had
+  before; closing a centred window saved where it showed; and a place off every display opened centred. On macOS a
+  zoom's animation frames, which report a normal window's bounds, are not taken for the size to restore to.
 - **A later launch's arguments reach the running app, on both desktop shells**
   (`SingleInstanceHostOptions.OnActivated`, with the launch's working directory), such as a file the app was started
   with. The Chromium sample shows them on its page, which is how each OS was measured; the WinForms shell's side is

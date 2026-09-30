@@ -1,3 +1,4 @@
+using Shenora.Core.Shell;
 using System.Runtime.InteropServices;
 
 namespace Shenora.Windows;

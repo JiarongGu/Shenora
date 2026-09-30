@@ -47,8 +47,8 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   them. And whether a later launch's window takes the foreground on Linux and macOS was not observed: on Linux a
   later launch could hand over its activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands
   over the foreground.
-- [ ] **Window size and position restored** (`WindowState`, `IWindowStateStore`, `JsonFileWindowStateStore`
-  move to Core; the Chromium shell applies and saves through CEF Views, on every OS).
+- [ ] **Secondary windows' own size and place.** The WinForms shell's `SecondaryWindows` restores each window's
+  state (`SecondaryWindowOptions.StateStore`); the Chromium shell restores the main window's only.
 - [ ] **The app's data on macOS** defaults to `~/Library/Application Support/<App>` from a bundle, and every OS
   gets a data-folder option (D89). The app's data is written inside the bundle today.
 - [ ] **Unhandled exceptions** reach the app (the three channels `WinFormsBootstrap` wires) in the Chromium shell.

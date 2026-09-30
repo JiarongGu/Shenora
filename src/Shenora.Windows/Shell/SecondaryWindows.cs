@@ -1,3 +1,4 @@
+using Shenora.Core.Shell;
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;

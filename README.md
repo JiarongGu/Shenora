@@ -285,8 +285,8 @@ prevent a wedge that would otherwise stop an off-screen page for good.
 
 The kit's own Chromium, through CEF (D81–D84), in either of two hosts. **Its own shell**, on CEF's windows:
 frameless chrome with real caption buttons and Snap Layouts, file drops with real paths, native file
-dialogs, the clipboard, a tray, one instance per install (a later launch's arguments reach the running app),
-secondary windows, crash reload and dev-server hot reload. **Or inside a WinForms
+dialogs, the clipboard, a tray, one instance per install (a later launch's arguments reach the running app), a
+main window that opens where it was left, secondary windows, crash reload and dev-server hot reload. **Or inside a WinForms
 app**, as a `ChromiumView` control beside the WebView2 one, keeping `OptimizedForm`, the window commands
 and `SecondaryWindows`:
 

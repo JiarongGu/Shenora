@@ -1,3 +1,4 @@
+using Shenora.Core.Shell;
 using Shenora;
 using Shenora.Windows;
 using Microsoft.Extensions.DependencyInjection;

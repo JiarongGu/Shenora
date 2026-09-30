@@ -1,3 +1,4 @@
+using Shenora.Core.Shell;
 using Microsoft.Extensions.DependencyInjection;
 using Shenora;
 using Shenora.Chromium;

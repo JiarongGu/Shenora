@@ -492,8 +492,9 @@ and the dependency rules a reviewer checks.
   Their Windows implementations stay in
   `Shenora.Windows`, which registers BOTH faces of each split service so app logic can depend on the
   neutral contract and compile with no Windows reference. The bar for moving a contract to `Core` is
-  "app logic must compile off Windows", NOT "the signature happens to be platform-neutral" — which is
-  why the window-state stack deliberately stays in `Shenora.Windows`.
+  "app logic must compile off Windows, or a second shell uses it", NOT "the signature happens to be
+  platform-neutral": the single-instance guard and window state moved when the Chromium shell used them
+  too (D88), while `WindowStateManager`, their WinForms applier, stays in `Shenora.Windows`.
   🔴 **The one package-on-package edge above `Shenora` is `Shenora.Windows` → `Shenora.Chromium`** (D83), for
   `ChromiumView`. It carries the engine's managed code, never CEF: the engine's build assets stay private to a
   direct reference. D37 merged the session stack into `Shenora.Windows`, where it is the `Sessions/` FOLDER, so

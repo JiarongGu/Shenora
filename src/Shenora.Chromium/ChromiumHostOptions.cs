@@ -64,6 +64,16 @@ public sealed class ChromiumHostOptions
     /// </para>
     /// </summary>
     public SingleInstanceHostOptions? SingleInstance { get; init; } = new();
+
+    /// <summary>
+    /// The main window's size, position and maximized state, saved as it closes and restored as it opens; null (the
+    /// default) keeps none. Device-independent pixels, as the window's own <see cref="ChromiumWindowOptions.Width"/>
+    /// and <see cref="ChromiumWindowOptions.Height"/>, which it opens at, centred, when nothing is saved. A saved
+    /// position no display can show any more is dropped, and the window is centred. The options'
+    /// <see cref="WindowStateOptions.MinWidth"/> and <see cref="WindowStateOptions.MinHeight"/> are the window's
+    /// minimum size while it runs too, so it never reopens larger than it was left.
+    /// </summary>
+    public WindowStateHostOptions? WindowState { get; init; }
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

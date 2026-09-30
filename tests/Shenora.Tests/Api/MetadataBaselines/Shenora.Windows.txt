@@ -139,9 +139,6 @@ Shenora.Windows.IWebViewResourceProvider
   method BeginWarmup
   method Exists
   method GetResourceStream
-Shenora.Windows.IWindowStateStore
-  method Load
-  method Save
 Shenora.Windows.InteractiveSession
   method .ctor
   method ClearProfile
@@ -174,10 +171,6 @@ Shenora.Windows.InteractiveSessionResult
   property Blob
   property ErrorCode
   property Success
-Shenora.Windows.JsonFileWindowStateStore
-  method .ctor
-  method Load
-  method Save
 Shenora.Windows.OptimizedForm
   event MaximizedChanged
   method .ctor
@@ -779,28 +772,6 @@ Shenora.Windows.WindowCommandOptions
   property SetCaptionButtons
   property ToggleMaximize
   property Window
-Shenora.Windows.WindowPlacement
-  field Maximized
-  field Normal
-  field value__
-Shenora.Windows.WindowState
-  method .ctor
-  method Deconstruct
-  method Equals
-  method Equals
-  method GetHashCode
-  method ToString
-  method op_Equality
-  method op_Inequality
-  property Height
-  property Placement
-  property Width
-  property X
-  property Y
-Shenora.Windows.WindowStateHostOptions
-  method .ctor
-  property Options
-  property Store
 Shenora.Windows.WindowStateManager
   method .ctor
   method Apply
@@ -809,15 +780,6 @@ Shenora.Windows.WindowStateManager
   method AttachTo
   method IsVisible
   method Save
-Shenora.Windows.WindowStateOptions
-  method .ctor
-  property DefaultHeight
-  property DefaultWidth
-  property MaxToWorkArea
-  property MinHeight
-  property MinVisibleHeight
-  property MinVisibleWidth
-  property MinWidth
 Shenora.Windows.WindowsHostExtensions
   method UseChromiumEngine
   method UseWindows

@@ -554,3 +554,9 @@ ActivateMessageName                   # the window-message channel went; the cha
 Shenora.Windows.SingleInstanceGuard   # -> Shenora.Core.Shell.SingleInstanceGuard
 Shenora.Windows.SingleInstanceHostOptions  # -> Shenora.Core.Shell.SingleInstanceHostOptions
 Shenora.Windows.SingleInstanceResult  # -> Shenora.Core.Shell.SingleInstanceResult
+Shenora.Windows.WindowState           # -> Shenora.Core.Shell.WindowState (D88: both desktop shells restore it)
+Shenora.Windows.WindowPlacement       # -> Shenora.Core.Shell.WindowPlacement
+Shenora.Windows.WindowStateOptions    # -> Shenora.Core.Shell.WindowStateOptions
+Shenora.Windows.IWindowStateStore     # -> Shenora.Core.Shell.IWindowStateStore
+Shenora.Windows.JsonFileWindowStateStore  # -> Shenora.Core.Shell.JsonFileWindowStateStore
+Shenora.Windows.WindowStateHostOptions    # -> Shenora.Core.Shell.WindowStateHostOptions

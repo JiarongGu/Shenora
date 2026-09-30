@@ -288,7 +288,7 @@ docs cite them — so the number is the column to scan.
   stop.** The mirror case: `IPathLocker` stays with its implementation, because advisory lock files are
   portable and no shell implements it. **Scope guard:** a contract moves only when app logic needs it to
   compile off Windows, or a second shell uses it — portable-in-signature is not the bar. The single-instance
-  guard moved on the second, when the Chromium shell needed it too (D88).
+  guard and window state moved on the second, when the Chromium shell needed them too (D88).
 
 - **D21 — For a whole application FEATURE, the kit ships primitives + lifecycle hooks; the app owns the
   product.** Owner: *"co-browse itself is a whole feature — you just need to provide enough interface for
@@ -434,9 +434,10 @@ docs cite them — so the number is the column to scan.
   implement differently like dropzone and frameless)"*. `Shenora.Mobile` references no Windows assembly.
   **A thin shell is the evidence the split is in the right place**, because the substrate moved first — a
   fat shell would have meant something portable was still trapped in the Windows one.
-  - **The bar stays D20's, not "it looks platform-neutral":** *can app logic compile off Windows?*
-    Window geometry, tray, secondary windows and native drop zones stay in the Windows shell because
-    they are desktop CONCEPTS — on mobile they are absent, not different.
+  - **The bar stays D20's, not "it looks platform-neutral":** *can app logic compile off Windows, or does a
+    second shell use it?* Tray, secondary windows and native drop zones stay in the desktop shells because they
+    are desktop CONCEPTS — on mobile they are absent, not different. Window state is one too, and its types are
+    Core's only because both desktop shells restore it (D88); a phone shell registers nothing for it.
   - 🔴 **A platform limit recorded as permanent outlives the platform.** Lifting the resource-serving layer
     once died because `HybridWebView` had no seam; `WebResourceRequested` now exists and D45 uses it.
     **What survives is the METHOD — check the platform before designing — not the verdict.**
