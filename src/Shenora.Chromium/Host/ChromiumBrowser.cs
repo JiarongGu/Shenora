@@ -177,14 +177,17 @@ internal sealed unsafe class ChromiumBrowser
     }
 
     /// <summary>
-    /// Show CEF's own file dialog, native on each OS, over this page's window. UI thread. <paramref name="done"/> gets
-    /// the picked paths, none when the user cancelled or the page's browser is gone.
+    /// Show CEF's own file dialog, native on each OS, over this page's window, in <paramref name="folder"/> and with a
+    /// save's <paramref name="fileName"/> filled in. UI thread. <paramref name="done"/> gets the picked paths, none when
+    /// the user cancelled or the page's browser is gone.
     /// </summary>
-    public void RunFileDialog(cef_file_dialog_mode_t mode, string title, string defaultPath, IReadOnlyList<string> filters, Action<string[]> done)
+    public void RunFileDialog(cef_file_dialog_mode_t mode, string title, string folder, string? fileName, IReadOnlyList<string> filters, Action<string[]> done)
     {
         if (_browser == null) { done([]); return; }
         using var host = new CefRef<_cef_browser_host_t>(_browser->get_host(_browser));
         if (host.IsNull) { done([]); return; }
+        StartIn(host.Ptr, folder);
+        var defaultPath = string.IsNullOrWhiteSpace(fileName) ? folder : Path.Combine(folder, fileName);
         var list = Cef.cef_string_list_alloc();
         try
         {
@@ -206,6 +209,32 @@ internal sealed unsafe class ChromiumBrowser
             }
         }
         finally { Cef.cef_string_list_free(list); }
+    }
+
+    // CEF passes none of a dialog's default path on but a save's file name: Chromium starts every dialog in the
+    // profile's last-selected directory, so the folder goes there, where it is read.
+    private void StartIn(_cef_browser_host_t* host, string folder)
+    {
+        using var context = new CefRef<_cef_request_context_t>(host->get_request_context(host));
+        if (context.IsNull) return;
+        var preferences = &context.Ptr->@base;
+        var value = Cef.cef_value_create();
+        var error = default(_cef_string_utf16_t);
+        const string name = "selectfile.last_directory";
+        fixed (char* f = folder)
+        fixed (char* n = name)
+        {
+            var folderString = CefStrings.View(f, folder.Length);
+            var nameString = CefStrings.View(n, name.Length);
+            value->set_string(value, &folderString);
+            // The call consumes the value's one reference.
+            if (preferences->set_preference(preferences, &nameString, value, &error) != 1)
+            {
+                var reason = CefStrings.Read(&error);
+                AppCallback.Log(_log, () => $"[Shenora.Chromium] The file dialog cannot start in its folder: {reason}", LogLevel.Warning);
+            }
+        }
+        Cef.cef_string_utf16_clear(&error);
     }
 
     // ── what CEF reports, delegated here ──────────────────────────────────────────────────────────────

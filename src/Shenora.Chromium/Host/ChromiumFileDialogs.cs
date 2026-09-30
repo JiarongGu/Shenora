@@ -11,9 +11,14 @@ namespace Shenora.Chromium.Host;
 /// <see cref="FileDialogOptions.DefaultPath"/>, then Documents; a successful pick is remembered; the titles default
 /// alike.
 /// <para>
-/// ⚠ Two options CEF cannot express. <see cref="OpenFolderOptions.AllowFileSelection"/> is a folder pick: CEF has no
-/// file-or-folder mode. <see cref="SaveFileOptions.DefaultExtension"/> is appended here when the user typed no
-/// extension. The remaining desktop hints (existence and name checks, the overwrite prompt) are the OS dialog's own.
+/// ⚠ What CEF cannot express. <see cref="OpenFolderOptions.AllowFileSelection"/> is a folder pick: CEF has no
+/// file-or-folder mode, and its one folder mode is Chromium's upload-folder, whose accept button reads "Upload".
+/// <see cref="SaveFileOptions.DefaultExtension"/> is appended here when the user typed no extension. The remaining
+/// desktop hints (existence and name checks, the overwrite prompt) are the OS dialog's own.
+/// </para>
+/// <para>
+/// The start folder is Chromium's own last-used folder for the profile, set before each dialog, because CEF passes
+/// on no folder of its own; so a page's own <c>&lt;input type="file"&gt;</c> afterwards opens there too.
 /// </para>
 /// </summary>
 internal sealed class ChromiumFileDialogs(ChromiumWindows windows, CefUiDispatcher ui, IFileDialogPathStore? store, ILogger? log) : IFileDialogs
@@ -47,12 +52,11 @@ internal sealed class ChromiumFileDialogs(ChromiumWindows windows, CefUiDispatch
         IReadOnlyList<FileDialogFilter>? filters, Func<string, (string Path, string? Directory)> accept)
     {
         var initial = await ResolveInitialPathAsync(options).ConfigureAwait(false);
-        var defaultPath = string.IsNullOrWhiteSpace(fileName) ? initial : Path.Combine(initial, fileName);
         var picked = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously);
         var accepted = AcceptFilters(filters);
         var posted = ui.Post(() =>
         {
-            if (!windows.RunFileDialog(mode, title, defaultPath, accepted, files => picked.TrySetResult(files)))
+            if (!windows.RunFileDialog(mode, title, initial, fileName, accepted, files => picked.TrySetResult(files)))
                 picked.TrySetException(new InvalidOperationException("No Chromium window is open to own the file dialog."));
         });
         if (!posted) throw new InvalidOperationException("The Chromium shell is not running.");

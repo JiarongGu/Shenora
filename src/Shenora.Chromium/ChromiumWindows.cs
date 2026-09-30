@@ -91,11 +91,11 @@ public sealed unsafe class ChromiumWindows
     /// Show a file dialog over the main window, or over any open window when the main one is not. UI thread.
     /// False when no window is open to own it.
     /// </summary>
-    internal bool RunFileDialog(cef_file_dialog_mode_t mode, string title, string defaultPath, IReadOnlyList<string> filters, Action<string[]> done)
+    internal bool RunFileDialog(cef_file_dialog_mode_t mode, string title, string folder, string? fileName, IReadOnlyList<string> filters, Action<string[]> done)
     {
         var owner = (_open.TryGetValue(MainWindowName, out var main) ? main : null) ?? _open.Values.FirstOrDefault(w => w is not null);
         if (owner is null) return false;
-        owner.Browser.RunFileDialog(mode, title, defaultPath, filters, done);
+        owner.Browser.RunFileDialog(mode, title, folder, fileName, filters, done);
         return true;
     }
 

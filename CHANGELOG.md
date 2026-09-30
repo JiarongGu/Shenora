@@ -55,6 +55,17 @@ at the first list and missed five more breaking changes.
   for the two (medians, 10 interleaved pairs). A page that lays out once it knows the shell does so sooner. A
   source-generated context for the envelope was measured too and was slower under JIT, compiling itself.
 
+### Fixed
+
+- **A file dialog in the Chromium shell starts in the folder it was asked for.** CEF's file-dialog code, the same on
+  every OS, passes on none of a dialog's default path but a save's file name, so each dialog opened wherever
+  Chromium last picked for the profile, and neither `DefaultPath` nor the remembered folder did anything. The kit
+  now sets that last-picked folder before each dialog, so a page's own `<input type="file">` opens there too.
+  Measured on Windows and Linux, three dialogs asked for three folders: each now resolves a bare name in its own.
+  Before, on Linux all three opened in the home folder; on Windows the folder dialog opened in Documents and the
+  open dialog could not find its file. The folder dialog's accept button reads "Upload" on both, which is CEF's one
+  folder mode.
+
 ## 0.18.0 — 2026-09-29
 
 ### Added
