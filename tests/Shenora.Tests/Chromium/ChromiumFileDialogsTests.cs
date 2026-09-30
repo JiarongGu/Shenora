@@ -90,6 +90,15 @@ public class ChromiumFileDialogsTests : IDisposable
     }
 
     [Fact]
+    public void With_no_Documents_the_start_folder_is_home()
+    {
+        var home = Directory.CreateDirectory(Path.Combine(_dir, "home")).FullName;
+        Assert.Equal(_dir, ChromiumFileDialogs.DocumentsOrHome(_dir, home));
+        Assert.Equal(home, ChromiumFileDialogs.DocumentsOrHome(Path.Combine(_dir, "gone"), home));
+        Assert.Equal(home, ChromiumFileDialogs.DocumentsOrHome("", home));   // an empty answer from GetFolderPath
+    }
+
+    [Fact]
     public async Task A_pick_remembers_its_folder_under_the_key_and_only_a_real_folder()
     {
         var store = new Store(null);

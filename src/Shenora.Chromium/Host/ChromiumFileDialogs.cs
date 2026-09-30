@@ -8,7 +8,7 @@ namespace Shenora.Chromium.Host;
 /// The Chromium shell's <see cref="IFileDialogs"/>: CEF's own file dialog, which is each OS's native one, over the
 /// main window. The contract's semantics are the WebView2 shell's <c>FileDialogs</c>: the start folder is the
 /// remembered one (<see cref="IFileDialogPathStore"/>, dropped when it no longer exists), then
-/// <see cref="FileDialogOptions.DefaultPath"/>, then Documents; a successful pick is remembered; the titles default
+/// <see cref="FileDialogOptions.DefaultPath"/>, then Documents (the home folder, for an account with none); a successful pick is remembered; the titles default
 /// alike.
 /// <para>
 /// ⚠ What CEF cannot express. <see cref="OpenFolderOptions.AllowFileSelection"/> is a folder pick: CEF has no
@@ -102,8 +102,13 @@ internal sealed class ChromiumFileDialogs(ChromiumWindows windows, CefUiDispatch
             }
         }
         if (!string.IsNullOrWhiteSpace(options?.DefaultPath) && Directory.Exists(options.DefaultPath)) return options.DefaultPath;
-        return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        return DocumentsOrHome(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
     }
+
+    // Documents where the account has one: a Linux one need not (WSL's had none), and a start folder that is not there
+    // left GTK's dialog on its Recent view.
+    internal static string DocumentsOrHome(string documents, string home) => Directory.Exists(documents) ? documents : home;
 
     // Never allowed to fail the pick the user already made.
     internal async Task RememberAsync(FileDialogOptions? options, string? directory)

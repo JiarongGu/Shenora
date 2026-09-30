@@ -49,7 +49,8 @@ at the first list and missed five more breaking changes.
     xdotool's as well as the page's). It is named for the app (`MyApp`, whether started as `MyApp` or
     `MyApp.App`), as X11's `WM_CLASS` and the Wayland app id, so a dock can match it to the app's `.desktop` file;
     it had no `WM_CLASS` at all. On a Wayland session CEF draws through XWayland (the app id is set but unmeasured).
-  - **File dialogs** are GTK's, over the window, named the same.
+  - **File dialogs** are GTK's, over the window, named the same. With no folder asked for, one starts in Documents,
+    or in the home folder where the account has none: WSL's has none, and GTK's dialog opened on its Recent list.
   - **The clipboard** is X11's, on a connection of the kit's own: text as Chromium offers it, HTML, PNG, files as a
     URI list and as GNOME's copied-files list, and any other media type under its own name. Measured against xclip
     both ways, byte for byte, a 20 MB picture read in parts (INCR) among them, and against Chromium's own clipboard
