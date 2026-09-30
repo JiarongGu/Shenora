@@ -60,10 +60,10 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 
 | Package | Registry | Target framework | In one line |
 |---|---|---|---|
-| `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Modules.Media` — probe, plan, serve, remux, and the shell's own picture surface), file operations (`Shenora.Engine.Files` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.Engine.Compression`). |
+| `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Modules.Media` — probe, plan, serve, remux, and the shell's own picture surface), file operations (`Shenora.Engine.Files` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.Engine.Compression`); and the auxiliary browser sessions (`Shenora.Core.Sessions`), written once over the browsers each shell makes. |
 | `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.Engine.Update`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
-| `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
-| `Shenora.Chromium` | NuGet | `net10.0` (Windows, macOS and Linux, x64 and arm64) | Chromium through CEF, for an app that ships its own browser engine instead of WebView2 (D81): a shell of its own (`UseChromium`), and the embedding `Shenora.Windows` hosts as a `ChromiumView`. **CEF is not in the package** — your app's build fetches the pinned CEF build and lays the app out (beside CEF's launcher on Windows, as an app bundle on macOS, beside the kit's helper on Linux), so reference it from the app's own project. |
+| `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and the auxiliary sessions' browsers in WebView2. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
+| `Shenora.Chromium` | NuGet | `net10.0` (Windows, macOS and Linux, x64 and arm64) | Chromium through CEF, for an app that ships its own browser engine instead of WebView2 (D81): a shell of its own (`UseChromium`), complete on Windows, macOS and Linux with no other shell package (D88), and the embedding `Shenora.Windows` hosts as a `ChromiumView`. **CEF is not in the package** — your app's build fetches the pinned CEF build and lays the app out (beside CEF's launcher on Windows, as an app bundle on macOS, beside the kit's helper on Linux), so reference it from the app's own project. |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell. It SHARES the MAUI-shaped half with `Shenora.Android` (`src/Shenora.Mobile/`: transport, dispatcher, safe area, interception) and owns what is genuinely per-platform — AVPlayer, `MPNowPlayingInfoCenter`, ActivityKit — in its own `Services/`. |
 | `@shenora/react` | npm | ES2022 / ESM · **React ≥ 18** | The client half — bridge, event bus, store, hooks. Built and tested against the LATEST React (19); 18 is supported and the floor is enforced rather than assumed — `verify` type-checks the shipped sources against React 18's types, so an API that does not exist there fails here instead of in your build. 18 is the floor because `useSyncExternalStore` is, and the store is built on it. |
@@ -271,7 +271,9 @@ buffered whole.
 > into a session deliberately, set `VirtualHost` + `ResourceProvider` on its `WebView2SessionBrowserOptions` —
 > `docs/guides/sessions.md` has the both-or-neither rule and the CORS caveat.
 
-Off-screen and auxiliary browser sessions over the same runtime: a bounded LIFO `RenderSessionPool`,
+The sessions are `Shenora.Core.Sessions` types, written once over the browsers each shell makes (D91): this
+package makes them in WebView2 (`WebView2SessionHost`), and `Shenora.Chromium` makes them in CEF. Off-screen and
+auxiliary browser sessions: a bounded LIFO `RenderSessionPool`,
 `InteractiveSession` (a human-in-the-loop window over an isolated persistent profile, driven by
 **your** driver), and `StreamingSession` (frames out, input in). The kit ships the mechanics and no
 scenario — a worked driver example lives in the sample, to copy and edit. **What a session DOES is
@@ -286,7 +288,10 @@ prevent a wedge that would otherwise stop an off-screen page for good.
 The kit's own Chromium, through CEF (D81–D84), in either of two hosts. **Its own shell**, on CEF's windows:
 frameless chrome with real caption buttons and Snap Layouts, file drops with real paths, native file
 dialogs, the clipboard, a tray, one instance per install (a later launch's arguments reach the running app), a
-main window that opens where it was left, secondary windows, crash reload and dev-server hot reload. **Or inside a WinForms
+main window that opens where it was left, secondary windows, revealing files and launching processes, naming who holds
+a file open, the app's unhandled exceptions, the main window's input taken while something modal runs, the auxiliary
+browser sessions, crash reload and dev-server hot reload: a complete shell, so an app on Windows, macOS or Linux needs
+no other shell package (D88). **Or inside a WinForms
 app**, as a `ChromiumView` control beside the WebView2 one, keeping `OptimizedForm`, the window commands
 and `SecondaryWindows`:
 

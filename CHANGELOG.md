@@ -35,9 +35,11 @@ at the first list and missed five more breaking changes.
 - **The auxiliary browser sessions moved to `Shenora.Core.Sessions`, over a host the shell registers (D91).**
   `RenderSessionPool`, `StreamingSession`, `InteractiveSession`, `SessionController`, `SessionBrowserOptions` and
   every type they use (the hook records, `SessionEvents` and its payloads, the `SessionInput` family,
-  `SessionCookie`) were `Shenora.Windows` types: an app adds `using Shenora.Core.Sessions;`. Each session's
-  options take `Host` (an `ISessionHost`; `UseWindows` registers `WebView2SessionHost`, and
-  `new WebView2SessionHost(control)` makes one over a control of your own) in place of `Anchor`. The fields only
+  `SessionCookie`) were `Shenora.Windows` types: an app adds `using Shenora.Core.Sessions;`.
+  `RenderSessionPoolOptions`, `StreamingSessionOptions` and `InteractiveSessionOptions` take a required `Host` (an
+  `ISessionHost`; `UseWindows` registers `WebView2SessionHost`, and `new WebView2SessionHost(control)` makes one over
+  a control of your own) in place of `Anchor`, so an initializer that set `Anchor` stops compiling until it sets
+  `Host` instead. The fields only
   WebView2 has (`VirtualHost`, `ResourceProvider`, `FolderMappings`, `AdditionalBrowserArguments`, `IsDevelopment`)
   moved to `WebView2SessionBrowserOptions`, which derives from `SessionBrowserOptions` and goes where it did.
   `InteractiveSessionOptions` lost `Icon` and `Owner`: the window wears the main window's icon and is modal to it,
