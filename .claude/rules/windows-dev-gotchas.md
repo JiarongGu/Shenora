@@ -26,6 +26,9 @@
 - **`process.exit()` with a `fetch` in flight aborts Node** (libuv `UV_HANDLE_CLOSING` assertion) and
   the abort REPLACES the exit code, so a script that meant to fail reports SUCCESS. Set
   `process.exitCode` instead.
+- **PowerShell variable names are case-INSENSITIVE**: in a probe script `$h` (a window handle) IS the `$H` height
+  parameter, so the window got the handle as its height, Windows clamped it to the screen, and it read as a kit bug
+  for an hour. Name handles `$hwnd`.
 - PS 5.1 quirks in scripts: no `&&`/`||` chains; `-Encoding utf8` writes a BOM (fine for
   PowerShell, poison for JSONL/BOM-sensitive consumers). BOM-less UTF-8 C# sources on this
   CJK-locale machine need `<CodePage>65001</CodePage>` or csc reads them as ANSI (set in
