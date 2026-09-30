@@ -106,11 +106,19 @@ internal sealed unsafe class ChromiumWindowGeometry(IWindowStateStore store, Win
         _latest = normal ? (bounds, now) : null;
     }
 
-    /// <summary>What closing at <paramref name="now"/> saves: the window's state as <see cref="Save"/> reads it.</summary>
+    /// <summary>
+    /// What closing at <paramref name="now"/> saves: the window's state as <see cref="Save"/> reads it. Maximized if
+    /// the window says so, or said so while it last showed (a minimized or hidden one can deny it). A window
+    /// maximized as it closes drops its newest normal-looking bounds rather than settling them: they are its
+    /// maximize's last frame, which macOS reports as a normal window's and may follow with no maximized change at all
+    /// (measured: 2 zooms in 15 then saved the full-screen frame as the size to restore to).
+    /// </summary>
     internal WindowState? Closing(bool shows, bool normal, bool maximized, Rectangle current, long now)
     {
-        SettleBy(now);
-        return StateFor(_normal, current, shows && normal, shows ? maximized : _maximized);
+        var isMaximized = maximized || (!shows && _maximized);
+        if (isMaximized) _latest = null;
+        else SettleBy(now);
+        return StateFor(_normal, current, shows && normal, isMaximized);
     }
 
     private void SettleBy(long now)

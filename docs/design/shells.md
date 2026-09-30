@@ -169,7 +169,9 @@ minimum too (`get_minimum_size`), as they are the WinForms form's `MinimumSize`.
 CEF has no restore bounds, so the shell keeps the bounds the window last SETTLED at while normal (held 300 ms) and
 saves those as it closes (`on_window_closing`), with the maximized flag it last showed. Settled, because macOS
 animates a zoom and reports each frame as a normal window's bounds: before the rule, a maximize from the page saved a
-frame of the animation (1673×949) as the size to restore to.
+frame of the animation (1673×949) as the size to restore to. And a window maximized as it closes drops its newest
+normal-looking bounds unsettled, because macOS can end a zoom on its full-screen frame with no maximized change after
+it (2 zooms in 21 saved that frame as a Normal size before; none in 25 after).
 
 ## The WebView2 host
 

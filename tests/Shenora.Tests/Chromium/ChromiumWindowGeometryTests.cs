@@ -153,6 +153,22 @@ public class ChromiumWindowGeometryTests
     }
 
     [Fact]
+    public void A_zoom_whose_last_frame_never_says_maximized_is_still_saved_maximized_over_the_bounds_before()
+    {
+        // The measured macOS failure: the frames of a zoom, the last one full screen, all reported as a normal
+        // window's, and no maximized change after them; at the close, which is seconds later, the window is hidden
+        // and says it is maximized. It saved the full-screen frame as a Normal size before this.
+        var g = Tracker();
+        g.Observe(true, true, false, Left, now: 0);
+        g.Observe(true, true, false, new Rectangle(25, 41, 1606, 919), now: 5000);
+        g.Observe(true, true, false, new Rectangle(9, 31, 1653, 939), now: 5032);
+        g.Observe(true, true, false, new Rectangle(0, 25, 1680, 951), now: 5065);   // the last frame, "normal"
+
+        Assert.Equal(new WindowState(1100, 700, 200, 150, WindowPlacement.Maximized),
+            g.Closing(shows: false, normal: false, maximized: true, new Rectangle(0, 25, 1680, 951), now: 8000));
+    }
+
+    [Fact]
     public void A_maximize_in_one_step_keeps_the_bounds_the_window_had()
     {
         var g = Tracker();
