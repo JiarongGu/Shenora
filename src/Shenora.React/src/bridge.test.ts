@@ -81,6 +81,46 @@ describe('ShenoraBridge', () => {
     expect(() => transport.emitFromHost({ category: IpcCategories.ipc, id, success: true })).not.toThrow();
   });
 
+  it('an unbounded timeout waits for the host however long it takes', async () => {
+    // A dialog waits on a person. `setTimeout` fires Infinity, or any delay over 2^31-1 ms, AT ONCE, so a caller
+    // asking for no limit used to be rejected immediately.
+    vi.useFakeTimers();
+    const { transport, bridge } = createBridge();
+
+    for (const timeoutMs of [Infinity, 2 ** 31]) {
+      const promise = bridge.invoke('APP', 'PICK', { timeoutMs });
+      vi.advanceTimersByTime(40 * 24 * 60 * 60 * 1000);
+      transport.respondToLast(`picked ${timeoutMs}`);
+      await expect(promise).resolves.toBe(`picked ${timeoutMs}`);
+    }
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('an unbounded request still ends when the bridge is disposed', async () => {
+    const { bridge } = createBridge();
+
+    const promise = bridge.invoke('APP', 'PICK', { timeoutMs: Infinity });
+    bridge.dispose();
+
+    await expect(promise).rejects.toMatchObject({ code: IpcErrorCodes.noTransport });
+  });
+
+  it('an unbounded fallback call is not raced against a timer', async () => {
+    vi.useFakeTimers();
+    let settle: (value: unknown) => void = () => {};
+    const bridge = new ShenoraBridge({
+      transport: null,
+      eventBus: new ShenoraEventBus(),
+      fallback: () => new Promise((resolve) => { settle = resolve; }),
+    });
+
+    const promise = bridge.invoke('APP', 'PICK', { timeoutMs: Infinity });
+    expect(vi.getTimerCount()).toBe(0);
+    settle('picked');
+
+    await expect(promise).resolves.toBe('picked');
+  });
+
   it('unbundles notification batches into the event bus in order', () => {
     const { transport, bus } = createBridge();
     const received: EventMessage[] = [];

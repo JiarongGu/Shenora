@@ -127,10 +127,18 @@ a rule is read as instructions — this line pointed at a folded package and a r
   a `BaseModuleService` singleton built at module scope, the normal way to write one — rejects every
   later request with "Bridge disposed" for the rest of the session. `isAvailable` must include
   `!disposed` too, or a stale reference reports itself usable while rejecting everything.
-- **Every request path is bounded, including the browser `fallback`.** That branch bypassed the timeout
-  entirely, so an async fallback (a scripted preview harness usually is) that never settled hung the
-  caller with none of the real path's diagnostics. Race a THENABLE only — a plain value has already
-  settled and must not be made async.
+- **Every request path is bounded, including the browser `fallback`** — except a request that waits on a
+  PERSON. That branch bypassed the timeout entirely, so an async fallback (a scripted preview harness usually
+  is) that never settled hung the caller with none of the real path's diagnostics. Race a THENABLE only — a
+  plain value has already settled and must not be made async.
+  ⚠ **The exception, and what it moves onto the host:** a request answered when a person is done (a file
+  dialog) is sent with `timeoutMs: Infinity`, because any limit rejects a page whose host is still showing the
+  dialog, and the person's pick then answers nobody (the dialogs used the 30 s default for a release). So on
+  that route **every HOST path must answer** — a throw, a second request, a dismissal the platform reports
+  differently — and one that can end without answering is the defect to fix, since nothing on the client
+  will. The Chromium shell's dialogs answer on a throw and queue a second request (CEF otherwise never
+  answered the first). Unverified on a device: an iOS swipe-down dismissal, and Android with
+  `ActivityResultRelay.Deliver` not forwarded, which used to surface as a `TIMEOUT` and is now silent.
 - **Composition helpers belong on `IMessageDispatcher`, via extensions over its ONE `Use` primitive.**
   They were instance methods on `MessageDispatcher`, so late mapping required a DOWNCAST — and the
   reference composition's `if (dispatcher is MessageDispatcher concrete)` had no `else`, so any decorator

@@ -68,6 +68,11 @@ at the first list and missed five more breaking changes.
 - **One file dialog at a time in the Chromium shell.** Another asked for while one is open waits for it and then
   shows, and both answer. CEF answered such a second dialog as cancelled itself and then never answered the first,
   so the page waiting on it waited for good (measured on Windows).
+- **`FileDialogs` waits as long as its dialog is open.** It used the bridge's 30 s timeout, so a person who took
+  longer got `TIMEOUT` while the dialog stayed up, and their pick then answered nobody. `invoke`'s `timeoutMs` takes
+  `Infinity` for no limit, and so does any delay longer than a timer holds (2^31−1 ms), which `setTimeout` used to
+  fire at once. A host that never answers a dialog is now a page that waits: on Android that is an app that does
+  not forward `OnActivityResult` to `ActivityResultRelay.Deliver`, which used to end in a `TIMEOUT`.
 
 ## 0.18.0 — 2026-09-29
 

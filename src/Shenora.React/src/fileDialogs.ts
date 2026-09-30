@@ -100,6 +100,8 @@ interface FileDialogRequests {
  * phone and reject with `IpcErrorCodes.capabilityNotSupported` there. Do not catch that — ask first,
  * via {@link useFileDialogs}, and do not render the control at all. `openFile` and `saveText` work
  * everywhere.
+ *
+ * Each waits as long as its dialog stays open: the bridge's timeout is off for these calls.
  */
 export class FileDialogs extends BaseModuleService<FileDialogRequests> {
   constructor(bridge?: ShenoraBridge) {
@@ -108,7 +110,7 @@ export class FileDialogs extends BaseModuleService<FileDialogRequests> {
 
   /** Pick an existing file. Available on every shell. */
   openFile(options?: OpenFileOptions): Promise<FileDialogResult> {
-    return this.send('OPEN_FILE', { payload: { options } });
+    return this.send('OPEN_FILE', { payload: { options }, timeoutMs: untilClosed });
   }
 
   /**
@@ -117,7 +119,7 @@ export class FileDialogs extends BaseModuleService<FileDialogRequests> {
    * grant — the same word with a different guarantee.
    */
   openFolder(options?: OpenFolderOptions): Promise<FileDialogResult> {
-    return this.send('OPEN_FOLDER', { payload: { options } });
+    return this.send('OPEN_FOLDER', { payload: { options }, timeoutMs: untilClosed });
   }
 
   /**
@@ -126,7 +128,7 @@ export class FileDialogs extends BaseModuleService<FileDialogRequests> {
    * expression; use {@link saveText} in portable code, which also works on the desktop.
    */
   saveFile(options?: SaveFileOptions): Promise<FileDialogResult> {
-    return this.send('SAVE_FILE', { payload: { options } });
+    return this.send('SAVE_FILE', { payload: { options }, timeoutMs: untilClosed });
   }
 
   /**
@@ -137,9 +139,12 @@ export class FileDialogs extends BaseModuleService<FileDialogRequests> {
    * host-side and saved through the host's own `IFileDialogs.SaveAsync` instead.
    */
   saveText(text: string, options?: SaveFileOptions): Promise<FileDialogResult> {
-    return this.send('SAVE_TEXT', { payload: { text, options } });
+    return this.send('SAVE_TEXT', { payload: { text, options }, timeoutMs: untilClosed });
   }
 }
+
+/** A dialog waits on a person, and the host answers when it closes. */
+const untilClosed = Infinity;
 
 /** What {@link useFileDialogs} returns: the client, plus what this shell will actually honour. */
 export interface FileDialogsHandle {

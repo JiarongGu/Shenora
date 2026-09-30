@@ -283,6 +283,16 @@ and it landed at 20.00 s both before and after the change. Position is not the s
 - [ ] **On a device, with a long-GOP file**: seek during the open with the picture surface up, and look for
   green until the next keyframe — before the change (the commit's parent) and after.
 
+### 🅿️ PARKED: a mobile dialog that ends without answering now waits for good
+
+The page waits on a file dialog with no timeout (the 30 s default lost slow picks), so every host path must
+answer (`ipc-contracts.md`). Two mobile paths are unverified:
+
+- [ ] **iOS**: a swipe-down dismissal of the export picker. `IosFileDialogs.ExportAsync` answers only through its
+  delegate's pick and cancel; the simulator can show whether `WasCancelled` fires.
+- [ ] **Android**: an app that does not forward `OnActivityResult` to `ActivityResultRelay.Deliver` used to end in
+  a `TIMEOUT` and now never answers. The relay could notice a result that never arrived once the activity resumes.
+
 ### 📱 WHAT IS LEFT ON ANDROID NEEDS A PHONE'S ENCODER, NOT AN EMULATOR'S
 
 The segment tier is answered on all three shells (`docs/design/media.md`), and the encoder's ARITHMETIC is

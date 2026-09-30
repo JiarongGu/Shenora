@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ShenoraBridge, configureBridge } from './bridge.js';
 import { ShenoraEventBus } from './eventBus.js';
 import { FileDialogs, useFileDialogs } from './fileDialogs.js';
@@ -66,6 +66,22 @@ describe('FileDialogs', () => {
     // simply `{ options }`, and the shape the host's SAVE_TEXT reads.
     void dialogs.saveText('body', { fileName: 'report.txt' });
     expect(transport.posted[1]?.payload).toEqual({ text: 'body', options: { fileName: 'report.txt' } });
+  });
+
+  it('waits for the person however long the dialog stays open', async () => {
+    // The bridge's default 30 s rejected a page whose dialog was still open, and the pick then answered nobody.
+    vi.useFakeTimers();
+    try {
+      const { transport, dialogs } = createDialogs();
+
+      const picks = [dialogs.openFile(), dialogs.openFolder(), dialogs.saveFile(), dialogs.saveText('x')];
+      vi.advanceTimersByTime(60 * 60 * 1000);
+      for (const request of transport.posted) transport.respond(request.id, { success: false });
+
+      await expect(Promise.all(picks)).resolves.toHaveLength(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('an omitted options argument still posts a payload the host can read', async () => {

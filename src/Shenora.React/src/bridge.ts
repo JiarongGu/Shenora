@@ -26,7 +26,7 @@ export interface ShenoraBridgeOptions {
   /** The event bus host notifications are unbundled into. Default: the shared bus. */
   eventBus?: ShenoraEventBus;
 
-  /** Per-request timeout in ms when the call doesn't set one. Family default: 30 000. */
+  /** Per-request timeout in ms when the call doesn't set one; `Infinity` for none. Family default: 30 000. */
   defaultTimeoutMs?: number;
 
   /**
@@ -67,7 +67,11 @@ export interface InvokeOptions<TPayload = unknown> {
   payload?: TPayload;
   /** Optional app-defined routing scope. */
   scope?: string;
-  /** Overrides the bridge's default timeout. */
+  /**
+   * Overrides the bridge's default timeout. `Infinity` waits without one, for a request that waits on a
+   * PERSON (a dialog, a confirmation): any limit there rejects a page whose host is still waiting. A delay
+   * longer than a timer can hold (2^31−1 ms) means the same, where `setTimeout` would fire it at once.
+   */
   timeoutMs?: number;
 }
 
@@ -81,10 +85,13 @@ export interface PostOptions<TPayload = unknown> {
 interface PendingRequest {
   resolve: (data: unknown) => void;
   reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout> | undefined;
 }
 
 const newId = (): string => randomId();
+
+/** The longest delay `setTimeout` honours; it fires a longer one at once. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 /** A promise-like: only these need racing against a timeout — a plain value has already settled. */
 const isThenable = (value: unknown): value is PromiseLike<unknown> =>
@@ -166,6 +173,8 @@ export class ShenoraBridge {
     };
 
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
+    // Written so NaN stays bounded: it fires at once, as it always has, rather than waiting forever.
+    const bounded = !(timeoutMs > MAX_TIMER_MS);
 
     if (!this.transport) {
       if (this.fallback) {
@@ -177,7 +186,7 @@ export class ShenoraBridge {
         }
         // An async fallback is raced against the timeout too, or one that never settles hangs the
         // caller forever. Only a thenable needs racing; a plain value has already settled.
-        if (!isThenable(result)) return Promise.resolve(result as TData);
+        if (!isThenable(result) || !bounded) return Promise.resolve(result) as Promise<TData>;
         // ⚠ The loser's timer is cleared in `finally` — otherwise every call holds a live timer, and
         // its closure, for the full timeout.
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -199,7 +208,7 @@ export class ShenoraBridge {
     }
 
     return new Promise<TData>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = !bounded ? undefined : setTimeout(() => {
         this.pending.delete(request.id);
         reject(new ShenoraError({
           code: IpcErrorCodes.timeout,
