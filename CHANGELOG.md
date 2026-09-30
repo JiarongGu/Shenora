@@ -41,8 +41,14 @@ at the first list and missed five more breaking changes.
   it from 1,455 MB to 272 MB (a layout of 363 MB where it was 1.5 GB) and warns, keeping it whole, where there is no
   `strip`. `dotnet publish --self-contained` makes a folder that runs with no .NET installed. Measured on WSL
   (Ubuntu 24.04, X11), from a package-only app: the page loaded from the app's origin, handshook and echoed (50
-  calls, median 3.2 ms; 1.6 ms in another run from the repo), and the app exited cleanly. Not yet: frameless chrome
-  and the drag bar, a tray, the clipboard;
+  calls, median 3.2 ms; 1.6 ms in another run from the repo), and the app exited cleanly. Under a window manager
+  (openbox, on a virtual X display, driven by xdotool) the frameless window has no frame, its drag region moves it,
+  its edges and corner resize it, a double-click on it maximizes, and the page's minimize, maximize and restore work;
+  WSLg's own window manager ignores a minimize, xdotool's as well as the page's. The window is named for the app
+  (`MyApp`, whether started as `MyApp` or `MyApp.App`), as X11's `WM_CLASS` and the Wayland app id, so a dock can
+  match it to the app's `.desktop` file; it had no `WM_CLASS` at all. File dialogs are GTK's, over the window, named
+  the same. On a Wayland session CEF draws through XWayland (the app id is set but unmeasured). Not yet: a tray, the
+  clipboard;
   and on WSL a window could take 8–12 s to close, with Chromium's GL over WSL's own, where software GL closed at once.
 
 ### Changed

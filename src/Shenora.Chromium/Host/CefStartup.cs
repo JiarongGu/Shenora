@@ -217,6 +217,9 @@ internal static unsafe class CefStartup
     private static _cef_main_args_t AllocateMainArgs()
     {
         var argv = Environment.GetCommandLineArgs();
+#if CEF_LINUX
+        if (argv.Length > 0) argv[0] = LinuxPlatform.Executable;
+#endif
         var pointers = (sbyte**)NativeMemory.Alloc((nuint)(argv.Length + 1), (nuint)sizeof(sbyte*));
         for (var i = 0; i < argv.Length; i++) pointers[i] = (sbyte*)Marshal.StringToCoTaskMemUTF8(argv[i]);
         pointers[argv.Length] = null;

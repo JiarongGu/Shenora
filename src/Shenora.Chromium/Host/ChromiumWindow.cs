@@ -292,8 +292,30 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
 #if CEF_MACOS
             // macOS's own buttons on a frameless window: the traffic lights, over the page's title bar.
             Struct->with_standard_window_buttons = &StandardWindowButtons;
+#elif CEF_LINUX
+            // Unanswered, the window has no WM_CLASS at all, which is what a dock matches to the app's .desktop file.
+            Struct->get_linux_window_properties = &LinuxWindowProperties;
 #endif
         }
+
+#if CEF_LINUX
+        [UnmanagedCallersOnly]
+        private static int LinuxWindowProperties(_cef_window_delegate_t* self, _cef_window_t* window, _cef_linux_window_properties_t* properties)
+        {
+            using var w = new CefRef<_cef_window_t>(window);
+            string name = LinuxPlatform.ProgramName, @class = LinuxPlatform.ProgramClass;
+            Copy(name, &properties->wm_class_name);
+            Copy(@class, &properties->wm_class_class);
+            Copy(name, &properties->wayland_app_id);
+            return 1;
+        }
+
+        // CEF owns the struct and frees what it holds, so the characters are copied into CEF's allocation.
+        private static void Copy(string value, _cef_string_utf16_t* into)
+        {
+            fixed (char* c = value) Cef.cef_string_utf16_set((ushort*)c, (nuint)value.Length, into, 1);
+        }
+#endif
 
 #if CEF_MACOS
         [UnmanagedCallersOnly]

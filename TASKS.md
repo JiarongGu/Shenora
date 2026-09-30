@@ -236,14 +236,18 @@ D37 and D51 are corrected in place to point at them.
    `chromium-helper-linux` job builds them with zig for glibc 2.28: they need `GLIBC_2.2.5` and `GLIBC_2.17`), and
    from a local feed an app with nothing but a `PackageReference` built, ran, and self-contained-published a folder
    that ran with no .NET installed. The build strips `libcef.so` in the cache (1,455 MB to 272 MB).
+   The window and the file dialogs work under a real window manager (openbox on Xvfb; CHANGELOG has the measures).
    **Left:**
    - The `chromium-helper-linux` job has not run in CI yet; its steps were rehearsed on WSL.
    - ⚠ **On WSL the window's close took 8–12 s** in development mode (every run) and in about one production run in
      five, with Chromium's GL on WSL's own (`ZINK: failed to choose pdev` on every run); with SwiftShader or no GPU it
      closed in 15–190 ms. A real Linux desktop with working GL is unmeasured (none here).
-   - Wayland: Chromium could not reach WSLg's Wayland socket from a `wsl.exe` shell; X11 is what ran.
-   - Frameless chrome and the drag bar, the per-OS services (a tray over D-Bus StatusNotifierItem, file dialogs,
-     clipboard), linux-arm64 (its helper is built, never run).
+   - Wayland: CEF drew through XWayland even with `WAYLAND_DISPLAY` set, and could not reach WSLg's Wayland socket
+     when asked to (`--ozone-platform=wayland`) from a `wsl.exe` shell. The Wayland app id is set and unmeasured.
+   - WSLg's own window manager (Weston) ignores minimize, xdotool's as well as the page's.
+   - A tray (D-Bus StatusNotifierItem; WSLg has no tray host), the clipboard (no Linux `IClipboardService`),
+     linux-arm64 (its helper is built, never run), and a real desktop's dialogs (unmeasured: Chromium may use the XDG
+     desktop portal where one runs, and WSL has none).
    - The machine: WSL had no `sudo`-free gcc, NSS, `bzip2` or binutils; the runs used `apt-get download`ed packages
      (with an index refreshed into user-owned folders) on `LD_LIBRARY_PATH` and `PATH`, and zig as `CC`.
 

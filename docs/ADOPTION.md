@@ -287,7 +287,9 @@ opens in the system browser exactly once.
    build makes `bundle/<App>.app` and `dotnet publish --self-contained` makes one that runs with no .NET installed
    — see TASKS for what macOS still lacks; on Linux `linux-x64`, or `linux-arm64`, built but not yet run, where the
    build lays the app out flat as `MyApp` beside `MyApp-helper`, the machine needs `libnss3` and `libasound2`, and
-   the build `bzip2` and binutils' `strip`, without which `libcef.so` keeps 1.2 GB of debug information),
+   the build `bzip2` and binutils' `strip`, without which `libcef.so` keeps 1.2 GB of debug information, and the
+   window's X11 `WM_CLASS` is the app's name, `MyApp`, however it was started, which is what a `.desktop` file's
+   `StartupWMClass` names),
    and name the app's assembly `<App>.App` (`<AssemblyName>MyApp.App</AssemblyName>`). The build fetches the pinned
    CEF build and lays the app out as `MyApp.exe`, which is CEF's launcher, starting `MyApp.App.dll`. `MyApp.exe`
    carries the app's `ApplicationIcon`, `Product`, `Company` and version, as an apphost would; a macOS bundle takes
