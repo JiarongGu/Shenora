@@ -9,8 +9,9 @@
 **Extra browsers your app drives, made by the shell it runs in** — off-screen for scraping and rendering,
 on-screen for a human, or streamed as frames with synthetic input. Each runs over its own profile, so none of
 them is your app's page and none of them can see your app's cookies. The sessions are written once, in
-`Shenora.Core.Sessions`, over the shell's `ISessionHost` (D91): the WinForms shell's makes WebView2 browsers; the
-Chromium shell's is being built (TASKS).
+`Shenora.Core.Sessions`, over the shell's `ISessionHost` (D91): the WinForms shell's makes WebView2 browsers, and the
+Chromium shell's makes windowless CEF browsers on every desktop ([In the Chromium shell](#in-the-chromium-shell); its
+interactive window is still being built, TASKS).
 
 🔴 **The kit ships the MECHANICS and no scenario.** There is no login flow, no scraper, no co-browse
 product in here — those are a product, not a mechanism (D21). The worked driver lives in the desktop
@@ -204,6 +205,33 @@ a server-backed app's pages are on a real loopback origin, which a session alrea
 **D38 is the WHY**, including the two limits that decide whether this fits your case at all: a custom
 or deferred SCHEME cannot work inside a session, and a bundle response's CORS header makes this safe
 only on a session rendering your own pages. Read it before co-browsing anyone else's.
+
+## In the Chromium shell
+
+`UseChromium` registers `ChromiumSessionHost` as the `ISessionHost`. Three things differ from the WinForms shell:
+
+- **Start the shell with `ChromiumHostOptions.OffscreenSessions = true`.** CEF renders off-screen only if it started
+  that way, so a session in a shell started without it is refused, naming the option.
+- 🔴 **A profile is ONE folder directly inside `ChromiumSessionHost.ProfilesDirectory`**, the shell's data folder:
+  `ComposeProfileDirectory(host.ProfilesDirectory, $"{provider}.{account}")`. CEF opens a profile nowhere else, and
+  opens any other path off the record with nothing kept, so a nested path is refused, as is the app's own profile.
+  One segment works in both shells, so portable code composes it that way.
+- **`WebView2SessionBrowserOptions` is refused**, and with it the bundle serving below. The app's origin is served to
+  the app's own windows only, so a session reaches a server-backed app's loopback pages and not an embedded bundle.
+
+The rest behaves as on WebView2, with small differences:
+- A subresource the filter blocks is cancelled rather than answered 403.
+- A permission kind carries WebView2's name for it (`Geolocation`, `Camera`, `ClipboardRead`, …).
+- `MuteAudio` mutes the browser and leaves autoplay to Chromium's own policy.
+- Answering credentials pauses each of that session's requests once, through the DevTools Fetch domain, since CEF
+  fails a challenge without asking. Only a session with `OnAuthRequest` pays that cost.
+- A popup `OnWindowRequest` allows opens off-screen, as the session's browser is, with nobody driving it. It closes
+  with the session, and its navigations and events are not the session's. In WebView2 it opens as a window of its own.
+
+⚠ **In both shells a permission decision is kept in the profile.** Later requests from that origin are answered from
+the profile without asking the hook again. In the Chromium shell this was measured for a denial: geolocation on a
+fresh profile asked the hook, and the next page on that profile was denied without asking. WebView2 documents the
+same default (`SavesInProfile`). Clear the profile to be asked again.
 
 ## If init times out
 

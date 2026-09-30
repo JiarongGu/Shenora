@@ -67,6 +67,7 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public Shenora.Core.Shell.WindowStateHostOptions? WindowState { get; init; }
   public System.Action<Shenora.Core.Shell.UnhandledExceptionReport>? OnUnhandledException { get; init; }
   public bool ObserveUnobservedTaskExceptions { get; init; }
+  public bool OffscreenSessions { get; init; }
   public bool? IsDevelopment { get; init; }
   public int DevToolsPort { get; init; }
   public string VirtualHost { get; init; }
@@ -74,6 +75,12 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public string? DevUrl { get; init; }
   public string? Locale { get; init; }
   public string? UserDataFolder { get; init; }
+sealed class Shenora.Chromium.ChromiumSessionHost : Shenora.Core.Sessions.ISessionHost
+  public Shenora.Core.Sessions.ISessionBrowserContext CreateContext()
+  public Shenora.Core.Shell.IUiDispatcher Ui { get; }
+  public System.Threading.Tasks.Task<Shenora.Core.Sessions.ISessionBrowser> CreateAsync(Shenora.Core.Sessions.SessionBrowserDefinition definition, System.Threading.CancellationToken cancellationToken)
+  public System.Threading.Tasks.Task<Shenora.Core.Sessions.ISessionWindow> OpenWindowAsync(Shenora.Core.Sessions.SessionWindowDefinition definition, System.Threading.CancellationToken cancellationToken)
+  public string ProfilesDirectory { get; }
 sealed class Shenora.Chromium.ChromiumTray
   public void ExitApplication()
   public void ShowWindow()

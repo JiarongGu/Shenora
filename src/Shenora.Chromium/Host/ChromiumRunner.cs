@@ -19,7 +19,8 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
     /// starts as the app is composed or when it runs.</summary>
     internal static CefStartup.Settings SettingsFor(ChromiumHostOptions options, ShenoraPaths paths, ShenoraEnvironment environment) =>
         new(options.UserDataFolder ?? paths.DataArea("chromium"), IsDevelopment(options, environment), options.DevToolsPort,
-            options.Window.BackgroundColor is { } color ? (uint)color.ToArgb() : null, MultiThreadedLoop: false) { Locale = options.Locale };
+            options.Window.BackgroundColor is { } color ? (uint)color.ToArgb() : null, MultiThreadedLoop: false)
+        { Locale = options.Locale, Windowless = options.OffscreenSessions };
 
     private static bool IsDevelopment(ChromiumHostOptions options, ShenoraEnvironment environment) =>
         options.IsDevelopment ?? environment.IsDevelopment;

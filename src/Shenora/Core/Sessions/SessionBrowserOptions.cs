@@ -15,8 +15,9 @@ public record SessionBrowserOptions
     /// it per provider and per sub-account (a SECURITY boundary, see <see cref="InteractiveSession"/>); wiping it
     /// discards the session for real.
     /// <para>
-    /// ⚠ In the Chromium shell it must lie inside the shell's own data folder (<c>ChromiumHostOptions.UserDataFolder</c>),
-    /// where CEF keeps every profile (D91).
+    /// ⚠ In the Chromium shell it must be a folder directly inside the shell's own data folder
+    /// (<c>ChromiumSessionHost.ProfilesDirectory</c>), the only place CEF keeps a profile: compose it with one segment
+    /// (D91).
     /// </para>
     /// </summary>
     public required string ProfileDirectory { get; init; }
@@ -31,7 +32,8 @@ public record SessionBrowserOptions
     public bool MuteAudio { get; init; } = true;
 
     /// <summary>
-    /// Request-layer filter: return true to BLOCK a subresource request (answered with an empty 403). Receives the
+    /// Request-layer filter: return true to BLOCK a subresource request (WebView2 answers it with an empty 403; the
+    /// Chromium shell cancels it, so it fails as blocked). Receives the
     /// request URI and the page's current URI. Runs on the UI thread per request, so keep it fast. ⚠ The page URI is
     /// null before the first navigation commits; NEVER block then, or the page's own document can't load.
     /// <para>
@@ -118,7 +120,8 @@ public sealed record SessionWindowRequest(string Uri, bool UserInitiated)
 }
 
 /// <summary>A capability the page asked for. Grant it, or leave it to be denied.</summary>
-/// <param name="Kind">The engine's name for what was asked (<c>Camera</c>, <c>ClipboardRead</c>, …).</param>
+/// <param name="Kind">What was asked, by WebView2's name for it (<c>Camera</c>, <c>Geolocation</c>, <c>ClipboardRead</c>, …),
+/// which the Chromium shell uses too.</param>
 /// <param name="Uri">The page that asked.</param>
 /// <param name="UserInitiated">True when a real gesture triggered it.</param>
 public sealed record SessionPermissionRequest(string Kind, string Uri, bool UserInitiated)

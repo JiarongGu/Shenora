@@ -82,7 +82,31 @@ at the first list and missed five more breaking changes.
   the desktop sample: a pooled off-screen render (2.8 s cold, 1.3 s on the warm instance), a stream's first frame in
   2.1 s and its stop, and an interactive session run silently off-screen, run revealed, and closed as its X button
   closes it (`SC_CLOSE`, posted: held once, the driver's final read returned) or by a bare `WM_CLOSE` (the flow ends
-  cancelled with the window, where a driver waiting on the page would otherwise have held it open). The Chromium shell's host is next (TASKS).
+  cancelled with the window, where a driver waiting on the page would otherwise have held it open).
+- **The render pool and streaming sessions run in the Chromium shell, on every desktop** (`ChromiumSessionHost`,
+  which `UseChromium` registers as `ISessionHost`). Start the shell with `ChromiumHostOptions.OffscreenSessions`,
+  since CEF renders off-screen only if it started that way. Each browser is windowless, in a request context over its
+  own profile, and its hooks keep their defaults and run on the UI thread, as WebView2's do. A profile must be a
+  folder directly inside the shell's data folder (`ProfilesDirectory`): CEF opens any other path off the record and
+  keeps nothing, so a nested one is refused. Unlike WebView2, a subresource the filter blocks is cancelled rather
+  than answered 403, and answering credentials pauses each of that session's requests once, since CEF fails a
+  challenge without asking and the DevTools Fetch domain answers it instead. A popup the hook allows opens off-screen
+  and closes with the session, where WebView2 opens a window. Permission kinds carry WebView2's names. Measured on
+  Windows, Linux (WSL, a virtual display) and an Intel Mac against pages of the probe's own:
+  - A warm pooled render of the sample's page took 160 to 225 ms (1.3 to 3 s under WSL's software rendering).
+  - A stream's first frame arrived, and its surface followed an emulated 800×600.
+  - An alert was dismissed, and a confirm and a prompt answered.
+  - Credentials were answered from the hook, and the load failed without one.
+  - A script-opened popup was asked of the hook and suppressed. Once allowed, it ran without one event reaching the
+    session and stopped when the pool was disposed (it ran on without the close).
+  - Geolocation asked as `Geolocation` and was denied, and the profile kept the denial.
+  - A cross-port redirect was cancelled by the pool's guard, and the subresource the filter blocked never reached
+    its server.
+  - A page's `chrome.webview.postMessage` was published, and a frame's was not (WebView2 documents its own event as
+    the top document's alone).
+  - A cookie was kept across reopening its profile.
+
+  The interactive session's window is not built yet (TASKS).
 - **`IUiDispatcher.Queue`**: run work on the UI thread after what it is doing now, never inline, for a body that opens
   a modal loop or whose caller must return first. The kit's dispatchers keep order behind earlier posts; any other
   implementation gets a default that hops through the thread pool.

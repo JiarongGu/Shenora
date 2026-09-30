@@ -38,6 +38,10 @@ internal static unsafe class CefStartup
         /// Windows and macOS whatever the OS speaks).</summary>
         public string? Locale { get; init; }
 
+        /// <summary>CEF's windowless (off-screen) rendering, which it starts with or not at all: for session browsers
+        /// that render with no window (D91).</summary>
+        public bool Windowless { get; init; }
+
         /// <summary>The profile's folder under <see cref="Cache"/>. Chrome's own windows always use <c>Default</c>
         /// (measured by an adopter, CEF 152), so a process whose windows are Chrome's names it so.</summary>
         public string Profile { get; init; } = "default";
@@ -115,6 +119,7 @@ internal static unsafe class CefStartup
             remote_debugging_port = settings.PagelessDebugPort > 0 ? settings.PagelessDebugPort
                 : settings.IsDevelopment ? settings.DevToolsPort : 0,
             persist_session_cookies = settings.PersistSessionCookies ? 1 : 0,
+            windowless_rendering_enabled = settings.Windowless ? 1 : 0,
             log_severity = cef_log_severity_t.LOGSEVERITY_WARNING,
         };
         if (settings.BackgroundColor is { } color) cef.background_color = color;

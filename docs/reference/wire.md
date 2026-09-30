@@ -260,7 +260,7 @@ What an auxiliary session publishes on the event bus — the 0.11.0 replacement 
 | `SessionEvents.DomContentLoaded` | `DOM_CONTENT_LOADED` | The document exists and is parsed; payload SessionSource. |
 | `SessionEvents.SourceChanged` | `SOURCE_CHANGED` | The address changed WITHOUT a navigation; payload SessionSource. |
 | `SessionEvents.TitleChanged` | `TITLE_CHANGED` | The document title changed; payload SessionSource. |
-| `SessionEvents.WebMessage` | `WEB_MESSAGE` | The page posted a message (WebView2's chrome.webview.postMessage); payload SessionWebMessage. |
+| `SessionEvents.WebMessage` | `WEB_MESSAGE` | The page posted a message (WebView2's chrome.webview.postMessage, which the Chromium shell gives its pages too); payload SessionWebMessage. |
 | `SessionEvents.DownloadStarting` | `DOWNLOAD_STARTING` | The page began a download; payload DownloadHit. |
 | `SessionEvents.WindowCloseRequested` | `WINDOW_CLOSE_REQUESTED` | The page called window.close(); no payload. |
 | `SessionEvents.ProcessFailed` | `PROCESS_FAILED` | A browser process died; payload SessionProcessReport. |

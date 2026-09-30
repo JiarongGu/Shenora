@@ -87,6 +87,13 @@ public sealed class ChromiumHostOptions
     /// <summary>Mark an unobserved faulted task observed, so it never escalates; it still reaches
     /// <see cref="OnUnhandledException"/>.</summary>
     public bool ObserveUnobservedTaskExceptions { get; init; } = true;
+
+    /// <summary>
+    /// Let the app's sessions that render off-screen run here (<c>RenderSessionPool</c>, <c>StreamingSession</c>, D91):
+    /// CEF's windowless rendering, which it starts with or not at all. Off by default, as CEF advises for an app that
+    /// does not use it, since it can cost rendering performance; a session asked for without it is refused.
+    /// </summary>
+    public bool OffscreenSessions { get; init; }
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

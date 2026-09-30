@@ -233,6 +233,11 @@ Shenora.slnx
 │   │                                          exe, holding no app page (D86): Chrome's own
 │   │                                          windows, a debugging port in production,
 │   │                                          relayed (Host/CdpRelay) so a tab is a page.
+│   │                                          ChromiumSessionHost is the ISessionHost the Core
+│   │                                          sessions drive (D91): windowless browsers
+│   │                                          (Host/ChromiumSessionBrowser), each profile a request
+│   │                                          context directly under the data folder, driven through
+│   │                                          the in-process DevTools channel (Host/DevToolsChannel).
 │   │                                          Serving/ answers the app's origin (the bundle, marked,
 │   │                                          then the app's interceptor pipeline; the IPC route only
 │   │                                          for the app's own browser and origin). Interop/Generated/ is
@@ -503,6 +508,7 @@ and the dependency rules a reviewer checks.
   🔴 **The one package-on-package edge above `Shenora` is `Shenora.Windows` → `Shenora.Chromium`** (D83), for
   `ChromiumView`. It carries the engine's managed code, never CEF: the engine's build assets stay private to a
   direct reference. The auxiliary sessions are `Shenora.Core.Sessions` (D91): written once over `ISessionHost`,
-  which `Shenora.Windows`' `Sessions/` folder implements over WebView2, so D14's separation survives as that seam.
+  which `Shenora.Windows`' `Sessions/` folder implements over WebView2 and `Shenora.Chromium`'s `ChromiumSessionHost`
+  over CEF, so D14's separation survives as that seam.
 - `src/*` never references `tests/`, `samples/`, or anything app-specific.
 - No Lyntai reference, ever (docs/DECISIONS.md D1).

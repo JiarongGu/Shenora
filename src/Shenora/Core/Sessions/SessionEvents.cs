@@ -50,8 +50,9 @@ public static class SessionEvents
     /// <summary>The document title changed; payload <see cref="SessionSource"/>.</summary>
     public const string TitleChanged = "TITLE_CHANGED";
 
-    /// <summary>The page posted a message (WebView2's <c>chrome.webview.postMessage</c>); payload
-    /// <see cref="SessionWebMessage"/>.</summary>
+    /// <summary>The page posted a message (WebView2's <c>chrome.webview.postMessage</c>, which the Chromium shell gives
+    /// its pages too); payload <see cref="SessionWebMessage"/>. Only the top document's: a frame's post is not the
+    /// page's.</summary>
     public const string WebMessage = "WEB_MESSAGE";
 
     /// <summary>The page began a download; payload <see cref="DownloadHit"/>. Whether the browser's own download is
@@ -121,7 +122,7 @@ public sealed record SessionResponse(
     string BodySample);
 
 /// <summary>A message the page posted (<see cref="SessionEvents.WebMessage"/>).</summary>
-/// <param name="Message">The message as a string; a page posting a non-string is not reported.</param>
+/// <param name="Message">The message as the page posted it when it is a string, and as its JSON when it is not.</param>
 public sealed record SessionWebMessage(string Message);
 
 /// <summary>A browser process failure (<see cref="SessionEvents.ProcessFailed"/>).</summary>

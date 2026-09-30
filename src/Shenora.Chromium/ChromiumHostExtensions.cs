@@ -5,6 +5,7 @@ using Shenora.Chromium.Host;
 using Shenora.Chromium.Interop;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
+using Shenora.Core.Sessions;
 using Shenora.Core.Shell;
 using Shenora.Modules.FileDialog;
 
@@ -78,6 +79,11 @@ public static class ChromiumHostExtensions
         }
         builder.Services.AddSingleton<IShenoraRunner>(sp => new ChromiumRunner(options, sp.GetRequiredService<CefUiDispatcher>(),
             sp.GetRequiredService<ChromiumWindows>(), sp.GetService<ChromiumTray>(), sp.GetService<ILogger<ChromiumRunner>>()));
+        // The browsers the auxiliary sessions drive (D91): windowless CEF browsers, each profile in a request context.
+        var dataFolder = options.UserDataFolder ?? builder.Paths.DataArea("chromium");
+        builder.Services.TryAddSingleton(sp => new ChromiumSessionHost(sp.GetRequiredService<CefUiDispatcher>(), dataFolder,
+            options.OffscreenSessions));
+        builder.Services.TryAddSingleton<ISessionHost>(sp => sp.GetRequiredService<ChromiumSessionHost>());
         // Taking the main window's input while something modal runs, as the WinForms shell disables its form.
         builder.Services.TryAddSingleton<IUiInteraction>(sp => new ChromiumUiInteraction(sp.GetRequiredService<ChromiumWindows>()));
         builder.Services.TryAddSingleton<IFileDialogs>(sp => new ChromiumFileDialogs(sp.GetRequiredService<ChromiumWindows>(),
