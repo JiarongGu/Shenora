@@ -19,7 +19,7 @@ foreach(required CEF_ROOT NETHOST_DIR CEF_API_VERSION)
 endforeach()
 
 if(NOT WIN32)
-  message(FATAL_ERROR "The shim is Windows-only today; macOS and Linux get their own when they are probed.")
+  message(FATAL_ERROR "The shim is Windows' alone; macOS and Linux build their helper (helper_mac.c, helper_linux.c) through `node devtools/dev.mjs cef-native`, without CMake.")
 endif()
 
 add_library(shenora_chromium_shim SHARED shim_win.cpp)

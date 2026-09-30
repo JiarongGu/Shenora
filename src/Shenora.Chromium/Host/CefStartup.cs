@@ -93,6 +93,13 @@ internal static unsafe class CefStartup
         var noSandbox = 0;
         var framework = MacPlatform.Framework;
         var bundle = Path.GetDirectoryName(MacPlatform.Contents) ?? MacPlatform.Contents;
+#elif CEF_LINUX
+        // The helper beside the app runs every subprocess natively, and Chromium sandboxes them itself (the zygote's
+        // namespaces, or chrome-sandbox). Without it (`dotnet <App>.App.dll`) this exe is every subprocess, unsandboxed.
+        if (File.Exists(LinuxPlatform.Helper)) subprocess = LinuxPlatform.Helper;
+        var noSandbox = subprocess is null ? 1 : 0;
+        var framework = "";
+        var bundle = "";
 #else
         var noSandbox = sandbox == 0 ? 1 : 0;
         var framework = "";
@@ -175,6 +182,8 @@ internal static unsafe class CefStartup
         {
 #if CEF_MACOS
             MacPlatform.Prepare();
+#elif CEF_LINUX
+            LinuxPlatform.Prepare();
 #endif
             Cef.cef_api_hash(CefApi.Version, 0);
         }

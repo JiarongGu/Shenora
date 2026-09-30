@@ -17,13 +17,16 @@ internal sealed class ChromiumEarlyStart
     /// <summary>
     /// This process is the app run from its layout, the only case CEF starts early in. On Windows, started through
     /// CEF's launcher and the kit's shim, which leave the sandbox; on macOS, from its bundle, the only place the shell
-    /// runs. Not a test host, and not the app's dll run by <c>dotnet</c>, as an IDE may.
+    /// runs; on Linux, with the helper the build laid out beside it. Not a test host, and not the app's dll run by
+    /// <c>dotnet</c>, as an IDE may.
     /// </summary>
     public static bool LaunchedFromLayout =>
 #if CEF_WINDOWS
         CefStartup.Sandbox != 0;
 #elif CEF_MACOS
         Directory.Exists(MacPlatform.Framework);
+#elif CEF_LINUX
+        File.Exists(LinuxPlatform.Helper) && File.Exists(LinuxPlatform.Library);
 #else
         false;
 #endif

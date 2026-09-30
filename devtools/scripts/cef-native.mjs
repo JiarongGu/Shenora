@@ -3,6 +3,7 @@
 //   node devtools/dev.mjs cef-native                  → src/Shenora.Chromium/artifacts/runtimes/win-x64/native/shenora_chromium_shim.dll
 //   node devtools/dev.mjs cef-native --rid win-arm64  → …/runtimes/win-arm64/native/…, cross-compiled from x64
 //   node devtools/dev.mjs cef-native --rid osx-x64    → …/runtimes/osx-x64/native/shenora_chromium_helper, on a Mac
+//   node devtools/dev.mjs cef-native --rid linux-x64  → …/runtimes/linux-x64/native/shenora_chromium_helper, on Linux
 //
 // That staging folder is what the package packs (gitignored, never committed, like the launcher's), and what
 // the app-build targets fall back to for an app in this repo that references the project rather than the package.
@@ -11,6 +12,8 @@
 // the target (win-arm64 needs Visual Studio's "C++ ARM64 build tools" component), the pinned CEF build for the RID
 // (downloaded and SHA-1-checked by cef-cache.mjs), and the .NET SDK's static nethost for the RID.
 // macOS: the helper every CEF subprocess runs, built with clang against no headers, on a Mac.
+// Linux: the same helper's twin, built with gcc against no headers, on Linux (linux-arm64 cross-compiles with
+// aarch64-linux-gnu-gcc from an x64 host).
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,31 +21,48 @@ import { distribution, fail, main, pin, project, repo, run } from './cef-cache.m
 
 /**
  * The RIDs this builds for: CEF's platform name, the compiler's architecture, and the machine the binary must
- * turn out to be — a PE Machine on Windows, a Mach-O CPU type on macOS.
+ * turn out to be — a PE Machine on Windows, a Mach-O CPU type on macOS, an ELF e_machine on Linux.
  */
 const targets = {
   'win-x64': { os: 'win32', platform: 'windows64', arch: 'x64', machine: 0x8664 },
   'win-arm64': { os: 'win32', platform: 'windowsarm64', arch: 'ARM64', machine: 0xaa64 },
   'osx-x64': { os: 'darwin', platform: 'macosx64', arch: 'x86_64', machine: 0x01000007 },
   'osx-arm64': { os: 'darwin', platform: 'macosarm64', arch: 'arm64', machine: 0x0100000c },
+  'linux-x64': { os: 'linux', platform: 'linux64', arch: 'x64', machine: 0x3e },
+  'linux-arm64': { os: 'linux', platform: 'linuxarm64', arch: 'arm64', machine: 0xb7 },
 };
 
-/** What the binary was really compiled for, whatever the build said: a PE's Machine, or a Mach-O's CPU type. */
+/** What the binary was really compiled for, whatever the build said: a PE's Machine, a Mach-O's CPU type, or an ELF's
+ * e_machine. */
 function machineOf(binary) {
   const bytes = fs.readFileSync(binary);
+  if (bytes.readUInt32BE(0) === 0x7f454c46) return bytes.readUInt16LE(18);
   if (bytes.readUInt32LE(0) === 0xfeedfacf) return bytes.readUInt32LE(4);
   return bytes.readUInt16LE(bytes.readUInt32LE(0x3c) + 4);
 }
 
-/** The macOS helper: one C file, no CEF headers, the oldest macOS CEF supports. */
-function buildHelper(rid, arch) {
+/** The macOS or Linux helper: one C file, no CEF headers; on macOS the oldest macOS CEF supports. */
+function buildHelper(rid, os, arch) {
   const build = path.join(repo, 'devtools', '_build', 'cef-native', rid);
   fs.mkdirSync(build, { recursive: true });
   const binary = path.join(build, 'shenora_chromium_helper');
-  const compile = run('clang', ['-O2', '-Wall', '-Wextra', '-Werror', '-arch', arch, '-mmacosx-version-min=12.0',
-    `-DCEF_API_VERSION=${pin.apiVersion}`, '-o', binary, path.join(project, 'native', 'helper_mac.c')]);
+  const flags = ['-O2', '-Wall', '-Wextra', '-Werror', `-DCEF_API_VERSION=${pin.apiVersion}`, '-o', binary];
+  const compile = os === 'darwin'
+    ? run('clang', [...flags, '-arch', arch, '-mmacosx-version-min=12.0', path.join(project, 'native', 'helper_mac.c')])
+    : run(...linuxCompiler(arch, [...flags, path.join(project, 'native', 'helper_linux.c'), '-ldl']));
   if (compile.status !== 0) fail(`build failed:\n${compile.stdout}${compile.stderr}`);
   return binary;
+}
+
+/**
+ * The Linux C compiler and its arguments: `CC` when set, which may carry arguments of its own (`zig cc -target
+ * x86_64-linux-gnu.2.28`, a compiler needing no root that also pins the oldest glibc the helper asks for), else gcc,
+ * or the aarch64 cross gcc for linux-arm64 from an x64 host.
+ */
+function linuxCompiler(arch, args) {
+  const cc = process.env.CC?.trim() || (arch === 'arm64' && process.arch !== 'arm64' ? 'aarch64-linux-gnu-gcc' : 'gcc');
+  const [command, ...own] = cc.split(/\s+/);
+  return [command, [...own, ...args]];
 }
 
 function cmake() {
@@ -116,8 +136,8 @@ async function buildShim(rid, platform, arch) {
 await main('cef-native', async () => {
   const rid = ridArgument();
   const { os, platform, arch, machine } = targets[rid];
-  if (process.platform !== os) fail(`${rid} builds on ${os === 'darwin' ? 'a Mac' : 'Windows'}; this is ${process.platform}.`);
-  const binary = os === 'darwin' ? buildHelper(rid, arch) : await buildShim(rid, platform, arch);
+  if (process.platform !== os) fail(`${rid} builds on ${{ darwin: 'a Mac', linux: 'Linux' }[os] ?? 'Windows'}; this is ${process.platform}.`);
+  const binary = os === 'win32' ? await buildShim(rid, platform, arch) : buildHelper(rid, os, arch);
   if (!fs.existsSync(binary)) fail(`the build reported success but ${binary} is missing.`);
   // A stale build directory configured for another architecture builds that one and succeeds.
   if (machineOf(binary) !== machine)

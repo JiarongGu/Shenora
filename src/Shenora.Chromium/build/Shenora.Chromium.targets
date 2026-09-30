@@ -22,7 +22,9 @@
                                 subprocesses from, each the kit's helper. A self-contained publish carries the
                                 runtime inside it, so the app starts from Finder with no .NET installed.
 
-    The Linux layout is not built yet.
+      ShenoraChromiumLinuxLayout after Build (and Publish) on Linux: CEF's runtime and resources beside the app, the
+                                .NET apphost also as <App>, and the kit's helper as <App>-helper, which every CEF
+                                subprocess runs.
   -->
   <Import Project="$(MSBuildThisFileDirectory)Shenora.Chromium.Cef.g.targets" />
 
@@ -54,7 +56,7 @@
 
     <!-- The package's own native half, the Windows shim or the macOS helper; in this repo, where an app references the
          project, the one cef-native staged. -->
-    <_ShenoraNative Condition="$(ShenoraCefPlatform.StartsWith('macos'))">shenora_chromium_helper</_ShenoraNative>
+    <_ShenoraNative Condition="$(ShenoraCefPlatform.StartsWith('macos')) or $(ShenoraCefPlatform.StartsWith('linux'))">shenora_chromium_helper</_ShenoraNative>
     <_ShenoraNative Condition="'$(_ShenoraNative)' == ''">shenora_chromium_shim.dll</_ShenoraNative>
     <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == '' and Exists('$(MSBuildThisFileDirectory)..\tools')">$(MSBuildThisFileDirectory)..\tools\$(RuntimeIdentifier)\native\$(_ShenoraNative)</ShenoraChromiumShim>
     <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == ''">$(MSBuildThisFileDirectory)..\artifacts\runtimes\$(RuntimeIdentifier)\native\$(_ShenoraNative)</ShenoraChromiumShim>
@@ -285,10 +287,9 @@ public sealed class ShenoraChromiumStampLauncher : Task
   <Target Name="_ShenoraChromiumCheck">
     <Error Condition="'$(ShenoraCefPlatform)' == ''"
            Text="Shenora.Chromium needs a RuntimeIdentifier CEF publishes a build for (win-x64, win-arm64, osx-x64, osx-arm64, linux-x64, linux-arm64); this build has '$(RuntimeIdentifier)'. Set &lt;RuntimeIdentifier&gt; in the app's project." />
-    <Error Condition="$(ShenoraCefPlatform.StartsWith('linux'))" Text="The Chromium shell's app layout is Windows' and macOS' today (this build targets $(RuntimeIdentifier)); the Linux layout is not built yet." />
     <Error Condition="!$(AssemblyName.EndsWith('.App'))"
            Text="A Shenora.Chromium app's own assembly must be named '&lt;App&gt;.App' (this one is '$(AssemblyName)'): CEF's launcher runs as &lt;App&gt;.exe and loads &lt;App&gt;.dll, the kit's shim, which starts &lt;App&gt;.App.dll. Set &lt;AssemblyName&gt;$(AssemblyName).App&lt;/AssemblyName&gt;." />
-    <Error Condition="!Exists('$(ShenoraChromiumShim)')" Text="The kit's native half for $(RuntimeIdentifier) is missing at $(ShenoraChromiumShim). The package carries it for win-x64 and win-arm64; in this repo, `node devtools/dev.mjs cef-native --rid $(RuntimeIdentifier)` builds and stages it (a macOS RID on a Mac)." />
+    <Error Condition="!Exists('$(ShenoraChromiumShim)')" Text="The kit's native half for $(RuntimeIdentifier) is missing at $(ShenoraChromiumShim). The package carries it for win-x64, win-arm64, osx-x64 and osx-arm64, and not yet for Linux; in this repo, `node devtools/dev.mjs cef-native --rid $(RuntimeIdentifier)` builds and stages it (a macOS RID on a Mac, a Linux RID on Linux)." />
   </Target>
 
   <Target Name="ShenoraChromiumFetchCef" DependsOnTargets="_ShenoraChromiumCheck" Condition="'$(ShenoraChromiumLayout)' == 'true'">
@@ -364,6 +365,30 @@ public sealed class ShenoraChromiumStampLauncher : Task
     <Copy SourceFiles="$(ShenoraCefDist)\Release\$(_ShenoraBootstrap)" DestinationFiles="$(PublishDir)$(_ShenoraAppExe).exe" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(PublishDir)$(_ShenoraAppExe).dll" SkipUnchangedFiles="true" />
     <ShenoraChromiumStampLauncher Executable="$(PublishDir)$(_ShenoraAppExe).exe" From="$(PublishDir)$(AssemblyName).dll" />
+  </Target>
+
+  <!-- Linux: flat, as Windows': CEF's runtime and resources beside the app, the .NET apphost also as <App>, and the kit's
+       helper as <App>-helper, which every CEF subprocess runs (Chromium's zygote forks it, so it runs no .NET). -->
+  <Target Name="ShenoraChromiumLinuxLayout" AfterTargets="Build" DependsOnTargets="_ShenoraChromiumLayoutInputs"
+          Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('linux'))">
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="_ShenoraChromiumLinuxInto" Properties="_ShenoraLinuxInto=$(OutDir)" />
+  </Target>
+
+  <Target Name="ShenoraChromiumLinuxPublishLayout" AfterTargets="Publish"
+          Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('linux'))">
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="_ShenoraChromiumLinuxInto" Properties="_ShenoraLinuxInto=$(PublishDir)" />
+  </Target>
+
+  <Target Name="_ShenoraChromiumLinuxInto" DependsOnTargets="_ShenoraChromiumLayoutInputs">
+    <ItemGroup>
+      <_ShenoraCefLinuxRuntime Include="$(ShenoraCefDist)/Release/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ShenoraCefLinuxRuntime)" DestinationFolder="$(_ShenoraLinuxInto)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(_ShenoraLinuxInto)%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(_ShenoraLinuxInto)$(AssemblyName)" DestinationFiles="$(_ShenoraLinuxInto)$(_ShenoraAppExe)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(_ShenoraLinuxInto)$(_ShenoraAppExe)-helper" SkipUnchangedFiles="true" />
+    <!-- A NuGet package keeps no Unix permissions, so the helper arrives from one without its executable bit. -->
+    <Exec Command="chmod 755 &quot;$(_ShenoraLinuxInto)$(_ShenoraAppExe)&quot; &quot;$(_ShenoraLinuxInto)$(_ShenoraAppExe)-helper&quot;" />
   </Target>
 
   <!-- An Info.plist, the one piece of a bundle the build has to write rather than copy. -->
