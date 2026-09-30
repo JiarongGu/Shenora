@@ -18,7 +18,7 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.18.0 — pre-release, stabilising toward 1.0.** The newest arrivals — `CHANGELOG.md` is the authority —
+**v0.19.0 — pre-release, stabilising toward 1.0.** The newest arrivals — `CHANGELOG.md` is the authority —
 are the Chromium shell on **Linux** (`UseChromium` with `-r linux-x64`: frameless windows, native file dialogs,
 the X11 clipboard and a StatusNotifierItem tray), file dialogs in the Chromium shell that start in the folder
 asked for on every OS, and **`Shenora.Chromium`** itself, before it: Chromium through CEF for an app that ships
