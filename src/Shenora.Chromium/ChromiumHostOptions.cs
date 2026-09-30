@@ -1,5 +1,6 @@
 using System.Drawing;
 using Shenora.Core.Ipc;
+using Shenora.Core.Shell;
 
 namespace Shenora.Chromium;
 
@@ -50,6 +51,19 @@ public sealed class ChromiumHostOptions
     /// <summary>A tray icon: its menu, and whether closing the main window hides it there. Null means none. The app
     /// reaches it as <see cref="ChromiumTray"/>.</summary>
     public ChromiumTrayOptions? Tray { get; init; }
+
+    /// <summary>
+    /// One running instance per install, on by default: a later launch has the running app bring its main window
+    /// forward (shown, restored, or opened again if it was closed), hands it its arguments
+    /// (<see cref="SingleInstanceHostOptions.OnActivated"/>), and exits. Whether the window then takes the foreground
+    /// is the OS's to allow on Linux and macOS; on Windows the later launch hands it over.
+    /// <para>
+    /// Null turns the gate off, and Chromium's own rule still stands: one process per <see cref="UserDataFolder"/>, so
+    /// a second instance needs a folder of its own, and a launch that shares one is handed to the running app, which
+    /// brings its window forward with NO arguments, since Chromium does not pass the app's on.
+    /// </para>
+    /// </summary>
+    public SingleInstanceHostOptions? SingleInstance { get; init; } = new();
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

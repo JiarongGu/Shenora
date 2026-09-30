@@ -96,8 +96,8 @@ keeps the library reusable (adopted from the family's other library, where it's 
   `Shenora` (`net10.0`); its **platform implementation** belongs in that platform's shell package
   — `Shenora.Windows`, or `src/Shenora.Mobile/` for the shared source behind `Shenora.Android` and
   `Shenora.iOS`. The bar for moving a contract to Core is **"app logic must be able to compile off
-  Windows"**, NOT "the signature happens to be platform-neutral" — which is exactly why the whole
-  window-state stack stays in `Shenora.Windows` (window geometry is a desktop concept).
+  Windows", or a SECOND SHELL uses it** — NOT "the signature happens to be platform-neutral". The
+  single-instance guard moved on the second, when the Chromium shell needed it (D88).
 - **⚠ If a SHELL implements it, the contract lives in Core — full stop.** Learned by getting one wrong:
   `IFileLockInspector` initially travelled with the file-operation engine out of Core, which would have
   forced a shell → file-engine package edge for a single interface (the engine was `Shenora.IO` then). Its sibling `IPathLocker` went the other

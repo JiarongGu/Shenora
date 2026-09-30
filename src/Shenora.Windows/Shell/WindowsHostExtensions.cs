@@ -12,35 +12,6 @@ using Shenora.Chromium;
 
 namespace Shenora.Windows;
 
-/// <summary>Single-instance behavior for <see cref="WindowsHostOptions.SingleInstance"/>.</summary>
-public sealed class SingleInstanceHostOptions
-{
-    /// <summary>
-    /// What "one instance" is scoped to. Null = the app's install root
-    /// (<see cref="ShenoraPaths.RootDir"/>), so distinct installs coexist.
-    /// </summary>
-    public string? Scope { get; init; }
-
-    /// <summary>
-    /// Argument a restart-relaunch passes so the gate waits for the outgoing instance instead of
-    /// treating the overlap as a double-launch (the restart-through-launcher pattern).
-    /// </summary>
-    public string RestartArgument { get; init; } = "--restarted";
-
-    /// <summary>
-    /// How long a restart-relaunch waits for its predecessor's mutex — a graceful shutdown can spend
-    /// many seconds draining before the mutex releases.
-    /// </summary>
-    public TimeSpan RestartWaitTimeout { get; init; } = TimeSpan.FromSeconds(25);
-
-    /// <summary>
-    /// What a LOSING launch does before exiting. Null = <see cref="SingleInstanceGuard.BroadcastActivate"/>
-    /// (the running instance comes to the front). A custom callback replaces that entirely, and receives
-    /// the guard so it can still broadcast.
-    /// </summary>
-    public Action<ShenoraApplication, SingleInstanceGuard>? OnSecondInstance { get; init; }
-}
-
 /// <summary>Main-window state persistence for <see cref="WindowsHostOptions.WindowState"/>.</summary>
 public sealed class WindowStateHostOptions
 {
@@ -203,17 +174,23 @@ internal sealed class WinFormsRunner : IShenoraRunner
         // Single-instance gate FIRST — before any lifecycle hook takes an OS lock (the WebView2 prewarm
         // takes the user-data-folder lock), and so a losing launch answers instantly.
         SingleInstanceGuard? guard = null;
+        var owned = false;
         if (options.SingleInstance is { } single)
         {
-            guard = new SingleInstanceGuard(app.ApplicationName, single.Scope ?? app.Paths.RootDir);
+            guard = new SingleInstanceGuard(app.ApplicationName, single.Scope ?? app.Paths.RootDir,
+                app.Services.GetService<ILogger<SingleInstanceGuard>>());
             var wait = app.Args.Contains(single.RestartArgument, StringComparer.Ordinal)
                 ? single.RestartWaitTimeout
                 : TimeSpan.Zero;
-            // Only AlreadyRunning stops the launch; Unverified means the guard failed open.
-            if (guard.TryAcquire(wait) is SingleInstanceResult.AlreadyRunning)
+            // Only AlreadyRunning stops the launch; Unverified means the guard failed open, and owns nothing to listen on.
+            var result = guard.TryAcquire(wait);
+            owned = result is SingleInstanceResult.Acquired;
+            if (result is SingleInstanceResult.AlreadyRunning)
             {
+                // This launch holds the foreground, which Windows lets the running instance take only when handed.
+                AllowSetForegroundWindow(ASFW_ANY);
                 if (single.OnSecondInstance is { } onSecond) onSecond(app, guard);
-                else guard.BroadcastActivate();
+                else guard.ActivateRunning(app.Args);
                 guard.Dispose();
                 return;
             }
@@ -249,39 +226,15 @@ internal sealed class WinFormsRunner : IShenoraRunner
                     new WindowStateManager(windowState.Store(app.Services), windowState.Options).AttachTo(form);
                 }
 
-                // A 2nd launch of this scope broadcasts the guard's activation message; bring the main
-                // window to the front when it arrives. A message filter, not a WndProc hook, so ANY Form
-                // works with no base-class requirement.
-                ActivateMessageFilter? filter = null;
-                if (guard?.ActivateMessageId is { } activateMessageId)
+                // A later launch of this scope reaches the guard's channel: bring the main window to the front, then
+                // hand the app its arguments. Listening once the form is SHOWN, when its handle exists to marshal
+                // to; a launch before that waits for the channel to open.
+                if (owned && guard is not null && options.SingleInstance is { } listening)
                 {
-                    filter = new ActivateMessageFilter(form, activateMessageId);
-                    Application.AddMessageFilter(filter);
+                    form.Shown += (_, _) => ListenForLaterLaunches(app, form, guard, listening);
                 }
-                else if (guard is not null)
-                {
-                    // 🔴 SAY SO. `RegisterWindowMessage` returned 0, so there is no channel and this app
-                    // will NOT come to the front when a second launch activates it. Single instance still
-                    // works — the mutex is the real guard — which is what makes it worth a line: the user
-                    // double-clicks, the second process exits quietly, and the app looks broken with no
-                    // trace anywhere. A WARNING, not Debug: only someone reading logs can act on it.
-                    // ⚠ Not covered by a test — forcing it means exhausting a session-wide OS resource,
-                    // which no test may do to the machine it runs on.
-                    app.Services.GetService<ILogger<SingleInstanceGuard>>()?.LogWarning(
-                        "The single-instance ACTIVATE channel is unavailable (RegisterWindowMessage "
-                        + "returned 0): a second launch will exit quietly instead of bringing this window "
-                        + "to the front. Single instance itself is unaffected. Usually a session out of "
-                        + "atom-table space — signing out clears it.");
-                }
-                try
-                {
-                    if (options.MessageLoop is { } loop) loop(form);
-                    else Application.Run(form);
-                }
-                finally
-                {
-                    if (filter is not null) Application.RemoveMessageFilter(filter);
-                }
+                if (options.MessageLoop is { } loop) loop(form);
+                else Application.Run(form);
             }
             finally
             {
@@ -308,29 +261,52 @@ internal sealed class WinFormsRunner : IShenoraRunner
             }
         }
     }
-}
 
-/// <summary>
-/// Watches the UI thread's message queue for the single-instance activation broadcast and brings
-/// the main window to the foreground (restoring it if minimized).
-/// </summary>
-internal sealed class ActivateMessageFilter(Form form, uint messageId) : IMessageFilter
-{
-    public bool PreFilterMessage(ref Message m)
+    private static void ListenForLaterLaunches(ShenoraApplication app, Form form, SingleInstanceGuard guard, SingleInstanceHostOptions options)
     {
-        if ((uint)m.Msg == messageId && !form.IsDisposed)
+        var log = app.Services.GetService<ILogger<SingleInstanceGuard>>();
+        // The one marshalling owner: a form closing or gone answers false rather than throwing on the channel's thread.
+        var ui = new WinFormsUiDispatcher(form, ex => log?.LogWarning(ex, "Bringing the window forward for a later launch failed."));
+        try
         {
-            if (form.WindowState == FormWindowState.Minimized)
+            guard.Listen(launch => ui.Post(() =>
             {
-                form.WindowState = FormWindowState.Normal;
-            }
-            form.Show();
-            form.Activate();
-            form.BringToFront();
-            SetForegroundWindow(form.Handle);
+                BringForward(form);
+                if (options.OnActivated is { } onActivated)
+                {
+                    AppCallback.Run(() => onActivated(app, launch),
+                        ex => log?.LogError(ex, "The app's handling of a later launch (OnActivated) threw."));
+                }
+            }));
         }
-        return false; // never consume — the broadcast is harmless to let through
+        catch (Exception ex)
+        {
+            // 🔴 SAY SO. With no channel this app will NOT come to the front when a later launch asks. Single
+            // instance still works — the mutex is the real guard — which is what makes it worth a line: the user
+            // double-clicks, the second process exits quietly, and the app looks broken with no trace anywhere.
+            app.Services.GetService<ILogger<SingleInstanceGuard>>()?.LogWarning(ex,
+                "The single-instance channel could not be opened: a later launch will exit without bringing this "
+                + "window to the front. Single instance itself is unaffected.");
+        }
     }
+
+    // Restored if minimized, shown if hidden (close-to-tray), then the foreground, which the later launch handed over.
+    private static void BringForward(Form form)
+    {
+        if (form.WindowState == FormWindowState.Minimized)
+        {
+            form.WindowState = FormWindowState.Normal;
+        }
+        form.Show();
+        form.Activate();
+        form.BringToFront();
+        SetForegroundWindow(form.Handle);
+    }
+
+    private const int ASFW_ANY = -1;
+
+    [DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(int dwProcessId);
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);

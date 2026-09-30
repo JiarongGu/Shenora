@@ -34,6 +34,33 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
+### 🧭 `Shenora.Chromium` ALONE IS A COMPLETE DESKTOP SHELL — Windows included (D88)
+
+> **DIRECTION (owner, 2026-10-01):** *"yes lets complete this entirely so use Shenora.Chromium along will be
+> complete"*. An app on any desktop references `Shenora.Chromium` and nothing of WinForms; `Shenora.Windows`
+> stays the small-app (WebView2) choice on Windows.
+
+What `Shenora.Windows` has and the Chromium shell does not, inventoried from the source, in the order to build:
+- [ ] **A running app told of a file or link by the OS, not by a launch.** On macOS, Finder's "open with" and a
+  registered URL scheme reach a running app as Apple Events (`application:openURLs:`), never as a process with
+  arguments, so `SingleInstanceHostOptions.OnActivated` never sees them there; the shell's `NSApp` subclass would take
+  them. And whether a later launch's window takes the foreground on Linux and macOS was not observed: on Linux a
+  later launch could hand over its activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands
+  over the foreground.
+- [ ] **Window size and position restored** (`WindowState`, `IWindowStateStore`, `JsonFileWindowStateStore`
+  move to Core; the Chromium shell applies and saves through CEF Views, on every OS).
+- [ ] **The app's data on macOS** defaults to `~/Library/Application Support/<App>` from a bundle, and every OS
+  gets a data-folder option (D89). The app's data is written inside the bundle today.
+- [ ] **Unhandled exceptions** reach the app (the three channels `WinFormsBootstrap` wires) in the Chromium shell.
+- [ ] **Revealing a file and opening a folder** (`IShellLauncher`'s two members) on every OS.
+- [ ] **Blocking the window during a modal operation** (`IUiInteraction`).
+- [ ] **Who holds a file open** (`IFileLockInspector`): the Restart Manager on Windows; Linux and macOS to design.
+- [ ] **Media:** what the machine decodes (`IMediaCapability`), the system's media controls (`IPlaybackSession`:
+  SMTC, Now Playing, MPRIS) and a native player. SMTC is WinRT, which a plain `net10.0` package reaches only
+  through COM.
+- [ ] **The auxiliary browsers** (`RenderSessionPool`, `InteractiveSession`, `StreamingSession`: 3,456 lines on
+  WebView2), on CEF: off-screen rendering, request contexts for isolated profiles, and input.
+
 ### 🅿️ RE-SIGNING AN EXPIRED iOS BUILD — built; its signing half is parked
 
 `ios deploy` installs only to a phone attached to the build Mac. An adopter measured the way around it

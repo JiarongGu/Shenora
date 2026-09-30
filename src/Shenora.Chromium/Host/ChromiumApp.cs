@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Shenora.Chromium.Interop;
+using Shenora.Core.Shell;
 
 namespace Shenora.Chromium.Host;
 
@@ -37,9 +38,12 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
     /// <param name="browser">This process holds no app page, only Chromium's own windows onto the web (D86): the
     /// local-network checks stay on, and <paramref name="browser"/> is the client of every window Chrome's UI opens.
     /// Null for the app's own pages.</param>
-    public ChromiumApp(Action contextInitialized, CefObject<_cef_client_t>? browser = null)
+    /// <param name="relaunched">A later launch CEF handed to this process, on CEF's UI thread: its folder, and no
+    /// arguments (see <c>Relaunched</c>). A process with the app's pages answers every one, this or nothing; a browser
+    /// process (<paramref name="browser"/>) leaves it to Chrome, which opens a window.</param>
+    public ChromiumApp(Action contextInitialized, CefObject<_cef_client_t>? browser = null, Action<SingleInstanceLaunch>? relaunched = null)
     {
-        _process = new ProcessHandler(contextInitialized, browser);
+        _process = new ProcessHandler(contextInitialized, browser, browser is null ? relaunched ?? (_ => { }) : null);
         _appPages = browser is null;
         Struct->get_browser_process_handler = &GetProcessHandler;
         Struct->on_before_command_line_processing = &BeforeCommandLine;
@@ -103,23 +107,43 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
         }
     }
 
+
     private sealed class ProcessHandler : CefObject<_cef_browser_process_handler_t>
     {
         private readonly Action _contextInitialized;
         private readonly CefObject<_cef_client_t>? _defaultClient;
+        private readonly Action<SingleInstanceLaunch>? _relaunched;
 
-        public ProcessHandler(Action contextInitialized, CefObject<_cef_client_t>? defaultClient)
+        public ProcessHandler(Action contextInitialized, CefObject<_cef_client_t>? defaultClient, Action<SingleInstanceLaunch>? relaunched)
         {
             _contextInitialized = contextInitialized;
             _defaultClient = defaultClient;
+            _relaunched = relaunched;
             Struct->on_context_initialized = &ContextInitialized;
             // Chrome's UI makes a window's browsers itself (a CDP target, a new tab, a window.open), and without a
             // client CEF knows nothing of them: no callback runs, and shutdown waits for them to be closed by hand.
             if (defaultClient is not null) Struct->get_default_client = &DefaultClient;
+            if (relaunched is not null) Struct->on_already_running_app_relaunch = &Relaunched;
         }
 
         [UnmanagedCallersOnly]
         private static void ContextInitialized(_cef_browser_process_handler_t* self) => AppCallback.Run(From<ProcessHandler>(self)._contextInitialized);
+
+        // CEF lets one process own a data folder (root_cache_path) and forwards a later launch's command line to it.
+        // Left unanswered it opens a Chrome-style window HERE, on the app's own profile and beside the page that holds
+        // the bridge (measured on Windows: "New tab - Chromium", with the app's pages among its tiles).
+        // ⚠ The launch arrives with NO arguments. That command line is Chromium's, not the app's: outside development
+        // the shell has CEF ignore the app's command line, and what came was only CEF's own switches (its log file,
+        // its disabled features), with none of "open me.txt --flag" the launch was given (measured on Windows).
+        [UnmanagedCallersOnly]
+        private static int Relaunched(_cef_browser_process_handler_t* self, _cef_command_line_t* commandLine, _cef_string_utf16_t* currentDirectory)
+        {
+            using var line = new CefRef<_cef_command_line_t>(commandLine);
+            var relaunched = From<ProcessHandler>(self)._relaunched!;
+            var folder = CefStrings.Read(currentDirectory);
+            AppCallback.Run(() => relaunched(new SingleInstanceLaunch([], folder)));
+            return 1;
+        }
 
         [UnmanagedCallersOnly]
         private static _cef_client_t* DefaultClient(_cef_browser_process_handler_t* self) =>

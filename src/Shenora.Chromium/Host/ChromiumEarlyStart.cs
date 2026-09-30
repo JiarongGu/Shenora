@@ -49,7 +49,7 @@ internal sealed class ChromiumEarlyStart
     public void Start(ChromiumHostOptions options, CefStartup.Settings settings) =>
         Start(options, contextInitialized =>
         {
-            var app = new ChromiumApp(contextInitialized);
+            var app = new ChromiumApp(contextInitialized, relaunched: ChromiumSingleInstance.Process.Relaunched);
             CefStartup.Initialize(app, settings);
             return app;
         });

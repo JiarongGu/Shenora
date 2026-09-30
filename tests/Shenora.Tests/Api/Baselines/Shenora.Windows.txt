@@ -559,28 +559,6 @@ sealed class Shenora.Windows.ShellLauncher : Shenora.Core.Shell.IUrlLauncher, Sh
   public void OpenDirectory(string directoryPath)
   public void OpenUrl(string url)
   public void RevealInExplorer(string filePath)
-sealed class Shenora.Windows.SingleInstanceGuard : System.IDisposable
-  public .ctor(string applicationName, string? scope = null)
-  public Shenora.Windows.SingleInstanceResult TryAcquire()
-  public Shenora.Windows.SingleInstanceResult TryAcquire(System.TimeSpan waitForPredecessor)
-  public static string ChannelKey(string? scope)
-  public string ActivateMessageName { get; }
-  public string ApplicationName { get; }
-  public string MutexName { get; }
-  public uint? ActivateMessageId { get; }
-  public void BroadcastActivate()
-  public void Dispose()
-sealed class Shenora.Windows.SingleInstanceHostOptions
-  public .ctor()
-  public System.Action<Shenora.ShenoraApplication, Shenora.Windows.SingleInstanceGuard>? OnSecondInstance { get; init; }
-  public System.TimeSpan RestartWaitTimeout { get; init; }
-  public string RestartArgument { get; init; }
-  public string? Scope { get; init; }
-enum Shenora.Windows.SingleInstanceResult (int)
-  public const Shenora.Windows.SingleInstanceResult Acquired = 0
-  public const Shenora.Windows.SingleInstanceResult AlreadyRunning = 1
-  public const Shenora.Windows.SingleInstanceResult Unverified = 2
-  public int value__
 sealed class Shenora.Windows.SplashPanel : System.Windows.Forms.Panel
   protected override void Dispose(bool disposing)
   public .ctor(Shenora.Windows.SplashPanelOptions? options = null)
@@ -846,7 +824,7 @@ static class Shenora.Windows.WindowsHostExtensions
   public static Shenora.ShenoraApplicationBuilder UseChromiumEngine(Shenora.ShenoraApplicationBuilder builder, Shenora.Chromium.ChromiumEngineOptions options)
   public static Shenora.ShenoraApplicationBuilder UseWindows(Shenora.ShenoraApplicationBuilder builder, Shenora.Windows.WindowsHostOptions options)
 sealed class Shenora.Windows.WindowsHostOptions
-  public Shenora.Windows.SingleInstanceHostOptions? SingleInstance { get; init; }
+  public Shenora.Core.Shell.SingleInstanceHostOptions? SingleInstance { get; init; }
   public Shenora.Windows.WinFormsBootstrapOptions? Bootstrap { get; init; }
   public Shenora.Windows.WindowStateHostOptions? WindowState { get; init; }
   public required System.Func<System.IServiceProvider, System.Windows.Forms.Form> MainForm { get; init; }

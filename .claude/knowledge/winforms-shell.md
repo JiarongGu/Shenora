@@ -101,7 +101,7 @@ owner, `IUiDispatcher`) — don't restate it here.
 ## Gotchas / traps
 
 - **`SingleInstanceGuard.TryAcquire` must be idempotent, because an OS mutex is per-thread
-  REENTRANT.** A second call used to take a second handle and succeed on the same thread even when this
+  REENTRANT.** (The guard is Core's now, and the Chromium shell runs it too — D88.) A second call used to take a second handle and succeed on the same thread even when this
   process already owned it — so `Dispose` could release only one, the mutex stayed held after shutdown,
   and the fast `--restarted` handoff timed out against a corpse. Already holding it IS success. (The
   guard's real contract is cross-process; in-process tests must hold from a dedicated thread, as a

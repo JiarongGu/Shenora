@@ -111,14 +111,19 @@ public sealed class ChromiumEngine
     /// <param name="app">The app: its data area and environment, and the services each page's IPC uses (its
     /// <see cref="IMessageDispatcher"/> and <see cref="IUiDispatcher"/>, and when registered its
     /// <see cref="IEventBus"/> and <see cref="IUrlLauncher"/>).</param>
-    /// <exception cref="InvalidOperationException">Started twice, or CEF would not start (the message names its log).</exception>
+    /// <exception cref="InvalidOperationException">Started twice, or CEF would not start: the message names its log,
+    /// or, when another process of the app owns the engine's data folder, says so (the Windows shell's
+    /// single-instance gate normally turns such a launch away first).</exception>
     public void Start(ShenoraApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
         if (Interlocked.CompareExchange(ref _state, 1, 0) != 0) throw new InvalidOperationException("The Chromium engine has already been started.");
         _app = app;
         _isDevelopment = _options.IsDevelopment ?? app.Environment.IsDevelopment;
-        _cefApp = new ChromiumApp(() => _ready.TrySetResult());
+        // A later launch CEF hands this process is answered, so Chromium opens no window of its own here; bringing the
+        // app's window forward is the Windows shell's single-instance gate's to do.
+        _cefApp = new ChromiumApp(() => _ready.TrySetResult(), relaunched: _ => AppCallback.Log(_log,
+            () => "[Shenora.Chromium] Chromium handed this process a later launch of the app", LogLevel.Information));
         try
         {
             CefStartup.Initialize(_cefApp, new CefStartup.Settings(

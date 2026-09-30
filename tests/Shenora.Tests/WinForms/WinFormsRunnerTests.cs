@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using Shenora;
+using Shenora.Core.Shell;
 using Shenora.Tests.TestSupport;
 using Shenora.Windows;
 using Microsoft.Extensions.DependencyInjection;
@@ -120,6 +122,83 @@ public class WinFormsRunnerTests
 
         Assert.False(formCreated);
         Assert.Same(built, reported);
+    }
+
+    [Fact]
+    public void A_losing_launch_hands_the_running_instance_its_arguments_by_default()
+    {
+        var root = UniqueRoot();
+        var arrived = new BlockingCollection<SingleInstanceLaunch>();
+        using var running = new ThreadHeldGuard("Shenora.Tests.Host", root, activated: arrived.Add);
+        Assert.True(running.Acquired);
+
+        var builder = Builder(root, "--open", "report.txt");
+        builder.UseWindows(new WindowsHostOptions
+        {
+            MainForm = _ => new Form(),
+            SkipProcessInit = true,
+            MessageLoop = _ => Assert.Fail("the loop must not run for a losing launch"),
+            SingleInstance = new SingleInstanceHostOptions { Scope = root },
+        });
+
+        using var built = builder.Build();
+        built.Run();
+
+        Assert.True(arrived.TryTake(out var activation, TimeSpan.FromSeconds(10)));
+        Assert.Equal(["--open", "report.txt"], activation!.Arguments);
+    }
+
+    [Fact]
+    public void The_running_instance_restores_its_form_and_hands_OnActivated_the_launch()
+    {
+        // The whole running side through a real show sequence: Shown → the channel opens → a later launch arrives on the
+        // channel's thread → marshalled to the form's → the form restored → the app's callback, on the UI thread.
+        Sta.Run(() =>
+        {
+            var root = UniqueRoot();
+            SingleInstanceLaunch? received = null;
+            var restored = false;
+            var onUiThread = false;
+            Form? main = null;
+            var builder = Builder(root);
+            builder.UseWindows(new WindowsHostOptions
+            {
+                MainForm = _ => main = new Form
+                {
+                    WindowState = FormWindowState.Minimized, ShowInTaskbar = false,
+                    StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(0, 0, 200, 150),
+                },
+                SkipProcessInit = true,
+                SingleInstance = new SingleInstanceHostOptions
+                {
+                    Scope = root,
+                    OnActivated = (_, launch) =>
+                    {
+                        received = launch;
+                        restored = main!.WindowState == FormWindowState.Normal;
+                        onUiThread = !main.InvokeRequired;
+                        main.Close();
+                    },
+                },
+                MessageLoop = form =>
+                {
+                    // After the runner's own Shown handler, which opened the channel.
+                    form.Shown += (_, _) => Task.Run(() =>
+                    {
+                        using var later = new SingleInstanceGuard("Shenora.Tests.Host", root);
+                        later.ActivateRunning(["--open", "x.txt"]);
+                    });
+                    Application.Run(form);
+                },
+            });
+
+            using var app = builder.Build();
+            app.Run();
+
+            Assert.Equal(["--open", "x.txt"], received!.Arguments);
+            Assert.True(restored);
+            Assert.True(onUiThread);
+        });
     }
 
     [Fact]

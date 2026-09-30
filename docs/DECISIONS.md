@@ -144,6 +144,7 @@ docs cite them — so the number is the column to scan.
 | **D85** | ON MACOS THE CHROMIUM SHELL USES CHROMIUM'S MOCK KEYCHAIN. |
 | **D86** | CHROMIUM ALSO RUNS AS A BROWSER, IN A PROCESS THAT HOLDS NONE OF THE APP. |
 | **D87** | THE CHROMIUM SHELL STARTS CEF WHILE THE APP IS COMPOSED. |
+| **D88** | `SHENORA.CHROMIUM` ALONE IS A COMPLETE DESKTOP SHELL, ON EVERY OS, WINDOWS INCLUDED. |
 
 <!-- decisions-index:end -->
 
@@ -286,8 +287,8 @@ docs cite them — so the number is the column to scan.
   **The placement rule, extended by D48: if a SHELL implements it, the contract lives in Core — full
   stop.** The mirror case: `IPathLocker` stays with its implementation, because advisory lock files are
   portable and no shell implements it. **Scope guard:** a contract moves only when app logic needs it to
-  compile off Windows — portable-in-signature is not the bar, which is why the whole window-state stack
-  stays in the Windows shell.
+  compile off Windows, or a second shell uses it — portable-in-signature is not the bar. The single-instance
+  guard moved on the second, when the Chromium shell needed it too (D88).
 
 - **D21 — For a whole application FEATURE, the kit ships primitives + lifecycle hooks; the app owns the
   product.** Owner: *"co-browse itself is a whole feature — you just need to provide enough interface for
@@ -1247,6 +1248,28 @@ docs cite them — so the number is the column to scan.
     otherwise pays CEF's start; a Chromium that will not start is still reported by `Run`. An app that composes
     and then fails, or returns without running, exits with CEF started, measured clean on Windows: its exit code,
     no child process left, no error report.
+
+- **D88 — `SHENORA.CHROMIUM` ALONE IS A COMPLETE DESKTOP SHELL, ON EVERY OS, WINDOWS INCLUDED.** An app on any
+  desktop references `Shenora.Chromium` and nothing of WinForms, and gets what `Shenora.Windows` gives a WebView2
+  app; `Shenora.Windows` stays Windows' small-app choice (D82). Owner, 2026-10-01: *"yes lets complete this
+  entirely so use Shenora.Chromium along will be complete"*. `TASKS.md` holds what is left.
+  - 🔴 **What both shells use lives in Core** (owner, over parallel types in the Chromium package): D20's rule, now
+    that a second shell uses it. A moved type changes its namespace, so a Windows app's source gains a `using`
+    and a binary built against the old names does not bind.
+  - **The single-instance guard is portable:** a named mutex scoped to the user, and on Windows to the logon session
+    as before, but not to the session on Linux and macOS, where a session is one terminal (the session scope let a
+    second instance start from another session on Linux); and a named pipe per user that only that user can open,
+    which carries a later launch's arguments to the running app. It replaced the Windows window-message broadcast,
+    which carried nothing.
+  - 🔴 **A Chromium process that holds the app's pages answers CEF's relaunch itself.** CEF lets one process own a
+    data folder and hands a later launch to it; unanswered, CEF opens a Chrome-style window there, on the app's
+    profile, beside the page that holds the bridge. So the shell treats it as a launch with no arguments (Chromium
+    does not pass the app's on), and the launch CEF turned away exits cleanly. A browser process (D86) keeps
+    Chrome's answer, a window of its own.
+  - **The kit's gate stays in front of CEF's rule, which would also keep one instance:** it turns a launch away
+    before CEF starts at all (no GPU process, no data-folder lock), it carries the launch's arguments where CEF's
+    hand-over carries none, its scope is the install rather than wherever the data folder is, it waits out a
+    `--restarted` predecessor, and it is the same gate the WinForms shell runs.
 
 ## Anti-goals — deliberately NOT built
 

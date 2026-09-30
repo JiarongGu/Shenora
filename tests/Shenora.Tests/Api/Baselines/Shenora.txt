@@ -374,6 +374,40 @@ static class Shenora.Core.Shell.ShellCapability
   public const string WindowChrome = "windowChrome"
   public const string WindowOrientation = "windowOrientation"
   public static System.NotSupportedException NotSupported(string capability, string shell, string? alternative = null)
+sealed class Shenora.Core.Shell.SingleInstanceGuard : System.IDisposable
+  public .ctor(string applicationName, string? scope = null, Microsoft.Extensions.Logging.ILogger? log = null)
+  public Shenora.Core.Shell.SingleInstanceResult TryAcquire()
+  public Shenora.Core.Shell.SingleInstanceResult TryAcquire(System.TimeSpan waitForPredecessor)
+  public bool ActivateRunning(System.Collections.Generic.IReadOnlyList<string>? arguments = null, System.TimeSpan? timeout = null)
+  public static string ChannelKey(string? scope)
+  public string ApplicationName { get; }
+  public string MutexName { get; }
+  public void Dispose()
+  public void Listen(System.Action<Shenora.Core.Shell.SingleInstanceLaunch> activated)
+sealed class Shenora.Core.Shell.SingleInstanceHostOptions
+  public .ctor()
+  public System.Action<Shenora.ShenoraApplication, Shenora.Core.Shell.SingleInstanceGuard>? OnSecondInstance { get; init; }
+  public System.Action<Shenora.ShenoraApplication, Shenora.Core.Shell.SingleInstanceLaunch>? OnActivated { get; init; }
+  public System.TimeSpan RestartWaitTimeout { get; init; }
+  public string RestartArgument { get; init; }
+  public string? Scope { get; init; }
+sealed class Shenora.Core.Shell.SingleInstanceLaunch : System.IEquatable<Shenora.Core.Shell.SingleInstanceLaunch>
+  public .ctor(System.Collections.Generic.IReadOnlyList<string> Arguments, string WorkingDirectory)
+  public Shenora.Core.Shell.SingleInstanceLaunch <Clone>$()
+  public System.Collections.Generic.IReadOnlyList<string> Arguments { get; init; }
+  public bool Equals(Shenora.Core.Shell.SingleInstanceLaunch? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.Shell.SingleInstanceLaunch? left, Shenora.Core.Shell.SingleInstanceLaunch? right)
+  public static bool op_Inequality(Shenora.Core.Shell.SingleInstanceLaunch? left, Shenora.Core.Shell.SingleInstanceLaunch? right)
+  public string WorkingDirectory { get; init; }
+  public void Deconstruct(out System.Collections.Generic.IReadOnlyList<string> Arguments, out string WorkingDirectory)
+enum Shenora.Core.Shell.SingleInstanceResult (int)
+  public const Shenora.Core.Shell.SingleInstanceResult Acquired = 0
+  public const Shenora.Core.Shell.SingleInstanceResult AlreadyRunning = 1
+  public const Shenora.Core.Shell.SingleInstanceResult Unverified = 2
+  public int value__
 abstract class Shenora.Core.Shell.UiDispatcherBase : Shenora.Core.Shell.IUiDispatcher
   protected .ctor(System.Action<System.Exception>? onPostFailure = null)
   protected abstract bool TryPost(System.Action work, out System.Exception? failure)

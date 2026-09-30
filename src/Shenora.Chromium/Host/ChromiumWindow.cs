@@ -90,7 +90,14 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         else _window->maximize(_window);
     }
 
-    public void Activate() { if (_window != null) { _window->show(_window); _window->activate(_window); } }
+    // Shown if hidden (the tray's close), restored if minimized, then to the front.
+    public void Activate()
+    {
+        if (_window == null) return;
+        _window->show(_window);
+        if (_window->is_minimized(_window) == 1) _window->restore(_window);
+        _window->activate(_window);
+    }
     public void Hide() { if (_window != null) _window->hide(_window); }
     public bool IsVisible => _window != null && ((_cef_view_t*)_window)->is_visible((_cef_view_t*)_window) == 1;
 

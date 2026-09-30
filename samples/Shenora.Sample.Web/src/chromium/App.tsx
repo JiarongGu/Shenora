@@ -90,6 +90,11 @@ export function App() {
   const [hello, setHello] = useState<string>();
   useShenoraEvent<{ at: string }>('SAMPLE_CHROMIUM', 'TRAY_HELLO', (e) => setHello(`the tray said hello at ${e.at}`));
 
+  // The app launched again while running: this window came forward, and that launch's arguments arrive here.
+  const [launched, setLaunched] = useState<string>();
+  useShenoraEvent<{ arguments: string[] }>('SAMPLE_CHROMIUM', 'LAUNCHED_AGAIN', (e) =>
+    setLaunched(`launched again with ${e.arguments.length ? e.arguments.join(' · ') : 'no arguments'}`));
+
   return (
     <>
       <TitleBar commands={commands} />
@@ -122,6 +127,9 @@ export function App() {
         </p>
         <p style={row}>
           <span style={hello ? ok : quiet}>{hello ?? (can('tray') ? 'tray: try its "Say hello to the page"' : 'tray: none')}</span>
+        </p>
+        <p style={row}>
+          <span style={launched ? ok : quiet}>{launched ?? 'single instance: launch the app again'}</span>
         </p>
         <p style={row}>
           <button disabled={!hosted} onClick={() => getBridge().invoke(LOGIC, 'OPEN_URL', { payload: { url: 'https://github.com/JiarongGu/Shenora' } })}>

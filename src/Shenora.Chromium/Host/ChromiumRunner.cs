@@ -1,5 +1,7 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Shenora.Chromium.Interop;
+using Shenora.Core.Shell;
 
 namespace Shenora.Chromium.Host;
 
@@ -26,26 +28,59 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
     {
         ArgumentNullException.ThrowIfNull(app);
         var isDevelopment = IsDevelopment(options, app.Environment);
-        if (!ChromiumEarlyStart.Process.TakeOver(options, () => Started(app, isDevelopment)))
+        var single = ChromiumSingleInstance.Process;
+        // A launch UseChromium's gate already turned away started no CEF, and touches none now.
+        ChromiumApp? cefApp = null;
+        if (!ChromiumEarlyStart.Process.HasStarted && single.Result is not SingleInstanceResult.AlreadyRunning)
         {
-            var cefApp = new ChromiumApp(() => Started(app, isDevelopment));
+            // CEF's subprocesses first: an app running an exe of its own with no launcher beside it is each of them too,
+            // and one that met the gate would take the scope as a second instance.
+            cefApp = new ChromiumApp(() => Started(app, isDevelopment), relaunched: single.Relaunched);
             var code = CefStartup.ExecuteIfSubprocess(cefApp, log);
             if (code >= 0) { Environment.Exit(code); return; }
-            CefStartup.Initialize(cefApp, SettingsFor(options, app.Paths, app.Environment));
         }
+        if (!single.Enter(options.SingleInstance, app.ApplicationName, app.Paths, app.Args, app.Services.GetService<ILogger<SingleInstanceGuard>>()))
+        {
+            single.Lose(app, options.SingleInstance!);
+            return;
+        }
+        if (single.Result is SingleInstanceResult.Unverified)
+            AppCallback.Log(log, () => "[Shenora.Chromium] The single-instance gate could not tell whether another instance runs; this one starts unguarded",
+                LogLevel.Warning);
 
-        SynchronizationContext.SetSynchronizationContext(new CefUiContext(ui, log));
         try
         {
-            Cef.cef_run_message_loop();
+            try
+            {
+                if (!ChromiumEarlyStart.Process.TakeOver(options, () => Started(app, isDevelopment)))
+                    CefStartup.Initialize(cefApp!, SettingsFor(options, app.Paths, app.Environment));
+            }
+            catch (ChromiumAlreadyRunningException ex)
+            {
+                // Past the gate (turned off, or scoped narrower than the data folder), but CEF's own rule holds: it
+                // handed this launch to the process that owns the folder, which comes to the front. This one is done.
+                AppCallback.Log(log, () => $"[Shenora.Chromium] {ex.Message}", LogLevel.Information);
+                return;
+            }
+
+            SynchronizationContext.SetSynchronizationContext(new CefUiContext(ui, log));
+            try
+            {
+                Cef.cef_run_message_loop();
+            }
+            finally
+            {
+                // Still on CEF's UI thread, where the icon was made; before CEF goes, or it lingers until hovered.
+                AppCallback.Run(() => tray?.Stop(), ex => AppCallback.Log(log, () => "[Shenora.Chromium] Removing the tray icon failed", LogLevel.Warning, ex));
+                ui.MarkGone();
+                AppCallback.Run(app.Stop, ex => AppCallback.Log(log, () => "[Shenora.Chromium] Stopping the app failed", LogLevel.Error, ex));
+                Cef.cef_shutdown();
+            }
         }
         finally
         {
-            // Still on CEF's UI thread, where the icon was made; before CEF goes, or it lingers until hovered.
-            AppCallback.Run(() => tray?.Stop(), ex => AppCallback.Log(log, () => "[Shenora.Chromium] Removing the tray icon failed", LogLevel.Warning, ex));
-            ui.MarkGone();
-            AppCallback.Run(app.Stop, ex => AppCallback.Log(log, () => "[Shenora.Chromium] Stopping the app failed", LogLevel.Error, ex));
-            Cef.cef_shutdown();
+            // Released LAST and explicitly, so a --restarted relaunch waiting on it proceeds the moment shutdown is done.
+            single.Release();
         }
     }
 
@@ -60,6 +95,13 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
             windows.Open(ChromiumWindows.MainWindowName, options.Window);
             // A tray that cannot be shown costs the tray, never the app.
             AppCallback.Run(() => tray?.Start(), ex => AppCallback.Log(log, () => "[Shenora.Chromium] The tray icon could not be shown", LogLevel.Error, ex));
+            // A later launch, through the gate's channel or handed over by CEF: the main window comes to the front, opened
+            // again if it was closed, and the app gets the launch's arguments.
+            ChromiumSingleInstance.Process.Listen(activation => ui.Post(() =>
+            {
+                windows.Open(ChromiumWindows.MainWindowName, options.Window);
+                options.SingleInstance?.OnActivated?.Invoke(app, activation);
+            }), log);
         }
         catch (Exception ex)
         {

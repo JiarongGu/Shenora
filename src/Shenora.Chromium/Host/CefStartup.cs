@@ -141,7 +141,13 @@ internal static unsafe class CefStartup
             initialized = Cef.cef_initialize(&args, &cef, app.ForCef(), (void*)sandbox);
         }
         if (initialized == 0)
-            throw new InvalidOperationException($"Chromium did not start (CEF exit code {Cef.cef_get_exit_code()}). Its log is {logFile}.");
+        {
+            var exitCode = Cef.cef_get_exit_code();
+            // One process per data folder: CEF handed this launch to the one that owns it, which is not a failure.
+            if (exitCode == (int)cef_resultcode_t.CEF_RESULT_CODE_NORMAL_EXIT_PROCESS_NOTIFIED)
+                throw new ChromiumAlreadyRunningException(settings.Cache);
+            throw new InvalidOperationException($"Chromium did not start (CEF exit code {exitCode}). Its log is {logFile}.");
+        }
     }
 
     /// <summary>

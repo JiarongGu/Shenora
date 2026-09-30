@@ -549,28 +549,6 @@ Shenora.Windows.ShellLauncher
   method OpenDirectory
   method OpenUrl
   method RevealInExplorer
-Shenora.Windows.SingleInstanceGuard
-  method .ctor
-  method BroadcastActivate
-  method ChannelKey
-  method Dispose
-  method TryAcquire
-  method TryAcquire
-  property ActivateMessageId
-  property ActivateMessageName
-  property ApplicationName
-  property MutexName
-Shenora.Windows.SingleInstanceHostOptions
-  method .ctor
-  property OnSecondInstance
-  property RestartArgument
-  property RestartWaitTimeout
-  property Scope
-Shenora.Windows.SingleInstanceResult
-  field Acquired
-  field AlreadyRunning
-  field Unverified
-  field value__
 Shenora.Windows.SplashPanel
   method .ctor
   method Dispose

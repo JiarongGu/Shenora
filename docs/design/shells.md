@@ -78,8 +78,11 @@ the app accumulates modal dialogs faster than a user can dismiss them.
 
 ## Single instance
 
-An OS mutex named per (application, scope) — scope defaults to the install root, so distinct installs
-coexist — plus a `RegisterWindowMessage` channel for activation. `TryAcquire` answers **three** ways:
+`SingleInstanceGuard` is Core's, and both desktop shells run it (D88). An OS mutex named per (application,
+scope) — scope defaults to the install root, so distinct installs coexist — limited to the USER, and on Windows to
+the logon session as it always was, but not to the session on Linux and macOS, where a session is one terminal;
+plus a named pipe per user (and per Windows session) that only that user can open, which carries a later launch's
+arguments and working directory to the running instance. `TryAcquire` answers **three** ways:
 `Acquired`, `AlreadyRunning`, and `Unverified` (the OS would not answer; the guard failed OPEN). Only
 `AlreadyRunning` stops the launch.
 
@@ -89,11 +92,19 @@ coexist — plus a `RegisterWindowMessage` channel for activation. `TryAcquire` 
   instance overlaps its predecessor's shutdown, while a genuine double-launch keeps the instant answer.
   The blocking wait also observes an abandoned mutex as soon as the kernel does, which the zero-wait path
   can race.
-- ⚠ **`ActivateMessageId == 0` is a real failure**, not just "not yet acquired": the session's atom table
-  can be exhausted (hit on the dev machine, 2026-08-10). Single instance still works — the mutex is the
-  guard — but a second launch exits quietly and nothing comes to the front, so the runner logs a WARNING
-  rather than skipping in silence.
-- Activation is an `IMessageFilter`, not a `WndProc` override, so any `Form` works with no base class.
+- **The running instance listens once it can come forward** (WinForms: the main form's `Shown`; Chromium: the
+  main window open), and only when it `Acquired` the scope; a later launch waits up to 5 s for the channel. It brings the main window to the front,
+  restored and shown, then runs `OnActivated` with the launch. A channel that cannot be opened is logged as a
+  WARNING: single instance still works, but a later launch exits quietly and nothing comes forward.
+- **The losing launch hands the foreground over** on Windows (`AllowSetForegroundWindow`), since it holds it and
+  Windows keeps it from a process the user is not using.
+- **The Chromium shell has a second rule behind the gate: CEF's.** One process per data folder, and a later
+  launch on the same folder is handed to it (`on_already_running_app_relaunch`). A process with the app's pages
+  always answers it: left unanswered, CEF opens a Chrome-style window there on the app's profile. The shell takes
+  it as a launch with NO arguments (Chromium's command line is its own, not the app's), and a `ChromiumView` engine
+  logs it. The launch CEF turned away (CEF's exit code 24) exits quietly from the shell, and fails the engine's
+  `Start` with a message that says so. The gate runs before CEF starts, in
+  `UseChromium` when the app runs from its layout (D87) and in the runner otherwise, after the subprocess check.
 
 ## The main window
 

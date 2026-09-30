@@ -30,7 +30,33 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Breaking
+
+- **The single-instance guard moved to `Shenora.Core.Shell`, and a later launch reaches the running app over a
+  pipe instead of a window message.** `SingleInstanceGuard`, `SingleInstanceResult` and `SingleInstanceHostOptions`
+  were `Shenora.Windows` types: a Windows app adds `using Shenora.Core.Shell;`, and `WindowsHostOptions.SingleInstance`
+  is otherwise unchanged. `SingleInstanceGuard.BroadcastActivate()` is now `ActivateRunning(arguments)`, and
+  `ActivateMessageId` and `ActivateMessageName` went with the window message, so an app's own `OnSecondInstance`
+  that broadcast calls `guard.ActivateRunning(app.Args)`. Both desktop shells run the guard now (D88), on every OS.
+  On Windows its mutex is still the logon session's, and now the user's alone within it; on Linux and macOS it is
+  the user's and not the session's, since a session there is one terminal.
+- **The Chromium shell is single-instance by default** (`ChromiumHostOptions.SingleInstance`). An app that runs
+  several instances, each with its own `UserDataFolder`, sets it to null to keep doing so.
+
 ### Added
+
+- **Single instance in the Chromium shell** (`ChromiumHostOptions.SingleInstance`, on by default, as on Windows): a
+  later launch has the running app bring its main window forward, shown if hidden, restored if minimized and opened
+  again if closed, and exits. Measured on Windows (the minimized window restored every time, and took the
+  foreground in 5 runs of 6 started from a script), Linux (a later launch from another session, through `setsid`)
+  and an Intel Mac: the later launch exited within a second (175 to 876 ms). Whether the window takes the foreground on Linux and macOS was not observed: there the OS decides.
+  `ChromiumWindows.Activate` and the tray's Open restore a minimized window too.
+- **A later launch's arguments reach the running app, on both desktop shells**
+  (`SingleInstanceHostOptions.OnActivated`, with the launch's working directory), such as a file the app was started
+  with. The Chromium sample shows them on its page, which is how each OS was measured; the WinForms shell's side is
+  driven through a real form in a test, and its sample restored and took the foreground from a second launch. On
+  macOS, Finder's "open with" reaches a running app as an Apple Event rather than a launch, and the shell does not
+  take those yet.
 
 - **The Chromium shell on Linux** (`linux-x64`; `linux-arm64` is built and not yet run). Measured on WSL (Ubuntu
   24.04, X11), from a package-only app and from the repo, and under a real window manager (openbox) on a virtual X
@@ -86,6 +112,18 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A second launch of a Chromium-shell app crashed, and the running one opened a Chrome window on the app's
+  profile.** CEF runs one process per data folder and hands a later launch to it, and the kit neither answered that
+  hand-over nor recognised the launch CEF turned away. So the later launch threw (`Chromium did not start (CEF exit
+  code 24)`), and the running app opened "New tab - Chromium", a Chrome-style window with an address bar, on the
+  app's own profile, in the process that holds the page's bridge (measured on Windows). Now every process with the
+  app's pages answers CEF's hand-over, so no Chrome window opens: the Chromium shell treats it as a later launch and
+  brings its window forward, with no arguments, since Chromium does not pass the app's on; a `ChromiumView` app logs
+  it. The shell's launch CEF turned away exits cleanly, and a `ChromiumView` app's says why it cannot start. Behind
+  the single-instance gate the hand-over happens only when the gate is off or scoped narrower than the data folder:
+  measured that way on Windows, Linux and macOS, the launch was handed over and exited 0, and the running app opened
+  nothing (one window on Windows and Linux, where the windows were listed; one page on Linux and macOS, where the
+  pages were).
 - **Closing the main window hides it only while the tray's icon is shown**, in the Chromium shell. With
   `CloseToTray` (the default) it hid wherever the icon could not be shown, leaving the app running with no window
   and no way back: on Linux, which had no tray at all, and on a Linux desktop with no tray host (GNOME without its

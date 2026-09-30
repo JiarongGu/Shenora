@@ -72,7 +72,10 @@ public static class ChromiumHostExtensions
         // The page's route to them, registered where the implementation exists (D64), as UseWindows does.
         builder.Services.AddShenoraFileDialogs();
         // Last, once the options are known good: CEF starts now, so its GPU process sets up while the app is built (D87).
-        if (ChromiumEarlyStart.LaunchedFromLayout)
+        // The single-instance gate first, since CEF takes its data folder as it starts: a launch it turns away starts
+        // no CEF at all, and the runner lets it go.
+        if (ChromiumEarlyStart.LaunchedFromLayout
+            && ChromiumSingleInstance.Process.Enter(options.SingleInstance, builder.ApplicationName, builder.Paths, builder.Args, log: null))
             ChromiumEarlyStart.Process.Start(options, ChromiumRunner.SettingsFor(options, builder.Paths, builder.Environment));
         return builder;
     }

@@ -546,3 +546,11 @@ CachePath                             # -> UserDataFolder, as WebViewEnvironment
 FocusLeaving                          # -> MoveFocusRequested, WebView2's name for the same event
 ChromiumDragAreaPress.DoubleClick     # -> ChromiumDragAreaPress.Action (a ChromiumDragAreaAction)
 ChromiumDragAreaPress.Press           # -> ChromiumDragAreaPress.Position
+
+# --- D88: single instance is Core's and portable, over a named pipe instead of a window message ----
+BroadcastActivate                     # -> SingleInstanceGuard.ActivateRunning, which carries the launch's arguments
+ActivateMessageId                     # the window-message channel went; the channel is SingleInstanceGuard.ChannelName
+ActivateMessageName                   # the window-message channel went; the channel is SingleInstanceGuard.ChannelName
+Shenora.Windows.SingleInstanceGuard   # -> Shenora.Core.Shell.SingleInstanceGuard
+Shenora.Windows.SingleInstanceHostOptions  # -> Shenora.Core.Shell.SingleInstanceHostOptions
+Shenora.Windows.SingleInstanceResult  # -> Shenora.Core.Shell.SingleInstanceResult

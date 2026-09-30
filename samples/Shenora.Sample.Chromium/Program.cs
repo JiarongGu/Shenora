@@ -57,6 +57,12 @@ internal static class Program
             },
             // The tray reopens the window, and one item of the app's own tells the page it was clicked: a native
             // event reaching React through the event bus. CloseToTray off, so closing the window ends the app.
+            // One instance per install (the default): a later launch brings this window forward, and its arguments reach
+            // the page, as a file opened with the app would.
+            SingleInstance = new SingleInstanceHostOptions
+            {
+                OnActivated = (_, launch) => events?.Emit(Module, "LAUNCHED_AGAIN", new { launch.Arguments }),
+            },
             Tray = new ChromiumTrayOptions
             {
                 CloseToTray = false,

@@ -133,7 +133,7 @@ that every app needs every row.
 | A double-buffered form base / frameless chrome | `OptimizedForm(+Options)` | Frameless is opt-in. Maximize is manual (work-area fill), so `AppPlacement` is the truth, **not** `Form.WindowState`. **Fixes a bug you likely have:** hand-rolled work-area code reaches for `Screen.WorkingArea`, which is DPI-mis-scaled on a HiDPI monitor (~12 px per edge — the visible gap the manual maximize path exists to remove); `OptimizedForm` uses `GetMonitorInfo`. |
 | Caption buttons drawn by the page | `OptimizedFormOptions.NativeCaptionButtons` + `CaptionButtonColors` | Report the rects via `SetCaptionButtons`; the window clips them out of every covering child and paints them, which is what buys Windows 11 **Snap Layouts**. The rects set the row's height, and the page can set the colours itself (`setCaptionButtonColors`). Requires `FramelessChrome` — the combination throws at construction rather than doing nothing. |
 | Tray icon + themed menu | `TrayIcon(+Options)`, `TrayMenuColors` | **`CloseReason.UserClosing` also means a programmatic `Close()`** — with close-to-tray on, a startup-abort path that calls `Close()` leaves a resident process. Close via `ExitApplication()`. |
-| Single-instance mutex + activate-existing | `SingleInstanceGuard` | Idempotent by design (an OS mutex is per-thread reentrant, which broke the naive version). |
+| Single-instance mutex + activate-existing | `WindowsHostOptions.SingleInstance` (on by default), over `SingleInstanceGuard` in `Shenora.Core.Shell` | Idempotent by design (an OS mutex is per-thread reentrant, which broke the naive version). A later launch brings the main window to the front and hands the running app its arguments and working directory (`SingleInstanceHostOptions.OnActivated`): the file a user opened with the app, say. |
 | File dialogs / clipboard / shell open / reveal | `IFileDialogs`, `IClipboardService`, `IUrlLauncher`(+`IShellLauncher`), `IUiInteraction`(+`IFormInteraction`) | Dialogs run on a dedicated STA thread with owner-handle z-order. The portable halves live in `Shenora` — see Stage 4. **Clipboard: one `SetAsync(ClipboardContent)` carries every representation at once** — hand-rolled code that sets text and then an image is silently keeping only the image. Put your own format in `Formats["application/x-yourapp-…"]`; the kit carries it verbatim. ⚠ **On ANDROID a picture is refused, deliberately.** An image reaches another app as a `content://` URI served by a `ContentProvider` **your app** declares in its manifest — the kit cannot declare one on your behalf, and inventing a private scheme would produce a copy no other app can open, which is worse than the refusal. Text, HTML and your own formats work everywhere; gate an image control on the capability rather than assuming it. iOS and Windows carry pictures. **To reach it from the PAGE rather than from C#**, register
 `AddShenoraClipboard()` — an opt-in IPC module (`SHENORA.CLIPBOARD`) whose client half is
 `useClipboard()` in `@shenora/react`. It exists because the browser's own Clipboard API cannot do
@@ -523,8 +523,8 @@ adapter, which needed no Windows reference either):
 **What is deliberately NOT portable, so you do not go looking:** the window-state stack
 (`WindowStateManager`, `IWindowStateStore`) stays in `Shenora.Windows`. Its signatures happen to look
 platform-neutral, and that is not the bar — window geometry is a desktop concept, and the bar is "app
-logic must be able to compile off Windows". Same for `OptimizedForm`, `TrayIcon`, `SplashPanel`,
-`SecondaryWindows` and `SingleInstanceGuard`.
+logic must be able to compile off Windows". Same for `OptimizedForm`, `TrayIcon`, `SplashPanel` and
+`SecondaryWindows`.
 
 **If a contract does not fit**, say so — that is the feedback D20 wants. The portable set was derived
 from what the surveyed apps actually needed, so a capability you cannot express through it is a real
