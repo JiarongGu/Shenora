@@ -290,7 +290,7 @@ public sealed class ShenoraChromiumStampLauncher : Task
            Text="Shenora.Chromium needs a RuntimeIdentifier CEF publishes a build for (win-x64, win-arm64, osx-x64, osx-arm64, linux-x64, linux-arm64); this build has '$(RuntimeIdentifier)'. Set &lt;RuntimeIdentifier&gt; in the app's project." />
     <Error Condition="!$(AssemblyName.EndsWith('.App'))"
            Text="A Shenora.Chromium app's own assembly must be named '&lt;App&gt;.App' (this one is '$(AssemblyName)'): CEF's launcher runs as &lt;App&gt;.exe and loads &lt;App&gt;.dll, the kit's shim, which starts &lt;App&gt;.App.dll. Set &lt;AssemblyName&gt;$(AssemblyName).App&lt;/AssemblyName&gt;." />
-    <Error Condition="!Exists('$(ShenoraChromiumShim)')" Text="The kit's native half for $(RuntimeIdentifier) is missing at $(ShenoraChromiumShim). The package carries it for win-x64, win-arm64, osx-x64 and osx-arm64, and not yet for Linux; in this repo, `node devtools/dev.mjs cef-native --rid $(RuntimeIdentifier)` builds and stages it (a macOS RID on a Mac, a Linux RID on Linux)." />
+    <Error Condition="!Exists('$(ShenoraChromiumShim)')" Text="The kit's native half for $(RuntimeIdentifier) is missing at $(ShenoraChromiumShim). The package carries it for win-x64, win-arm64, osx-x64, osx-arm64, linux-x64 and linux-arm64; in this repo, `node devtools/dev.mjs cef-native --rid $(RuntimeIdentifier)` builds and stages it (a macOS RID on a Mac, a Linux RID on Linux)." />
   </Target>
 
   <Target Name="ShenoraChromiumFetchCef" DependsOnTargets="_ShenoraChromiumCheck" Condition="'$(ShenoraChromiumLayout)' == 'true'">
