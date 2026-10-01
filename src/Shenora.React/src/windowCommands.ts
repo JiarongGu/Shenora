@@ -124,12 +124,19 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
    * `onContextMenu`, and `preventDefault()` there so the browser's own menu does not open too. It resolves as the
    * menu opens, not when it closes. A Chromium page's `-webkit-app-region: drag` area opens the menu on a right click
    * without it.
+   *
+   * ⚠ Rejects with `NO_ROUTE` on the Chromium shell outside Windows.
    */
   showSystemMenu(): Promise<void> {
     return this.send('SHOW_SYSTEM_MENU');
   }
 
-  /** Resync the native chrome to the app theme (host `WindowCommandOptions.ApplyTheme`). */
+  /**
+   * Resync the native chrome to the app theme (host `WindowCommandOptions.ApplyTheme`).
+   *
+   * ⚠ Rejects with `NO_ROUTE` on the WebView2 shell unless the host set `WindowCommandOptions.ApplyTheme` (and always
+   * from a secondary window), and on the Chromium shell unless the window paints its own caption buttons.
+   */
   setTheme(dark: boolean): Promise<void> {
     return this.send('SET_THEME', { payload: { dark } });
   }
@@ -151,6 +158,9 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
    *
    * ⚠ Re-send on every layout change: the rectangles are a snapshot, and a stale one moves the
    * hit-test off the button the user can see. Pass an empty array to hand the pixels back to the page.
+   *
+   * ⚠ Rejects with `NO_ROUTE` on the Chromium shell outside Windows, and on the WebView2 shell unless the host set
+   * `WindowCommandOptions.SetCaptionButtons` (from a secondary window: unless it is an `OptimizedForm`).
    */
   setCaptionButtons(buttons: CaptionButtonRect[]): Promise<void> {
     return this.send('SET_CAPTION_BUTTONS', { payload: { buttons } });

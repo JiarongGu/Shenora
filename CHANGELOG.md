@@ -93,6 +93,39 @@ at the first list and missed five more breaking changes.
 - **`MediaPlayer`'s documentation and its open-timeout message said the app must write the page's report route.**
   The kit registers it (`MediaPlayerModule`); the message now names the likely causes.
 
+- **`npx shenora` did nothing on macOS and Linux.** npm links a package's command there as a symlink, and the CLI
+  ran only when the path it was started by matched its own file, so it exited 0 having done nothing. Measured under
+  WSL: the 0.19.0 package printed nothing; built from this tree, it prints its usage.
+
+- **`shenora inspect`'s operator routes trusted any request from this machine**, including one a website open in the
+  same browser could send: a page could queue actions on the device, read their results, or run a command on the Mac
+  through `/api/inspect/host`, and the service let it read the answer. Those routes now also need a request addressed
+  to a loopback name and, from a browser, from the inspect page itself; their answers no longer allow other origins.
+
+- **A remote user or host beginning with `-` reached `ssh` and `scp` as an option**, so a `shenora.deploy.json` in a
+  cloned repository could run a command on this machine. Such a host, or one with a space, is refused.
+
+- **`shenora ios deploy --simulator` through a remote Mac built for the architecture of the machine running the CLI**,
+  so an Apple Silicon Mac driven from Windows got an x64 build that would not install. The building Mac is asked.
+
+- **`shenora ios push` failed when a tracked file had been deleted locally**; it now leaves it out, and removes it from
+  the Mac as it does any file a push no longer sends.
+
+- **`shenora ios provision` read one of Xcode's two profile folders and counted expired profiles**, so it could report
+  a missing profile as present, or miss one Xcode had. It reads both, and an expired profile does not count.
+
+- **`shenora ios exec` dropped every `--` word of the command** (`xcrun simctl list --json` lost `--json`) and
+  everything after `--`; only `--host` and `--key` are the CLI's own now. **`shenora android build --aab` could hand
+  back the unsigned bundle** the SDK leaves beside the signed one. **`ios log`, `ios shot` and the crash check after a
+  simulator deploy read whichever simulator was booted**; they take `--simulator <name>`, as `deploy` does.
+
+- **In the Chromium shell, a page message the shell did not take was dropped without a word**, so an `invoke` with no
+  timeout, such as a file dialog's, waited for good. It now fails at once with `NO_TRANSPORT`, and a one-way `post`
+  reports through the bridge's `onPostError`.
+
+- **A segment-streamed video stalled on a seek back into media the browser had evicted.** The binder still counted
+  the segment as appended and never fetched it again; it now fetches it again.
+
 ## 0.19.0 — 2026-09-30
 
 ### Breaking

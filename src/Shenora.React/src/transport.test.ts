@@ -217,6 +217,26 @@ describe('createChromiumTransport', () => {
     expect(host.fetched).toEqual([{ url: '/route-the-shell-chose', init: { method: 'POST', body: '{"id":"1"}' } }]);
   });
 
+  it('answers a request the shell did not take, rather than leaving it to wait', async () => {
+    // A failed post was swallowed: an invoke with no timeout (a file dialog's) then waited for ever.
+    const host = installChromiumHost();
+    const received: string[] = [];
+    const transport = createChromiumTransport()!;
+    transport.subscribe((m) => received.push(m));
+
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))));
+    transport.post(JSON.stringify({ id: 'r1', module: 'FILES', type: 'OPEN' }));
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(null, { status: 403 }))));
+    transport.post(JSON.stringify({ id: 'r2', module: 'FILES', type: 'SAVE' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const answers = received.map((m) => JSON.parse(m) as { id: string; success: boolean; error: { code: string } });
+    expect(answers.map((a) => [a.id, a.success, a.error.code])).toEqual([
+      ['r1', false, 'NO_TRANSPORT'], ['r2', false, 'NO_TRANSPORT'],
+    ]);
+    expect(host.fetched).toEqual([]);   // the stubs above replaced the recording one
+  });
+
   it('delivers what the shell pushes, and only strings', () => {
     const host = installChromiumHost();
     const received: string[] = [];

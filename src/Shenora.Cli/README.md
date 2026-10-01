@@ -60,7 +60,9 @@ npx shenora ios deploy --simulator
 `push` sends what git would list as source — tracked files plus anything not ignored — so `bin/`, `obj/`
 and `node_modules` stay here. **Uncommitted edits travel**, deliberately: the obvious implementation is
 `git push`, and it is the wrong one for a dev loop, because the Mac would build HEAD and the fix you just
-made would never arrive. It adds and overwrites; it does not delete.
+made would never arrive. It adds and overwrites, and it deletes only what an earlier push sent and this one no
+longer would: it records what it sent on the Mac, and the first push into an existing git checkout treats that
+checkout's tracked files as sent. Nothing it never sent is touched.
 
 It needs Remote Login on (System Settings → General → Sharing) and your key in the Mac's
 `~/.ssh/authorized_keys`. When it will not connect, `doctor` says **which** of the six unrelated causes it

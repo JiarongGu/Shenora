@@ -13,7 +13,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { FakeTarget } from './fake-target.js';
 import { build, findApp, checkExtensions, buildProject, buildDir } from '../ios.js';
 import { pushTree, filesToPush } from './push.js';
-import { provisionBundleIds, installedProfileIds } from './provision.js';
+import { provisionBundleIds, installedProfileIds, parseInstalledProfiles } from './provision.js';
 import type { DeployConfig } from '../config.js';
 
 let labelSeq = 0;
@@ -314,6 +314,19 @@ describe('provisioning', () => {
 
     expect(result?.minted).toEqual(['com.example.app']);     // xcodebuild said fine…
     expect(result?.missing).toEqual(['com.example.app']);    // …and the disk disagrees
+  });
+
+  it('reads both profile stores and leaves out an expired profile', () => {
+    const target = new FakeTarget({ isRemote: true, label: freshLabel(), probes: [] });
+    installedProfileIds(target, '/Users/you');
+    const probe = target.via('probe').find((c) => c.includes('application-identifier'))!;
+    expect(probe).toContain('Xcode/UserData/Provisioning Profiles');
+    expect(probe).toContain('MobileDevice/Provisioning Profiles');   // where Xcode before 16 kept them
+
+    const now = new Date('2026-10-01T00:00:00Z');
+    expect(parseInstalledProfiles(
+      'T1.com.example.old\t2026-09-30T00:00:00Z\nT1.com.example.app\t2027-09-30T00:00:00Z\nT1.com.example.undated\t',
+      now)).toEqual(['com.example.app', 'com.example.undated']);
   });
 
   it('strips the team prefix when reading installed profiles', () => {

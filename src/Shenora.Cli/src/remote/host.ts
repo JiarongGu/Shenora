@@ -1,5 +1,5 @@
 // Which Mac, and — when it will not answer — WHICH of the six independent things is wrong.
-import { argValue } from '../exec.js';
+import { argValue, fail } from '../exec.js';
 import type { DeployConfig } from '../config.js';
 import { SshTarget, hasHost, type RemoteHost } from './ssh.js';
 import { LocalTarget, type Target } from './target.js';
@@ -13,6 +13,26 @@ export function parseHostSpec(spec: string): RemoteHost | null {
   const user = trimmed.slice(0, at).trim();
   const host = trimmed.slice(at + 1).trim();
   return host ? { host, ...(user ? { user } : {}) } : null;
+}
+
+/**
+ * 🔴 **A user or host that begins with `-` is an OPTION to ssh and scp**, so `-oProxyCommand=…` runs a command on
+ * THIS machine. The host can come from `shenora.deploy.json`, which is normally tracked, so a cloned repository could
+ * carry one. Whitespace is refused with it: no host name or account has any.
+ */
+export function isSafeHostSpec(host: RemoteHost): boolean {
+  const name = host.host.trim();
+  const user = host.user?.trim() ?? '';
+  return name !== '' && ![name, user].some((part) => part.startsWith('-') || /\s/.test(part));
+}
+
+/** Report an unusable host and answer true, or answer false. */
+export function refusesHost(host: RemoteHost): boolean {
+  if (isSafeHostSpec(host)) return false;
+  fail(`refusing the remote host ${JSON.stringify(host.user ? `${host.user}@${host.host}` : host.host)}.`,
+    '  A user or host beginning with "-" would be read by ssh as an option, and neither may contain spaces.\n'
+    + '  Check --host, SHENORA_IOS_HOST and the "remote" block of shenora.deploy.json.');
+  return true;
 }
 
 /**
@@ -48,6 +68,7 @@ export function resolveHost(cfg: DeployConfig | null, args: readonly string[]): 
  */
 export function resolveTarget(cfg: DeployConfig | null, args: readonly string[]): Target | null {
   const host = resolveHost(cfg, args);
+  if (host && refusesHost(host)) return null;
   if (host) return new SshTarget(host);
   if (process.platform === 'darwin') return new LocalTarget();
 

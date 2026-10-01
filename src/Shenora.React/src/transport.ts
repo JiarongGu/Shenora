@@ -1,3 +1,5 @@
+import { IpcCategories, IpcErrorCodes } from './types.js';
+
 /** The WebView2 host surface injected by a Shenora (or family) desktop host. */
 interface ChromeWebView {
   postMessage(message: string): void;
@@ -158,13 +160,26 @@ export function createChromiumTransport(): ShenoraTransport | null {
     listeners = set;
   }
   const own = listeners;
+  // A post the shell did not take is ANSWERED here, as the host would answer a refusal: swallowed, an `invoke` waited
+  // for its timeout, and one with none (a file dialog's) waited for ever, while a one-way `post` was lost unreported.
+  const refuse = (message: string, why: string): void => {
+    let request: { id?: unknown; module?: unknown; type?: unknown };
+    try { request = JSON.parse(message) as typeof request; } catch { return; }
+    if (request === null || typeof request !== 'object' || typeof request.id !== 'string') return;
+    const module = String(request.module ?? ''), type = String(request.type ?? '');
+    const answer = JSON.stringify({
+      category: IpcCategories.ipc, id: request.id, success: false,
+      error: { code: IpcErrorCodes.noTransport, message: `The shell did not take ${module}.${type}: ${why}.`, parameters: { module, type } },
+    });
+    for (const listener of [...own]) listener(answer);
+  };
   return {
     // Each message is a request of its own. They reach the host in the order they were posted: measured,
-    // 1,500 of 1,500 one-way posts in order, though no spec promises it. A failed post is swallowed, since an
-    // unhandled rejection here would name nothing: an `invoke` then fails at the bridge's request timeout,
-    // which names the call, and a one-way `post` is lost.
+    // 1,500 of 1,500 one-way posts in order, though no spec promises it.
     post: (message) => {
-      void fetch(marker.ipc, { method: 'POST', body: message }).catch(() => undefined);
+      void fetch(marker.ipc, { method: 'POST', body: message }).then(
+        (response) => { if (!response.ok) refuse(message, `it answered ${response.status}`); },
+        () => refuse(message, 'the post failed'));
     },
     subscribe: (listener) => {
       own.add(listener);

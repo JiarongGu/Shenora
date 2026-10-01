@@ -306,8 +306,9 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
 /**
  * The publish output, for the format that was actually ASKED FOR.
  *
- * Within a format, **`-Signed.apk` first**: the SDK leaves both and the unsigned one installs nowhere, so
- * handing back the wrong file is a failure the adopter meets minutes later, on a device.
+ * Within a format, **the `-Signed` one first**: the SDK leaves both, for a bundle as for an APK, and the unsigned one
+ * installs nowhere, so handing back the wrong file is a failure the adopter meets minutes later, on a device or at
+ * Play's upload.
  *
  * 🔴 **ACROSS formats it never substitutes.** Preferring `-Signed.apk` unconditionally makes
  * `android build --aab`, run in a directory still holding an APK from an earlier publish, report that APK
@@ -323,9 +324,7 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
 export function findPackage(dir: string, format: 'apk' | 'aab' = 'apk', builtAfter?: number): string | null {
   if (!fs.existsSync(dir)) return null;
   const entries = fs.readdirSync(dir);
-  const pick = format === 'aab'
-    ? entries.find((e) => e.endsWith('.aab'))
-    : entries.find((e) => e.endsWith('-Signed.apk')) ?? entries.find((e) => e.endsWith('.apk'));
+  const pick = entries.find((e) => e.endsWith(`-Signed.${format}`)) ?? entries.find((e) => e.endsWith(`.${format}`));
   if (!pick) return null;
 
   const full = path.join(dir, pick);

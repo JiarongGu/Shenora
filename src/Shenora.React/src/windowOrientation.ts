@@ -34,11 +34,12 @@ interface WindowOrientationRequests {
  *
  * ```tsx
  * const orientation = new WindowOrientation();
+ * const shell = useShellInfo();
  * useEffect(() => {
- *   if (!capabilities.has('windowOrientation')) return;
+ *   if (!shell?.capabilities.includes(ShellCapabilities.windowOrientation)) return;
  *   orientation.lock('landscape');            // entering the viewer
  *   return () => { void orientation.unlock(); };  // leaving it
- * }, []);
+ * }, [shell]);
  * ```
  */
 export class WindowOrientation extends BaseModuleService<WindowOrientationRequests> {

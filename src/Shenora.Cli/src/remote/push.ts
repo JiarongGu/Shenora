@@ -30,7 +30,13 @@ export function filesToPush(root: string): string[] | null {
       + ' Set "remote": { "dir": … } and sync the Mac yourself.');
     return null;
   }
-  return listed.out.split('\n').map((l) => l.trim()).filter(Boolean);
+  // Only what is ON DISK: `-c` lists a tracked file deleted from the working tree too, and `tar -T` failed the whole
+  // push on it. Dropped here, it reads as removed, so the push deletes it on the Mac as well. lstat, so a link whose
+  // target is missing still goes. A Set, because an unmerged path is listed once per stage.
+  const present = (file: string): boolean => {
+    try { fs.lstatSync(path.join(root, file)); return true; } catch { return false; }
+  };
+  return [...new Set(listed.out.split('\n').map((l) => l.trim()).filter(Boolean))].filter(present);
 }
 
 export interface PushResult {

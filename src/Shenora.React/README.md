@@ -21,8 +21,9 @@ await getBridge().notifyReady();
 interface NoteRequests { GET_ALL: void; ADD: { title: string } }
 class NoteService extends BaseModuleService<NoteRequests> {
   constructor() { super('NOTES'); }
-  getAll() { return this.send<Note[]>('GET_ALL'); }
-  add(title: string) { return this.send<Note>('ADD', { payload: { title } }); }
+  // Declare the return type; never `send<Note>(…)`, which switches the payload check off (see BaseModuleService).
+  getAll(): Promise<Note[]> { return this.send('GET_ALL'); }
+  add(title: string): Promise<Note> { return this.send('ADD', { payload: { title } }); }
 }
 
 // in components:
@@ -75,15 +76,16 @@ Every request the host handles is tracked automatically — there is nothing to 
 import { useShenoraRequests } from '@shenora/react';
 
 const running = useShenoraRequests((s) => s.running);           // every request still in flight
-const finished = useShenoraRequests((s) => s.finished);         // retained history, newest first
+const finished = useShenoraRequests((s) => s.finished);         // retained history, in the order first seen
 const importJob = useShenoraRequests((s) => s.byId[requestId]); // one, by id
 
 useShenoraRequests.actions.cancel(requestId);   // XMLHttpRequest.abort() — the id you sent with
 useShenoraRequests.actions.clearFinished();
 ```
 
-🔴 **The id is the one you already have.** `requestId` is the `id` of the request you sent — there is no
-second identity to correlate. Cancelling it targets the token the route is running under.
+🔴 **The id is the one you already have.** `requestId` is the `id` `post` returned — there is no
+second identity to correlate. Cancelling it targets the token the route is running under. ⚠ `invoke` hands back
+no id, so work you may need to cancel is work you `post`.
 
 ⚠ **Most requests never appear here, and that is the design.** The host stays SILENT for the first
 50 ms (`IpcRequestTrackerOptions.GracePeriod`): a request that finishes inside that window emits no

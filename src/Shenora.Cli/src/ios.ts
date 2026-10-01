@@ -651,12 +651,24 @@ function cliEntry(): string {
 }
 
 /**
- * The simulator RID follows THIS MAC's architecture, not the phone's — Apple Silicon runs arm64
+ * The simulator RID follows the BUILDING Mac's architecture, not the phone's — Apple Silicon runs arm64
  * simulators, Intel runs x64. Getting it wrong builds something that cannot install, with an error that
  * blames the app.
+ *
+ * 🔴 Asked of the target, not read from this process: under `--host` the CLI runs on another machine, and a Windows
+ * x64 CLI built x64 for an Apple Silicon Mac. `hw.optional.arm64` rather than `uname -m`, which a Node under
+ * Rosetta answers `x86_64` on Apple Silicon. `armProbe` is that sysctl's output: `1`, `0`, or nothing (Intel has
+ * no such key, and a failed probe answers nothing too).
  */
-function simulatorRid(): string {
-  return process.arch === 'arm64' ? 'iossimulator-arm64' : 'iossimulator-x64';
+export function simulatorRidFor(armProbe: string, isRemote: boolean, localArch: string): string {
+  const answer = armProbe.trim();
+  if (answer === '1') return 'iossimulator-arm64';
+  if (answer === '0' || isRemote) return 'iossimulator-x64';
+  return localArch === 'arm64' ? 'iossimulator-arm64' : 'iossimulator-x64';
+}
+
+function simulatorRid(target: Target): string {
+  return simulatorRidFor(target.probe('sysctl -n hw.optional.arm64 2>/dev/null'), target.isRemote, process.arch);
 }
 
 /** `$HOME` per remote host, memoised — see {@link remoteRoot}. */
@@ -992,7 +1004,7 @@ export function cmdDeploy(cfg: DeployConfig, args: string[]): void {
  * The simulator half — no signing, no provisioning, no 7-day profile.
  */
 function deployToSimulator(target: Target, cfg: DeployConfig, args: string[], extra: string): void {
-  const rid = simulatorRid();
+  const rid = simulatorRid(target);
   const startedAt = Date.now();
   if (!build(target, cfg, rid, '', extra)) return;
 
@@ -1037,7 +1049,7 @@ function deployToSimulator(target: Target, cfg: DeployConfig, args: string[], ex
     fail('launch failed.');
     return;
   }
-  if (!stillRunning(target, launched.out, cfg)) return;
+  if (!stillRunning(target, launched.out, cfg, simTarget)) return;
   console.log('\nshenora: running in the simulator. Screenshot it with `shenora ios shot`.');
 }
 
@@ -1050,7 +1062,7 @@ function deployToSimulator(target: Target, cfg: DeployConfig, args: string[], ex
  *
  * ⚠ The pid is a HOST pid — `simctl` runs simulator processes on the Mac itself — so `ps` can answer.
  */
-function stillRunning(target: Target, launchOutput: string, cfg: DeployConfig): boolean {
+function stillRunning(target: Target, launchOutput: string, cfg: DeployConfig, simulator: string): boolean {
   const pid = /:\s*(\d+)\s*$/m.exec(launchOutput.trim())?.[1];
   if (!pid) return true;      // Nothing to check against; do not invent a failure.
 
@@ -1062,7 +1074,7 @@ function stillRunning(target: Target, launchOutput: string, cfg: DeployConfig): 
   fail('the app launched and then exited immediately.',
     '  A launch reports a pid whether or not the process survives, so this is checked rather than assumed.');
   const crash = target.probe(
-    `xcrun simctl spawn booted log show --last 2m --predicate ${q(simulatorLogPredicate(cfg.bundleId))}`
+    `xcrun simctl spawn ${q(simulator)} log show --last 2m --predicate ${q(simulatorLogPredicate(cfg.bundleId))}`
     + ` 2>/dev/null | tail -25`);
 
   // 🔴 A metadata-token failure is a MIXED BUILD, and the plausible reading is the wrong one. After
@@ -1237,12 +1249,14 @@ export function cmdLog(cfg: DeployConfig, args: string[]): void {
     return;
   }
 
-  console.log(`shenora: last ${lines} lines from ${cfg.bundleId} (booted simulator)\n`);
+  // The named simulator when one is given, as deploy addresses it: with two running, `booted` is whichever simctl picks.
+  const simulator = argValue(args, '--simulator') ?? 'booted';
+  console.log(`shenora: last ${lines} lines from ${cfg.bundleId} (${simulator === 'booted' ? 'booted simulator' : simulator})\n`);
   // 🔴 `simctl spawn booted` runs the query INSIDE the simulator; without it this reads THIS MAC's own
   // unified log and answers with a header and nothing under it, whichever target you deployed to.
   // QUIET, so the three outcomes below decide what the user sees — `log show`'s stderr is noisy on a
   // perfectly good run, but discarding the STATUS with it makes a missing simulator look like a quiet app.
-  const r = target.sh(`xcrun simctl spawn booted log show --last 10m --style compact `
+  const r = target.sh(`xcrun simctl spawn ${q(simulator)} log show --last 10m --style compact `
     + `--predicate ${q(simulatorLogPredicate(cfg.bundleId))} 2>/dev/null | tail -${q(lines)}`,
     { quiet: true });
 
@@ -1387,21 +1401,27 @@ export function cmdResign(cfg: DeployConfig, args: string[]): void {
  * Runs DIRECTLY rather than through the inspect service, so it needs nothing listening. The service
  * carries the same capability for its operator page, gated to loopback.
  */
-export function cmdExec(cfg: DeployConfig | null, args: string[]): boolean {
-  const { own } = splitArgs(args);
-  // Everything that is not a flag or a flag's value — the command to run.
-  const valued = new Set(['--host', '--key', '--device']);
+/**
+ * The command `exec` runs: every word but this CLI's own `--host`/`--key` and their values, then everything after
+ * `--`. Every other `--` word was dropped as if it were ours, so `xcrun simctl list --json` lost its `--json`.
+ */
+export function execCommand(args: readonly string[]): string {
+  const { own, passthrough } = splitArgs(args);
+  const ours = new Set(['--host', '--key']);
   const words: string[] = [];
   for (let i = 0; i < own.length; i++) {
-    const a = own[i]!;
-    if (valued.has(a)) { i++; continue; }
-    if (a.startsWith('--')) continue;
-    words.push(a);
+    if (ours.has(own[i]!)) { i++; continue; }
+    words.push(own[i]!);
   }
-  const command = words.join(' ');
+  return [...words, ...passthrough].join(' ');
+}
+
+export function cmdExec(cfg: DeployConfig | null, args: string[]): boolean {
+  const command = execCommand(args);
   if (!command.trim()) return fail('nothing to run.', '  shenora ios exec "xcodebuild -version"');
 
-  const target = resolveTarget(cfg, args);
+  // Only the words before `--` name the host: one inside the command is the command's.
+  const target = resolveTarget(cfg, splitArgs(args).own);
   if (!target) return false;
   const r = target.sh(command);
   target.close();
@@ -1418,7 +1438,8 @@ export function cmdShot(cfg: DeployConfig, args: string[]): void {
   // screenshot you cannot look at, reported as a success. Stage it there, then pull it here.
   const staged = target.isRemote ? `/tmp/shenora-shot-${Date.now()}.png` : out;
 
-  if (target.sh(`xcrun simctl io booted screenshot ${q(staged)}`).status !== 0) {
+  const simulator = argValue(args, '--simulator') ?? 'booted';   // as deploy and log address it
+  if (target.sh(`xcrun simctl io ${q(simulator)} screenshot ${q(staged)}`).status !== 0) {
     fail('no booted simulator to screenshot.', '  Run `shenora ios deploy --simulator` first.');
     return;
   }

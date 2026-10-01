@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { bindSegmentStream, SegmentBinderError } from './segmentBinder.js';
+import { bindSegmentStream, SegmentBinderError, forgetEvicted } from './segmentBinder.js';
 
 /**
  * 🔴 **The imperative half, tested without a browser — which the module said could not be done.**
@@ -473,5 +473,30 @@ describe('bindSegmentStream', () => {
     expect(element.countFor('timeupdate')).toBe(0);
     expect(element.countFor('seeking')).toBe(0);
     expect(source.countFor('startstreaming')).toBe(0);
+  });
+});
+
+describe('forgetEvicted — a segment MSE evicted must be fetched again', () => {
+  const ranges = (...spans: Array<[number, number]>) =>
+    ({ length: spans.length, start: (i: number) => spans[i]![0], end: (i: number) => spans[i]![1] }) as unknown as TimeRanges;
+  const segments = [{ seconds: 6 }, { seconds: 6 }, { seconds: 6 }];
+
+  it('forgets a segment that was held and is no longer buffered', () => {
+    const appended = new Set([0, 1, 2]);
+    const held = new Set<number>();
+    forgetEvicted(appended, held, segments, ranges([0, 18]));
+    expect([...held]).toEqual([0, 1, 2]);
+
+    // The browser evicted the first segment under its quota; a seek back to 0 s must find it unappended.
+    forgetEvicted(appended, held, segments, ranges([6, 18]));
+    expect([...appended]).toEqual([1, 2]);
+  });
+
+  it('keeps a segment that never showed as buffered, rather than refetching it for ever', () => {
+    const appended = new Set([0]);
+    const held = new Set<number>();
+    forgetEvicted(appended, held, segments, ranges());   // timestamps that do not match the playlist
+    forgetEvicted(appended, held, segments, ranges());
+    expect([...appended]).toEqual([0]);
   });
 });

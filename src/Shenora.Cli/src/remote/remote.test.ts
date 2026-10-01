@@ -1,10 +1,10 @@
 // The remote transport's claims. Every one of these is a trap whose failure mode is a WRONG ANSWER —
 // a truncated command reporting success, a build failure that looks like a slow build, "cannot connect"
 // standing in for six unrelated causes.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { SshTarget, guiScript, hasHost, SSH_COMMAND_LIMIT } from './ssh.js';
 import { LocalTarget, withCwd } from './target.js';
-import { parseHostSpec, classifySshFailure, resolveHost } from './host.js';
+import { parseHostSpec, classifySshFailure, resolveHost, resolveTarget, isSafeHostSpec } from './host.js';
 import type { DeployConfig } from '../config.js';
 import { buildProject, buildDir, countXcodeAccounts } from '../ios.js';
 import { filesToPush } from './push.js';
@@ -77,6 +77,29 @@ describe('parseHostSpec', () => {
     expect(parseHostSpec('mac.local')).toEqual({ host: 'mac.local' });
     expect(parseHostSpec('  ')).toBeNull();
     expect(parseHostSpec('bob@')).toBeNull();
+  });
+});
+
+describe('a host ssh would read as an option', () => {
+  it('is refused before ssh or scp sees it, from any source including a tracked config', () => {
+    // `-oProxyCommand=…` as a host runs a command on THIS machine, and the config file is normally tracked.
+    expect(isSafeHostSpec({ host: 'mac.local', user: 'bob' })).toBe(true);
+    expect(isSafeHostSpec({ host: '-oProxyCommand=touch pwned' })).toBe(false);
+    expect(isSafeHostSpec({ host: 'mac.local', user: '-oProxyCommand=x' })).toBe(false);
+    expect(isSafeHostSpec({ host: 'mac local' })).toBe(false);
+
+    const cfg = { remote: { host: '-oProxyCommand=x' }, file: 'shenora.deploy.json' } as unknown as DeployConfig;
+    const saved = process.env.SHENORA_IOS_HOST;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    delete process.env.SHENORA_IOS_HOST;
+    try {
+      expect(resolveTarget(cfg, [])).toBeNull();
+      expect(() => new SshTarget({ host: '-oProxyCommand=x' })).toThrow();
+    } finally {
+      errors.mockRestore();
+      process.exitCode = 0;
+      if (saved !== undefined) process.env.SHENORA_IOS_HOST = saved;
+    }
   });
 });
 
@@ -242,6 +265,23 @@ describe('choosing what to push', () => {
     expect(files!.some((f) => f.startsWith('local/'))).toBe(false);
     // ...and it really did find this package's own sources.
     expect(files!.some((f) => f.endsWith('push.ts'))).toBe(true);
+  });
+
+  it('leaves out a tracked file that was deleted from the working tree', () => {
+    // `git ls-files -c` still names it, and `tar -T` failed the whole push on the missing file.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shenora-push-'));
+    try {
+      const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore' });
+      git('init', '-q');
+      fs.writeFileSync(path.join(dir, 'kept.txt'), 'k');
+      fs.writeFileSync(path.join(dir, 'gone.txt'), 'g');
+      git('add', '.');
+      fs.rmSync(path.join(dir, 'gone.txt'));
+
+      expect(filesToPush(dir)).toEqual(['kept.txt']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('deletes only what it previously sent, and only what it would no longer send', () => {

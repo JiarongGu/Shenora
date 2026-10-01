@@ -66,6 +66,10 @@ export class SshTarget implements Target {
 
   constructor(private readonly hostConfig: RemoteHost) {
     const user = hostConfig.user?.trim();
+    // The backstop for `isSafeHostSpec`, which callers check first so the refusal is reported rather than thrown.
+    if ([hostConfig.host.trim(), user ?? ''].some((part) => part.startsWith('-'))) {
+      throw new Error('a remote user or host may not begin with "-": ssh would read it as an option');
+    }
     this.spec = user ? `${user}@${hostConfig.host}` : hostConfig.host;
     this.label = this.spec;
     this.flags = [

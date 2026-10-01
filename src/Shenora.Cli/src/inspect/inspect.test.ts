@@ -103,6 +103,43 @@ describe('the trust boundary', () => {
     expect(res.status).toBe(404);
   });
 
+  it('refuses a website in this machine\'s browser and a rebound name, though both come from loopback', async () => {
+    const calls: string[] = [];
+    const { server } = createInspectService({
+      page: () => inspectPage(),
+      host: () => ({ label: 'mac', sh(c: string) { calls.push(c); return { status: 0, out: '' }; } }) as never,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (typeof address === 'string' || address === null) throw new Error('no port');
+    const port = address.port;
+
+    // http.request, not fetch: fetch will not let a caller set Host or Origin, which is what a browser sends.
+    const post = (headers: Record<string, string>): Promise<{ status: number; cors: string | undefined }> =>
+      new Promise((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port, path: '/api/inspect/host', method: 'POST',
+          headers: { 'Content-Type': 'text/plain', ...headers } }, (res) => {
+          res.resume();
+          resolve({ status: res.statusCode ?? 0, cors: res.headers['access-control-allow-origin'] as string | undefined });
+        });
+        req.on('error', reject);
+        req.end(JSON.stringify({ command: 'echo pwned' }));
+      });
+
+    // 🔴 The 0.19.0 gate read only the socket, and both of these ran the command.
+    expect((await post({ Origin: 'https://evil.example' })).status).toBe(404);
+    expect((await post({ Host: `rebound.example:${port}` })).status).toBe(404);
+    expect(calls).toEqual([]);
+
+    // The service's own page, and the CLI (no Origin), still reach it, and the answer grants no other origin.
+    const own = await post({ Origin: `http://127.0.0.1:${port}` });
+    expect(own.status).toBe(200);
+    expect(own.cors).toBeUndefined();
+    expect((await post({})).status).toBe(200);
+    expect(calls).toHaveLength(2);
+  });
+
   it('never consults a header for the peer address', () => {
     // A regression guard with teeth: if the gate is ever rewritten to read X-Forwarded-For, this string
     // appears in the module and the test fails. The address must stay a SOCKET fact.

@@ -44,11 +44,30 @@ export interface InspectDevice {
 /**
  * 🔴 **The trust boundary, and it is a socket fact.** `remoteAddress` cannot be set by a client;
  * `X-Forwarded-For` can, so it is never consulted. Everything that DECIDES WHAT RUNS — queueing an
- * action, reading results, running a command on the Mac — is gated on this.
+ * action, reading results, running a command on the Mac — is gated on this, and on the rest of
+ * {@link isOperatorRequest}.
  */
 export function isLoopback(address: string | undefined): boolean {
   if (!address) return false;
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
+const LOOPBACK_NAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/**
+ * 🔴 **A loopback PEER is not enough for the operator half.** A browser on this machine is a loopback peer for any
+ * website it has open: a "simple" POST needs no preflight, so a page could queue actions here or run a command on the
+ * Mac, and `Access-Control-Allow-Origin: *` let it read the answer. DNS rebinding reaches loopback under the page's
+ * own name. So the request must also be ADDRESSED to a loopback name, and a browser's — which carries an `Origin` —
+ * must come from this service's own page. The CLI's own requests carry no `Origin`.
+ */
+export function isOperatorRequest(remoteAddress: string | undefined, host: string | undefined,
+                                  origin: string | undefined): boolean {
+  if (!isLoopback(remoteAddress) || !host) return false;
+  let name: string;
+  try { name = new URL(`http://${host}`).hostname; } catch { return false; }
+  if (!LOOPBACK_NAMES.has(name)) return false;
+  return origin === undefined || origin === `http://${host}`;
 }
 
 /** Strip the IPv4-mapped-IPv6 prefix so an address reads the way the user's router shows it. */
@@ -185,14 +204,14 @@ export function createInspectService(options: InspectServiceOptions): { server: 
     });
   });
 
-  const send = (res: http.ServerResponse, status: number, body: unknown): void => {
+  const send = (res: http.ServerResponse, status: number, body: unknown, crossOrigin = true): void => {
     const text = typeof body === 'string' ? body : JSON.stringify(body);
     res.writeHead(status, {
       'Content-Type': typeof body === 'string' ? 'text/html; charset=utf-8' : 'application/json',
       'Cache-Control': 'no-store',
-      // So the channel can also be driven from the app's own origin, which is a different port.
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      // So the DEVICE half can also be driven from the app's own origin, which is a different port. Never the
+      // operator half, whose page is this service's own.
+      ...(crossOrigin ? { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type' } : {}),
     });
     res.end(text);
   };
@@ -200,7 +219,7 @@ export function createInspectService(options: InspectServiceOptions): { server: 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://inspect');
     const route = url.pathname;
-    const local = isLoopback(req.socket.remoteAddress);
+    const operator = isOperatorRequest(req.socket.remoteAddress, req.headers.host, req.headers.origin);
     const peer = plainAddress(req.socket.remoteAddress);
     const since = Number(url.searchParams.get('since') ?? '0') || 0;
 
@@ -218,7 +237,7 @@ export function createInspectService(options: InspectServiceOptions): { server: 
     // 🔴 The operator half. A privileged request from off-box gets 404, not 403: a route that decides
     // what runs should not confirm it exists to someone who cannot use it.
     const operatorOnly = (): boolean => {
-      if (local) return true;
+      if (operator) return true;
       send(res, 404, { error: 'not found' });
       return false;
     };
@@ -252,46 +271,46 @@ export function createInspectService(options: InspectServiceOptions): { server: 
         return;
       }
 
-      // ── The operator's half. Loopback only.
+      // ── The operator's half. This machine's own page or CLI only (isOperatorRequest).
       case 'POST /api/inspect/actions': {
         if (!operatorOnly()) return;
         const body = (await readBody(req)) as
           { kind?: InspectAction['kind']; payload?: string; device?: string } | null;
         if (!body?.payload) {
-          send(res, 400, { error: 'payload is required' });
+          send(res, 400, { error: 'payload is required' }, false);
           return;
         }
         const action = state.queue(body.kind ?? 'eval', String(body.payload), clamp(body.device) || undefined);
-        send(res, 200, { ok: true, seq: action.seq });
+        send(res, 200, { ok: true, seq: action.seq }, false);
         return;
       }
       case 'GET /api/inspect/results': {
         if (!operatorOnly()) return;
-        send(res, 200, state.resultsSince(since));
+        send(res, 200, state.resultsSince(since), false);
         return;
       }
       case 'GET /api/inspect/devices': {
         if (!operatorOnly()) return;
-        send(res, 200, { devices: [...state.devices.values()] });
+        send(res, 200, { devices: [...state.devices.values()] }, false);
         return;
       }
       case 'POST /api/inspect/host': {
-        // 🔴 THIS RUNS A COMMAND ON THE MAC. Reachable from the LAN it would be a remote shell for
-        // anyone on the same wifi. The loopback gate is the only thing between those two readings, and
-        // `service.test.ts` fails if it is ever removed.
+        // 🔴 THIS RUNS A COMMAND ON THE MAC. Reachable from the LAN, or from a website open in this machine's
+        // browser, it would be a remote shell. `isOperatorRequest` is the only thing in the way, and
+        // `inspect.test.ts` fails if it is ever removed.
         if (!operatorOnly()) return;
         const body = (await readBody(req)) as { command?: string } | null;
         if (!body?.command) {
-          send(res, 400, { error: 'command is required' });
+          send(res, 400, { error: 'command is required' }, false);
           return;
         }
         const target = options.host?.() ?? null;
         if (!target) {
-          send(res, 409, { error: 'no Mac is configured — see `shenora ios doctor --host`' });
+          send(res, 409, { error: 'no Mac is configured — see `shenora ios doctor --host`' }, false);
           return;
         }
         const r = target.sh(String(body.command), { quiet: true, timeoutMs: 5 * 60_000 });
-        send(res, 200, { ok: r.status === 0, status: r.status, out: r.out, host: target.label });
+        send(res, 200, { ok: r.status === 0, status: r.status, out: r.out, host: target.label }, false);
         return;
       }
       default:

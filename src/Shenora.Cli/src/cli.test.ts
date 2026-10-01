@@ -13,12 +13,13 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { withPipefail, argValue, describeSpawnFailure, run, splitArgs, shellPassthrough } from './exec.js';
 import {
   simulatorLogPredicate, describeConnection, findArtifact, describeLogOutcome, parseDeviceList,
   isAlreadyBooted, describeDeviceSigning, pickBindingBand, describeBindings, describeAotCrossPack,
-  provisionBanner,
+  provisionBanner, simulatorRidFor, execCommand,
 } from './ios.js';
 import { parseDevices, findPackage, adbCandidates, resolveJdk } from './android.js';
 import {
@@ -26,7 +27,7 @@ import {
   type DeployConfig,
 } from './config.js';
 import { cmdCopy, lastLines } from './copy.js';
-import { main } from './cli.js';
+import { main, isProgram } from './cli.js';
 import { LocalTarget } from './remote/target.js';
 
 const temps: string[] = [];
@@ -178,6 +179,28 @@ describe('simulatorLogPredicate — the reader that was silent', () => {
   it('falls back to the whole id when there is nothing to split', () => {
     // A single-segment id is unusual but not invalid, and `split('.').pop()` on it must not yield ''.
     expect(simulatorLogPredicate('myapp')).toBe('processImagePath CONTAINS[c] "myapp"');
+  });
+});
+
+describe('execCommand — every word is the command\'s but --host and --key', () => {
+  it('keeps the command\'s own long options and what follows --', () => {
+    expect(execCommand(['xcrun', 'simctl', 'list', '--json'])).toBe('xcrun simctl list --json');   // 0.19.0 dropped --json
+    expect(execCommand(['--host', 'me@mac.local', 'xcodebuild', '-version', '--key', 'k'])).toBe('xcodebuild -version');
+    expect(execCommand(['ls', '--', '--all', '--host'])).toBe('ls --all --host');
+  });
+});
+
+describe('simulatorRidFor — the BUILDING Mac decides, not the machine running the CLI', () => {
+  it('builds arm64 for an Apple Silicon Mac driven from an x64 machine', () => {
+    expect(simulatorRidFor('1', true, 'x64')).toBe('iossimulator-arm64');   // 0.19.0 read process.arch: x64
+  });
+  it('builds x64 for an Intel Mac, which has no such key, local or remote', () => {
+    expect(simulatorRidFor('', true, 'arm64')).toBe('iossimulator-x64');
+    expect(simulatorRidFor('0', false, 'arm64')).toBe('iossimulator-x64');
+  });
+  it('falls back to this process only on the Mac itself, when the probe said nothing', () => {
+    expect(simulatorRidFor('', false, 'arm64')).toBe('iossimulator-arm64');
+    expect(simulatorRidFor('', false, 'x64')).toBe('iossimulator-x64');
   });
 });
 
@@ -609,6 +632,11 @@ describe('findPackage — the Android artifact', () => {
   it('takes the .aab when that is what was asked for', () => {
     const dir = make('com.x.aab');
     expect(findPackage(dir, 'aab')).toBe(path.join(dir, 'com.x.aab'));
+  });
+
+  it('prefers -Signed.aab too, which the SDK also leaves beside the unsigned bundle', () => {
+    const dir = make('com.x.aab', 'com.x-Signed.aab');   // directory order put the unsigned one first
+    expect(findPackage(dir, 'aab')).toBe(path.join(dir, 'com.x-Signed.aab'));
   });
 
   it('answers null rather than throwing for a missing directory', () => {
@@ -1097,6 +1125,26 @@ describe('cmdCopy — refuses to delete what it did not create', () => {
 // exercised because `cli.ts` called `main` at module scope: importing it to test it would have run
 // whatever argv the test runner happened to carry. It runs conditionally now, which is what makes the
 // cases below possible.
+describe('isProgram — npm runs the CLI through a SYMLINK on macOS and Linux', () => {
+  it('is the program when invoked through a link to it, and not for another file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shenora-bin-'));
+    try {
+      const target = path.join(dir, 'cli.js');
+      fs.writeFileSync(target, '');
+      const link = path.join(dir, 'shenora');
+      try { fs.symlinkSync(target, link); } catch { return; }   // Windows without symlink rights: npm uses .cmd shims there
+      const url = pathToFileURL(target).href;
+
+      expect(isProgram(link, url)).toBe(true);    // the 0.19.0 guard compared these as given and said false
+      expect(isProgram(target, url)).toBe(true);
+      expect(isProgram(path.join(dir, 'other.js'), url)).toBe(false);
+      expect(isProgram(undefined, url)).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('main — the group/verb routing, and what it BLAMES when it cannot proceed', () => {
   const capture = (argv: string[]) => {
     const out: string[] = [];

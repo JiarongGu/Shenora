@@ -93,6 +93,30 @@ function resolve(manifestUrl: string, uri: string): string {
   return slash < 0 ? uri : manifestUrl.slice(0, slash + 1) + uri;
 }
 
+/**
+ * Forget the segments the element has since EVICTED. MSE evicts buffered media under its quota, and a segment still
+ * marked appended after that was never fetched again: a seek back into it found nothing to fetch and stalled.
+ * A segment is held while a buffered range covers its midpoint, which tolerates the edge slack an append leaves.
+ * ⚠ Only a segment once SEEN held is forgotten: one whose timestamps do not match the playlist's durations never
+ * appears held, and forgetting it would refetch it for ever.
+ * @internal exported for tests
+ */
+export function forgetEvicted(appended: Set<number>, held: Set<number>, segments: readonly { seconds: number }[],
+                              ranges: TimeRanges): void {
+  let start = 0;
+  for (let index = 0; index < segments.length; index++) {
+    const seconds = segments[index]!.seconds;
+    if (appended.has(index)) {
+      const middle = start + seconds / 2;
+      let buffered = false;
+      for (let i = 0; i < ranges.length && !buffered; i++) buffered = middle >= ranges.start(i) && middle <= ranges.end(i);
+      if (buffered) held.add(index);
+      else if (held.delete(index)) appended.delete(index);
+    }
+    start += seconds;
+  }
+}
+
 /** Seconds already buffered ahead of `currentTime`, across whichever range holds it. */
 function bufferedAhead(element: HTMLMediaElement): number {
   const ranges = element.buffered;
@@ -215,6 +239,7 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
 
   // ── state ───────────────────────────────────────────────────────────────────────────────────────
   const appended = new Set<number>();
+  const held = new Set<number>();   // appended AND seen in `buffered` — see forgetEvicted
   // Absent signals mean ALWAYS streaming. A managed source flips this on its own events.
   let streaming = true;
   let disposed = false;
@@ -291,6 +316,7 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
     try {
       for (;;) {
         if (disposed) return;
+        forgetEvicted(appended, held, parsed.segments, element.buffered);
         const index = nextSegment(
           { currentTime: element.currentTime, bufferedAhead: bufferedAhead(element), appended, streaming },
           { segments: parsed.segments, targetAheadSeconds },

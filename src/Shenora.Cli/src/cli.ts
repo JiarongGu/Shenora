@@ -3,7 +3,7 @@
 // a real iPhone, with no Xcode project of the adopter's own.
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { loadConfig, CONFIG_FILE, SAMPLE_CONFIG, type DeployConfig } from './config.js';
 import { cmdDevices, cmdDoctor, cmdBuild, cmdDeploy, cmdLog, cmdSimulators, cmdShot, cmdPush, cmdProvision, cmdResign, cmdExec } from './ios.js';
 import {
@@ -30,10 +30,11 @@ const USAGE = `shenora — take a built app onto a simulator or a real iPhone
                                build → boot → install → launch (no signing needed)
   shenora ios deploy [--device <name|id>]
                                build → SIGN → verify extensions → install → launch
-  shenora ios log [-n <lines>] [--device [<name|id>]]
+  shenora ios log [-n <lines>] [--device [<name|id>] | --simulator <name>]
                                the app's own output — the booted SIMULATOR by default; --device
                                relaunches on the phone with a console attached (startup is the point)
-  shenora ios shot [-o <file>] screenshot the booted simulator
+  shenora ios shot [-o <file>] [--simulator <name>]
+                               screenshot the booted simulator, or the one named
   shenora ios push             send this working tree to the remote Mac (uncommitted edits included)
   shenora ios provision [<extra.bundle.id>…] [--verbose]
                                mint the signing profiles a device build needs (app + its extensions).
@@ -178,8 +179,22 @@ export function main(argv: string[]): void | Promise<void> {
   if (group) process.exitCode = 1;   // bare `shenora` is help, not an error
 }
 
+/**
+ * Whether `invoked` (the program's `argv[1]`) is the file at `moduleUrl`, compared by REAL path. npm installs a bin
+ * on macOS and Linux as a symlink, and Node resolves the main module through it, so `argv[1]` is the link while the
+ * module url is its target: compared as given, `npx shenora` matched nothing and exited 0 having done nothing.
+ */
+export function isProgram(invoked: string | undefined, moduleUrl: string): boolean {
+  if (!invoked) return false;
+  try {
+    return fs.realpathSync(invoked) === fs.realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
 // 🔴 Run ONLY when this file is the program. Called unconditionally at module scope, importing the routing
 // above to TEST it would run whatever the test runner's own argv happened to say.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isProgram(process.argv[1], import.meta.url)) {
   main(process.argv.slice(2));
 }

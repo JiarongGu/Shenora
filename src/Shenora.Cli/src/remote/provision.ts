@@ -46,20 +46,37 @@ function uploadStub(target: Target, home: string): boolean {
   return true;
 }
 
-/** Every bundle id installed profiles cover, read from the profiles themselves. */
-export function installedProfileIds(target: Target, home: string): string[] {
-  // ⚠ `security cms -D` decodes the profile; the id inside is `TEAM.bundle.id`, so the team prefix is
-  // stripped to compare against what the app actually declares.
+/**
+ * Every bundle id a USABLE installed profile covers, read from the profiles themselves.
+ *
+ * ⚠ Both stores: Xcode 16 keeps profiles under `UserData`, and earlier ones (and profiles they left behind) under
+ * `MobileDevice`; reading one reported a profile the SDK would sign with as missing. ⚠ An EXPIRED profile is not
+ * one: counted, `provision` said "in place" and the device build then failed for want of a profile.
+ */
+export function installedProfileIds(target: Target, home: string, now: Date = new Date()): string[] {
+  // `security cms -D` decodes the profile; each line out is `TEAM.bundle.id<TAB>expiry`.
+  const stores = [`${home}/Library/Developer/Xcode/UserData/Provisioning Profiles`,
+    `${home}/Library/MobileDevice/Provisioning Profiles`];
   const raw = target.probe(
-    `for f in ${q(`${home}/Library/Developer/Xcode/UserData/Provisioning Profiles`)}/*.mobileprovision; do`
-    + ` security cms -D -i "$f" 2>/dev/null`
-    + ` | plutil -extract Entitlements.application-identifier raw - 2>/dev/null; done`);
-  return raw
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
+    `for f in ${stores.map((s) => `${q(s)}/*.mobileprovision`).join(' ')}; do [ -f "$f" ] || continue;`
+    + ` p=$(security cms -D -i "$f" 2>/dev/null) || continue;`
+    + ` id=$(printf '%s' "$p" | plutil -extract Entitlements.application-identifier raw - 2>/dev/null) || continue;`
+    + ` printf '%s\\t%s\\n' "$id" "$(printf '%s' "$p" | plutil -extract ExpirationDate raw - 2>/dev/null)"; done`);
+  return parseInstalledProfiles(raw, now);
+}
+
+/** @internal exported for tests — the probe's lines, the team prefix dropped and expired profiles left out. */
+export function parseInstalledProfiles(raw: string, now: Date): string[] {
+  const ids: string[] = [];
+  for (const line of raw.split('\n')) {
+    const [id = '', expiry = ''] = line.trim().split('\t');
+    if (!id) continue;
+    const expires = Date.parse(expiry);
+    if (!Number.isNaN(expires) && expires <= now.getTime()) continue;   // no date read: kept, it cannot be judged
     // Drop the leading team id: `ABCDE12345.com.example.app` -> `com.example.app`.
-    .map((l) => l.replace(/^[A-Z0-9]+\./, ''));
+    ids.push(id.replace(/^[A-Z0-9]+\./, ''));
+  }
+  return [...new Set(ids)];
 }
 
 export interface ProvisionResult {
