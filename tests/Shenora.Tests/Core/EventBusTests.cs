@@ -260,6 +260,31 @@ public class EventBusTests
         Assert.Null(exception);
     }
 
+    /// <summary>The app's logger is app code: the bus reports a failing handler through it inside the catch that keeps
+    /// the failure from the emitter, so a logger that throws there must not undo the catch.</summary>
+    [Fact]
+    public async Task A_logger_that_throws_while_reporting_a_failing_handler_does_not_reach_the_emitter()
+    {
+        var bus = new EventBus(new ThrowingLogger());
+        var delivered = new List<EventMessage>();
+        bus.Subscribe("APP", "TICK", _ => throw new InvalidOperationException("handler"));
+        bus.Subscribe("APP", "TICK", Collect(delivered));
+
+        var exception = await Record.ExceptionAsync(() => bus.EmitAsync("APP", "TICK"));
+
+        Assert.Null(exception);
+        Assert.Single(delivered);
+    }
+
+    private sealed class ThrowingLogger : Microsoft.Extensions.Logging.ILogger<EventBus>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+                                TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => throw new InvalidOperationException("the app's logger");
+    }
+
     [Fact]
     public void Emit_still_throws_on_a_caller_bug()
     {

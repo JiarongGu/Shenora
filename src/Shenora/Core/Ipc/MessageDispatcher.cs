@@ -96,7 +96,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
 
             if (response is null)
             {
-                _logger.LogWarning("No handler for {Module}/{Type}", request.Module, request.Type);
+                AppCallback.Log(_logger, () => $"No handler for {request.Module}/{request.Type}", LogLevel.Warning);
                 response = IpcResponse.CreateError(request.Id, IpcErrorCodes.NoHandler, parameters:
                     new Dictionary<string, string> { ["module"] = request.Module, ["type"] = request.Type });
             }
@@ -136,8 +136,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Request tracking failed to begin for {Module}/{Type}",
-                             request.Module, request.Type);
+            AppCallback.Log(_logger, () => $"Request tracking failed to begin for {request.Module}/{request.Type}", LogLevel.Error, ex);
             return null;
         }
     }
@@ -147,7 +146,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     {
         if (scope is null) return;
         try { scope.Fail(error); }
-        catch (Exception ex) { _logger.LogError(ex, "Request tracking failed to record a failure"); }
+        catch (Exception ex) { AppCallback.Log(_logger, () => "Request tracking failed to record a failure", LogLevel.Error, ex); }
     }
 
     /// <inheritdoc cref="BeginTracking"/>
@@ -155,7 +154,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     {
         if (scope is null) return;
         try { scope.Dispose(); }
-        catch (Exception ex) { _logger.LogError(ex, "Request tracking failed to end a request"); }
+        catch (Exception ex) { AppCallback.Log(_logger, () => "Request tracking failed to end a request", LogLevel.Error, ex); }
     }
 
     /// <summary>
@@ -196,7 +195,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
             Payload = payload is null ? null : IpcJson.SerializeToElement(payload),
         };
 
-        _logger.LogTrace("Programmatic send: {Module}/{Type} (scope: {Scope})", module, type, scope ?? "none");
+        AppCallback.Log(_logger, () => $"Programmatic send: {module}/{type} (scope: {scope ?? "none"})", LogLevel.Trace);
         return await DispatchAsync(request, cancellationToken);
     }
 

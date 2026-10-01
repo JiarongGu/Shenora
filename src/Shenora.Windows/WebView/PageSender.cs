@@ -65,6 +65,13 @@ internal sealed class PageUiDispatcher(Control page) : IUiDispatcher
         using (PageSender.Enter(page)) return work();
     });
 
+    // Forwarded, or the interface's default ran it from the thread pool: out of order with earlier posts, and true
+    // before anything was posted.
+    public bool Queue(Func<Task> work) => _ui.Queue(() =>
+    {
+        using (PageSender.Enter(page)) return work();
+    });
+
     public Task InvokeAsync(Action work, CancellationToken cancellationToken = default) => _ui.InvokeAsync(() =>
     {
         using (PageSender.Enter(page)) work();

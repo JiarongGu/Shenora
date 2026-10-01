@@ -126,7 +126,7 @@ public sealed class EventBus : IEventBus
                 matched.Add(handler);
         }
 
-        _logger.LogTrace("Emitting {EventKey} to {HandlerCount} handler(s)", eventKey, matched.Count);
+        AppCallback.Log(_logger, () => $"Emitting {eventKey} to {matched.Count} handler(s)", LogLevel.Trace);
 
         await Task.WhenAll(matched.Select(handler => InvokeSafely(handler, message))).ConfigureAwait(false);
     }
@@ -166,7 +166,7 @@ public sealed class EventBus : IEventBus
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Fire-and-forget emit failed.");
+                AppCallback.Log(_logger, () => "Fire-and-forget emit failed.", LogLevel.Error, ex);
             }
         }
     }
@@ -180,7 +180,7 @@ public sealed class EventBus : IEventBus
         catch (Exception ex)
         {
             // One subscriber's failure must not break the other subscribers or the emitter.
-            _logger.LogError(ex, "Event handler failed for {Module}.{Type}", message.Module, message.Type);
+            AppCallback.Log(_logger, () => $"Event handler failed for {message.Module}.{message.Type}", LogLevel.Error, ex);
         }
     }
 

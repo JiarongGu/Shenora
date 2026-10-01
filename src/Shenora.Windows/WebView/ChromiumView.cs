@@ -70,9 +70,10 @@ public sealed class ChromiumView : Control
         {
             _browser = new ChromiumChildBrowser(_engine, Handle, BrowserOptions());
         }
-        catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException)
+        catch (Exception ex)
         {
-            // Never out of handle creation, where WinForms answers an exception with a blocking modal dialog.
+            // Never out of handle creation, where WinForms answers an exception with a blocking modal dialog — any
+            // exception: two types were caught, and a Path that is not a valid URL threw UriFormatException past them.
             AppCallback.Log(_log, () => $"The Chromium page '{Name}' could not open", LogLevel.Error, ex);
         }
     }
@@ -102,10 +103,10 @@ public sealed class ChromiumView : Control
                 break;
             // Refused when the button is up by now, or the window is maximized its own way.
             case ChromiumDragAreaAction.Move when !FormCaption.Move(form, press.Position):
-                _log?.LogDebug("The page's drag area asked to move its window, which did not start");
+                AppCallback.Log(_log, () => "The page's drag area asked to move its window, which did not start", LogLevel.Debug);
                 break;
             case ChromiumDragAreaAction.ShowSystemMenu when !FormCaption.ShowSystemMenu(form, press.Position):
-                _log?.LogDebug("The page's drag area asked for its window's system menu, which it has none of");
+                AppCallback.Log(_log, () => "The page's drag area asked for its window's system menu, which it has none of", LogLevel.Debug);
                 break;
         }
     }

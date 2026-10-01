@@ -253,8 +253,8 @@ public sealed class WindowCommandModule : ModuleBase
             // A page whose transport does not mark it (a ChromiumChildBrowser handed a UI dispatcher of its own) arrives
             // here from its own window's thread, and would command the main window.
             if (Application.MessageLoop && _options.Window.IsHandleCreated && _options.Window.InvokeRequired)
-                _log?.LogWarning("A window command came from another window's thread with no page marked, so it acts on the main window. " +
-                    "Host a Chromium page in a ChromiumView, whose page marks itself.");
+                AppCallback.Log(_log, () => "A window command came from another window's thread with no page marked, so it acts on the main window. " +
+                    "Host a Chromium page in a ChromiumView, whose page marks itself.", LogLevel.Warning);
             return _own;
         }
         if (sender is null || sender.IsDisposed || sender.TopLevelControl is not Form form) return null;

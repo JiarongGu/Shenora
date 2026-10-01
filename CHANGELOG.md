@@ -163,6 +163,26 @@ at the first list and missed five more breaking changes.
   aborts the app past any C# `catch`, and this one reads a document that may not exist yet. It catches its own
   error now, and the shell retries.
 
+- **On Linux and macOS, launches that arrived while the running instance handled one were lost**, each reporting
+  that it had handed its arguments over. The channel's socket closed between one launch and the next, dropping
+  everything queued on it. Measured under WSL: of three launches 0.19.0 delivered one, in 3 runs of 3; now all three
+  arrive, 3 of 3. **There, a later launch also stopped reaching the running app after the host name changed**, which
+  macOS does by itself after a name clash on the network: the channel's name carried it.
+
+- **A WinForms app that starts hidden, in the tray, was never brought forward by a later launch.** The channel
+  opened when the window was first shown, so it never opened. It opens before the loop now.
+
+- **`IUiDispatcher.Queue` on the main-form and page dispatchers of `Shenora.Windows` ran from the thread pool**, out
+  of order with earlier posts and reporting success before anything was posted; they queue on the UI thread now.
+  **A logger that throws was not contained everywhere**: in the event bus, the IPC dispatcher, drop zones, secondary
+  windows, the tray and others, a failing logger could escape a handler, end a window's thread, or reach the caller;
+  every call now goes through the guard the rest of the kit uses. **A `ChromiumView` whose `Path` is not a valid URL
+  failed out of handle creation**, which WinForms answers with a modal error dialog; it logs and stays empty.
+
+- **Docs:** `RevealInFileManager` waits up to 5 s on Linux, and `LaunchProcess` refuses a macOS `.app` folder; both
+  now say so. `IFileLockInspector` said its implementation lived outside `Shenora`, and `Shenora.Windows` claimed
+  shell launching; both live in `Shenora`.
+
 - **Docs:** the launcher package's stock binary starts `app/MyApp.exe`, which its description did not say; the
   Android package's description claimed lock-screen controls, which need the app's MediaStyle notification; the iOS
   description still said the app writes four SwiftUI views for a Live Activity; and `MobileIpcBridge.Dispose` said it

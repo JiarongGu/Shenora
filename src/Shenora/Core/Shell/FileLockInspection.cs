@@ -21,7 +21,7 @@ public readonly record struct FileLockHolder(int ProcessId, string ProcessName)
 /// When the holder will never take a lease — a game with its assets open, antivirus, a shell preview
 /// handler — exclusion is impossible and the only useful thing left is to say WHO, so the app can retry,
 /// ask the user to close it, or report something better than "the process cannot access the file".
-/// Implementations are platform-specific and live outside <c>Shenora</c>; this is the seam.
+/// This is the seam; the kit's implementation is <see cref="FileLockInspector"/>, beside it.
 /// </summary>
 public interface IFileLockInspector
 {

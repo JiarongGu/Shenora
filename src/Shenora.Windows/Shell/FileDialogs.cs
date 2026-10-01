@@ -128,7 +128,7 @@ public sealed class FileDialogs : IFileDialogs
 
         if (!File.Exists(selected) && !Directory.Exists(selected))
         {
-            _logger.LogWarning("Dialog selection does not exist: {Path}", selected);
+            AppCallback.Log(_logger, () => $"Dialog selection does not exist: {selected}", LogLevel.Warning);
             return FileDialogResult.Cancelled();
         }
 
@@ -215,12 +215,12 @@ public sealed class FileDialogs : IFileDialogs
                         return remembered;
                     // Stale memory (the folder moved/was deleted) — fall through; the next
                     // successful pick overwrites it.
-                    _logger.LogDebug("Remembered dialog path is gone: {Path}", remembered);
+                    AppCallback.Log(_logger, () => $"Remembered dialog path is gone: {remembered}", LogLevel.Debug);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Dialog path store read failed for key {Key}", options.RememberPathKey);
+                AppCallback.Log(_logger, () => $"Dialog path store read failed for key {options.RememberPathKey}", LogLevel.Warning, ex);
             }
         }
 
@@ -246,7 +246,7 @@ public sealed class FileDialogs : IFileDialogs
     private void RememberPathFireAndForget(FileDialogOptions? options, string? directory) =>
         // Fire-and-forget from the dialog thread — persistence must never hold the dialog open.
         _ = RememberPathAsync(options, directory).ContinueWith(
-            t => _logger.LogWarning(t.Exception, "Failed to remember dialog path"),
+            t => AppCallback.Log(_logger, () => "Failed to remember dialog path", LogLevel.Warning, t.Exception),
             TaskContinuationOptions.OnlyOnFaulted);
 
     /// <summary>Raw-handle <see cref="IWin32Window"/> for cross-thread dialog ownership.</summary>

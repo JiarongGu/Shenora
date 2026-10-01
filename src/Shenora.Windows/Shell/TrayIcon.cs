@@ -142,7 +142,7 @@ public sealed class TrayIcon : IDisposable
             return;
         e.Cancel = true;
         _options.Window.Hide();
-        _logger.LogDebug("Window hidden to tray");
+        AppCallback.Log(_logger, () => "Window hidden to tray", LogLevel.Debug);
     }
 
     private void OnWindowClosed(object? sender, EventArgs e) => _notifyIcon.Visible = false;

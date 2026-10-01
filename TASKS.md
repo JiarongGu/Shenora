@@ -326,6 +326,15 @@ Once in five `verify` runs (2026-10-01), `vitest (cli package)` ended on an unha
 passed 5 of 5. A forks-pool worker whose IPC channel closed under load, unattributed. If it recurs: count it under
 `verify` and alone, then try `pool: 'threads'` in `src/Shenora.Cli/vitest.config.ts` as the A/B.
 
+### 🟡 A launch that arrives while the app shuts down is lost
+
+The single-instance channel stays open until the guard is disposed, last in shutdown, so a later launch arriving
+after the window has gone connects, hands over its arguments, reports success, and exits; nothing comes forward and
+no instance starts. Found in review, not seen live.
+
+- [ ] Stop listening when shutdown begins (a new `SingleInstanceGuard` member, so not a patch), and have a losing
+  launch whose activation failed wait for the mutex and start in its place.
+
 ### 🟡 A background handoff resumes a film the user had paused
 
 `BackgroundPlaybackTransfer.ToBackgroundAsync` hands off a `Paused` player as well as a `Playing` one, because the

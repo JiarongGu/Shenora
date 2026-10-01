@@ -269,9 +269,9 @@ public sealed partial class ResourcePackJournal
                 // ⚠ NOT `rolledBackFrom`. That word means "this pack was served and failed to confirm", and
                 // an app surfaces it to its user; a pack overtaken by a store release never ran and never
                 // failed. Conflating them reports a defect that did not happen.
-                _log?.LogInformation("The packaged resource pack {Packaged} is newer than the staged {Pending}, "
-                                   + "so the staged one has been dropped before it was ever served.",
-                                     packagedVersion, pending);
+                AppCallback.Log(_log, () => $"The packaged resource pack {packagedVersion} is newer than the staged {pending}, "
+                                             + "so the staged one has been dropped before it was ever served.",
+                                    LogLevel.Information);
             }
             else if (state.Attempts < _options.MaxAttempts)
             {
@@ -288,9 +288,9 @@ public sealed partial class ResourcePackJournal
                 state.Pending = null;
                 state.Attempts = 0;
                 Write(state);
-                _log?.LogWarning("Resource pack {Version} was served {Attempts} time(s) without confirming, so it "
-                               + "has been rolled back. The app is running the previous pack.",
-                                 pending, _options.MaxAttempts);
+                AppCallback.Log(_log, () => $"Resource pack {pending} was served {_options.MaxAttempts} time(s) without confirming, so it "
+                                         + "has been rolled back. The app is running the previous pack.",
+                                    LogLevel.Warning);
             }
         }
 
@@ -302,8 +302,8 @@ public sealed partial class ResourcePackJournal
             {
                 state.Active = null;
                 Write(state);
-                _log?.LogInformation("The packaged resource pack {Packaged} is newer than the staged {Active}, "
-                                   + "so the staged one has been dropped.", packagedVersion, active);
+                AppCallback.Log(_log, () => $"The packaged resource pack {packagedVersion} is newer than the staged {active}, "
+                                             + "so the staged one has been dropped.", LogLevel.Information);
                 return new ResourcePackResult(packagedVersion, ResourcePackKind.Packaged, 0, rolledBackFrom);
             }
             return new ResourcePackResult(active, ResourcePackKind.Active, 0, rolledBackFrom);
@@ -347,8 +347,8 @@ public sealed partial class ResourcePackJournal
         {
             // ⚠ FAIL TOWARD THE PACKAGED PACK. A comparator that throws must not leave a staged pack in
             // force, because that is the state nothing can get out of.
-            _log?.LogWarning(ex, "Comparing resource pack versions '{Left}' and '{Right}' threw, so the "
-                               + "packaged pack is being preferred.", left, right);
+            AppCallback.Log(_log, () => $"Comparing resource pack versions '{left}' and '{right}' threw, so the "
+                                         + "packaged pack is being preferred.", LogLevel.Warning, ex);
             return true;
         }
     }
@@ -365,8 +365,8 @@ public sealed partial class ResourcePackJournal
         {
             // An unreadable record is the same as none: the packaged pack is always serveable, so the app
             // starts rather than failing on its own bookkeeping.
-            _log?.LogWarning(ex, "The resource pack record at {Path} could not be read; starting from the "
-                               + "packaged pack.", _options.Path);
+            AppCallback.Log(_log, () => $"The resource pack record at {_options.Path} could not be read; starting from the "
+                                         + "packaged pack.", LogLevel.Warning, ex);
             return new Record();
         }
     }
@@ -383,8 +383,8 @@ public sealed partial class ResourcePackJournal
         {
             // 🔴 A record that cannot be written is a REAL failure and is said out loud: the attempt count
             // is what stops a broken pack looping, so losing it silently is the defect this type prevents.
-            _log?.LogError(ex, "The resource pack record at {Path} could not be written. A pending pack may "
-                             + "be retried more often than {MaxAttempts}.", _options.Path, _options.MaxAttempts);
+            AppCallback.Log(_log, () => $"The resource pack record at {_options.Path} could not be written. A pending pack may "
+                                       + $"be retried more often than {_options.MaxAttempts}.", LogLevel.Error, ex);
         }
     }
 

@@ -202,6 +202,55 @@ public class WinFormsRunnerTests
     }
 
     [Fact]
+    public void A_running_instance_that_never_showed_its_window_is_still_brought_forward()
+    {
+        // A tray app: its own loop, and the window never shown. The channel opened on Shown, so it never opened, and a
+        // later launch waited, gave up and exited with this app still hidden.
+        Sta.Run(() =>
+        {
+            var root = UniqueRoot();
+            var shown = false;
+            Form? main = null;
+            var builder = Builder(root);
+            builder.UseWindows(new WindowsHostOptions
+            {
+                MainForm = _ => main = new Form
+                {
+                    ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(0, 0, 200, 150),
+                },
+                SkipProcessInit = true,
+                SingleInstance = new SingleInstanceHostOptions
+                {
+                    Scope = root,
+                    OnActivated = (_, _) =>
+                    {
+                        shown = main!.Visible;
+                        main.Close();
+                        Application.ExitThread();
+                    },
+                },
+                MessageLoop = hidden =>
+                {
+                    using var bail = new System.Windows.Forms.Timer { Interval = 15_000 };   // a broken run ends
+                    bail.Tick += (_, _) => Application.ExitThread();
+                    bail.Start();
+                    _ = Task.Run(() =>
+                    {
+                        using var later = new SingleInstanceGuard("Shenora.Tests.Host", root);
+                        later.ActivateRunning(["--open", "x.txt"], TimeSpan.FromSeconds(10));
+                    });
+                    Application.Run();
+                },
+            });
+
+            using var app = builder.Build();
+            app.Run();
+
+            Assert.True(shown, "the hidden window was not brought forward");
+        });
+    }
+
+    [Fact]
     public void Restarted_relaunch_waits_out_the_predecessor()
     {
         var root = UniqueRoot();

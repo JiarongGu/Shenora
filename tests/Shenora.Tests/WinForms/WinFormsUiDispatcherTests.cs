@@ -290,6 +290,25 @@ public class WinFormsUiDispatcherTests
         await Assert.ThrowsAsync<ObjectDisposedException>(() => dispatcher.InvokeAsync(() => { }));
     }
 
+    /// <summary>The main-form dispatcher QUEUES in order too. It did not implement Queue, so the interface's default ran
+    /// the work from the thread pool, behind anything posted after it.</summary>
+    [Fact]
+    public void MainFormUiDispatcher_queues_in_order_with_the_posts_around_it()
+    {
+        Sta.Run(() =>
+        {
+            using var form = Realized();
+            var dispatcher = new MainFormUiDispatcher(new FakeInteraction { MainForm = form });
+            var ran = new List<string>();
+
+            Assert.True(dispatcher.Queue(() => { ran.Add("queued"); return Task.CompletedTask; }));
+            form.BeginInvoke(() => ran.Add("posted after"));
+            for (var i = 0; i < 50 && ran.Count < 2; i++) { Application.DoEvents(); Thread.Sleep(2); }
+
+            Assert.Equal(["queued", "posted after"], ran);
+        });
+    }
+
     private sealed class FakeInteraction : IFormInteraction
     {
         public Form? MainForm;

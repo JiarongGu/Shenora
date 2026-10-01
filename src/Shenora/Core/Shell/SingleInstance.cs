@@ -94,10 +94,13 @@ public sealed class SingleInstanceGuard : IDisposable
     /// <summary>How long a later launch's request may take to arrive once it connects.</summary>
     internal TimeSpan ReadTimeout { get; init; } = TimeSpan.FromSeconds(5);
 
-    // The user the channel belongs to, and on Windows the logon session, which the mutex is limited to there.
+    // The user the channel belongs to, and on Windows the logon session, which the mutex is limited to there. Off
+    // Windows the user name alone: UserDomainName is the HOST name there, which macOS changes by itself after a name
+    // clash on the network, and a later launch then looked for a channel the running instance had not opened.
     private static string UserOf() =>
-        $"{Environment.UserDomainName}\\{Environment.UserName}"
-        + (OperatingSystem.IsWindows() ? $"#{System.Diagnostics.Process.GetCurrentProcess().SessionId}" : "");
+        OperatingSystem.IsWindows()
+            ? $"{Environment.UserDomainName}\\{Environment.UserName}#{System.Diagnostics.Process.GetCurrentProcess().SessionId}"
+            : Environment.UserName;
 
     /// <summary>
     /// Stable key for a scope value. Normalized case- and trailing-separator-insensitive so
@@ -252,11 +255,12 @@ public sealed class SingleInstanceGuard : IDisposable
         _mutex = null;
     }
 
-    // One instance at a time, which on Windows also makes this the pipe's FIRST instance or fails, so a process that
+    // One instance at a time on Windows, which also makes this the pipe's FIRST instance or fails, so a process that
     // took the name before this one is refused rather than joined. A peer that connected and never let go does not
-    // hold it: disposing this side frees the instance (measured on Windows).
+    // hold it: disposing this side frees the instance (measured on Windows). Two elsewhere — see ListenAsync.
     private NamedPipeServerStream NewServer() =>
-        new(ChannelName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        new(ChannelName, PipeDirection.In, OperatingSystem.IsWindows() ? 1 : 2, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
     private async Task ListenAsync(NamedPipeServerStream server, Action<SingleInstanceLaunch> activated, CancellationToken stop)
     {
@@ -278,8 +282,21 @@ public sealed class SingleInstanceGuard : IDisposable
             {
                 AppCallback.Log(_log, () => "[Shenora] A later launch's request could not be read", LogLevel.Warning, ex);
             }
-            await server.DisposeAsync().ConfigureAwait(false);
-            if (await NextServerAsync(stop).ConfigureAwait(false) is not { } next) return;
+            // 🔴 Off Windows the next instance comes FIRST. There a pipe is a socket its instances share, and it closes
+            // with the last of them, dropping every launch queued on it while this one was handled — each of which had
+            // connected, written, and reported success. Windows allows one instance, so it can only come after.
+            NamedPipeServerStream? next;
+            if (OperatingSystem.IsWindows())
+            {
+                await server.DisposeAsync().ConfigureAwait(false);
+                next = await NextServerAsync(stop).ConfigureAwait(false);
+            }
+            else
+            {
+                next = await NextServerAsync(stop).ConfigureAwait(false);
+                await server.DisposeAsync().ConfigureAwait(false);
+            }
+            if (next is null) return;
             server = next;
         }
     }

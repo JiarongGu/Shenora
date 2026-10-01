@@ -116,6 +116,11 @@ internal sealed class MainFormUiDispatcher(IFormInteraction interaction) : IUiDi
     public bool Post(Func<Task> work) => Current?.Post(work) ?? false;
 
     /// <inheritdoc />
+    /// <remarks>Forwarded, or the interface's default ran it from the thread pool: out of order with earlier posts, and
+    /// true before anything was posted.</remarks>
+    public bool Queue(Func<Task> work) => Current?.Queue(work) ?? false;
+
+    /// <inheritdoc />
     public Task InvokeAsync(Action work, CancellationToken cancellationToken = default) =>
         Current?.InvokeAsync(work, cancellationToken) ?? NoMainForm<bool>();
 

@@ -143,11 +143,11 @@ public sealed class DropZoneManager : IDisposable
             _options.ParentForm.Controls.Add(overlay);
             overlay.BringToFront();
             _overlays[zoneId] = overlay;
-            _logger.LogDebug("Drop zone registered: {ZoneId} ({Count} total)", zoneId, _overlays.Count);
+            AppCallback.Log(_logger, () => $"Drop zone registered: {zoneId} ({_overlays.Count} total)", LogLevel.Debug);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to create drop-zone overlay {ZoneId}", zoneId);
+            AppCallback.Log(_logger, () => $"Failed to create drop-zone overlay {zoneId}", LogLevel.Error, ex);
         }
     }
 
@@ -164,7 +164,7 @@ public sealed class DropZoneManager : IDisposable
         {
             _options.ParentForm.Controls.Remove(overlay);
             overlay.Dispose();
-            _logger.LogDebug("Drop zone unregistered: {ZoneId}", zoneId);
+            AppCallback.Log(_logger, () => $"Drop zone unregistered: {zoneId}", LogLevel.Debug);
         }
     }
 
@@ -191,7 +191,7 @@ public sealed class DropZoneManager : IDisposable
         }
         _overlays.Clear();
         _cssBounds.Clear();
-        _logger.LogDebug("All drop zones cleared");
+        AppCallback.Log(_logger, () => "All drop zones cleared", LogLevel.Debug);
     }
 
     /// <summary>Detach the form handlers and destroy every overlay.</summary>
@@ -213,7 +213,7 @@ public sealed class DropZoneManager : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Detaching the document-change handler failed (the browser is already gone).");
+            AppCallback.Log(_logger, () => "Detaching the document-change handler failed (the browser is already gone).", LogLevel.Debug, ex);
         }
         ClearAll();
     }
@@ -277,7 +277,7 @@ public sealed class DropZoneManager : IDisposable
         // ⚠ Not Ready (no handle yet) or Gone — DROP, never fall through to the inline path, which
         // would run PointToScreen / Controls.Add on a worker thread and force handle creation there.
         // Zones are registered by the page, which cannot have loaded before the form was realized.
-        _logger.LogDebug("Drop-zone UI work skipped — the host window is {State}.", _ui.State);
+        AppCallback.Log(_logger, () => $"Drop-zone UI work skipped — the host window is {_ui.State}.", LogLevel.Debug);
         return true;
     }
 

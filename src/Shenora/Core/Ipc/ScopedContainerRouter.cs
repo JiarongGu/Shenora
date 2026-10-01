@@ -68,7 +68,7 @@ public sealed class ScopedContainerRouter : IDisposable
     {
         ArgumentException.ThrowIfNullOrEmpty(module);
         _facadeResolvers[module] = services => services.GetService<TFacade>();
-        _logger.LogDebug("Scope-routed module mapped: {Module}", module);
+        AppCallback.Log(_logger, () => $"Scope-routed module mapped: {module}", LogLevel.Debug);
         return this;
     }
 
@@ -121,7 +121,7 @@ public sealed class ScopedContainerRouter : IDisposable
             provider.Dispose();
             throw;
         }
-        _logger.LogDebug("Scope container created: {ScopeId}", scopeId);
+        AppCallback.Log(_logger, () => $"Scope container created: {scopeId}", LogLevel.Debug);
         return provider;
     }
 
@@ -133,7 +133,7 @@ public sealed class ScopedContainerRouter : IDisposable
         if (_scopes.TryRemove(scopeId, out var lazy))
         {
             DisposeScope(scopeId, lazy);
-            _logger.LogDebug("Scope container invalidated: {ScopeId}", scopeId);
+            AppCallback.Log(_logger, () => $"Scope container invalidated: {scopeId}", LogLevel.Debug);
         }
     }
 
@@ -155,7 +155,7 @@ public sealed class ScopedContainerRouter : IDisposable
 
         if (string.IsNullOrEmpty(request.Scope))
         {
-            _logger.LogWarning("Scoped module {Module} called without a scope", request.Module);
+            AppCallback.Log(_logger, () => $"Scoped module {request.Module} called without a scope", LogLevel.Warning);
             return IpcResponse.CreateError(request.Id, IpcErrorCodes.ScopeRequired, parameters:
                 new Dictionary<string, string> { ["module"] = request.Module });
         }
@@ -172,15 +172,15 @@ public sealed class ScopedContainerRouter : IDisposable
             // GetScopeServices already removed the dead entry, so ONE retry builds a fresh container; a
             // second failure is a real fault and propagates. Guarded on !_disposed so a router shutting
             // down does not spin rebuilding scopes it is tearing down.
-            _logger.LogDebug("Scope {Scope} was invalidated mid-request; rebuilding for {Module}/{Type}",
-                request.Scope, request.Module, request.Type);
+            AppCallback.Log(_logger, () => $"Scope {request.Scope} was invalidated mid-request; rebuilding for {request.Module}/{request.Type}",
+                LogLevel.Debug);
             facade = _facadeResolvers[request.Module](GetScopeServices(request.Scope));
         }
 
         if (facade is null)
             return await next();
 
-        _logger.LogTrace("Routing {Module}/{Type} to scope {Scope}", request.Module, request.Type, request.Scope);
+        AppCallback.Log(_logger, () => $"Routing {request.Module}/{request.Type} to scope {request.Scope}", LogLevel.Trace);
         return await facade.HandleMessageAsync(request, cancellationToken);
     }
 
@@ -212,7 +212,7 @@ public sealed class ScopedContainerRouter : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Scope container {ScopeId} had no disposable value", scopeId);
+            AppCallback.Log(_logger, () => $"Scope container {scopeId} had no disposable value", LogLevel.Debug, ex);
         }
     }
 }

@@ -219,11 +219,13 @@ internal sealed class WinFormsRunner : IShenoraRunner
                 }
 
                 // A later launch of this scope reaches the guard's channel: bring the main window to the front, then
-                // hand the app its arguments. Listening once the form is SHOWN, when its handle exists to marshal
-                // to; a launch before that waits for the channel to open.
+                // hand the app its arguments. Listening needs the form's HANDLE to marshal to, so it is created here,
+                // which does not show the window: listening on Shown left an app that starts hidden (a tray app with
+                // its own loop) unreachable, and every later launch gave up after waiting for the channel.
                 if (owned && guard is not null && options.SingleInstance is { } listening)
                 {
-                    form.Shown += (_, _) => ListenForLaterLaunches(app, form, guard, listening);
+                    _ = form.Handle;
+                    ListenForLaterLaunches(app, form, guard, listening);
                 }
                 if (options.MessageLoop is { } loop) loop(form);
                 else Application.Run(form);
@@ -276,9 +278,9 @@ internal sealed class WinFormsRunner : IShenoraRunner
             // 🔴 SAY SO. With no channel this app will NOT come to the front when a later launch asks. Single
             // instance still works — the mutex is the real guard — which is what makes it worth a line: the user
             // double-clicks, the second process exits quietly, and the app looks broken with no trace anywhere.
-            app.Services.GetService<ILogger<SingleInstanceGuard>>()?.LogWarning(ex,
+            AppCallback.Log(log, () =>
                 "The single-instance channel could not be opened: a later launch will exit without bringing this "
-                + "window to the front. Single instance itself is unaffected.");
+                + "window to the front. Single instance itself is unaffected.", LogLevel.Warning, ex);
         }
     }
 

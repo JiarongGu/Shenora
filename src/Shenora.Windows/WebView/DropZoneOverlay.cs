@@ -168,7 +168,7 @@ internal sealed class DropZoneOverlay : Panel
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error handling drop on zone {ZoneId}", ZoneId);
+            AppCallback.Log(_logger, () => $"Error handling drop on zone {ZoneId}", LogLevel.Error, ex);
         }
         finally
         {
@@ -223,7 +223,8 @@ internal sealed class DropZoneOverlay : Panel
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Occlusion check failed for zone {ZoneId}", ZoneId);
+            // Guarded: the app's logger, inside a catch on the UI thread, where a throw would escape the handler.
+            AppCallback.Log(_logger, () => $"Occlusion check failed for zone {ZoneId}", LogLevel.Warning, ex);
             ShowOverlay("occlusion check error"); // fail open — a drop target beats a hover glitch
         }
         finally
@@ -237,14 +238,14 @@ internal sealed class DropZoneOverlay : Panel
         if (Dead || Visible) return;
         Visible = true;
         BringToFront();
-        _logger.LogTrace("Zone {ZoneId} shown: {Reason} (formActive: {FormActive})", ZoneId, reason, _formIsActive);
+        AppCallback.Log(_logger, () => $"Zone {ZoneId} shown: {reason} (formActive: {_formIsActive})", LogLevel.Trace);
     }
 
     private void HideOverlay(string reason)
     {
         if (Dead || !Visible) return;
         Visible = false;
-        _logger.LogTrace("Zone {ZoneId} hidden: {Reason} (formActive: {FormActive})", ZoneId, reason, _formIsActive);
+        AppCallback.Log(_logger, () => $"Zone {ZoneId} hidden: {reason} (formActive: {_formIsActive})", LogLevel.Trace);
     }
 
     protected override void Dispose(bool disposing)

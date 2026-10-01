@@ -42,7 +42,7 @@ public abstract class ModuleBase : IIpcModule
         ArgumentNullException.ThrowIfNull(request);
         try
         {
-            _logger.LogDebug("{Module} handling {Type}", ModuleName, request.Type);
+            AppCallback.Log(_logger, () => $"{ModuleName} handling {request.Type}", LogLevel.Debug);
 
             // The request's tracking scope, if it was dispatched (D66) — picked up here so
             // IModuleContext.Report needs no id and no wiring. The DISPATCHER owns its lifetime.

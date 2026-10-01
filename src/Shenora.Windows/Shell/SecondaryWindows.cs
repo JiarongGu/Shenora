@@ -84,7 +84,7 @@ public sealed class SecondaryWindows : IDisposable
             // ⚠ Without this a failed Start leaves the entry behind forever — RunWindow, the only other
             // cleanup path, never ran — so the name stays permanently "already open".
             _windows.TryRemove(name, out _);
-            _logger.LogError(ex, "Secondary window '{Name}' could not start its thread", name);
+            AppCallback.Log(_logger, () => $"Secondary window '{name}' could not start its thread", LogLevel.Error, ex);
             throw;
         }
         return true;
@@ -113,7 +113,8 @@ public sealed class SecondaryWindows : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Secondary window '{Name}' failed to create", name);
+            // Guarded, as both below: the app's logger, on this window's own thread, where a throw would end the process.
+            AppCallback.Log(_logger, () => $"Secondary window '{name}' failed to create", LogLevel.Error, ex);
             _windows.TryRemove(name, out _);
             return;
         }
@@ -140,19 +141,19 @@ public sealed class SecondaryWindows : IDisposable
             }
         };
 
-        _logger.LogDebug("Secondary window '{Name}' opened on thread {Thread}", name, Environment.CurrentManagedThreadId);
+        AppCallback.Log(_logger, () => $"Secondary window '{name}' opened on thread {Environment.CurrentManagedThreadId}", LogLevel.Debug);
         try
         {
             Application.Run(form); // this thread's own pump — returns when the form closes
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Secondary window '{Name}' pump faulted", name);
+            AppCallback.Log(_logger, () => $"Secondary window '{name}' pump faulted", LogLevel.Error, ex);
         }
         finally
         {
             _windows.TryRemove(name, out _);
-            _logger.LogDebug("Secondary window '{Name}' closed", name);
+            AppCallback.Log(_logger, () => $"Secondary window '{name}' closed", LogLevel.Debug);
         }
     }
 

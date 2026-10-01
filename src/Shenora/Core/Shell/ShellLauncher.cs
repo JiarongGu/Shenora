@@ -15,7 +15,9 @@ namespace Shenora.Core.Shell;
 public interface IShellLauncher : IUrlLauncher
 {
     /// <summary>Open the OS's file manager with <paramref name="filePath"/> selected: Explorer, Finder, or the
-    /// desktop's own on Linux (its folder, where the file manager cannot select).</summary>
+    /// desktop's own on Linux (its folder, where the file manager cannot select). ⚠ On Linux it WAITS, up to 5 s, for
+    /// the file manager to answer over D-Bus — one that is still starting takes a moment — so call it off the UI
+    /// thread there.</summary>
     void RevealInFileManager(string filePath);
 
     /// <summary>Open a directory in the OS's file manager.</summary>
@@ -28,7 +30,8 @@ public interface IShellLauncher : IUrlLauncher
     /// (it handed the work to an already-running instance). ⚠ <c>null</c> is not a failure — a launch
     /// that did not happen THROWS. It means there is no process for you to wait on or kill.
     /// </returns>
-    /// <exception cref="FileNotFoundException"><c>ExecutablePath</c> does not exist.</exception>
+    /// <exception cref="FileNotFoundException"><c>ExecutablePath</c> does not exist. ⚠ On macOS an app bundle is a
+    /// FOLDER, so <c>Foo.app</c> is refused: pass the executable inside it, <c>Foo.app/Contents/MacOS/Foo</c>.</exception>
     int? LaunchProcess(ProcessLaunchOptions options);
 }
 
