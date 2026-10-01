@@ -129,10 +129,10 @@ at the first list and missed five more breaking changes.
   the session inactive and nothing made it active again. Publishing an item, or reporting it playing, now does.
   Measured on an emulator: after a clear and a second publish, `dumpsys media_session` reads `active=true`.
 
-- **The launcher would not start an app on a machine whose .NET runtime it looked for in the wrong place.** It read
-  the installer's record from the 64-bit registry view, and the installer writes it in the 32-bit one, so on this
-  repository's own machine, with .NET 10 installed, it reported the runtime missing and exited. It reads both views,
-  then the runtime folders under `DOTNET_ROOT` and Program Files.
+- **The Windows launcher could refuse to start an app whose .NET runtime was installed.** It read the installer's
+  record from the 64-bit registry view, and the installer writes it in the 32-bit one, so on a machine with .NET 10
+  installed (measured) it reported the runtime missing and exited. It reads both views, then the runtime folders
+  under `DOTNET_ROOT` and Program Files.
 
 - **The launcher on Windows broke on a path or argument outside the ANSI code page.** A non-ASCII file name in an
   update stopped the apply with *"No mapping for the Unicode character exists in the target multi-byte code page"*,
