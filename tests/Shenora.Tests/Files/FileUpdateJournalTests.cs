@@ -215,11 +215,12 @@ public class FileUpdateJournalTests : IDisposable
     }
 
     /// <summary>
-    /// 🔴 A recovery whose undo could not run KEEPS its entry, so the next one tries again. It was removed regardless,
-    /// and the update counted resolved: the half-applied tree and its orphaned backup were permanent.
+    /// 🔴 A recovery whose undo could not run gives its entry up. Kept for the next start, it was replayed over what the
+    /// app wrote in between: here the backup it owed went back over a newer update's content. What it could not restore
+    /// is not lost; it stays in its sidecar.
     /// </summary>
     [Fact]
-    public async Task A_recovery_that_could_not_undo_keeps_its_entry_for_the_next_one()
+    public async Task A_recovery_that_could_not_undo_is_not_replayed_over_later_writes()
     {
         var target = Path.Combine(_root, "landed.txt");
         var temp = Path.Combine(_root, "landed.tmp");
@@ -232,11 +233,49 @@ public class FileUpdateJournalTests : IDisposable
         });
         Thaw();
 
-        Assert.Equal(0, await NewQueue(new LockedTarget(new SystemFileOperations(), target)).RecoverAsync());
-        Assert.Single(Directory.GetFiles(JournalDir, "*.journal"));   // still owed
-        Assert.Equal(1, await NewQueue().RecoverAsync());              // the lock gone, the next one finishes it
-        Assert.Equal("ORIGINAL", await File.ReadAllTextAsync(target));
+        await NewQueue(new LockedTarget(new SystemFileOperations(), target)).RecoverAsync();
         Assert.Empty(Directory.GetFiles(JournalDir, "*.journal"));
+        Assert.Equal("ORIGINAL", await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(_root, "landed.txt.shenora-bak-*"))));
+
+        var newer = Path.Combine(_root, "newer.tmp");
+        await File.WriteAllTextAsync(newer, "NEWER");
+        Assert.True((await NewQueue().ApplyAsync(new FileUpdate { Changes = [new FileChange.Replace(newer, target)] })).Succeeded);
+        Assert.Equal(0, await NewQueue().RecoverAsync());   // the next start
+        Assert.Equal("NEWER", await File.ReadAllTextAsync(target));
+    }
+
+    /// <summary>The same for a rollback in the process: <c>RolledBack</c> false tells the caller, and the entry goes.</summary>
+    [Fact]
+    public async Task A_rollback_that_could_not_finish_gives_its_entry_up()
+    {
+        var target = Path.Combine(_root, "landed.txt");
+        var temp = Path.Combine(_root, "landed.tmp");
+        await File.WriteAllTextAsync(target, "ORIGINAL");
+        await File.WriteAllTextAsync(temp, "NEW");
+
+        var result = await NewQueue(new FailsRestoring(new SystemFileOperations())).ApplyAsync(new FileUpdate
+        {
+            Changes = [new FileChange.Replace(temp, target), new FileChange.Replace(Path.Combine(_root, "missing.tmp"), Path.Combine(_root, "other.txt"))],
+            Atomicity = FileAtomicity.AllOrNothing,
+            Retry = new Shenora.Engine.RetryPolicy { Attempts = 1 },
+        });
+
+        Assert.False(result.RolledBack);
+        Assert.Empty(Directory.GetFiles(JournalDir, "*.journal"));
+        Assert.Equal("ORIGINAL", await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(_root, "landed.txt.shenora-bak-*"))));
+    }
+
+    /// <summary>Fails putting a backup back, as a file something holds open would refuse it.</summary>
+    private sealed class FailsRestoring(IFileOperations inner) : IFileOperations
+    {
+        public ValueTask<bool> FileExistsAsync(string path) => inner.FileExistsAsync(path);
+        public ValueTask<bool> DirectoryExistsAsync(string path) => inner.DirectoryExistsAsync(path);
+        public ValueTask CreateDirectoryAsync(string path) => inner.CreateDirectoryAsync(path);
+        public ValueTask DeleteFileAsync(string path) => inner.DeleteFileAsync(path);
+        public ValueTask DeleteDirectoryAsync(string path, bool recursive) => inner.DeleteDirectoryAsync(path, recursive);
+        public ValueTask MoveFileAsync(string from, string to, bool overwrite) =>
+            from.Contains(".shenora-bak-", StringComparison.Ordinal) ? throw new IOException("held open") : inner.MoveFileAsync(from, to, overwrite);
+        public ValueTask ReplaceFileAsync(string source, string destination, string backup) => inner.ReplaceFileAsync(source, destination, backup);
     }
 
     /// <summary>A non-recursive delete of a folder that is not empty FAILS under AllOrNothing, as it does change by change.

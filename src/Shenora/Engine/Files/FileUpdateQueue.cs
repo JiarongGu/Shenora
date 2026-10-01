@@ -230,9 +230,8 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                 // swallowed every step, so a caller branching on RolledBack was told "nothing changed"
                 // over a half-applied tree — the exact outcome AllOrNothing exists to make impossible.
                 var rolledBack = await RollbackAsync(undo).ConfigureAwait(false);
-                // KEPT when the rollback did not finish, so recovery tries again: removed, the half-applied tree
-                // would be permanent.
-                if (journal is not null && rolledBack)
+                if (!rolledBack) LogNotRolledBack(updateId);
+                if (journal is not null)
                     await Guarded(() => new ValueTask(journal.RemoveAsync(updateId, CancellationToken.None)))
                         .ConfigureAwait(false);
                 return new FileUpdateResult(0, index, ex, rolledBack, holders);
@@ -269,26 +268,25 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         foreach (var entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            bool done;
             if (entry.Stage == FileUpdateStage.Applying)
             {
                 Log(() => $"recovering interrupted update {entry.UpdateId} (started {entry.StartedUtc:u}): rolling back {entry.Undo.Count} step(s)");
-                done = await RollbackAsync(entry.Undo).ConfigureAwait(false);
+                if (!await RollbackAsync(entry.Undo).ConfigureAwait(false)) LogNotRolledBack(entry.UpdateId);
             }
             else
             {
                 Log(() => $"recovering interrupted update {entry.UpdateId}: finishing {entry.Staged.Count} staged deletion(s)");
-                done = true;
+                var done = true;
                 foreach (var commit in entry.Staged)
                     if (!await Guarded(() => RunUndoAsync(commit)).ConfigureAwait(false)) done = false;
-            }
 
-            // An entry whose steps did not all run stays for the next recovery (each step checks the world first, so
-            // running it again is safe); removed, what it was owed could never be finished.
-            if (!done)
-            {
-                Log(() => $"update {entry.UpdateId} could not be fully recovered; its journal entry stays for the next attempt");
-                continue;
+                // Staged deletions that did not all finish stay for the next recovery: they touch only the update's
+                // own sidecars, so running them later is safe. Removed, those sidecars were never deleted.
+                if (!done)
+                {
+                    Log(() => $"update {entry.UpdateId} could not be fully recovered; its journal entry stays for the next attempt");
+                    continue;
+                }
             }
             await journal.RemoveAsync(entry.UpdateId, cancellationToken).ConfigureAwait(false);
             resolved++;
@@ -524,6 +522,15 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     /// </summary>
     private static string SidecarPath(string path, string tag) =>
         $"{path}.shenora-{tag}-{Guid.NewGuid():N}";
+
+    /// <summary>
+    /// A rollback that did not finish still gives up its journal entry. Kept, a later recovery would replay it over
+    /// whatever this process, or another, wrote to those paths since: delete a file a newer update created, or move an
+    /// old backup over newer content. What it could not put back stays in its sidecar.
+    /// </summary>
+    private void LogNotRolledBack(string updateId) =>
+        Log(() => $"update {updateId} was not fully rolled back; the originals it could not restore are left beside "
+                  + "their paths as *.shenora-bak-* and *.shenora-del-*");
 
     private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_options.Log, message, exception: failure);
 }

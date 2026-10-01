@@ -56,8 +56,8 @@ at the first list and missed five more breaking changes.
 - **Recovering an interrupted `AllOrNothing` file update could destroy files.** Undoing a move checked only that its
   destination existed, so a move that had not happened (cut short during a retry's back-off, or refused because its
   destination was there) was "undone" by moving the destination's file over its source. A move is now undone only
-  when its source is gone. A rollback or recovery that could not finish also removed its journal entry, so the
-  half-applied update could never be finished; the entry now stays for the next `RecoverAsync`.
+  when its source is gone. A recovery that could not finish an update's staged deletions also removed its journal
+  entry, so the hidden copies they were deleting stayed for good; the entry now stays for the next `RecoverAsync`.
 
 - **An `AllOrNothing` non-recursive delete of a folder that was not empty reported success**, and left the folder
   under a hidden sidecar name. It now fails as the direct delete does, and the update rolls back.
