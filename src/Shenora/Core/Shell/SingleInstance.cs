@@ -425,7 +425,9 @@ public sealed class SingleInstanceHostOptions
     /// <para>
     /// On macOS the Chromium shell brings files and links here too: Finder's "open with", a file dropped on the Dock
     /// icon and a link to a scheme the bundle declares reach an app as Apple Events rather than arguments, the first
-    /// launch's own included, and arrive as a launch whose arguments are the paths or the URL. The WinForms shell,
+    /// launch's own included, and arrive as a launch whose arguments are the paths or the URL; the Dock icon clicked
+    /// while the app runs arrives as a launch with none. ⚠ So an app that opens files or links on macOS keeps
+    /// <c>SingleInstance</c> set: with it null, they bring the window forward and reach no callback. The WinForms shell,
     /// Windows-only, has only launches.
     /// </para>
     /// </summary>

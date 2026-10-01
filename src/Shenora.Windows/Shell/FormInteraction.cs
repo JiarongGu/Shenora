@@ -38,6 +38,7 @@ public sealed class FormInteraction : IFormInteraction
     private readonly object _lock = new();
     private Form? _mainForm;
     private int _blockCount;
+    private volatile bool _enabled = true;
 
     /// <inheritdoc />
     public void SetMainForm(Form form) => _mainForm = form ?? throw new ArgumentNullException(nameof(form));
@@ -78,12 +79,14 @@ public sealed class FormInteraction : IFormInteraction
     {
         var form = _mainForm;
         if (form is null || form.IsDisposed) return;
+        _enabled = enabled;
         try
         {
             // ⚠ NON-BLOCKING matters here specifically: this runs while holding the block-count lock, and
-            // a blocking Invoke under a lock is the classic pool-vs-UI deadlock. Posts are FIFO, so
-            // block/unblock ordering is preserved.
-            if (new WinFormsUiDispatcher(form).Post(() => form.Enabled = enabled)) return;
+            // a blocking Invoke under a lock is the classic pool-vs-UI deadlock. The post applies the LATEST state when it
+            // runs, not the value captured here: Post runs inline on the UI thread, so an unblock there overtook a block
+            // posted from another thread, which then landed last and left the form disabled.
+            if (new WinFormsUiDispatcher(form).Post(() => form.Enabled = _enabled)) return;
 
             // Not Ready: apply directly. Control.Enabled before handle creation is just a stored value,
             // and dropping it would lose the block for a window that has not been shown yet.

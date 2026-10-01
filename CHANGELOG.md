@@ -179,6 +179,21 @@ at the first list and missed five more breaking changes.
   every call now goes through the guard the rest of the kit uses. **A `ChromiumView` whose `Path` is not a valid URL
   failed out of handle creation**, which WinForms answers with a modal error dialog; it logs and stays empty.
 
+- **`ChromiumBrowserProcess`'s debugging port let a web page drive the browser.** Chromium's own port refuses a
+  request whose `Host` names a domain (DNS rebinding) and a socket that carries an `Origin`, and the relay in front of
+  it called the engine with its own `Host` and no `Origin`, so it passed both on; a path not starting with `/` also
+  named another host. It refuses what the engine refuses now.
+
+- **An `async Main` could hang after a Chromium shell's `Run` returned**: the thread kept the shell's
+  synchronization context, so an `await` there (an `await using`) resumed on a UI that was gone. The thread's own
+  context is put back. **A file dialog over a main window hidden in the tray** was owned by that hidden window, and on
+  macOS, where it is a sheet, never seen; a visible window owns it now, or the main window comes back. **The main
+  window could stay disabled after a modal session ended**, when the session's end, on the UI thread, overtook its
+  start, posted from elsewhere; the WinForms shell had the same order fault. Both apply the latest state now.
+  **On macOS, clicking the Dock icon of a running app with no window open showed nothing**; it brings the main window
+  back. A `Close` or `Activate` of a window still being opened was dropped, and a window CEF would not create kept its
+  browser's client for the life of the process.
+
 - **Docs:** `RevealInFileManager` waits up to 5 s on Linux, and `LaunchProcess` refuses a macOS `.app` folder; both
   now say so. `IFileLockInspector` said its implementation lived outside `Shenora`, and `Shenora.Windows` claimed
   shell launching; both live in `Shenora`.

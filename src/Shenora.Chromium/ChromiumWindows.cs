@@ -73,12 +73,21 @@ public sealed unsafe class ChromiumWindows
 
     /// <summary>Close the named window. No-op when it is not open. False when the shell is not running.</summary>
     /// <param name="name">The window's name.</param>
-    public bool Close(string name) => _ui.Post(() => { if (_open.TryGetValue(name, out var w)) w?.Close(); });
+    public bool Close(string name) => _ui.Post(() => WhenOpen(name, w => w.Close()));
 
     /// <summary>Bring the named window to the front. No-op when it is not open. False when the shell is not
     /// running.</summary>
     /// <param name="name">The window's name.</param>
-    public bool Activate(string name) => _ui.Post(() => { if (_open.TryGetValue(name, out var w)) w?.Activate(); });
+    public bool Activate(string name) => _ui.Post(() => WhenOpen(name, w => w.Activate()));
+
+    // A name reserved and not yet made — its Open posted from another thread and still queued — takes the request once
+    // it is: queued again behind that open, where it was dropped.
+    private void WhenOpen(string name, Action<ChromiumWindow> act, int tries = 0)
+    {
+        if (!_open.TryGetValue(name, out var window)) return;
+        if (window is not null) act(window);
+        else if (tries < 3) _ui.Queue(() => WhenOpen(name, act, tries + 1));
+    }
 
     /// <summary>Asked, by window name, before a window closes: false hides it instead (the tray's close-to-tray).
     /// UI thread.</summary>
@@ -101,7 +110,9 @@ public sealed unsafe class ChromiumWindows
     internal void SetMainEnabled(bool enabled)
     {
         _mainEnabled = enabled;
-        _ui.Post(() => { if (_open.TryGetValue(MainWindowName, out var w)) w?.SetEnabled(enabled); });
+        // The LATEST state, read when the post runs, not the value captured here: Post runs inline on the UI thread, so
+        // an unblock there overtook a block posted from elsewhere, which then landed last and left the window disabled.
+        _ui.Post(() => { if (_open.TryGetValue(MainWindowName, out var w)) w?.SetEnabled(_mainEnabled); });
     }
 
     /// <summary>
@@ -110,8 +121,16 @@ public sealed unsafe class ChromiumWindows
     /// </summary>
     internal bool RunFileDialog(cef_file_dialog_mode_t mode, string title, string folder, string? fileName, IReadOnlyList<string> filters, Action<string[]> done)
     {
-        var owner = (_open.TryGetValue(MainWindowName, out var main) ? main : null) ?? _open.Values.FirstOrDefault(w => w is not null);
-        if (owner is null) return false;
+        // A VISIBLE window owns it: on macOS the dialog is a sheet on its owner, and on a main window hidden in the tray
+        // it was never seen while the page waited on it. With none visible, the main window comes back to show it.
+        var main = _open.TryGetValue(MainWindowName, out var named) ? named : null;
+        var owner = (main is { IsVisible: true } ? main : null) ?? _open.Values.FirstOrDefault(w => w is { IsVisible: true });
+        if (owner is null)
+        {
+            owner = main ?? _open.Values.FirstOrDefault(w => w is not null);
+            if (owner is null) return false;
+            owner.Activate();
+        }
         owner.Browser.RunFileDialog(mode, title, folder, fileName, filters, done);
         return true;
     }

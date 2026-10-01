@@ -66,6 +66,7 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
                 return;
             }
 
+            var previous = SynchronizationContext.Current;
             SynchronizationContext.SetSynchronizationContext(new CefUiContext(ui, log));
             try
             {
@@ -78,6 +79,9 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
                 ui.MarkGone();
                 AppCallback.Run(app.Stop, ex => AppCallback.Log(log, () => "[Shenora.Chromium] Stopping the app failed", LogLevel.Error, ex));
                 Cef.cef_shutdown();
+                // The thread's own context back: left in place, an `async Main` awaiting after Run (an `await using`)
+                // posted its continuation to a UI that was gone, and never resumed.
+                SynchronizationContext.SetSynchronizationContext(previous);
             }
         }
         finally

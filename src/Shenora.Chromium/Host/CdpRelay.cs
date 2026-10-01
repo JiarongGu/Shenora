@@ -22,7 +22,8 @@ namespace Shenora.Chromium.Host;
 /// extension's page) is left alone.</para>
 ///
 /// <para><b>Loopback, like the engine's own port</b>: anything on this machine can drive the browser while it runs.
-/// The relay adds no reach the engine's port did not have.</para>
+/// The relay adds no reach the engine's port did not have, which takes keeping the engine's own refusals: see
+/// <see cref="Admits"/>.</para>
 /// </remarks>
 internal sealed class CdpRelay : IAsyncDisposable
 {
@@ -166,8 +167,16 @@ internal sealed class CdpRelay : IAsyncDisposable
             var request = await ReadHeadAsync(stream, _stop.Token).ConfigureAwait(false);
             if (request is null) return;
 
-            if (request.Headers.TryGetValue("Upgrade", out var upgrade)
-                && upgrade.Equals("websocket", StringComparison.OrdinalIgnoreCase))
+            var socket = request.Headers.TryGetValue("Upgrade", out var upgrade)
+                         && upgrade.Equals("websocket", StringComparison.OrdinalIgnoreCase);
+            if (!Admits(request, socket))
+            {
+                await stream.WriteAsync("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray(), _stop.Token)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (socket)
             {
                 await RelaySocketAsync(stream, request, _stop.Token).ConfigureAwait(false);
             }
@@ -181,6 +190,24 @@ internal sealed class CdpRelay : IAsyncDisposable
         {
             // A client or the engine went away mid-exchange: the connection ends, the relay does not.
         }
+    }
+
+    /// <summary>
+    /// 🔴 The engine's own checks, which its port applies and the relay's requests to it would otherwise BYPASS: the
+    /// relay calls the engine with its own <c>Host</c> and no <c>Origin</c>. So a <c>Host</c> must name an IP address or
+    /// <c>localhost</c> (a DNS-rebinding page arrives under its own name), and a socket must carry no <c>Origin</c> (the
+    /// engine is started allowing none, so a web page cannot open one). A path must start with <c>/</c>: appended to the
+    /// engine's address, <c>@host/…</c> named another host.
+    /// </summary>
+    public static bool Admits(Head request, bool socket)
+    {
+        if (!request.Path.StartsWith('/')) return false;
+        if (socket && request.Headers.ContainsKey("Origin")) return false;
+        if (!request.Headers.TryGetValue("Host", out var host)) return true;   // as the engine: only a NAMED host is refused
+        var name = host.StartsWith('[') ? host[..(host.IndexOf(']') + 1)]
+                 : host.Count(c => c == ':') == 1 ? host[..host.IndexOf(':')] : host;
+        return name.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+               || IPAddress.TryParse(name.Trim('[', ']'), out _);
     }
 
     private async Task RelayHttpAsync(Stream stream, Head request, CancellationToken ct)

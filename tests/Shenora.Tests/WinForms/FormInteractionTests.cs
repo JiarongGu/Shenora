@@ -53,6 +53,26 @@ public class FormInteractionTests
         Assert.True(form.Enabled);
     }
 
+    /// <summary>A block posted from another thread must not land AFTER an unblock made on the UI thread, which applies
+    /// inline: the post applied the value it captured, so the form stayed disabled with nothing blocking it.</summary>
+    [Fact]
+    public void An_unblock_on_the_UI_thread_is_not_overtaken_by_a_block_posted_from_another()
+    {
+        Shenora.Tests.TestSupport.Sta.Run(() =>
+        {
+            using var form = new Form();
+            _ = form.Handle;
+            var interaction = new FormInteraction();
+            interaction.SetMainForm(form);
+
+            Task.Run(interaction.BlockInteraction).Wait();   // posted: not the UI thread
+            interaction.UnblockInteraction();                 // inline: this is the UI thread
+            for (var i = 0; i < 20; i++) Application.DoEvents();
+
+            Assert.True(form.Enabled, "the form was left disabled with no block outstanding");
+        });
+    }
+
     [Fact]
     public void Blocking_without_a_form_is_a_no_op()
     {

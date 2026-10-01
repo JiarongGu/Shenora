@@ -78,6 +78,8 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         if (window.IsNull)
         {
             using (new CefRef<_cef_browser_view_t>(_browserView)) _browserView = null;
+            // As for a view CEF would not make: no browser was made, so nothing would ever retire the client.
+            Browser.Retire();
             throw new InvalidOperationException($"CEF would not create the window '{Name}'.");
         }
     }

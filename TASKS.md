@@ -326,6 +326,16 @@ Once in five `verify` runs (2026-10-01), `vitest (cli package)` ended on an unha
 passed 5 of 5. A forks-pool worker whose IPC channel closed under load, unattributed. If it recurs: count it under
 `verify` and alone, then try `pool: 'threads'` in `src/Shenora.Cli/vitest.config.ts` as the A/B.
 
+### 🟡 On macOS and Linux a main window blocked by a modal session can still be closed
+
+`IUiInteraction` disables the Chromium shell's main window while an interactive session's window shows. On Windows
+`EnableWindow` keeps the user from closing it; on macOS and Linux the title bar still closes it, the loop quits, and
+the session's window goes with it. Refusing in `can_close` while blocked would also refuse the app's own `Close`.
+Found in review, not seen live.
+
+- [ ] Measure whether `can_close` runs inside `window->close()` (then a flag can tell the app's close from the
+  user's), and try the title-bar close on a Mac.
+
 ### 🟡 A launch that arrives while the app shuts down is lost
 
 The single-instance channel stays open until the guard is disposed, last in shutdown, so a later launch arriving

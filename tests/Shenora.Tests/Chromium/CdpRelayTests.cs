@@ -125,6 +125,47 @@ public sealed class CdpRelayTests
         await Task.WhenAny(serving, Task.Delay(2000));
     }
 
+    /// <summary>
+    /// 🔴 The engine's own refusals, kept. The relay calls the engine with its own Host and no Origin, so a page that
+    /// rebinds its name to 127.0.0.1 — or opens a socket from a web origin — drove the browser through it, which the
+    /// engine's port refuses.
+    /// </summary>
+    [Theory]
+    [InlineData("127.0.0.1:9222", false, null, "/json/version", true)]
+    [InlineData("localhost:9222", true, null, "/devtools/browser/x", true)]
+    [InlineData("[::1]:9222", false, null, "/json", true)]
+    [InlineData(null, false, null, "/json", true)]
+    [InlineData("rebound.example:9222", false, null, "/json", false)]
+    [InlineData("rebound.example", true, null, "/devtools/browser/x", false)]
+    [InlineData("127.0.0.1:9222", true, "https://evil.example", "/devtools/browser/x", false)]
+    [InlineData("127.0.0.1:9222", false, null, "@evil.example/json", false)]
+    public void The_relay_admits_what_the_engine_would(string? host, bool socket, string? origin, string path, bool admitted)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (host is not null) headers["Host"] = host;
+        if (origin is not null) headers["Origin"] = origin;
+        Assert.Equal(admitted, CdpRelay.Admits(new CdpRelay.Head("GET", path, headers), socket));
+    }
+
+    [Fact]
+    public async Task A_rebound_host_is_refused_before_the_engine_is_asked()
+    {
+        using var engine = new TcpListener(IPAddress.Loopback, 0);
+        engine.Start();
+        var enginePort = ((IPEndPoint)engine.LocalEndpoint).Port;
+        await using var relay = CdpRelay.Start(0, enginePort);
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, relay.Port);
+        var stream = client.GetStream();
+        await stream.WriteAsync("GET /json HTTP/1.1\r\nHost: rebound.example\r\n\r\n"u8.ToArray());
+        var buffer = new byte[256];
+        var read = await stream.ReadAsync(buffer, new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token);
+
+        Assert.StartsWith("HTTP/1.1 403", Encoding.ASCII.GetString(buffer, 0, read));
+        Assert.False(engine.Pending(), "the relay forwarded a refused request to the engine");
+    }
+
     /// <summary>The stand-in engine: one HTTP answer, then one socket that announces every tab as <c>other</c>.</summary>
     private static async Task ServeEngineAsync(TcpListener engine, int port)
     {

@@ -69,6 +69,7 @@ internal static unsafe class MacPlatform
         class_addMethod(cls, sel_registerName(WillFinishLaunchingName), (nint)(delegate* unmanaged<nint, nint, nint, void>)&WillFinishLaunching, "v@:@");
         class_addMethod(cls, sel_registerName(OpenDocumentsName), (nint)(delegate* unmanaged<nint, nint, nint, nint, void>)&OpenDocuments, "v@:@@");
         class_addMethod(cls, sel_registerName(GetUrlName), (nint)(delegate* unmanaged<nint, nint, nint, nint, void>)&GetUrl, "v@:@@");
+        class_addMethod(cls, sel_registerName(ReopenName), (nint)(delegate* unmanaged<nint, nint, nint, nint, void>)&Reopen, "v@:@@");
         // The framework registered these when it loaded; a class conforms to what it is TOLD it conforms to.
         foreach (var name in new[] { "CrAppProtocol", "CrAppControlProtocol", "CefAppProtocol" })
             if (objc_getProtocol(name) is var protocol and not 0) class_addProtocol(cls, protocol);
@@ -89,12 +90,14 @@ internal static unsafe class MacPlatform
     // Apple Event codes (FourCharCode): the core suite's open-documents, and the internet suite's get-URL.
     private const uint CoreEventClass = 0x61657674;   // 'aevt'
     private const uint OpenDocumentsId = 0x6F646F63;  // 'odoc'
+    private const uint ReopenId = 0x72617070;         // 'rapp'
     private const uint InternetEventClass = 0x4755524C, GetUrlId = 0x4755524C;   // 'GURL', 'GURL'
     private const uint DirectObject = 0x2D2D2D2D;     // '----'
     private const uint FileUrl = 0x6675726C;          // 'furl'
     private const string WillFinishLaunchingName = "shenoraWillFinishLaunching:";
     private const string OpenDocumentsName = "shenoraOpenDocuments:withReply:";
     private const string GetUrlName = "shenoraGetURL:withReply:";
+    private const string ReopenName = "shenoraReopen:withReply:";
 
     /// <summary>
     /// A file opened with the app (Finder's "open with", a file dropped on its Dock icon) and a link to a URL scheme it
@@ -108,7 +111,17 @@ internal static unsafe class MacPlatform
         var install = sel_registerName("setEventHandler:andSelector:forEventClass:andEventID:");
         objc_msgSend_handler(events, install, self, sel_registerName(OpenDocumentsName), CoreEventClass, OpenDocumentsId);
         objc_msgSend_handler(events, install, self, sel_registerName(GetUrlName), InternetEventClass, GetUrlId);
+        objc_msgSend_handler(events, install, self, sel_registerName(ReopenName), CoreEventClass, ReopenId);
     });
+
+    /// <summary>
+    /// The Dock icon clicked, or the app opened again from Finder, while it runs: macOS says so with this event and
+    /// starts no second process. Unanswered, an app whose windows were all closed showed nothing; it arrives as a launch
+    /// with no arguments, so the main window comes back.
+    /// </summary>
+    [UnmanagedCallersOnly]
+    private static void Reopen(nint self, nint selector, nint appleEvent, nint reply) => AppCallback.Run(() =>
+        ChromiumSingleInstance.Process.Relaunched(new SingleInstanceLaunch([], Environment.CurrentDirectory)));
 
     [UnmanagedCallersOnly]
     private static void OpenDocuments(nint self, nint selector, nint appleEvent, nint reply) => AppCallback.Run(() =>
