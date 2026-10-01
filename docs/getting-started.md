@@ -24,7 +24,7 @@ Reference the **leaf** you need; the rest arrive transitively. The full table wi
 in the [root README](../README.md#packages).
 
 ```xml
-<PackageReference Include="Shenora.Windows" Version="0.19.0" />   <!-- desktop: pulls in Shenora -->
+<PackageReference Include="Shenora.Windows" Version="0.19.1" />   <!-- desktop: pulls in Shenora -->
 ```
 
 ```bash
@@ -94,7 +94,7 @@ an assembly named `<App>.App`:
   <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
 </PropertyGroup>
 <ItemGroup>
-  <PackageReference Include="Shenora.Chromium" Version="0.19.0" />
+  <PackageReference Include="Shenora.Chromium" Version="0.19.1" />
   <!-- The built page, served from beside the app. -->
   <None Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
 </ItemGroup>
