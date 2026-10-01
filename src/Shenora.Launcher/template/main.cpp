@@ -86,13 +86,13 @@ int main(int argc, char** argv) {
 
     const fs::path app = root / kAppSubdir / kAppExecutable;
     // `--app-root` is the kit's own contract (`AppRootArgument` + `ShenoraPaths`), so the app never has
-    // to guess where it was installed. u8string, never string(): on Windows that is the ANSI code page, which
+    // to guess where it was installed. to_utf8, never string(): on Windows that is the ANSI code page, which
     // threw for an install path outside it and mangled one inside it.
-    std::vector<std::string> args{ "--app-root", root.u8string() };
+    std::vector<std::string> args{ "--app-root", shenora::to_utf8(root) };
     args.insert(args.end(), forwarded.begin(), forwarded.end());
 
     if (!shenora::start_detached(app, args)) {
-        std::fprintf(stderr, "could not start %s\n", app.u8string().c_str());
+        std::fprintf(stderr, "could not start %s\n", shenora::to_utf8(app).c_str());
         return 4;
     }
     // Return IMMEDIATELY. §4: the launcher must be gone before the app's single-instance gate runs,

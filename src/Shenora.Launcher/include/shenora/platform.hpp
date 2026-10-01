@@ -47,7 +47,27 @@ bool dotnet_runtime_present(int major);
 /// The program's arguments after its own name, as UTF-8 — the encoding `start_detached` and the manifest assume.
 ///
 /// ⚠ Not `argv` itself on Windows: there it is in the ANSI code page, so a forwarded argument outside that code
-/// page reached the app mangled. Pass a path on as `path.u8string()` for the same reason, never `path.string()`.
+/// page reached the app mangled. Pass a path on as `to_utf8(path)` for the same reason, never `path.string()`.
 std::vector<std::string> utf8_arguments(int argc, char** argv);
+
+/// A path as UTF-8, in C++17 and C++20 alike: `u8string()` is a `std::u8string` from C++20 on, so a project that
+/// copies the template into a C++20 build would not compile it.
+inline std::string to_utf8(const std::filesystem::path& path, bool generic = false) {
+#if defined(__cpp_char8_t)
+    const auto text = generic ? path.generic_u8string() : path.u8string();
+    return std::string(text.begin(), text.end());
+#else
+    return generic ? path.generic_u8string() : path.u8string();
+#endif
+}
+
+/// A UTF-8 string as a path: `u8path` is deprecated from C++20 on, an error under warnings-as-errors.
+inline std::filesystem::path from_utf8(const std::string& text) {
+#if defined(__cpp_char8_t)
+    return std::filesystem::path(std::u8string(text.begin(), text.end()));
+#else
+    return std::filesystem::u8path(text);
+#endif
+}
 
 }  // namespace shenora

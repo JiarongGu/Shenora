@@ -116,7 +116,7 @@ ApplyResult apply_update_body(const ApplyOptions& options) {
         std::error_code undoEc;
         for (auto it = replaced.rbegin(); it != replaced.rend(); ++it) {
             fs::copy_file(rollback / *it, appRoot / *it, fs::copy_options::overwrite_existing, undoEc);
-            if (undoEc) log("could not restore '" + it->generic_u8string() + "': " + undoEc.message());
+            if (undoEc) log("could not restore '" + to_utf8(*it, true) + "': " + undoEc.message());
         }
         for (const fs::path& relative : added) fs::remove(appRoot / relative, undoEc);
         fs::remove_all(rollback, undoEc);
@@ -127,7 +127,7 @@ ApplyResult apply_update_body(const ApplyOptions& options) {
         if (!entry.is_regular_file()) continue;
         const fs::path relative = fs::relative(entry.path(), staged, ec);
         if (ec) continue;
-        if (normalize_path(relative.generic_u8string()) == kManifest) continue;
+        if (normalize_path(to_utf8(relative, true)) == kManifest) continue;
 
         const fs::path target = appRoot / relative;
         const bool existed = fs::exists(target, ec);
@@ -135,7 +135,7 @@ ApplyResult apply_update_body(const ApplyOptions& options) {
             fs::create_directories((rollback / relative).parent_path(), ec);
             fs::copy_file(target, rollback / relative, fs::copy_options::overwrite_existing, ec);
             if (ec) {
-                result.failure = "could not keep a copy of '" + relative.generic_u8string() + "': " + ec.message();
+                result.failure = "could not keep a copy of '" + to_utf8(relative, true) + "': " + ec.message();
                 log(result.failure);
                 restore();
                 return result;
@@ -145,14 +145,14 @@ ApplyResult apply_update_body(const ApplyOptions& options) {
         fs::create_directories(target.parent_path(), ec);
         fs::copy_file(entry.path(), target, fs::copy_options::overwrite_existing, ec);
         if (ec) {
-            result.failure = "could not write '" + relative.generic_u8string() + "': " + ec.message();
+            result.failure = "could not write '" + to_utf8(relative, true) + "': " + ec.message();
             log(result.failure);
             if (!existed) added.push_back(relative);   // a failed copy can leave a partial file behind
             restore();
             return result;
         }
         if (!existed) added.push_back(relative);
-        result.written.push_back(relative.generic_u8string());
+        result.written.push_back(to_utf8(relative, true));
     }
 
     // ── 6. Removals: TRACKED paths only, never a directory sweep ──────────────────────────────────
@@ -170,9 +170,9 @@ ApplyResult apply_update_body(const ApplyOptions& options) {
             const std::string key = normalize_path(f.path);
             if (keep.count(key) != 0) continue;
             if (key == kManifest) continue;
-            // u8path, and generic_u8string above: manifest paths are UTF-8, and on Windows a narrow path is read in the
+            // from_utf8, and to_utf8 above: manifest paths are UTF-8, and on Windows a narrow path is read in the
             // ANSI code page, so a removal looked for another name and a name that code page cannot hold threw.
-            const fs::path victim = appRoot / fs::u8path(f.path).make_preferred();
+            const fs::path victim = appRoot / from_utf8(f.path).make_preferred();
             if (!fs::exists(victim, ec)) continue;
             fs::remove(victim, ec);
             if (!ec) result.removed.push_back(f.path);
