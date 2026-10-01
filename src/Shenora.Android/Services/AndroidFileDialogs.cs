@@ -47,8 +47,10 @@ public sealed class AndroidFileDialogs : MobileFileDialogsBase
                 await write(stream, cancellationToken).ConfigureAwait(false);
             }
 
+            // Only once it is OPEN: opening can fail without truncating, and the document is then still whole.
+            var target = OpenDocument(destination);
             copying = true;
-            await CopyToDocumentAsync(temp, destination, cancellationToken).ConfigureAwait(false);
+            await CopyToDocumentAsync(temp, target, cancellationToken).ConfigureAwait(false);
 
             // No path reported: a content URI is a revocable grant, not something the app can reopen
             // later, and the contract populates FilePath only for an addressable destination.
@@ -115,9 +117,9 @@ public sealed class AndroidFileDialogs : MobileFileDialogsBase
 
     /// <summary>
     /// Take back the document a failed or cancelled save leaves: <c>ACTION_CREATE_DOCUMENT</c> creates it when the user
-    /// picks, so it stayed behind empty — or, failing during the copy, holding part of the content. Before the copy
-    /// only an EMPTY one goes, since the user may have picked an existing document to overwrite and it is still
-    /// whole; once the copy has truncated it, what is left is a fragment either way. Best effort.
+    /// picks, so it stayed behind empty — or, failing during the copy, holding part of the content. Until it is open
+    /// for writing only an EMPTY one goes, since the user may have picked an existing document to overwrite and it is
+    /// still whole; once opening has truncated it, what is left is a fragment either way. Best effort.
     /// </summary>
     private static void DiscardDocument(AndroidUri destination, bool written)
     {
@@ -139,18 +141,21 @@ public sealed class AndroidFileDialogs : MobileFileDialogsBase
     }
 
     /// <summary>
-    /// Copy the finished temp into the document the user chose. ⚠ <c>"wt"</c> truncates first, so a
-    /// smaller replacement does not leave the tail of the old content behind.
+    /// Open the document the user chose for writing. ⚠ <c>"wt"</c> truncates as it opens, so a smaller
+    /// replacement does not leave the tail of the old content behind.
     /// </summary>
-    private static async Task CopyToDocumentAsync(string temp, AndroidUri destination,
-                                                  CancellationToken cancellationToken)
+    private static Stream OpenDocument(AndroidUri destination)
     {
         var resolver = Platform.AppContext.ContentResolver
                        ?? throw new InvalidOperationException("No ContentResolver is available.");
 
-        var target = resolver.OpenOutputStream(destination, "wt")
-                     ?? throw new IOException("The chosen document could not be opened for writing.");
+        return resolver.OpenOutputStream(destination, "wt")
+               ?? throw new IOException("The chosen document could not be opened for writing.");
+    }
 
+    /// <summary>Copy the finished temp into the opened document, and close it.</summary>
+    private static async Task CopyToDocumentAsync(string temp, Stream target, CancellationToken cancellationToken)
+    {
         await using (target.ConfigureAwait(false))
         {
             var source = File.OpenRead(temp);
