@@ -47,6 +47,52 @@ at the first list and missed five more breaking changes.
   0.19.0 packages on Linux: the title read empty in 3 runs of 4; built from this tree, which differs from 0.19.0 by
   this change alone, it read the page's title in 4 of 4.
 
+- **A mission scheduler with a durable store could overwrite or delete a saved mission.** Mission ids restarted at
+  `m1` in every process, so a mission submitted after a restart could take the id of a record the store still held:
+  it replaced that record, or recovery's removal of the old id deleted the new one. Ids now carry a per-run suffix.
+  Two related fixes: the token passed to `RecoverAsync` bounds the recovery pass only, and no longer cancels every
+  mission it recovered; and forgetting a cancelled durable mission no longer runs the app's store under the
+  scheduler's lock.
+
+- **Recovering an interrupted `AllOrNothing` file update could destroy files.** Undoing a move checked only that its
+  destination existed, so a move that had not happened (cut short during a retry's back-off, or refused because its
+  destination was there) was "undone" by moving the destination's file over its source. A move is now undone only
+  when its source is gone. A rollback or recovery that could not finish also removed its journal entry, so the
+  half-applied update could never be finished; the entry now stays for the next `RecoverAsync`.
+
+- **An `AllOrNothing` non-recursive delete of a folder that was not empty reported success**, and left the folder
+  under a hidden sidecar name. It now fails as the direct delete does, and the update rolls back.
+
+- **A resource pack named or versioned `..` passed validation**, so staging could delete the packs root and pruning
+  the folder above it; on Windows `C:` and a trailing dot did the same. A name and a version must each be one plain
+  folder name.
+
+- **An update apply cut short during its removals never finished them.** `UpdateStage.ApplyAsync` wrote the new
+  baseline before removing what the release dropped, so the next run found nothing to remove. Removals now run first,
+  the written files are flushed to disk before the stage is cleared, and a clear cut short no longer leaves a pending
+  stage that every later apply refuses.
+
+- **On Linux and macOS, `FilePathLocker` did not keep another process out.** Its lock file took a shared lock there,
+  so two processes held one path at once (measured under WSL). It now takes an exclusive lock, and the lock file
+  stays after release: deleting it could let a waiter lock the old file while a newcomer locked a new one. Windows is
+  unchanged.
+
+- **`AppLifecycle` could under-report time away on a phone that had slept**, because the clock it read does not run
+  while the device sleeps, and a page branching on the span could keep a connection that had died. It now reports the
+  longer of that clock and the wall clock.
+
+- **Two remote media urls that differ only in case shared one conversion cache entry**, so one could be served the
+  other's conversion. The same held for an app-supplied `RemoteMediaSource.Identity`.
+
+- **Cancelling `IComputedRemuxRoute.PlanAsync` did nothing while that call ran the walk itself.** It now stops the
+  wait, as documented, and the walk still lands for the next call.
+
+- **Cancelling `Mp4Remuxer.Remux(sourcePath, destinationPath, …)` left a truncated MP4 at the destination.** It now
+  deletes it, as its documentation says.
+
+- **`MediaPlayer`'s documentation and its open-timeout message said the app must write the page's report route.**
+  The kit registers it (`MediaPlayerModule`); the message now names the likely causes.
+
 ## 0.19.0 — 2026-09-30
 
 ### Breaking

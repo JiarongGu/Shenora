@@ -46,4 +46,11 @@ public static class DerivedCacheKey
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
         return Convert.ToHexStringLower(hash.AsSpan(0, 8));
     }
+
+    /// <summary>
+    /// The key for a source known only by a name — a url, an app's identity string — with no length or mtime to tell
+    /// two apart. The name rides in the variant too, which is not case-folded: <c>For</c> lower-cases its path, and a
+    /// url path or an identity is case-SENSITIVE, so <c>…/Clip.mp4</c> was served <c>…/clip.mp4</c>'s conversion.
+    /// </summary>
+    internal static string ForName(string name, string variant) => For(name, 0, DateTime.UnixEpoch, $"{variant}|{name}");
 }

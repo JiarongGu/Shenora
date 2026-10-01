@@ -49,16 +49,23 @@ public sealed class AppLifecycle
     private readonly ILogger? _log;
     private readonly Lock _gate = new();
 
-    // Monotonic, so a clock change mid-background cannot produce a negative or absurd duration — which a
-    // page WOULD act on, since the whole payload is a number it branches against a threshold.
+    // Both clocks, and the LONGER span wins. The monotonic one is immune to a clock change but stops while the device
+    // sleeps (CLOCK_MONOTONIC on Android, the uptime clock on Apple), so a phone pocketed for forty minutes read as
+    // seconds and the page kept its dead socket. The wall clock covers the sleep; a clock set back cannot shorten
+    // the span below the monotonic one, and a clock set forward only costs an extra reconnect.
     private long? _stoppedAt;
+    private DateTimeOffset _stoppedAtWall;
+    private readonly Func<DateTimeOffset> _wallClock;
 
     /// <param name="events">Where the transitions are published. The pump forwards them to the page.</param>
     /// <param name="log">Optional diagnostics.</param>
-    public AppLifecycle(IEventBus events, ILogger? log = null)
+    public AppLifecycle(IEventBus events, ILogger? log = null) : this(events, log, static () => DateTimeOffset.UtcNow) { }
+
+    internal AppLifecycle(IEventBus events, ILogger? log, Func<DateTimeOffset> wallClock)
     {
         _events = events ?? throw new ArgumentNullException(nameof(events));
         _log = log;
+        _wallClock = wallClock;
     }
 
     /// <summary>
@@ -77,7 +84,11 @@ public sealed class AppLifecycle
         {
             // Idempotent: a second stop without an intervening resume keeps the FIRST timestamp, so the
             // duration still covers the whole absence rather than restarting mid-way.
-            _stoppedAt ??= Stopwatch.GetTimestamp();
+            if (_stoppedAt is null)
+            {
+                _stoppedAt = Stopwatch.GetTimestamp();
+                _stoppedAtWall = _wallClock();
+            }
         }
         Log("lifecycle: the app left the foreground");
         _events.Emit(Module, StoppedType);
@@ -98,7 +109,7 @@ public sealed class AppLifecycle
         lock (_gate)
         {
             awayMs = _stoppedAt is { } since
-                ? Stopwatch.GetElapsedTime(since).TotalMilliseconds
+                ? Math.Max(Stopwatch.GetElapsedTime(since).TotalMilliseconds, (_wallClock() - _stoppedAtWall).TotalMilliseconds)
                 : null;
             _stoppedAt = null;
         }

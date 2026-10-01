@@ -56,12 +56,13 @@ public sealed class FilePathLockerOptions
 /// Cross-process leases as lock FILES in a directory of the app's own, one per canonical path. Each
 /// file holds the holder's process id and path, readable by <see cref="IFileLockInspector"/>.
 /// <para>
-/// Opened <c>FileShare.Read</c> + <c>DeleteOnClose</c>, so the exclusion is the OS's rather than a
-/// convention and the file vanishes when the holding process exits — including when it CRASHES, so a
-/// stale lock is never a state anyone has to clean up.
+/// The exclusion is the OS's rather than a convention, and it ends when the holding process exits — including
+/// when it CRASHES, so a stale lock is never a state anyone has to clean up. On Windows it is the file's share
+/// mode and the file is deleted on close; on Linux and macOS it is an exclusive <c>flock</c>, and the file stays
+/// for the next acquirer — there, the file existing does not mean the path is held.
 /// </para>
 /// <para>
-/// <b>Windows is the tested target</b>; on POSIX <c>DeleteOnClose</c> has no direct equivalent. ⚠ Over
+/// <b>Windows is the tested target.</b> ⚠ Over
 /// an SMB2+ share, after a HARD failure (the holder crashes, the link drops) the server frees the handle
 /// only when the SESSION TIMES OUT — a stale lease self-heals in tens of seconds, so size the lease
 /// timeout for that.
@@ -97,14 +98,19 @@ public sealed class FilePathLocker : IPathLocker
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
+                // Windows: the share mode is the exclusion (Read, so a diagnostic can still see WHO holds it) and the
+                // file goes with its holder. Unix: .NET takes an flock that is EXCLUSIVE only for FileShare.None — Read
+                // gave every writer a shared one, so two processes held one lease — and the file STAYS: unlinked on
+                // release, a waiter that had already opened it locks the dead inode while a newcomer locks a new one.
+                var unix = !OperatingSystem.IsWindows();
                 var stream = new FileStream(lockFile, new FileStreamOptions
                 {
-                    Mode = FileMode.Create,
+                    Mode = unix ? FileMode.OpenOrCreate : FileMode.Create,
                     Access = FileAccess.Write,
-                    // Read, not None: a diagnostic (or a human) can still see WHO holds it.
-                    Share = FileShare.Read,
-                    Options = FileOptions.DeleteOnClose,
+                    Share = unix ? FileShare.None : FileShare.Read,
+                    Options = unix ? FileOptions.None : FileOptions.DeleteOnClose,
                 });
+                if (unix) stream.SetLength(0);   // truncated only once held: OpenOrCreate leaves a holder's record alone
                 await WriteHolderAsync(stream, canonical, cancellationToken).ConfigureAwait(false);
                 Log(() => $"lease acquired: {canonical}");
                 return new FileLease(canonical, stream, _options);

@@ -1003,6 +1003,8 @@ public class Mp4RemuxerTests
             Assert.True(thrown is OperationCanceledException,
                 "cancelling the path overload must THROW, not answer "
                 + $"{swallowed?.Outcome.ToString() ?? thrown?.GetType().Name} \"{swallowed?.Reason}\"");
+            // And leaves no output, as its documentation says: the destination was created before the walk.
+            Assert.False(File.Exists(destinationPath), "a cancelled remux left a truncated MP4 at the destination");
         }
         finally
         {

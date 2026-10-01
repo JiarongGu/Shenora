@@ -58,6 +58,37 @@ public class AppLifecycleTests
             $"expected at least the elapsed delay, got {report.BackgroundMilliseconds}ms");
     }
 
+    /// <summary>A device asleep stops the monotonic clock (Android, iOS), so the span it measured was the awake part
+    /// only. Modelled by moving the wall clock while the monotonic one barely runs.</summary>
+    [Fact]
+    public async Task Time_the_device_spent_asleep_still_counts_as_time_away()
+    {
+        var recording = new Recording();
+        var now = DateTimeOffset.UtcNow;
+        var lifecycle = new AppLifecycle(recording.Bus, null, () => now);
+
+        lifecycle.ReportStopped();
+        now += TimeSpan.FromMinutes(40);
+        lifecycle.ReportResumed();
+
+        Assert.True((await recording.ResumeAsync()).BackgroundMilliseconds >= TimeSpan.FromMinutes(40).TotalMilliseconds);
+    }
+
+    [Fact]
+    public async Task A_clock_set_back_while_away_cannot_shorten_the_span_below_what_elapsed()
+    {
+        var recording = new Recording();
+        var now = DateTimeOffset.UtcNow;
+        var lifecycle = new AppLifecycle(recording.Bus, null, () => now);
+
+        lifecycle.ReportStopped();
+        await Task.Delay(60);
+        now -= TimeSpan.FromHours(1);
+        lifecycle.ReportResumed();
+
+        Assert.True((await recording.ResumeAsync()).BackgroundMilliseconds >= 40);
+    }
+
     [Fact]
     public async Task A_resume_with_NO_preceding_stop_reports_null_rather_than_zero()
     {

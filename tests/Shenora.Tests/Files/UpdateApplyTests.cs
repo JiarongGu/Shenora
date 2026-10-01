@@ -183,6 +183,49 @@ public class UpdateApplyTests
         Assert.False(status.Pending, "an escaping manifest path was accepted and the stage was published");
     }
 
+    /// <summary>
+    /// An apply interrupted during its removals is FINISHED by the next one. The baseline used to be written before
+    /// the removals, so the re-run diffed the release against itself and the dropped files stayed for good. Interrupted
+    /// here by cancelling from the log line a locked file's failed removal writes (a held file refuses deletion on
+    /// Windows only, hence the guard).
+    /// </summary>
+    [Fact]
+    public async Task An_apply_interrupted_during_removals_finishes_them_on_the_next_run()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var dir = TempDir.Create();
+        Install(dir, Manifest("1.0", ("app.exe", "v1"), ("a-held.dll", "x"), ("b-old.dll", "y")),
+            ("app.exe", "v1"), ("a-held.dll", "x"), ("b-old.dll", "y"));
+
+        using var interrupt = new CancellationTokenSource();
+        var stage = new UpdateStage(new UpdateStageOptions
+        {
+            Root = dir.Combine(".update"),
+            Log = new CancelOn("Could not remove", interrupt),
+        });
+        await StageAsync(stage, Manifest("2.0", ("app.exe", "v2")), ("app.exe", "v2"));
+
+        using (File.Open(dir.Combine("app", "a-held.dll"), FileMode.Open, FileAccess.Read, FileShare.Read))
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stage.ApplyAsync(dir.Combine("app"), interrupt.Token));
+
+        var outcome = await stage.ApplyAsync(dir.Combine("app"));
+
+        Assert.True(outcome.Applied);
+        Assert.False(File.Exists(dir.Combine("app", "a-held.dll")));
+        Assert.False(File.Exists(dir.Combine("app", "b-old.dll")));
+    }
+
+    private sealed class CancelOn(string text, CancellationTokenSource source) : Microsoft.Extensions.Logging.ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+                                TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (formatter(state, exception).Contains(text, StringComparison.Ordinal)) source.Cancel();
+        }
+    }
+
     [Fact]
     public async Task Does_nothing_when_no_stage_is_pending()
     {

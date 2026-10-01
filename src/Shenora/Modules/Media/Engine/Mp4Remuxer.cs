@@ -127,7 +127,10 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
         catch (OperationCanceledException)
         {
             // 🔴 BEFORE THE GENERAL CATCH, or a cancellation is reported as `SourceUnreadable` and the caller
-            // tells the user their video is corrupt.
+            // tells the user their video is corrupt. The destination was created before the walk and is closed by
+            // now; left, it was a truncated MP4 at the path a caller would serve.
+            try { File.Delete(destinationPath); }
+            catch (Exception) { /* held by something else: the cancellation is still the answer */ }
             throw;
         }
         catch (Exception)

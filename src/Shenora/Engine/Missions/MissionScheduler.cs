@@ -33,6 +33,11 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
     private readonly CancellationToken _shutdownToken;
 
     private long _nextId;
+
+    // This scheduler's run, in every id it mints: the durable store keys records by id, and a counter alone restarts at 1
+    // in every process, so a fresh mission took a recovered record's id and recovery's removal of the old id deleted
+    // the new record (and a mission submitted before RecoverAsync overwrote an unrecovered one).
+    private readonly string _run = Guid.NewGuid().ToString("N")[..12];
     private bool _disposed;
 
     /// <summary>
@@ -189,7 +194,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             // SubmitAsync is NOT async, so an unusable definition throws HERE, not on the returned task.
             // Skipped rather than rethrown: abandoning the pass over one bad row leaves every later
             // record unrecovered AND unremoved, so the next boot repeats the whole thing.
-            try { _ = SubmitAsync(request, cancellationToken); }
+            // Not the recovery token: it cancels the PASS, and handed on it would cancel every mission recovered.
+            try { _ = SubmitAsync(request, CancellationToken.None); }
             catch (Exception ex)
             {
                 Log(() => $"mission {record.MissionId} ({record.Kind}) could not be resubmitted " +
@@ -297,8 +303,9 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
                     RemovePendingLocked(node);
                     if (entry.Definition.Key is { } cancelledKey) _byKey.Remove(cancelledKey);
                     entry.TryComplete(MissionOutcome.Cancelled, 0, null);
-                    // The caller cancelled it; its Queued record must not resurrect it at recovery.
-                    if (entry.Durable) _ = ForgetCancelledAsync(entry);
+                    // The caller cancelled it; its Queued record must not resurrect it at recovery. Started OFF this lock:
+                    // once the Queued append has landed, the forget would run the app's store inline, under it.
+                    if (entry.Durable) _ = Task.Run(() => ForgetCancelledAsync(entry));
                     node = next;
                     continue;
                 }
@@ -585,7 +592,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         }
 
         var sequence = Interlocked.Increment(ref _nextId);
-        return new Entry($"m{sequence}", sequence, definition, claims, lanes, cancellationToken);
+        return new Entry($"m{sequence}-{_run}", sequence, definition, claims, lanes, cancellationToken);
     }
 
     private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_options.Log, message, exception: failure);

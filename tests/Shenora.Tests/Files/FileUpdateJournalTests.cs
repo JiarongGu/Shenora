@@ -172,6 +172,95 @@ public class FileUpdateJournalTests : IDisposable
         Assert.Empty(Directory.GetFiles(_root, "*.shenora-bak-*"));   // and no orphaned backup left
     }
 
+    /// <summary>
+    /// 🔴 A move onto a file that already exists, cut off BEFORE it landed. Its undo used to check only that the
+    /// destination existed, which it did all along, so recovery moved the untouched original over the staged file:
+    /// both contents gone. The evidence a move happened is that its source is gone.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]   // died before the move landed: nothing to undo
+    [InlineData(true)]    // died just after: undone
+    public async Task A_move_onto_an_existing_file_recovers_to_both_files_as_they_were(bool landed)
+    {
+        var target = Path.Combine(_root, "moved-to.txt");
+        var staged = Path.Combine(_root, "staged.txt");
+        await File.WriteAllTextAsync(target, "ORIGINAL");
+        await File.WriteAllTextAsync(staged, "NEW");
+
+        var doomed = NewQueue(new CrashingOperations(new SystemFileOperations(), to => to == target, Freeze, after: landed));
+        await doomed.ApplyAsync(new FileUpdate
+        {
+            Changes = [new FileChange.Move(staged, target, Overwrite: true)],
+            Atomicity = FileAtomicity.AllOrNothing,
+        });
+
+        Thaw();
+        Assert.Equal(1, await NewQueue().RecoverAsync());
+        Assert.Equal("ORIGINAL", await File.ReadAllTextAsync(target));
+        Assert.Equal("NEW", await File.ReadAllTextAsync(staged));
+    }
+
+    /// <summary>Fails every move onto one path, as a file something else holds open would.</summary>
+    private sealed class LockedTarget(IFileOperations inner, string locked) : IFileOperations
+    {
+        public ValueTask<bool> FileExistsAsync(string path) => inner.FileExistsAsync(path);
+        public ValueTask<bool> DirectoryExistsAsync(string path) => inner.DirectoryExistsAsync(path);
+        public ValueTask CreateDirectoryAsync(string path) => inner.CreateDirectoryAsync(path);
+        public ValueTask DeleteFileAsync(string path) => inner.DeleteFileAsync(path);
+        public ValueTask DeleteDirectoryAsync(string path, bool recursive) => inner.DeleteDirectoryAsync(path, recursive);
+        public ValueTask MoveFileAsync(string from, string to, bool overwrite) =>
+            to == locked ? throw new IOException("held open") : inner.MoveFileAsync(from, to, overwrite);
+        public ValueTask ReplaceFileAsync(string source, string destination, string backup) =>
+            destination == locked ? throw new IOException("held open") : inner.ReplaceFileAsync(source, destination, backup);
+    }
+
+    /// <summary>
+    /// 🔴 A recovery whose undo could not run KEEPS its entry, so the next one tries again. It was removed regardless,
+    /// and the update counted resolved: the half-applied tree and its orphaned backup were permanent.
+    /// </summary>
+    [Fact]
+    public async Task A_recovery_that_could_not_undo_keeps_its_entry_for_the_next_one()
+    {
+        var target = Path.Combine(_root, "landed.txt");
+        var temp = Path.Combine(_root, "landed.tmp");
+        await File.WriteAllTextAsync(target, "ORIGINAL");
+        await File.WriteAllTextAsync(temp, "NEW");
+        await NewQueue(new CrashingOperations(new SystemFileOperations(), to => to == target, Freeze, after: true)).ApplyAsync(new FileUpdate
+        {
+            Changes = [new FileChange.Replace(temp, target)],
+            Atomicity = FileAtomicity.AllOrNothing,
+        });
+        Thaw();
+
+        Assert.Equal(0, await NewQueue(new LockedTarget(new SystemFileOperations(), target)).RecoverAsync());
+        Assert.Single(Directory.GetFiles(JournalDir, "*.journal"));   // still owed
+        Assert.Equal(1, await NewQueue().RecoverAsync());              // the lock gone, the next one finishes it
+        Assert.Equal("ORIGINAL", await File.ReadAllTextAsync(target));
+        Assert.Empty(Directory.GetFiles(JournalDir, "*.journal"));
+    }
+
+    /// <summary>A non-recursive delete of a folder that is not empty FAILS under AllOrNothing, as it does change by change.
+    /// Staged, it was moved aside, its empty-only removal then failed in silence, and the update reported success with the
+    /// folder gone from its path.</summary>
+    [Fact]
+    public async Task A_non_recursive_delete_of_a_full_folder_fails_and_leaves_it_in_place()
+    {
+        var folder = Path.Combine(_root, "full");
+        Directory.CreateDirectory(folder);
+        await File.WriteAllTextAsync(Path.Combine(folder, "inside.txt"), "kept");
+
+        var result = await NewQueue().ApplyAsync(new FileUpdate
+        {
+            Changes = [new FileChange.Delete(folder, Recursive: false)],
+            Atomicity = FileAtomicity.AllOrNothing,
+            Retry = new Shenora.Engine.RetryPolicy { Attempts = 1 },
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("kept", await File.ReadAllTextAsync(Path.Combine(folder, "inside.txt")));
+        Assert.Empty(Directory.GetDirectories(_root, "full.shenora-del-*"));
+    }
+
     [Fact]
     public async Task A_deleted_file_comes_back_after_a_crash()
     {

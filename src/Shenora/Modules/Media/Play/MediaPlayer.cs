@@ -85,11 +85,11 @@ public sealed class MediaPlayerOptions
 /// across all three shells; its display and sound are a page element. It talks to the page over
 /// <see cref="IEventBus"/>, and the page answers by calling <see cref="Report"/> from its IPC route.
 /// <para>
-/// 🔴 <b>That return route is the APP's to write and the kit ships no facade for it</b> — the page posts
-/// <c>PLAYER_REPORT</c> on <see cref="MediaAccessOptions.Module"/> and something must turn it into a
-/// <see cref="Report"/> call. <see cref="OpenAsync"/> completes on the first non-<c>Opening</c> report and
-/// on nothing else, so skipping the route makes every open fail after
-/// <see cref="MediaPlayerOptions.OpenTimeout"/>. <c>docs/ADOPTION.md</c> has the four-line route.
+/// 🔴 <b>Both ends ship, and the page must use them</b>: the page binds its element with <c>useMediaPlayer</c> from
+/// <c>@shenora/react</c>, which posts <c>PLAYER_REPORT</c> on <see cref="MediaAccessOptions.Module"/>, and
+/// <see cref="MediaPlayerModule"/> — registered by default — turns that into a <see cref="Report"/> call.
+/// <see cref="OpenAsync"/> completes on the first non-<c>Opening</c> report and on nothing else, so a page with no
+/// bound element makes every open fail after <see cref="MediaPlayerOptions.OpenTimeout"/>.
 /// </para>
 /// <para>
 /// It does NOT replace <c>IosMediaPlayer</c>/<c>AndroidMediaPlayer</c>: a page element cannot play while iOS
@@ -239,8 +239,9 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
                 Fail("The page never reported on the media source.");
                 throw new MediaPlayerException(
                     $"The page did not report on the media source within {_options.OpenTimeout.TotalSeconds:0.#}s. " +
-                    $"The usual cause is that nothing routes the page's '{MediaPlayerModule.ReportType}' message on " +
-                    $"module '{_options.Access.Module}' to MediaPlayer.Report — see docs/ADOPTION.md. " +
+                    "The usual cause is a page with no element bound through useMediaPlayer, or a composition " +
+                    $"without the kit's MediaPlayerModule answering '{MediaPlayerModule.ReportType}' on module " +
+                    $"'{_options.Access.Module}'. " +
                     "Raise MediaPlayerOptions.OpenTimeout if the source is genuinely this slow.");
             }
             throw;

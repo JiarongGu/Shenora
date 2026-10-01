@@ -230,7 +230,9 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                 // swallowed every step, so a caller branching on RolledBack was told "nothing changed"
                 // over a half-applied tree — the exact outcome AllOrNothing exists to make impossible.
                 var rolledBack = await RollbackAsync(undo).ConfigureAwait(false);
-                if (journal is not null)
+                // KEPT when the rollback did not finish, so recovery tries again: removed, the half-applied tree
+                // would be permanent.
+                if (journal is not null && rolledBack)
                     await Guarded(() => new ValueTask(journal.RemoveAsync(updateId, CancellationToken.None)))
                         .ConfigureAwait(false);
                 return new FileUpdateResult(0, index, ex, rolledBack, holders);
@@ -267,17 +269,27 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         foreach (var entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            bool done;
             if (entry.Stage == FileUpdateStage.Applying)
             {
                 Log(() => $"recovering interrupted update {entry.UpdateId} (started {entry.StartedUtc:u}): rolling back {entry.Undo.Count} step(s)");
-                await RollbackAsync(entry.Undo).ConfigureAwait(false);
+                done = await RollbackAsync(entry.Undo).ConfigureAwait(false);
             }
             else
             {
                 Log(() => $"recovering interrupted update {entry.UpdateId}: finishing {entry.Staged.Count} staged deletion(s)");
-                foreach (var commit in entry.Staged) await Guarded(() => RunUndoAsync(commit)).ConfigureAwait(false);
+                done = true;
+                foreach (var commit in entry.Staged)
+                    if (!await Guarded(() => RunUndoAsync(commit)).ConfigureAwait(false)) done = false;
             }
 
+            // An entry whose steps did not all run stays for the next recovery (each step checks the world first, so
+            // running it again is safe); removed, what it was owed could never be finished.
+            if (!done)
+            {
+                Log(() => $"update {entry.UpdateId} could not be fully recovered; its journal entry stays for the next attempt");
+                continue;
+            }
             await journal.RemoveAsync(entry.UpdateId, cancellationToken).ConfigureAwait(false);
             resolved++;
         }
@@ -411,6 +423,13 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                         ? _operations.DeleteFileAsync(delete.Path)
                         : _operations.DeleteDirectoryAsync(delete.Path, delete.Recursive));
 
+                // Refused here, as the direct delete refuses it: moved aside first, the folder's empty-only removal
+                // failed after the set had landed, and the update reported success with the folder gone from its path.
+                if (isDirectory && !delete.Recursive
+                    && !await _operations.DirectoryIsEmptyAsync(delete.Path).ConfigureAwait(false))
+                    return new PlannedChange([], [], () => throw new IOException(
+                        $"The directory '{delete.Path}' is not empty, and the delete was not recursive."));
+
                 // STAGED: a delete cannot be undone from nothing, so under AllOrNothing it is a move
                 // aside now and a real delete only once everything lands.
                 var aside = SidecarPath(delete.Path, "del");
@@ -464,10 +483,18 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
 
             case FileUndoKind.RestoreBackup:
             case FileUndoKind.MoveBack:
-                if (step.Source is { } source
-                    && (await _operations.FileExistsAsync(source).ConfigureAwait(false)
-                        || await _operations.DirectoryExistsAsync(source).ConfigureAwait(false)))
-                    await _operations.MoveFileAsync(source, step.Target, overwrite: true).ConfigureAwait(false);
+                if (step.Source is not { } source
+                    || !(await _operations.FileExistsAsync(source).ConfigureAwait(false)
+                         || await _operations.DirectoryExistsAsync(source).ConfigureAwait(false)))
+                    return;
+                // A move happened only if what it moved is gone from where it was. Its destination alone proves
+                // nothing: a move onto an existing file (or one refused because the file was there) leaves the
+                // destination in place, and moving that back destroyed the original and the staged file both.
+                if (step.Kind == FileUndoKind.MoveBack
+                    && (await _operations.FileExistsAsync(step.Target).ConfigureAwait(false)
+                        || await _operations.DirectoryExistsAsync(step.Target).ConfigureAwait(false)))
+                    return;
+                await _operations.MoveFileAsync(source, step.Target, overwrite: true).ConfigureAwait(false);
                 return;
 
             case FileUndoKind.RemoveCreatedDirectory:
@@ -506,6 +533,7 @@ internal interface IFileOperations
 {
     ValueTask<bool> FileExistsAsync(string path);
     ValueTask<bool> DirectoryExistsAsync(string path);
+    ValueTask<bool> DirectoryIsEmptyAsync(string path) => ValueTask.FromResult(!Directory.EnumerateFileSystemEntries(path).Any());
     ValueTask CreateDirectoryAsync(string path);
     ValueTask MoveFileAsync(string from, string to, bool overwrite);
     ValueTask ReplaceFileAsync(string source, string destination, string backup);

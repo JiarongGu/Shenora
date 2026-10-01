@@ -62,6 +62,16 @@ public class DerivedCacheKeyTests
                      DerivedCacheKey.For("C:/media/film.mkv", 1234, local));
     }
 
+    /// <summary>A remote source has no length or mtime, so its name is the whole key, and a url path is case-sensitive.</summary>
+    [Fact]
+    public void Two_names_that_differ_only_in_case_are_two_sources()
+    {
+        Assert.NotEqual(DerivedCacheKey.ForName("https://cdn.example/Clip.mp4", "remote"),
+                        DerivedCacheKey.ForName("https://cdn.example/clip.mp4", "remote"));
+        Assert.Equal(DerivedCacheKey.ForName("https://cdn.example/Clip.mp4", "remote"),
+                     DerivedCacheKey.ForName("https://cdn.example/Clip.mp4", "remote"));
+    }
+
     [Fact]
     public void A_blank_path_or_a_negative_length_is_a_caller_bug()
     {

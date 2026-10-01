@@ -328,6 +328,60 @@ public class MissionSchedulerBehaviourTests
         Assert.Contains("w-running", store.Removed);
     }
 
+    /// <summary>
+    /// 🔴 Ids are unique across processes, because the store keys records by them. A counter that restarts in every
+    /// process gave the resubmitted mission the very id it recovered from ("m1"), and recovery's removal of that old id
+    /// then deleted the NEW mission's record: queued durable work no longer saved anywhere.
+    /// </summary>
+    [Fact]
+    public async Task A_recovered_mission_never_takes_an_id_its_store_already_holds()
+    {
+        var store = new RecordingStore();
+        store.Pending.Add(new MissionRecord("m1", "scan", null, MissionState.Queued, DateTimeOffset.UtcNow));
+        var release = new TaskCompletionSource();
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions { QueueStore = store });
+
+        try
+        {
+            await scheduler.RecoverAsync(_ => new MissionDefinition { Durable = true, Run = (_, _) => release.Task });
+
+            MissionRecord queued;
+            lock (store.Saved) queued = Assert.Single(store.Saved, r => r.State == MissionState.Queued);
+            Assert.NotEqual("m1", queued.MissionId);
+            lock (store.Removed) Assert.DoesNotContain(queued.MissionId, store.Removed);
+        }
+        finally
+        {
+            release.TrySetResult();   // or a failed assertion leaves the scheduler's dispose waiting on the mission
+        }
+    }
+
+    /// <summary>RecoverAsync's token cancels the recovery PASS ("Cancels recovery"), never the missions it recovered:
+    /// handed on, a recovery bounded by a timeout cancelled every recovered mission still waiting when it fired.</summary>
+    [Fact]
+    public async Task Cancelling_recovery_afterwards_leaves_the_recovered_missions_queued()
+    {
+        var store = new RecordingStore();
+        store.Pending.Add(new MissionRecord("old-1", "scan", null, MissionState.Queued, DateTimeOffset.UtcNow));
+        var release = new TaskCompletionSource();
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions { GlobalLaneCapacity = 1, QueueStore = store });
+        try
+        {
+            // The lane's one permit is taken, so the recovered mission waits behind it.
+            _ = scheduler.SubmitAsync(new MissionDefinition { Kind = "blocker", Run = (_, _) => release.Task });
+            using var recovery = new CancellationTokenSource();
+            await scheduler.RecoverAsync(_ => new MissionDefinition { Kind = "scan", Run = (_, _) => Task.CompletedTask }, recovery.Token);
+
+            recovery.Cancel();
+            await Task.Delay(200);
+            Assert.Contains(scheduler.Snapshot(), m => m.Kind == "scan" && !m.IsRunning);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+    }
+
     [Fact]
     public async Task A_recovered_record_is_REMOVED_so_it_cannot_be_recovered_again_next_boot()
     {

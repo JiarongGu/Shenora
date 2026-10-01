@@ -53,8 +53,8 @@ public sealed class ResourcePack
 
         // Rejected rather than sanitised: rewriting a name would make two different ones collide on
         // one directory.
-        if (HasPathSeparator(name)) throw new ArgumentException("A pack name may not contain a path separator.", nameof(name));
-        if (HasPathSeparator(version)) throw new ArgumentException("A pack version may not contain a path separator.", nameof(version));
+        if (!IsPlainFolderName(name)) throw new ArgumentException($"A pack name must be one plain folder name; '{name}' is not.", nameof(name));
+        if (!IsPlainFolderName(version)) throw new ArgumentException($"A pack version must be one plain folder name; '{version}' is not.", nameof(version));
 
         Name = name;
         Version = version;
@@ -189,9 +189,20 @@ public sealed class ResourcePack
         catch (Exception) { /* best effort — CreateDirectory + overwrite extraction covers the rest */ }
     }
 
-    private static bool HasPathSeparator(string value) =>
-        value.Contains('/', StringComparison.Ordinal)
-        || value.Contains('\\', StringComparison.Ordinal)
-        || value.Contains(Path.DirectorySeparatorChar)
-        || value.Contains(Path.AltDirectorySeparatorChar);
+    /// <summary>
+    /// One plain folder name: no separator, not <c>.</c> or <c>..</c>, nothing the file system refuses in a name, and
+    /// unchanged by the platform's own normalisation. A separator was the only check, and <c>..</c> passed it: a version of
+    /// <c>..</c> made the pack's directory the ROOT, which staging deleted whole, and a name of <c>..</c> made pruning sweep
+    /// the root's parent. On Windows <c>C:</c> is the current directory and a trailing dot collapses into another folder.
+    /// </summary>
+    private static bool IsPlainFolderName(string value)
+    {
+        if (value is "." or ".." || Path.IsPathRooted(value)
+            || value.Contains('/', StringComparison.Ordinal) || value.Contains('\\', StringComparison.Ordinal)
+            || value.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            return false;
+        // Asked of the OS rather than enumerated: the name must come back unchanged under a fixed base.
+        var probe = Path.Combine(Path.GetFullPath(Path.GetTempPath()), value);
+        return Path.GetFullPath(probe) == probe;
+    }
 }

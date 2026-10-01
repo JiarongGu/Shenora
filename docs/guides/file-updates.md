@@ -165,8 +165,8 @@ An applier that only asks "is an update waiting" may test for the file and read 
 every staged file has been verified, so a crash mid-download leaves files and no marker, and the next run
 restages. An applier that scans `staged/` for content instead will eventually act on a half-downloaded one.
 
-> ⚠ **Take this half deliberately, not by default.** The strong half of the story is the journaled,
-> recoverable APPLY (`FileUpdateQueue`, `RecoverAsync`, `AllOrNothing`) — and that is exactly the half a
+> ⚠ **Take this half deliberately, not by default.** The strong half of the story is the APPLY: the stage stays
+> until `ApplyAsync` has finished, so an apply interrupted part-way is completed by running it again — and that is exactly the half a
 > frozen applier already owns and cannot hand over. If your applier is already installed on your whole user
 > base, adopting the stage is cheap and adopting the apply is a migration question the kit does not answer
 > for you yet (`Shenora.Launcher` assumes it is the applier from day one, which is true only for a product

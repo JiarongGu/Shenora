@@ -157,10 +157,26 @@ public class ResourcePackTests : IDisposable
     [InlineData("../engine")]
     [InlineData("a/b")]
     [InlineData("a\\b")]
-    public void A_name_or_version_carrying_a_separator_is_REJECTED_not_sanitised(string bad)
+    [InlineData("..")]   // 🔴 {Root}/engine/.. IS the root, which staging then deleted whole
+    [InlineData(".")]
+    public void A_name_or_version_that_is_not_one_plain_folder_name_is_REJECTED_not_sanitised(string bad)
     {
         var options = new ResourcePackOptions { Root = _root };
         // Rejected, because silently rewriting it would let two different names collide on one directory.
+        Assert.Throws<ArgumentException>(() => new ResourcePack(bad, "1.0.0", options));
+        Assert.Throws<ArgumentException>(() => new ResourcePack("engine", bad, options));
+    }
+
+    /// <summary>On Windows a drive-relative "C:" is the CURRENT directory, and a trailing dot or a run of dots is
+    /// normalised away into another folder or the parent: none of them is one plain folder name there.</summary>
+    [Theory]
+    [InlineData("C:")]
+    [InlineData("v1.")]
+    [InlineData("...")]
+    public void On_Windows_a_name_that_normalises_into_another_folder_is_rejected(string bad)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var options = new ResourcePackOptions { Root = _root };
         Assert.Throws<ArgumentException>(() => new ResourcePack(bad, "1.0.0", options));
         Assert.Throws<ArgumentException>(() => new ResourcePack("engine", bad, options));
     }

@@ -171,6 +171,9 @@ public sealed class UpdateStage
     /// <summary>Delete the whole staging area, marker included. Safe when nothing is staged.</summary>
     public void Clear()
     {
+        // The marker first: a clear interrupted part-way otherwise left a pending stage whose manifest was gone,
+        // which every later apply refused.
+        if (File.Exists(MarkerPath)) File.Delete(MarkerPath);
         if (Directory.Exists(_options.Root)) Directory.Delete(_options.Root, recursive: true);
     }
 
@@ -357,21 +360,9 @@ public sealed class UpdateStage
             written.Add(relative.Replace('\\', '/'));
         }
 
-        // The new baseline, written even outside the tree since the next apply computes removals from it.
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(baselinePath)!);
-            File.Copy(stagedManifestPath, baselinePath, overwrite: true);
-            if (IsUnder(baselinePath, installRoot))
-                written.Add(Path.GetRelativePath(installRoot, baselinePath).Replace('\\', '/'));
-        }
-        catch (Exception ex)
-        {
-            // The payload is already overlaid; a missing baseline degrades to "remove nothing next time".
-            Log($"[Shenora.Engine.Update] The payload applied but the baseline could not be written to " +
-                $"'{baselinePath}' ({ex.GetType().Name}) — the next apply will compute no removals.");
-        }
-
+        // Removals run BEFORE the new baseline is written: an apply interrupted here keeps the stage, and running it
+        // again recomputes the same removals from the old baseline. Written first, the baseline already matched the
+        // release, so the re-run found nothing to remove and the dropped files stayed for good.
         var removed = new List<string>();
         foreach (var path in ManifestDiff.Compute(installed, release).Removed)
         {
@@ -395,6 +386,27 @@ public sealed class UpdateStage
                 Log($"[Shenora.Engine.Update] Could not remove '{path}': {ex.GetType().Name}");
             }
         }
+
+        // The new baseline, written even outside the tree since the next apply computes removals from it.
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(baselinePath)!);
+            File.Copy(stagedManifestPath, baselinePath, overwrite: true);
+            if (IsUnder(baselinePath, installRoot))
+                written.Add(Path.GetRelativePath(installRoot, baselinePath).Replace('\\', '/'));
+            else
+                FlushToDisk(baselinePath);
+        }
+        catch (Exception ex)
+        {
+            // The payload is already overlaid; a missing baseline degrades to "remove nothing next time".
+            Log($"[Shenora.Engine.Update] The payload applied but the baseline could not be written to " +
+                $"'{baselinePath}' ({ex.GetType().Name}) — the next apply will compute no removals.");
+        }
+
+        // On disk before the stage goes: the stage is the only record of what this apply owes, and a power cut after
+        // Clear could otherwise leave files that were never written past the cache.
+        foreach (var relative in written) FlushToDisk(Path.Combine(installRoot, relative));
 
         Clear();
         Log($"[Shenora.Engine.Update] Applied version {release.Version}: {written.Count} written, {removed.Count} removed.");
@@ -526,6 +538,20 @@ public sealed class UpdateStage
         await using var stream = File.OpenRead(path);
         var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
         return Convert.ToHexStringLower(hash);
+    }
+
+    /// <summary>Best effort: a file the apply cannot reopen for writing (read-only, say) is left to the cache.</summary>
+    private void FlushToDisk(string path)
+    {
+        try
+        {
+            using var handle = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+            handle.Flush(flushToDisk: true);
+        }
+        catch (Exception ex)
+        {
+            Log($"[Shenora.Engine.Update] Could not flush '{path}' to disk: {ex.GetType().Name}");
+        }
     }
 
     private void Log(string message) => AppCallback.Log(_options.Log, () => message);

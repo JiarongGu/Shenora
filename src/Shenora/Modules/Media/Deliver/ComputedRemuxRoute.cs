@@ -454,8 +454,9 @@ internal sealed class ComputedRemuxRoute : IDisposable
                     return MediaPlanOutcome.Failed;
 
                 case PlanState.Claimed:
-                    // We own the walk. AWAITED here — unlike the request path, this is an app thread.
-                    await SubmitGuardedAsync(PlanMission(key, contained), key).ConfigureAwait(false);
+                    // We own the walk. AWAITED here — unlike the request path, this is an app thread. A cancel stops
+                    // this wait only; the walk runs on and records its answer for the next caller.
+                    await SubmitGuardedAsync(PlanMission(key, contained), key).WaitAsync(cancellationToken).ConfigureAwait(false);
                     break;
 
                 default:

@@ -1459,6 +1459,39 @@ public class ComputedRemuxRouteTests : IDisposable
 
     // ── warming a plan before the page asks (D72) ─────────────────────────────────────────────────────
 
+    /// <summary>Cancelling stops the WAIT even when this call owns the walk, and the walk still lands for the next one.
+    /// The owning branch awaited the walk with no token, so a cancel did nothing until the whole film was read.</summary>
+    [Fact]
+    public async Task Cancelling_PlanAsync_stops_the_wait_on_its_own_walk_and_the_walk_still_lands()
+    {
+        var path = Stage("film.mkv", Film());
+        using var parked = new ManualResetEventSlim(initialState: false);
+        using var walking = new ManualResetEventSlim(initialState: false);
+
+        var interceptor = new FakeInterceptor();
+        using var route = ComputedRemuxRoute.Use(interceptor, _scheduler, Access(), (source, token) =>
+        {
+            walking.Set();
+            parked.Wait(TimeSpan.FromSeconds(20));   // bounded, so a broken run ends rather than hanging the suite
+            return Mp4Remuxer.Plan(source, token);
+        });
+
+        using var cancel = new CancellationTokenSource();
+        var waiting = route.PlanAsync(path, cancel.Token);
+        try
+        {
+            Assert.True(walking.Wait(TimeSpan.FromSeconds(20)), "the walk never started");
+            cancel.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting.WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+        finally
+        {
+            parked.Set();
+        }
+
+        Assert.Equal(MediaPlanOutcome.Ready, await route.PlanAsync(path, CancellationToken.None));
+    }
+
     /// <summary>
     /// 🔴 <b>THE CLAIM D72 IS MADE OF, and the reason there is no readiness event: after
     /// <c>PlanAsync</c>, an element's FIRST request is a 206.</b>

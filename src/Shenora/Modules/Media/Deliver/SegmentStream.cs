@@ -283,8 +283,7 @@ internal sealed class SegmentStream : IDisposable
     private Source? OpenRemote(RemoteMediaSource remote, CancellationToken cancellationToken)
     {
         // ⚠ Keyed on IDENTITY, falling back to the url — see RemoteMediaSource.Identity.
-        var key = DerivedCacheKey.For(
-            remote.Identity ?? remote.Url.AbsoluteUri, 0, DateTime.UnixEpoch, "hls-remote");
+        var key = DerivedCacheKey.ForName(remote.Identity ?? remote.Url.AbsoluteUri, "hls-remote");
 
         // 🔴 No opener, no bytes: this route can serve a manifest for such a source and never a segment.
         if (remote.Open is not { } open)

@@ -283,7 +283,7 @@ public static class MediaConversionExtensions
                 }
                 source = remote.AbsoluteUri;
                 // The url is all there is to key on — see AllowRemoteSource's remarks.
-                key = DerivedCacheKey.For(source, 0, DateTime.UnixEpoch, "remote");
+                key = DerivedCacheKey.ForName(source, "remote");
             }
             else
             {

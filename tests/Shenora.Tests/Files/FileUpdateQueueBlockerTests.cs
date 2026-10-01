@@ -29,6 +29,10 @@ public class FileUpdateQueueBlockerTests
 
         public ValueTask<bool> FileExistsAsync(string path) => ValueTask.FromResult(Files.Contains(path));
         public ValueTask<bool> DirectoryExistsAsync(string path) => ValueTask.FromResult(Directories.Contains(path));
+        public ValueTask<bool> DirectoryIsEmptyAsync(string path) => ValueTask.FromResult(!HasChildren(path));
+
+        /// <summary>Something inside every tree is held open, so no directory delete succeeds.</summary>
+        public bool TreesHeldOpen { get; init; }
 
         public ValueTask CreateDirectoryAsync(string path)
         {
@@ -70,6 +74,7 @@ public class FileUpdateQueueBlockerTests
         public ValueTask DeleteDirectoryAsync(string path, bool recursive)
         {
             Log.Add($"rmdir {path} recursive={recursive}");
+            if (TreesHeldOpen) throw new IOException($"A file under '{path}' is in use.");
             if (!recursive && HasChildren(path))
                 throw new IOException($"The directory is not empty: '{path}'.");
             foreach (var child in Files.Where(f => f.StartsWith(path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)).ToList())
@@ -138,9 +143,8 @@ public class FileUpdateQueueBlockerTests
     {
         // ⚠ The mirror of the test above, and the reason the orphan was permanent: the entry recording
         // that a deletion was still owed used to be removed even when the deletion failed, so RecoverAsync
-        // could never see it again. A NON-recursive request over a non-empty tree is the honest failure —
-        // the caller asked for a delete that cannot succeed, and it must not be silently upgraded.
-        var fs = new Fs();
+        // could never see it again. A file held open inside the tree is what makes the late delete fail.
+        var fs = new Fs { TreesHeldOpen = true };
         var root = Abs("keep");
         fs.Directories.Add(root);
         fs.Files.Add(Path.Combine(root, "child.txt"));
@@ -151,7 +155,7 @@ public class FileUpdateQueueBlockerTests
         await queue.ApplyAsync(new FileUpdate
         {
             Atomicity = FileAtomicity.AllOrNothing,
-            Changes = [new FileChange.Delete(root) { Recursive = false }],
+            Changes = [new FileChange.Delete(root) { Recursive = true }],
         });
 
         Assert.NotEmpty(journal.Entries);

@@ -326,6 +326,15 @@ Once in five `verify` runs (2026-10-01), `vitest (cli package)` ended on an unha
 passed 5 of 5. A forks-pool worker whose IPC channel closed under load, unattributed. If it recurs: count it under
 `verify` and alone, then try `pool: 'threads'` in `src/Shenora.Cli/vitest.config.ts` as the A/B.
 
+### 🟡 A background handoff resumes a film the user had paused
+
+`BackgroundPlaybackTransfer.ToBackgroundAsync` hands off a `Paused` player as well as a `Playing` one, because the
+platform pauses a backgrounded element itself before `Window.Stopped` (`docs/design/mobile-shells.md`). So a film the
+user paused starts playing natively when they leave the app. Found in review, not seen live.
+
+- [ ] Measure on Android whether the platform's pause arrives while `document.hidden` is already true; if it does,
+  `useMediaPlayer` can tell that pause from the user's, and the transfer can hand off only a film that was playing.
+
 ### 🟡 A request that completed as a cancel landed is recorded as cancelled
 
 A route that has already answered, whose `CANCEL` lands before the dispatcher ends its scope, is recorded
