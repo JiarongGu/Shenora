@@ -250,9 +250,11 @@ internal static class SessionBrowser
         if (filter is null && bundlePrefix is null) return;
 
         // ONE filter registration, widened only as far as needed: a blocking policy must see every
-        // request; a bundle alone only needs its own prefix.
+        // request; a bundle alone only needs its own prefix. Every request SOURCE, named: the deprecated
+        // two-argument overload is documented as the main frame's alone (measured on the current runtime, it
+        // already passed same- and cross-origin iframes, so this states the intent rather than fixing one).
         core.AddWebResourceRequestedFilter(
-            filter is not null ? "*" : bundlePrefix + "*", CoreWebView2WebResourceContext.All);
+            filter is not null ? "*" : bundlePrefix + "*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
 
         // ONCE per session. The filter runs on every subresource of every page, so a predicate that
         // throws for one shape would otherwise write a log line per image on the page.

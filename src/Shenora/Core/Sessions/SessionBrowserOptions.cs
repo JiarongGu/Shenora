@@ -28,7 +28,8 @@ public record SessionBrowserOptions
     /// </summary>
     public bool KeepAliveInBackground { get; init; }
 
-    /// <summary>Mute all audio and block autoplay without a user gesture (default true).</summary>
+    /// <summary>Mute all audio (default true). WebView2 also blocks autoplay without a user gesture; the Chromium shell
+    /// mutes only, since its autoplay policy is a switch of the whole process.</summary>
     public bool MuteAudio { get; init; } = true;
 
     /// <summary>
@@ -123,7 +124,8 @@ public sealed record SessionWindowRequest(string Uri, bool UserInitiated)
 /// <param name="Kind">What was asked, by WebView2's name for it (<c>Camera</c>, <c>Geolocation</c>, <c>ClipboardRead</c>, …),
 /// which the Chromium shell uses too.</param>
 /// <param name="Uri">The page that asked.</param>
-/// <param name="UserInitiated">True when a real gesture triggered it.</param>
+/// <param name="UserInitiated">True when a real gesture triggered it. ⚠ Always false in the Chromium shell, whose engine
+/// does not say: do not grant on it alone.</param>
 public sealed record SessionPermissionRequest(string Kind, string Uri, bool UserInitiated)
 {
     /// <summary>True = grant. False (the default) = deny.</summary>
@@ -131,7 +133,7 @@ public sealed record SessionPermissionRequest(string Kind, string Uri, bool User
 }
 
 /// <summary>A script dialog the page opened, and what to do about it. Mutate and return; nothing is awaited.</summary>
-/// <param name="Kind">Alert, confirm, prompt or beforeunload, as the engine reports it.</param>
+/// <param name="Kind"><c>Alert</c>, <c>Confirm</c>, <c>Prompt</c> or <c>Beforeunload</c>, the same on every shell.</param>
 /// <param name="Uri">The page that opened it.</param>
 /// <param name="Message">The text the page passed.</param>
 /// <param name="DefaultText">A <c>prompt</c>'s pre-filled text; empty otherwise.</param>

@@ -337,10 +337,12 @@ public sealed class InteractiveSession
     /// </summary>
     /// <param name="profileDirectory">
     /// The profile to wipe. Build it with <see cref="ComposeProfileDirectory"/>; a path containing
-    /// <c>..</c>, or one that IS a volume root, is refused.
+    /// <c>..</c>, one that IS a volume root, or a browser's whole data folder (the Chromium shell's
+    /// <c>ProfilesDirectory</c>) is refused.
     /// </param>
     /// <returns>True when the tree is gone (including when it was never there).</returns>
-    /// <exception cref="ArgumentException">The path contains a <c>..</c> segment or is a volume root.</exception>
+    /// <exception cref="ArgumentException">The path contains a <c>..</c> segment, is a volume root, or is a browser's
+    /// whole data folder.</exception>
     public static bool ClearProfile(string profileDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileDirectory);
@@ -356,6 +358,12 @@ public sealed class InteractiveSession
         var full = Path.GetFullPath(profileDirectory);
         if (string.Equals(full, Path.GetPathRoot(full), StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("profileDirectory must not be a volume root", nameof(profileDirectory));
+        // ⚠ AND A BROWSER'S WHOLE DATA FOLDER, which holds Chromium's "Local State" directly; a profile never does (and a
+        // WebView2 user data folder keeps it a level down). The Chromium shell's ProfilesDirectory is one, and passed
+        // here instead of a profile composed inside it, this deleted every profile and the app's own browser state.
+        if (File.Exists(Path.Combine(full, "Local State")))
+            throw new ArgumentException("profileDirectory is a browser's whole data folder, not one profile in it: "
+                                        + "compose the profile with ComposeProfileDirectory", nameof(profileDirectory));
 
         try
         {

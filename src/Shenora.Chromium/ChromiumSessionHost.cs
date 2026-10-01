@@ -85,7 +85,7 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
                     Alive();
                     return Create(definition, profile, (_cef_request_context_t*)context, owned: shared is null);
                 },
-                browser => ((ChromiumSessionBrowser)browser).Ready,
+                browser => Task.WhenAll(((ChromiumSessionBrowser)browser).Ready, ((ChromiumSessionBrowser)browser).FirstPage),
                 browser => _ui.InvokeAsync(browser.Close, CancellationToken.None), abandon);
         }
         catch (Exception ex)
@@ -144,14 +144,22 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
             runtime_style = cef_runtime_style_t.CEF_RUNTIME_STYLE_ALLOY,
         };
         var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
-        // No first page, as a WebView2 has none: an about:blank loading as the browser was made finished after the first
-        // lease's navigation had begun, which took it for its own (measured from the feed: the title read empty).
-        var url = default(_cef_string_utf16_t);
-        // The call consumes a reference to the context; ours stays.
-        ((_cef_base_ref_counted_t*)context)->add_ref((_cef_base_ref_counted_t*)context);
-        var made = Cef.cef_browser_host_create_browser_sync(&windowInfo, browser.ClientForCef(), &url, &settings, null, context);
+        // On about:blank, and READY only once that page has loaded (CreateAsync awaits FirstPage): loading as the browser
+        // was made, it finished after the first lease's navigation had begun, which took it for its own (measured from
+        // the feed on Linux: the title read empty). Made with no page instead, a windowless browser on Windows never
+        // answered its DevTools setup, and every session timed out (measured).
+        _cef_browser_t* made;
+        const string blank = "about:blank";
+        fixed (char* u = blank)
+        {
+            var url = CefStrings.View(u, blank.Length);
+            // The call consumes a reference to the context; ours stays.
+            ((_cef_base_ref_counted_t*)context)->add_ref((_cef_base_ref_counted_t*)context);
+            made = Cef.cef_browser_host_create_browser_sync(&windowInfo, browser.ClientForCef(), &url, &settings, null, context);
+        }
         if (made == null)
         {
+            browser.NeverMade();   // its client, which nothing would ever retire, as the window path already says
             if (owned) Release(context);
             throw new InvalidOperationException($"Chromium would not make a session browser (profile '{profile}').");
         }

@@ -291,6 +291,28 @@ public class InteractiveSessionTests
         Assert.True(InteractiveSession.ClearProfile(dir));
     }
 
+    /// <summary>The Chromium shell's ProfilesDirectory is CEF's whole data folder, and passed instead of a profile in it,
+    /// the recursive delete took every profile and the app's own browser state.</summary>
+    [Fact]
+    public void ClearProfile_refuses_a_browsers_whole_data_folder()
+    {
+        var root = Path.Combine(AppContext.BaseDirectory, "login-tests", "cef-root-" + Guid.NewGuid().ToString("N"));
+        var profile = InteractiveSession.ComposeProfileDirectory(root, "provider.account");
+        Directory.CreateDirectory(profile);
+        File.WriteAllText(Path.Combine(root, "Local State"), "{}");
+        File.WriteAllText(Path.Combine(profile, "Cookies"), "x");
+        try
+        {
+            Assert.Throws<ArgumentException>(() => InteractiveSession.ClearProfile(root));
+            Assert.True(File.Exists(Path.Combine(root, "Local State")));
+            Assert.True(InteractiveSession.ClearProfile(profile));   // the profile composed inside it still clears
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void ClearProfile_REPORTS_a_profile_it_could_not_clear()
     {

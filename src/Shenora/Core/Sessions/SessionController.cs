@@ -120,13 +120,18 @@ public sealed class SessionController
             throw new InvalidOperationException($"Navigation refused by the navigation guard: {uri.Host}");
 
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnNav(SessionNavigationResult _) => done.TrySetResult();
+        var target = uri.ToString();
+        void OnNav(SessionNavigationResult result)
+        {
+            // Not the abort of the navigation this one replaced (SessionNavigation.Superseded).
+            if (!SessionNavigation.Superseded(result, target)) done.TrySetResult();
+        }
         _browser.NavigationCompleted += OnNav;
         try
         {
             using var overall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             overall.CancelAfter(NavigationCap);   // a dead renderer never completes a navigation
-            _browser.Navigate(uri.ToString());
+            _browser.Navigate(target);
             // WhenAny never throws, and the two ways it completes MEAN different things: the cap is a soft "carry on and
             // look at the page", the caller's own token is "I gave up" and must surface so it cannot be mistaken for a
             // finished load.
@@ -138,7 +143,7 @@ public sealed class SessionController
             _browser.NavigationCompleted -= OnNav;   // on cancellation too, or it leaks until the next navigation
         }
         return true;
-    });
+    }, cancellationToken);   // a UI thread busy with something else must not hold a caller that has given up
 
     /// <summary>Run script on the live page; returns its value JSON-encoded.</summary>
     // WaitAsync: a driver cancelled mid-call must stop waiting even though the browser call runs on.
@@ -178,7 +183,8 @@ public sealed class SessionController
 
     /// <summary>Marshal a browser call to the shell's UI thread (a driver continuation may resume off it), through the
     /// ONE owner, which answers a thread that is not running with a faulted task.</summary>
-    private Task<T> OnUiAsync<T>(Func<Task<T>> work) => _ui.InvokeAsync(work);
+    private Task<T> OnUiAsync<T>(Func<Task<T>> work, CancellationToken cancellationToken = default) =>
+        _ui.InvokeAsync(work, cancellationToken);
 
     private void PostUi(Action work) => _ui.Post(work);
 }

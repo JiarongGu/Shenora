@@ -203,9 +203,13 @@ public sealed class StreamingSession : IAsyncDisposable
         // loop has ended) would otherwise leave StartAsync waiting forever even with the token ALREADY cancelled.
         using var cancelled = cancellationToken.Register(() =>
         {
-            frames.Writer.TryComplete();
-            tcs.TrySetCanceled(cancellationToken);
+            // Only while the start is still the caller's: a cancel landing just after success completed the LIVE
+            // session's Frames, a stream that then ended for no reason the app could see.
+            if (tcs.TrySetCanceled(cancellationToken)) frames.Writer.TryComplete();
         });
+        // The renderer dying while the session starts. Setup awaits the browser's DevTools calls, which a dead renderer
+        // never answers, so each is raced against this, or StartAsync waited for ever on a session that had ended.
+        var died = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var host = options.Host;
         var posted = host.Ui.Queue(async () =>
@@ -234,6 +238,7 @@ public sealed class StreamingSession : IAsyncDisposable
                     // forever for a stream that can never resume.
                     OnGone = report =>
                     {
+                        died.TrySetResult();
                         frames.Writer.TryComplete();
                         SignalEnded(options, ended, new StreamingSessionEnded(StreamingSessionEndReason.RendererFailed, report.Kind));
                     },
@@ -245,6 +250,8 @@ public sealed class StreamingSession : IAsyncDisposable
                 if (cancellationToken.IsCancellationRequested) { TearDown(); tcs.TrySetCanceled(cancellationToken); return; }
 
                 var live = browser;
+                // An off-screen page never saves a file, as in the pool: DOWNLOAD_STARTING still reports it.
+                live.CancelDownloads = true;
                 subscription = live.OnDevToolsEvent("Page.screencastFrame", json =>
                 {
                     try
@@ -270,19 +277,28 @@ public sealed class StreamingSession : IAsyncDisposable
                 // shutdown.
                 var controller = new SessionController(host.Ui, live, window: null, options.NavigationGuard,
                     onLoading: null, id: sessionId);
-                await live.CallDevToolsAsync("Page.enable", "{}").ConfigureAwait(true);
+                async Task SetUp(string method, string parameters)
+                {
+                    var call = live.CallDevToolsAsync(method, parameters);
+                    if (await Task.WhenAny(call, died.Task).ConfigureAwait(true) != call)
+                        throw new InvalidOperationException("The streaming session's renderer ended while the session started.");
+                    await call.ConfigureAwait(true);
+                }
+                await SetUp("Page.enable", "{}").ConfigureAwait(true);
                 var vp = options.InitialViewport;
-                await live.CallDevToolsAsync("Emulation.setDeviceMetricsOverride",
+                await SetUp("Emulation.setDeviceMetricsOverride",
                     BuildMetricsOverrideJson(vp.Width, vp.Height, vp.DeviceScaleFactor)).ConfigureAwait(true);
                 // The screencast emits only when the page VISUALLY CHANGES, so idle bandwidth is ~0; everyNthFrame:1
                 // streams every changed frame rather than halving the rate.
-                await live.CallDevToolsAsync("Page.startScreencast",
+                await SetUp("Page.startScreencast",
                     string.Create(CultureInfo.InvariantCulture,
                         $"{{\"format\":\"{(options.FrameFormat == StreamingSessionFrameFormat.Png ? "png" : "jpeg")}\",\"quality\":{options.FrameQuality},\"maxWidth\":{options.MaxFrameWidth},\"maxHeight\":{options.MaxFrameHeight},\"everyNthFrame\":1}}")).ConfigureAwait(true);
 
                 // Past this line the caller owns teardown, so anything cancelled up to here must be torn down here rather
-                // than left running.
+                // than left running — and so must a renderer that died during setup, which StartAsync owns.
                 if (cancellationToken.IsCancellationRequested) { TearDown(); tcs.TrySetCanceled(cancellationToken); return; }
+                if (died.Task.IsCompleted)
+                    throw new InvalidOperationException("The streaming session's renderer ended while the session started.");
 
                 var session = new StreamingSession(live, frames, controller, options, ended, subscription);
                 // ⚠ A false return means the registration above already cancelled the task, so the caller is gone and

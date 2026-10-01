@@ -157,7 +157,8 @@ public interface ISessionWindow
 
     /// <summary>
     /// Asked as the window is about to close, with whether a person (or code acting for one) asked, rather than the app
-    /// or the OS ending: false keeps it open. Null lets every close through.
+    /// or the OS ending: false keeps it open. Null lets every close through. ⚠ The Chromium shell cannot tell the two
+    /// apart and always passes true.
     /// </summary>
     Func<bool, bool>? Closing { get; set; }
 

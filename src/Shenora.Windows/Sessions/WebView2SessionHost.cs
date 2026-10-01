@@ -115,12 +115,12 @@ public sealed class WebView2SessionHost : ISessionHost
         var opened = new TaskCompletionSource<ISessionWindow>(TaskCreationOptions.RunContinuationsAsynchronously);
         var main = _mainForm();
 
-        var form = new Form
-        {
-            Text = definition.Title,
-            StartPosition = FormStartPosition.CenterScreen,
-            ShowInTaskbar = true,
-        };
+        // A silent window shows without taking activation (QuietForm): parked off-screen at opacity 0, it must not hold
+        // the keyboard of a user typing into the app.
+        var form = definition.Revealed ? new Form() : new QuietForm();
+        form.Text = definition.Title;
+        form.StartPosition = FormStartPosition.CenterScreen;
+        form.ShowInTaskbar = true;
         // Device-independent pixels, as on every shell: scaled by the display the window opens on.
         form.ClientSize = form.LogicalToDeviceUnits(definition.ClientSize);
         form.MinimumSize = form.LogicalToDeviceUnits(definition.MinimumSize);
@@ -140,7 +140,7 @@ public sealed class WebView2SessionHost : ISessionHost
 
         var web = new WebView2Control { Dock = DockStyle.Fill };
         form.Controls.Add(web);
-        var window = new WebView2SessionWindow(form, web, definition.Revealed && !OffscreenWindow.IsParked(form));
+        var window = new WebView2SessionWindow(form, web, definition.Revealed && !OffscreenWindow.IsParked(form), _mainForm);
         Exception? failure = null;
 
         form.Shown += async (_, _) =>
@@ -160,18 +160,36 @@ public sealed class WebView2SessionHost : ISessionHost
             }
         };
 
-        // ShowDialog runs its own nested loop until the window closes, so it goes in a post of its own: the caller gets
-        // the window as it shows, and drives it from inside that loop. Modal, with the app's main window disabled behind
-        // it, when it shows; a silent-refresh window must be OWNERLESS, or ShowDialog would silently disable the main
-        // window for the whole refresh.
+        // Once the window is gone: a window that never got to the caller lets the call answer then, so a cancelled or
+        // failed open never returns while its window still holds the profile.
+        void Finished()
+        {
+            window.MarkClosed();
+            try { form.Dispose(); } catch { }
+            if (failure is not null) opened.TrySetException(failure);
+            else opened.TrySetCanceled(cancellationToken.IsCancellationRequested ? cancellationToken : new CancellationToken(true));
+        }
+
         // QUEUED, never inline: called on the UI thread, an inline ShowDialog would run its whole nested loop inside this
         // call, which could then not return the task the caller awaits until the window was gone.
         var posted = Ui.Queue(() =>
         {
+            if (!definition.Revealed)
+            {
+                // 🔴 A silent window is MODELESS: ShowDialog disables every window of the thread whatever its owner, and
+                // activates the dialog, so a refresh parked out of sight disabled the main window and took the keyboard for
+                // its whole run. It becomes modal to the main window only if it is revealed (WebView2SessionWindow.Reveal).
+                form.FormClosed += (_, _) => Ui.Queue(() => { Finished(); return Task.CompletedTask; });
+                try { form.Show(); }
+                catch (Exception ex) { failure ??= ex; Finished(); }
+                return Task.CompletedTask;
+            }
+
+            // ShowDialog runs its own nested loop until the window closes: the caller gets the window as it shows, and
+            // drives it from inside that loop, modal, with the app's main window disabled behind it.
             try
             {
-                var owner = definition.Revealed && main is { Visible: true, IsDisposed: false } ? main : null;
-                form.ShowDialog(owner);
+                form.ShowDialog(main is { Visible: true, IsDisposed: false } ? main : null);
             }
             catch (Exception ex)
             {
@@ -179,12 +197,7 @@ public sealed class WebView2SessionHost : ISessionHost
             }
             finally
             {
-                window.MarkClosed();
-                try { form.Dispose(); } catch { }
-                // A window that never got to the caller is gone now, so the call can answer: a cancelled or failed open
-                // never returns while its window still holds the profile.
-                if (failure is not null) opened.TrySetException(failure);
-                else opened.TrySetCanceled(cancellationToken.IsCancellationRequested ? cancellationToken : new CancellationToken(true));
+                Finished();
             }
             return Task.CompletedTask;
         });
@@ -227,17 +240,26 @@ internal sealed class WebView2SessionBrowser : ISessionBrowser
         _host = host;
         _ownsHost = ownsHost;
         var core = web.CoreWebView2;
-        // Read from the core, not the event args: NavigationCompleted's args carry no Uri at all, and after a redirect
-        // chain the address the navigation started for is not where the page ended up.
+        // A success reads where the page is from the core: NavigationCompleted's args carry no Uri at all, and after a
+        // redirect chain the address the navigation started for is not where the page ended up. A FAILURE reports its
+        // own navigation's address, by id: the core still showed the page before it, so the abort of a navigation a newer
+        // one replaced, and the refusal of the newer one, looked alike to a session waiting on one of them.
+        var started = new Dictionary<ulong, string>();
         core.NavigationCompleted += (_, e) =>
-            NavigationCompleted?.Invoke(new SessionNavigationResult(core.Source ?? string.Empty, e.IsSuccess, e.WebErrorStatus.ToString()));
+        {
+            var own = started.Remove(e.NavigationId, out var address) ? address : null;
+            var uri = e.IsSuccess ? core.Source : own ?? core.Source;
+            NavigationCompleted?.Invoke(new SessionNavigationResult(uri ?? string.Empty, e.IsSuccess, e.WebErrorStatus.ToString()));
+        };
         // NavigationStarting is the main frame's alone (iframes raise FrameNavigationStarting). It has NO deferral in
         // the SDK, which is why the policy is a synchronous predicate. Guarded: an escape here is an unhandled UI-thread
         // crash, so a throw CANCELS.
         core.NavigationStarting += (_, e) =>
         {
+            var address = e.Uri ?? string.Empty;
+            started[e.NavigationId] = address;   // a redirect keeps the id and moves the address
             if (CancelNavigation is not { } cancel) return;
-            try { if (cancel(e.Uri)) e.Cancel = true; }
+            try { if (cancel(address)) e.Cancel = true; }
             catch { e.Cancel = true; }
         };
         // After SessionBrowser's own publisher, so DOWNLOAD_STARTING is still reported for a download cancelled here.
@@ -321,13 +343,21 @@ internal sealed class WebView2SessionWindow : ISessionWindow
     private readonly Form _form;
     private readonly WebView2Control _web;
     private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly Func<Form?> _mainForm;
     private bool _revealed;
+    private Form? _blocked;   // the main window, whose input this window took when it was revealed
 
-    public WebView2SessionWindow(Form form, WebView2Control web, bool revealed)
+    public WebView2SessionWindow(Form form, WebView2Control web, bool revealed, Func<Form?>? mainForm = null)
     {
         _form = form;
         _web = web;
         _revealed = revealed;
+        _mainForm = mainForm ?? (() => null);
+        _form.FormClosed += (_, _) =>
+        {
+            if (_blocked is { IsDisposed: false } blocked) blocked.Enabled = true;
+            _blocked = null;
+        };
         _form.FormClosing += (_, e) =>
         {
             if (Closing is not { } closing) return;
@@ -357,6 +387,14 @@ internal sealed class WebView2SessionWindow : ISessionWindow
     {
         if (_revealed || _form.IsDisposed) return;
         _revealed = true;
+        // Modal to the main window from here, as a window shown revealed is: a silent one was opened modeless, so it takes
+        // the main window's input now, and gives it back as it closes.
+        if (!_form.Modal && _mainForm() is { IsDisposed: false, Visible: true, Enabled: true } main)
+        {
+            _form.Owner = main;
+            main.Enabled = false;
+            _blocked = main;
+        }
         // NOT `_form.ShowInTaskbar = true`: that setter RECREATES the window handle, under a live WebView2, at the one
         // moment this window matters. See WindowActivation.ShowTaskbarButton.
         WindowActivation.ShowTaskbarButton(_form);

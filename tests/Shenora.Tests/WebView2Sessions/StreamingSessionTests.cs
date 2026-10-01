@@ -1,3 +1,5 @@
+using Shenora.Core.Shell;
+using Shenora.Tests.TestSupport;
 using Shenora.Core.Sessions;
 using System.Globalization;
 using System.Text.Json;
@@ -157,6 +159,44 @@ public class StreamingSessionTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => StreamingSession.StartAsync(Options(quality: 0)));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => StreamingSession.StartAsync(Options(buffer: 0)));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => StreamingSession.StartAsync(Options(maxW: 0)));
+    }
+
+    /// <summary>A renderer that dies while the session starts ends the start, which owns that teardown: setup awaited
+    /// DevTools calls a dead renderer never answers, so StartAsync waited for ever.</summary>
+    [Fact]
+    public async Task A_renderer_that_dies_during_start_ends_the_start_and_closes_the_browser()
+    {
+        using var ui = new TestUiThread();
+        var host = new DyingHost(ui);
+
+        var start = StreamingSession.StartAsync(new StreamingSessionOptions
+        {
+            Host = host,
+            Browser = new SessionBrowserOptions { ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "dying") },
+        });
+
+        var finished = await Task.WhenAny(start, Task.Delay(TimeSpan.FromSeconds(10)));
+        Assert.Same(start, finished);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => start);
+        Assert.True(host.Browser!.IsClosed, "the start left the dead session's browser open");
+    }
+
+    /// <summary>Hands out a browser whose DevTools never answer, and reports its renderer gone a moment later.</summary>
+    private sealed class DyingHost(TestUiThread ui) : ISessionHost
+    {
+        public FakeSessionBrowser? Browser;
+        public IUiDispatcher Ui => ui;
+        public ISessionBrowserContext CreateContext() => throw new NotSupportedException();
+        public Task<ISessionWindow> OpenWindowAsync(SessionWindowDefinition definition, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<ISessionBrowser> CreateAsync(SessionBrowserDefinition definition, CancellationToken cancellationToken)
+        {
+            Browser = new FakeSessionBrowser { DevTools = _ => new TaskCompletionSource<string>().Task };
+            _ = Task.Delay(200).ContinueWith(_ => ui.Post(() =>
+                definition.OnGone?.Invoke(new SessionProcessReport("RenderProcessExited", "crashed", 1, Terminal: true))));
+            return Task.FromResult<ISessionBrowser>(Browser);
+        }
     }
 
     [Fact]

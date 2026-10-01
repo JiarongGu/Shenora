@@ -41,11 +41,10 @@ at the first list and missed five more breaking changes.
   reported the GPU path off. Windows and macOS never froze, minimized or not, and are unchanged.
 
 - **A Chromium session's first navigation could return before its page had loaded.** A windowless session browser
-  was made on `about:blank`, and that page could finish loading after the first lease's `NavigateAsync` had begun,
-  which took its completion for its own: a script run straight after read the blank page (an empty title). It is now
-  made with no page at all, as the interactive window's browser already was, and as a WebView2 is. Measured from the
-  0.19.0 packages on Linux: the title read empty in 3 runs of 4; built from this tree, which differs from 0.19.0 by
-  this change alone, it read the page's title in 4 of 4.
+  is made on `about:blank`, and that page could finish loading after the first lease's `NavigateAsync` had begun,
+  which took its completion for its own: a script run straight after read the blank page (an empty title). The
+  browser is now handed over only once that page has loaded. Measured from the 0.19.0 packages on Linux: the title
+  read empty in 3 runs of 4; built from this tree, it read the page's title in 6 of 6 on Linux and on Windows.
 
 - **A mission scheduler with a durable store could overwrite or delete a saved mission.** Mission ids restarted at
   `m1` in every process, so a mission submitted after a restart could take the id of a record the store still held:
@@ -193,6 +192,41 @@ at the first list and missed five more breaking changes.
   **On macOS, clicking the Dock icon of a running app with no window open showed nothing**; it brings the main window
   back. A `Close` or `Activate` of a window still being opened was dropped, and a window CEF would not create kept its
   browser's client for the life of the process.
+
+- **A session navigation could return before its own page loaded, on the end of the navigation it replaced.**
+  Starting one while another loads aborts that one, and its completion arrives first: `NavigateAsync` after a soft
+  cap, and the pool's reset to a blank page between leases, both took it for their own. Those waits now skip the abort
+  of a navigation to another address, and a Chromium session no longer counts that abort as its new navigation's
+  failure. Measured on WebView2: a second navigation to a page taking 1 s returned after 1–2 ms, 3 runs of 3; now it
+  waits for its own page.
+
+- **A silent `InteractiveSession` on the WebView2 shell disabled the main window for its whole run, and could take
+  the keyboard.** It was a dialog, and a dialog disables every window of its thread whatever its owner; it is
+  modeless now, shown without activation, and takes the main window's input only once revealed. Measured: the main
+  window stayed enabled through a silent run, 3 of 3 (it was disabled throughout), and was disabled while a revealed
+  one showed and enabled after. The pool's and streaming sessions' hidden windows also show without activation now.
+
+- **The Chromium shell's `SessionEvents.ResponseReceived` reported no `Set-Cookie` and no redirect**, the cookie a
+  login sets being the case it exists for. The responses are now put together from the protocol's events: a redirect
+  is reported with its cookies, and a failed request is reported too (it was never reported, and its entry was kept
+  for the life of the browser). Measured: a 302 that sets a cookie was absent from 0.19.0, and is now reported with
+  it, 6 runs of 6. ⚠ Chromium does not send a `Set-Cookie` for every response (the page that redirect led to arrived
+  without its own), so read the jar where a cookie must not be missed.
+
+- **An off-screen session's page could save files**: a WebView2 pool or streaming browser saved a download into the
+  user's Downloads folder, while the Chromium shell's cancelled it anyway. Both cancel it now and report it as
+  `DOWNLOAD_STARTING`, as an interactive session already did.
+
+- **Sessions, smaller:** a renderer that died while a `StreamingSession` started left `StartAsync` waiting for good,
+  though the start owns that teardown; a cancellation landing just after a successful start completed the live
+  session's `Frames`. The WebView2 shell's off-screen surface took `ViewportSize` as physical pixels, though it is
+  device-independent, as the Chromium shell takes it. `InteractiveSession.ClearProfile` refuses a browser's whole
+  data folder (the Chromium shell's `ProfilesDirectory`), which it deleted with every profile in it.
+  `SessionController.NavigateAsync` gives up on its token while the UI thread is busy. The Chromium shell's
+  `beforeunload` dialog kind is `Beforeunload`, as WebView2's is. Leaks in the Chromium shell: a session browser CEF
+  would not create kept its client, and each client certificate offered kept a reference. Docs: what `MuteAudio`,
+  `ProcessFailed`, `UserInitiated` and an interactive window's `Closing` mean in the Chromium shell; the sessions
+  guide's `OnEnded` example named a type that does not exist.
 
 - **Docs:** `RevealInFileManager` waits up to 5 s on Linux, and `LaunchProcess` refuses a macOS `.app` folder; both
   now say so. `IFileLockInspector` said its implementation lived outside `Shenora`, and `Shenora.Windows` claimed

@@ -248,19 +248,21 @@ public sealed class WebViewHost
         }
 
         var virtualHostPrefix = WebViewBundleServing.Prefix(_options.VirtualHost, _options.ResourceProvider);
+        // Every request SOURCE, iframes included, named: the deprecated two-argument overload is documented as the main
+        // frame's alone (measured on the current runtime, it passed iframes too; this states the intent).
         if (virtualHostPrefix is not null)
         {
-            core.AddWebResourceRequestedFilter(virtualHostPrefix + "*", CoreWebView2WebResourceContext.All);
+            core.AddWebResourceRequestedFilter(virtualHostPrefix + "*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
         }
         foreach (var scheme in _options.DeferredSchemes)
         {
-            core.AddWebResourceRequestedFilter(scheme.Scheme + "://*", CoreWebView2WebResourceContext.All);
+            core.AddWebResourceRequestedFilter(scheme.Scheme + "://*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
         }
         // What the interceptor needs on top of the above — see WebView2Interceptor.ExtraFilters.
         var interceptorFilters = WebView2Interceptor.ExtraFilters(IsDevelopment, _options.DevUrl);
         foreach (var pattern in interceptorFilters)
         {
-            core.AddWebResourceRequestedFilter(pattern, CoreWebView2WebResourceContext.All);
+            core.AddWebResourceRequestedFilter(pattern, CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
         }
         if (virtualHostPrefix is null && _options.DeferredSchemes.Count == 0 && interceptorFilters.Length == 0)
             return;

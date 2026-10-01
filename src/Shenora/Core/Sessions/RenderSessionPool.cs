@@ -250,6 +250,9 @@ public sealed class RenderSessionPool : IDisposable
                 var instance = new PoolInstance(made) { Poisoned = pending.Gone };
                 pending.Instance = instance;
                 WireNavigationPolicy(instance);
+                // An off-screen page never saves a file: DOWNLOAD_STARTING still reports it. Left on, a WebView2 pool
+                // browser saved into the user's Downloads folder, while CEF's cancelled it anyway (Alloy's default).
+                made.CancelDownloads = true;
                 // ⚠ A false return means the lease was abandoned while the browser was being made, so NOBODY OWNS it:
                 // handing ownership over is what TrySetResult means, and failing to is a teardown obligation, or the
                 // cancellation trades a hang for a leaked browser process holding the profile lock.
@@ -388,7 +391,12 @@ public sealed class RenderSessionPool : IDisposable
         instance.ApprovedOrigin = null;
 
         var navDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnNav(SessionNavigationResult _) => navDone.TrySetResult(true);
+        // Not the abort of the previous lease's navigation, which this one replaces: taken, the instance went back to the
+        // pool still loading the blank page, and its next lease's first navigation could take THAT completion for its own.
+        void OnNav(SessionNavigationResult result)
+        {
+            if (!SessionNavigation.Superseded(result, "about:blank")) navDone.TrySetResult(true);
+        }
         instance.Browser.NavigationCompleted += OnNav;
         try
         {

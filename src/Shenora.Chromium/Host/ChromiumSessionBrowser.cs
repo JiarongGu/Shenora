@@ -288,6 +288,7 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
     // Set when the main frame's navigation failed, so its load-end (which CEF raises after a committed failure too) does
     // not report it again as a success. Reset as each main-frame navigation begins.
     private bool _navigationFailed;
+    private string _navigatingTo = string.Empty;
 
     // Set as the session closes the browser, so that close is not reported as the page's own window.close().
     private bool _closing;
@@ -338,10 +339,22 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
         Setup(devTools, "Runtime.addBinding", JsonSerializer.Serialize(new { name = WebMessageBinding }));
         Setup(devTools, "Page.addScriptToEvaluateOnNewDocument", JsonSerializer.Serialize(new { source = WebMessageShim }));
 
-        if (_options.ObserveResponse is null) return;
-        _subscriptions.Add(devTools.Subscribe("Network.responseReceived", ResponseReceived));
-        if (_options.ResponseBodySample > 0)
-            _subscriptions.Add(devTools.Subscribe("Network.loadingFinished", LoadingFinished));
+        if (_options.ObserveResponse is not { } observe) return;
+        // App code on the per-response path: a throw means "do not report" rather than "report everything".
+        _responses = new ChromiumResponses(uri =>
+        {
+            try { return observe(uri); }
+            catch (Exception ex)
+            {
+                SessionLog(l => l.LogError(ex, "ObserveResponse threw; not reporting {Uri}.", uri));
+                return false;
+            }
+        }, sampleBodies: _options.ResponseBodySample > 0);
+        _subscriptions.Add(devTools.Subscribe("Network.responseReceived", json => PublishResponse(_responses?.Response(json))));
+        _subscriptions.Add(devTools.Subscribe("Network.responseReceivedExtraInfo", json => PublishResponse(_responses?.ExtraInfo(json))));
+        _subscriptions.Add(devTools.Subscribe("Network.requestWillBeSent", json => PublishResponse(_responses?.RequestWillBeSent(json))));
+        _subscriptions.Add(devTools.Subscribe("Network.loadingFinished", json => Ended(json, finished: true)));
+        _subscriptions.Add(devTools.Subscribe("Network.loadingFailed", json => Ended(json, finished: false)));
         Setup(devTools, "Network.enable", "{}");
     }
 
@@ -418,44 +431,23 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
         + " globalThis.chrome.webview = { postMessage: m => globalThis." + WebMessageBinding
         + "(typeof m === 'string' ? m : JSON.stringify(m)) }; })();";
 
-    private readonly Dictionary<string, SessionResponse> _awaitingBodies = new(StringComparer.Ordinal);
+    private ChromiumResponses? _responses;
 
-    private void ResponseReceived(string json)
+    private void PublishResponse(SessionResponse? response)
     {
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        var response = root.GetProperty("response");
-        var url = response.GetProperty("url").GetString() ?? string.Empty;
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return;
-        // App code on the per-response path: a throw means "do not report" rather than "report everything".
-        try { if (!_options.ObserveResponse!(uri)) return; }
-        catch (Exception ex)
-        {
-            SessionLog(l => l.LogError(ex, "ObserveResponse threw; not reporting {Uri}.", uri));
-            return;
-        }
-        var headers = new List<KeyValuePair<string, string>>();
-        if (response.TryGetProperty("headers", out var map) && map.ValueKind == JsonValueKind.Object)
-            foreach (var header in map.EnumerateObject())
-                // The protocol folds a repeated header into one value, lines apart: split them back, so Set-Cookie
-                // arrives as the several headers it was.
-                foreach (var value in (header.Value.GetString() ?? string.Empty).Split('\n'))
-                    headers.Add(new(header.Name, value));
-        var described = new SessionResponse(url, response.GetProperty("status").GetInt32(),
-            response.TryGetProperty("statusText", out var text) ? text.GetString() ?? string.Empty : string.Empty, headers, string.Empty);
-        if (_options.ResponseBodySample <= 0)
-        {
-            Publish(SessionEvents.ResponseReceived, () => described);
-            return;
-        }
-        _awaitingBodies[root.GetProperty("requestId").GetString() ?? string.Empty] = described;
+        if (response is not null) Publish(SessionEvents.ResponseReceived, () => response);
     }
 
-    private void LoadingFinished(string json)
+    // The request is over: a response still waiting goes out, with a sample of its body when it finished and one was
+    // asked for. A FAILED one goes out too, without: waiting on loadingFinished alone, it was never reported, and its
+    // entry stayed for the life of the browser.
+    private void Ended(string json, bool finished)
     {
-        string requestId;
-        using (var doc = JsonDocument.Parse(json)) requestId = doc.RootElement.GetProperty("requestId").GetString() ?? string.Empty;
-        if (!_awaitingBodies.Remove(requestId, out var described)) return;
+        if (_responses is null) return;
+        var waiting = _responses.Ended(json, out var requestId, out var final);
+        foreach (var response in waiting)
+            if (!ReferenceEquals(response, final) || !finished || _options.ResponseBodySample <= 0) PublishResponse(response);
+        if (final is not { } described || !finished || _options.ResponseBodySample <= 0) return;
         var limit = Math.Min(_options.ResponseBodySample, SessionPolicy.MaxBodySample);
         SessionCalls.Then(CallDevToolsAsync("Network.getResponseBody", JsonSerializer.Serialize(new { requestId })),
             answer => Publish(SessionEvents.ResponseReceived, () => described with { BodySample = BodySample(answer, limit) }),
@@ -488,6 +480,11 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
     /// from the first page and present on the next). Completes whether or not each call succeeded; a refusal is logged.
     /// </summary>
     public Task Ready => Task.WhenAll(_setup);
+
+    /// <summary>The page the browser was made on has loaded (or failed): its completion can no longer reach a session's
+    /// first navigation. A windowless browser is made on about:blank; see ChromiumSessionHost.Create.</summary>
+    internal Task FirstPage => _firstPage.Task;
+    private readonly TaskCompletionSource _firstPage = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private void Setup(DevToolsChannel devTools, string method, string parametersJson) =>
         _setup.Add(devTools.CallAsync(method, parametersJson).ContinueWith(t =>
@@ -674,6 +671,7 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
             using var f = new CefRef<_cef_frame_t>(frame);
             var owner = From<Load>(self)._owner;
             if (frame == null || frame->is_main(frame) != 1 || !owner.Mine(browser)) return;
+            owner._firstPage.TrySetResult();
             if (owner._navigationFailed) return;   // already reported, as the failure it was
             AppCallback.Run(() => owner.Completed(new SessionNavigationResult(owner.Source, true, "Unknown")));
         }
@@ -686,11 +684,21 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
             using var f = new CefRef<_cef_frame_t>(frame);
             var owner = From<Load>(self)._owner;
             if (frame == null || frame->is_main(frame) != 1 || !owner.Mine(browser)) return;
-            owner._navigationFailed = true;
+            owner._firstPage.TrySetResult();
             var url = CefStrings.Read(failedUrl);
+            // The abort of a navigation a newer one REPLACED arrives after the newer one began, and marked IT failed, so
+            // its success was never reported. Only a failure of the navigation in progress is its failure.
+            if (errorCode != cef_errorcode_t.ERR_ABORTED || SameAddress(url, owner._navigatingTo))
+                owner._navigationFailed = true;
             AppCallback.Run(() => owner.Completed(new SessionNavigationResult(url, false, errorCode.ToString())));
         }
     }
+
+    // Alike once parsed, as the core's SessionNavigation compares them (internal there).
+    private static bool SameAddress(string left, string right) =>
+        Uri.TryCreate(left, UriKind.Absolute, out var a) && Uri.TryCreate(right, UriKind.Absolute, out var b)
+            ? a.AbsoluteUri == b.AbsoluteUri
+            : string.Equals(left, right, StringComparison.Ordinal);
 
     private void Completed(SessionNavigationResult result)
     {
@@ -763,6 +771,7 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
             if (frame == null || frame->is_main(frame) != 1 || !owner.Mine(browser)) return 0;
             var url = CefStrings.TakeUserFree(request->get_url(request));
             if (isRedirect == 0) owner._navigationFailed = false;   // a new navigation, which has not failed yet
+            owner._navigatingTo = url;   // a redirect moves it with the navigation
             owner.Publish(SessionEvents.NavigationStarting, () => new SessionSource(url, owner._title));
             if (owner.CancelNavigation is not { } cancel) return 0;
             try { return cancel(url) ? 1 : 0; }
@@ -789,23 +798,34 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
             using var b = new CefRef<_cef_browser_t>(browser);
             using var c = new CefRef<_cef_select_client_certificate_callback_t>(callback);
             var owner = From<Requests>(self)._owner;
-            var subjects = new List<string>((int)certificatesCount);
-            for (nuint i = 0; i < certificatesCount; i++)
+            // Each offered certificate carries a reference this callback releases, as every pointer parameter does; kept,
+            // one leaked per certificate per request.
+            var held = new List<CefRef<_cef_x509_certificate_t>>((int)certificatesCount);
+            try
             {
-                var certificate = certificates[i];
-                using var subject = new CefRef<_cef_x509_cert_principal_t>(certificate->get_subject(certificate));
-                subjects.Add(subject.IsNull ? string.Empty : CefStrings.TakeUserFree(subject.Ptr->get_display_name(subject.Ptr)));
+                var subjects = new List<string>((int)certificatesCount);
+                for (nuint i = 0; i < certificatesCount; i++)
+                {
+                    var certificate = certificates[i];
+                    held.Add(new CefRef<_cef_x509_certificate_t>(certificate));
+                    using var subject = new CefRef<_cef_x509_cert_principal_t>(certificate->get_subject(certificate));
+                    subjects.Add(subject.IsNull ? string.Empty : CefStrings.TakeUserFree(subject.Ptr->get_display_name(subject.Ptr)));
+                }
+                var request = SessionPolicy.Decide(owner._options.OnCertificateRequest, new SessionCertificateRequest(CefStrings.Read(host), port, subjects),
+                    ex => owner.SessionLog(l => l.LogError(ex, "OnCertificateRequest threw; cancelling.")));
+                if (request.SelectedIndex is { } index && index >= 0 && index < (int)certificatesCount)
+                {
+                    var chosen = certificates[index];
+                    ((_cef_base_ref_counted_t*)chosen)->add_ref((_cef_base_ref_counted_t*)chosen);   // select consumes one
+                    callback->select(callback, chosen);
+                }
+                else callback->select(callback, null);
+                return 1;
             }
-            var request = SessionPolicy.Decide(owner._options.OnCertificateRequest, new SessionCertificateRequest(CefStrings.Read(host), port, subjects),
-                ex => owner.SessionLog(l => l.LogError(ex, "OnCertificateRequest threw; cancelling.")));
-            if (request.SelectedIndex is { } index && index >= 0 && index < (int)certificatesCount)
+            finally
             {
-                var chosen = certificates[index];
-                ((_cef_base_ref_counted_t*)chosen)->add_ref((_cef_base_ref_counted_t*)chosen);   // select consumes one
-                callback->select(callback, chosen);
+                foreach (var certificate in held) certificate.Dispose();
             }
-            else callback->select(callback, null);
-            return 1;
         }
 
         [UnmanagedCallersOnly]
@@ -900,7 +920,8 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
             using var c = new CefRef<_cef_jsdialog_callback_t>(callback);
             var owner = From<Dialogs>(self)._owner;
             var dialog = SessionPolicy.Decide(owner._options.OnScriptDialog,
-                new SessionScriptDialog("BeforeUnload", owner.Source, CefStrings.Read(messageText), string.Empty),
+                // WebView2's spelling (its enum's name), as Alert, Confirm and Prompt already are: one kind, one string.
+                new SessionScriptDialog("Beforeunload", owner.Source, CefStrings.Read(messageText), string.Empty),
                 ex => owner.SessionLog(l => l.LogError(ex, "OnScriptDialog threw; dismissing.")));
             Answer(callback, dialog.Accept, string.Empty);
             return 1;

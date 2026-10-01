@@ -32,7 +32,10 @@ internal sealed class FakeSessionBrowser : ISessionBrowser
 
     public Task<string?> ExecuteScriptAsync(string javaScript) => Task.FromResult<string?>("null");
 
-    public Task<string> CallDevToolsAsync(string method, string parametersJson) => Task.FromResult("{}");
+    /// <summary>What a DevTools call answers; null answers <c>{}</c> at once.</summary>
+    public Func<string, Task<string>>? DevTools { get; set; }
+
+    public Task<string> CallDevToolsAsync(string method, string parametersJson) => DevTools?.Invoke(method) ?? Task.FromResult("{}");
 
     public IDisposable OnDevToolsEvent(string eventName, Action<string> onEvent) => new Nothing();
 
