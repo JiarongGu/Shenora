@@ -28,6 +28,17 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Fixed
+
+- **A Chromium session's first navigation could return before its page had loaded.** A windowless session browser
+  was made on `about:blank`, and that page could finish loading after the first lease's `NavigateAsync` had begun,
+  which took its completion for its own: a script run straight after read the blank page (an empty title). It is now
+  made with no page at all, as the interactive window's browser already was, and as a WebView2 is. Measured from the
+  0.19.0 packages on Linux: the title read empty in 3 runs of 4; built from this tree, which differs from 0.19.0 by
+  this change alone, it read the page's title in 4 of 4.
+
 ## 0.19.0 — 2026-09-30
 
 ### Breaking
