@@ -102,7 +102,7 @@ var stream = await StreamingSession.StartAsync(new StreamingSessionOptions
     Browser = new SessionBrowserOptions { ProfileDirectory = profileDir },
     // 🔴 A dead renderer ends the session with nobody calling stop — dispose it HERE or the
     // off-screen window and its browser process outlive the app, holding the profile lock.
-    OnEnded = ended => { if (ended.Reason is StreamingSessionEndedReason.RendererFailed) _ = stream!.DisposeAsync(); },
+    OnEnded = ended => { if (ended.Reason is StreamingSessionEndReason.RendererFailed) _ = stream!.DisposeAsync(); },
 });
 
 await foreach (var frame in stream.Frames.ReadAllAsync(ct)) Show(frame);   // latest-frame-wins
