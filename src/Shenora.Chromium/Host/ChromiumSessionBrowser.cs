@@ -110,6 +110,7 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
         if (_browser == null) return;
         using var frame = new CefRef<_cef_frame_t>(_browser->get_main_frame(_browser));
         if (frame.IsNull) return;
+        _navigation.Requested(url);
         fixed (char* u = url)
         {
             var target = CefStrings.View(u, url.Length);
@@ -288,7 +289,7 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
     // Set when the main frame's navigation failed, so its load-end (which CEF raises after a committed failure too) does
     // not report it again as a success. Reset as each main-frame navigation begins.
     private bool _navigationFailed;
-    private string _navigatingTo = string.Empty;
+    private readonly NavigationChain _navigation = new();
 
     // Set as the session closes the browser, so that close is not reported as the page's own window.close().
     private bool _closing;
@@ -686,24 +687,19 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
             if (frame == null || frame->is_main(frame) != 1 || !owner.Mine(browser)) return;
             owner._firstPage.TrySetResult();
             var url = CefStrings.Read(failedUrl);
-            // The abort of a navigation a newer one REPLACED arrives after the newer one began, and marked IT failed, so
-            // its success was never reported. Only a failure of the navigation in progress is its failure.
-            if (errorCode != cef_errorcode_t.ERR_ABORTED || SameAddress(url, owner._navigatingTo))
-                owner._navigationFailed = true;
-            AppCallback.Run(() => owner.Completed(new SessionNavigationResult(url, false, errorCode.ToString())));
+            // The abort of a navigation a newer one REPLACED arrives after the newer one began. Marking the newer one
+            // failed hid its success, and handing it to a session ended that session's wait early.
+            var replaced = owner._navigation.Replaced(url, errorCode == cef_errorcode_t.ERR_ABORTED);
+            if (!replaced) owner._navigationFailed = true;
+            AppCallback.Run(() => owner.Completed(new SessionNavigationResult(url, false, errorCode.ToString()), replaced));
         }
     }
 
-    // Alike once parsed, as the core's SessionNavigation compares them (internal there).
-    private static bool SameAddress(string left, string right) =>
-        Uri.TryCreate(left, UriKind.Absolute, out var a) && Uri.TryCreate(right, UriKind.Absolute, out var b)
-            ? a.AbsoluteUri == b.AbsoluteUri
-            : string.Equals(left, right, StringComparison.Ordinal);
-
-    private void Completed(SessionNavigationResult result)
+    // Published either way; a session is not handed the end of a navigation its own replaced.
+    private void Completed(SessionNavigationResult result, bool replaced = false)
     {
         Publish(SessionEvents.NavigationCompleted, () => result);
-        NavigationCompleted?.Invoke(result);
+        if (!replaced) NavigationCompleted?.Invoke(result);
     }
 
     private sealed class Display : CefObject<_cef_display_handler_t>
@@ -771,7 +767,7 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
             if (frame == null || frame->is_main(frame) != 1 || !owner.Mine(browser)) return 0;
             var url = CefStrings.TakeUserFree(request->get_url(request));
             if (isRedirect == 0) owner._navigationFailed = false;   // a new navigation, which has not failed yet
-            owner._navigatingTo = url;   // a redirect moves it with the navigation
+            owner._navigation.Started(url);
             owner.Publish(SessionEvents.NavigationStarting, () => new SessionSource(url, owner._title));
             if (owner.CancelNavigation is not { } cancel) return 0;
             try { return cancel(url) ? 1 : 0; }

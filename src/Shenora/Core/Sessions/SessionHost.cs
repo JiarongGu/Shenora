@@ -114,7 +114,12 @@ public interface ISessionBrowser
     /// <summary>Start a navigation; <see cref="NavigationCompleted"/> says when the document has loaded.</summary>
     void Navigate(string url);
 
-    /// <summary>A main-frame navigation finished, successfully or not.</summary>
+    /// <summary>
+    /// A main-frame navigation finished, successfully or not. Not raised for the ABORT of a navigation that one
+    /// <see cref="Navigate"/> started replaced: a session waits on this for its own navigation, and that abort can arrive
+    /// after its own began. The abort of the navigation <see cref="Navigate"/> started, or of a hop it was redirected to
+    /// (refused, or a download), is raised.
+    /// </summary>
     event Action<SessionNavigationResult>? NavigationCompleted;
 
     /// <summary>

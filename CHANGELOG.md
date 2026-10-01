@@ -195,10 +195,12 @@ at the first list and missed five more breaking changes.
 
 - **A session navigation could return before its own page loaded, on the end of the navigation it replaced.**
   Starting one while another loads aborts that one, and its completion arrives first: `NavigateAsync` after a soft
-  cap, and the pool's reset to a blank page between leases, both took it for their own. Those waits now skip the abort
-  of a navigation to another address, and a Chromium session no longer counts that abort as its new navigation's
-  failure. Measured on WebView2: a second navigation to a page taking 1 s returned after 1–2 ms, 3 runs of 3; now it
-  waits for its own page.
+  cap, and the pool's reset to a blank page between leases, both took it for their own. Both shells' session browsers
+  no longer raise `ISessionBrowser.NavigationCompleted` for that abort (it is still published as
+  `SessionEvents.NavigationCompleted`), and a Chromium session no longer counts it as its new navigation's failure.
+  The abort of the navigation itself, or of a hop it was redirected to (refused by the pool's navigation guard, or a
+  download), still ends the wait. Measured on WebView2: a second navigation to a page taking 1 s returned after 1–2
+  ms, 3 runs of 3; now it waits for its own page. An `ISessionBrowser` of an app's own should do the same.
 
 - **A silent `InteractiveSession` on the WebView2 shell disabled the main window for its whole run, and could take
   the keyboard.** It was a dialog, and a dialog disables every window of its thread whatever its owner; it is

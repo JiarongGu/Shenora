@@ -120,18 +120,13 @@ public sealed class SessionController
             throw new InvalidOperationException($"Navigation refused by the navigation guard: {uri.Host}");
 
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var target = uri.ToString();
-        void OnNav(SessionNavigationResult result)
-        {
-            // Not the abort of the navigation this one replaced (SessionNavigation.Superseded).
-            if (!SessionNavigation.Superseded(result, target)) done.TrySetResult();
-        }
+        void OnNav(SessionNavigationResult _) => done.TrySetResult();
         _browser.NavigationCompleted += OnNav;
         try
         {
             using var overall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             overall.CancelAfter(NavigationCap);   // a dead renderer never completes a navigation
-            _browser.Navigate(target);
+            _browser.Navigate(uri.ToString());
             // WhenAny never throws, and the two ways it completes MEAN different things: the cap is a soft "carry on and
             // look at the page", the caller's own token is "I gave up" and must surface so it cannot be mistaken for a
             // finished load.

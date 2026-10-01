@@ -73,17 +73,13 @@ public sealed class RenderSession : IAsyncDisposable
         _instance.ApprovedOrigin = uri.Authority;
 
         var navDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var target = uri.ToString();
-        void OnNav(SessionNavigationResult result)
-        {
-            if (!SessionNavigation.Superseded(result, target)) navDone.TrySetResult(result.Success);
-        }
+        void OnNav(SessionNavigationResult result) => navDone.TrySetResult(result.Success);
         _browser.NavigationCompleted += OnNav;
         try
         {
             using var overall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             overall.CancelAfter(_navigationTimeout); // cap so a hung load can't wedge the lease
-            _browser.Navigate(target);
+            _browser.Navigate(uri.ToString());
             // WhenAny never throws, and the cap firing and the CALLER cancelling both complete the Delay task, but they
             // mean different things. The cap is a soft "return what's there"; the caller's own token means "I gave up",
             // which MUST surface so it can't be mistaken for a completed load.

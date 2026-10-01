@@ -179,7 +179,11 @@ public sealed class WebView2SessionHost : ISessionHost
                 // 🔴 A silent window is MODELESS: ShowDialog disables every window of the thread whatever its owner, and
                 // activates the dialog, so a refresh parked out of sight disabled the main window and took the keyboard for
                 // its whole run. It becomes modal to the main window only if it is revealed (WebView2SessionWindow.Reveal).
-                form.FormClosed += (_, _) => Ui.Queue(() => { Finished(); return Task.CompletedTask; });
+                // Inline when the queue refuses (the app shutting down), or the window's Closed never completes.
+                form.FormClosed += (_, _) =>
+                {
+                    if (!Ui.Queue(() => { Finished(); return Task.CompletedTask; })) Finished();
+                };
                 try { form.Show(); }
                 catch (Exception ex) { failure ??= ex; Finished(); }
                 return Task.CompletedTask;
@@ -233,6 +237,7 @@ internal sealed class WebView2SessionBrowser : ISessionBrowser
     private readonly WebView2Control _web;
     private readonly Form _host;
     private readonly bool _ownsHost;
+    private readonly NavigationChain _navigation = new();
 
     public WebView2SessionBrowser(WebView2Control web, Form host, bool ownsHost)
     {
@@ -242,14 +247,17 @@ internal sealed class WebView2SessionBrowser : ISessionBrowser
         var core = web.CoreWebView2;
         // A success reads where the page is from the core: NavigationCompleted's args carry no Uri at all, and after a
         // redirect chain the address the navigation started for is not where the page ended up. A FAILURE reports its
-        // own navigation's address, by id: the core still showed the page before it, so the abort of a navigation a newer
-        // one replaced, and the refusal of the newer one, looked alike to a session waiting on one of them.
+        // own navigation's address, by id: the core still shows the page before it.
         var started = new Dictionary<ulong, string>();
         core.NavigationCompleted += (_, e) =>
         {
             var own = started.Remove(e.NavigationId, out var address) ? address : null;
-            var uri = e.IsSuccess ? core.Source : own ?? core.Source;
-            NavigationCompleted?.Invoke(new SessionNavigationResult(uri ?? string.Empty, e.IsSuccess, e.WebErrorStatus.ToString()));
+            var uri = (e.IsSuccess ? core.Source : own ?? core.Source) ?? string.Empty;
+            // The replaced navigation's abort is ConnectionAborted (measured: its server had not answered) or
+            // OperationCanceled.
+            var aborted = e.WebErrorStatus is CoreWebView2WebErrorStatus.ConnectionAborted or CoreWebView2WebErrorStatus.OperationCanceled;
+            if (_navigation.Replaced(uri, aborted)) return;
+            NavigationCompleted?.Invoke(new SessionNavigationResult(uri, e.IsSuccess, e.WebErrorStatus.ToString()));
         };
         // NavigationStarting is the main frame's alone (iframes raise FrameNavigationStarting). It has NO deferral in
         // the SDK, which is why the policy is a synchronous predicate. Guarded: an escape here is an unhandled UI-thread
@@ -258,6 +266,7 @@ internal sealed class WebView2SessionBrowser : ISessionBrowser
         {
             var address = e.Uri ?? string.Empty;
             started[e.NavigationId] = address;   // a redirect keeps the id and moves the address
+            _navigation.Started(address);
             if (CancelNavigation is not { } cancel) return;
             try { if (cancel(address)) e.Cancel = true; }
             catch { e.Cancel = true; }
@@ -281,7 +290,11 @@ internal sealed class WebView2SessionBrowser : ISessionBrowser
 
     public bool CancelDownloads { get; set; }
 
-    public void Navigate(string url) => Core.Navigate(url);
+    public void Navigate(string url)
+    {
+        _navigation.Requested(url);
+        Core.Navigate(url);
+    }
 
     public async Task<string?> ExecuteScriptAsync(string javaScript) =>
         await _web.ExecuteScriptAsync(javaScript).ConfigureAwait(true);

@@ -93,28 +93,6 @@ public sealed record SessionSource(string Uri, string Title);
 /// as a string so an app subscribing through the bus needs no engine reference.</param>
 public sealed record SessionNavigationResult(string Uri, bool Success, string Status);
 
-/// <summary>Which navigation a completion ends, for the sessions that wait on one.</summary>
-internal static class SessionNavigation
-{
-    /// <summary>
-    /// Whether <paramref name="result"/> ends a navigation the one to <paramref name="target"/> REPLACED: aborted, and
-    /// for another address. Starting a navigation while one loads aborts that one, and its completion arrives first, so
-    /// a wait that took it returned before its own page had loaded. Any success, any other failure, and an abort of the
-    /// target itself (refused, or a download) still end the wait. The abort is <c>ConnectionAborted</c> in WebView2
-    /// (measured: a navigation replaced while its server had not answered) or <c>OperationCanceled</c>, and
-    /// <c>ERR_ABORTED</c> in CEF.
-    /// </summary>
-    internal static bool Superseded(SessionNavigationResult result, string target) =>
-        !result.Success && result.Status is "ConnectionAborted" or "OperationCanceled" or "ERR_ABORTED"
-        && !SameAddress(result.Uri, target);
-
-    /// <summary>Two addresses alike once parsed (<c>https://a.example</c> is <c>https://a.example/</c>).</summary>
-    internal static bool SameAddress(string left, string right) =>
-        Uri.TryCreate(left, UriKind.Absolute, out var a) && Uri.TryCreate(right, UriKind.Absolute, out var b)
-            ? a.AbsoluteUri == b.AbsoluteUri
-            : string.Equals(left, right, StringComparison.Ordinal);
-}
-
 /// <summary>
 /// A network response (<see cref="SessionEvents.ResponseReceived"/>).
 /// <para>

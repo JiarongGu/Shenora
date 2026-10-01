@@ -391,12 +391,9 @@ public sealed class RenderSessionPool : IDisposable
         instance.ApprovedOrigin = null;
 
         var navDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        // Not the abort of the previous lease's navigation, which this one replaces: taken, the instance went back to the
-        // pool still loading the blank page, and its next lease's first navigation could take THAT completion for its own.
-        void OnNav(SessionNavigationResult result)
-        {
-            if (!SessionNavigation.Superseded(result, "about:blank")) navDone.TrySetResult(true);
-        }
+        // The browser does not raise the abort of the previous lease's navigation, which this one replaces
+        // (ISessionBrowser.NavigationCompleted): taken, the instance went back to the pool still loading the blank page.
+        void OnNav(SessionNavigationResult _) => navDone.TrySetResult(true);
         instance.Browser.NavigationCompleted += OnNav;
         try
         {
