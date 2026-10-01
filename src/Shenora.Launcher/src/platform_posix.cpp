@@ -33,8 +33,12 @@ std::vector<int> processes_using(const fs::path& root) {
     std::vector<int> holders;
     const pid_t self = getpid();
     std::error_code ec;
-    const std::string prefix = fs::absolute(root, ec).lexically_normal().string();
+    std::string prefix = fs::absolute(root, ec).lexically_normal().string();
     if (ec) return holders;
+    // Ending in a separator, so `…/app` does not also claim `…/app-old/…`: a bare prefix closed, then killed, a
+    // process that only shared the start of the name.
+    while (!prefix.empty() && prefix.back() == '/') prefix.pop_back();
+    prefix.push_back('/');
 
     // Walk /proc rather than shelling out to lsof: no dependency, no PATH assumption, and it works in
     // the minimal container an update might run in. A process we cannot read is skipped, which keeps
@@ -124,6 +128,11 @@ bool dotnet_runtime_present(int major) {
         }
     }
     return false;
+}
+
+// The native narrow encoding here, which is UTF-8 on every system this library targets.
+std::vector<std::string> utf8_arguments(int argc, char** argv) {
+    return argc > 1 ? std::vector<std::string>(argv + 1, argv + argc) : std::vector<std::string>{};
 }
 
 }  // namespace shenora

@@ -130,10 +130,32 @@ public static class AndroidMediaVideoConversion
             output.SetInteger(MediaFormat.KeyIFrameInterval, 1);
 
             _encoder = MediaCodec.CreateEncoderByType(AvcMime)!;
-            _encoder.Configure(output, null, null, MediaCodecConfigFlags.Encode);
-            _bridge = _encoder.CreateInputSurface()!;
-            _encoder.Start();
+            try
+            {
+                _encoder.Configure(output, null, null, MediaCodecConfigFlags.Encode);
+                _bridge = _encoder.CreateInputSurface()!;
+                _encoder.Start();
+                _decoder = StartDecoder(mime, codecPrivate, frameRate, bitRate);
+            }
+            catch
+            {
+                // A constructor that throws is never disposed: what it made is released here, or the device's few codec
+                // instances and its Surface leak and the NEXT conversion fails with a resource error naming nothing.
+                foreach (var codec in new[] { _decoder, _encoder })
+                {
+                    if (codec is null) continue;
+                    try { codec.Stop(); } catch (Exception) { }
+                    try { codec.Release(); } catch (Exception) { }
+                    codec.Dispose();
+                }
+                try { _bridge?.Release(); } catch (Exception) { }
+                _bridge?.Dispose();
+                throw;
+            }
+        }
 
+        private MediaCodec StartDecoder(string mime, ReadOnlyMemory<byte> codecPrivate, int frameRate, int bitRate)
+        {
             // ⚠ SAID OUT LOUD, because the REQUEST is the only half of this the kit owns and the only half
             // observable from outside — and an encoder need not honour it. Measured on an API 36 emulator:
             // the same source came out at ~1.7 Mbps whether this asked for 4.1 Mbps or the 400 kbps floor,
@@ -153,9 +175,19 @@ public static class AndroidMediaVideoConversion
                 input.SetByteBuffer("csd-0", Java.Nio.ByteBuffer.Wrap(codecPrivate.ToArray())!);
             }
 
-            _decoder = MediaCodec.CreateDecoderByType(mime)!;
-            _decoder.Configure(input, _bridge, null, MediaCodecConfigFlags.None);
-            _decoder.Start();
+            var decoder = MediaCodec.CreateDecoderByType(mime)!;
+            try
+            {
+                decoder.Configure(input, _bridge, null, MediaCodecConfigFlags.None);
+                decoder.Start();
+                return decoder;
+            }
+            catch
+            {
+                try { decoder.Release(); } catch (Exception) { }
+                decoder.Dispose();
+                throw;
+            }
         }
 
         /// <inheritdoc />
@@ -173,6 +205,9 @@ public static class AndroidMediaVideoConversion
                 {
                     Report(_log, $"[Shenora.Android] a {frame.Data.Length}-byte frame exceeds the decoder's "
                                + $"{buffer.Remaining()}-byte input buffer.");
+                    // Handed back EMPTY: a dequeued buffer belongs to us until queued, and each one kept here left the
+                    // decoder one fewer, until it had none and every later frame was dropped.
+                    _decoder.QueueInputBuffer(index, 0, 0, frame.PresentationTimeUs, MediaCodecBufferFlags.None);
                     return [];
                 }
                 buffer.Put(frame.Data.ToArray());

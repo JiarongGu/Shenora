@@ -113,7 +113,10 @@ public static class SafeAreaScript
         var effective = insets is { IsEmpty: false } measured ? measured : options.Default;
 
         var script = new StringBuilder();
-        script.Append("(function(){var r=document.documentElement;");
+        // A JS try/catch round the whole body: on iOS a script that THROWS takes the app down past any C# catch
+        // (mobile-shells.md), and this one dereferences a document that may not exist yet. Caught, it answers without
+        // the delivered marker, which the shell reads as "not yet" and retries.
+        script.Append("(function(){try{var r=document.documentElement;");
 
         if (effective is { } v)
         {
@@ -157,7 +160,7 @@ public static class SafeAreaScript
 
         // A truthy marker, so a caller can tell DELIVERED from EVALUATED-AGAINST-NOTHING — see
         // DeliveredMarker.
-        script.Append("return '").Append(DeliveredMarker).Append("';})();");
+        script.Append("return '").Append(DeliveredMarker).Append("';}catch(e){return 'failed: '+e;}})();");
         return script.ToString();
     }
 

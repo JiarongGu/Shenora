@@ -44,4 +44,10 @@ bool start_detached(const std::filesystem::path& exe, const std::vector<std::str
 /// then to install, which is safe to do redundantly.
 bool dotnet_runtime_present(int major);
 
+/// The program's arguments after its own name, as UTF-8 — the encoding `start_detached` and the manifest assume.
+///
+/// ⚠ Not `argv` itself on Windows: there it is in the ANSI code page, so a forwarded argument outside that code
+/// page reached the app mangled. Pass a path on as `path.u8string()` for the same reason, never `path.string()`.
+std::vector<std::string> utf8_arguments(int argc, char** argv);
+
 }  // namespace shenora

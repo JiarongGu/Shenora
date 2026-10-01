@@ -262,8 +262,8 @@ Shenora.slnx
 │   │                                          B4b: puts the per-RID launcher binaries the `launcher`
 │   │                                          release matrix builds (win-x64 + linux-x64) into one nupkg
 │   │                                          under runtimes/{rid}/native/, alongside the C++ library
-│   │                                          sources and template under launcher-src/ so an adopter
-│   │                                          can either use the stock binary or build their own.
+│   │                                          sources and template under launcher-src/, which an
+│   │                                          adopter builds; the stock binary starts app/MyApp.exe.
 │   │                                          It consumes DOWNLOADED artifacts because the binaries
 │   │                                          come from two different toolchains on two different
 │   │                                          runners — no single `dotnet pack` can produce both — so

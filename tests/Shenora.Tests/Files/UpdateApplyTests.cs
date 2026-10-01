@@ -88,7 +88,7 @@ public class UpdateApplyTests
     /// <summary>
     /// 🔴 <b>An INSTALLED baseline listing an escaping path must not delete outside the install root.</b>
     /// This is the reachable half of the manifest-path hole: the removal pass is driven by the baseline,
-    /// and step 6 of a previous apply wrote that baseline from a manifest a remote server supplied — so
+    /// and a previous apply wrote that baseline from a manifest a remote server supplied — so
     /// one poisoned release arms the NEXT update's delete.
     /// <para>
     /// The baseline is written as raw JSON rather than through <c>Manifest(...)</c> on purpose: the diff

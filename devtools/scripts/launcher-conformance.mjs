@@ -10,7 +10,7 @@
 // themselves and prove nothing.
 //
 // Usage: node devtools/scripts/launcher-conformance.mjs <launcher-exe> <update-probe-exe>
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -168,6 +168,62 @@ test('the manifest parser reads what the C# side WRITES', (box) => {
   assert(r.applied === '1', `C#-written manifest was not applied: ${r.out.trim()}`);
   assert(fs.existsSync(path.join(box.app, 'nested/deep/x.dll')), 'a nested path did not land');
   assert(fs.existsSync(path.join(box.app, 'Mixed Case Name.dll')), 'a spaced/mixed-case path did not land');
+});
+
+test('a file name outside ASCII lands, and a tracked one is removed', (box) => {
+  // Manifest paths are UTF-8, and on Windows a narrow path is read in the ANSI code page: the removal looked for
+  // another name, and a name that code page cannot hold threw out of the apply. Two scripts, so the case fails on a
+  // Western code page and on a CJK one alike.
+  write(path.join(box.release, 'café-中.dll'), 'v2');
+  stage(box);
+  write(path.join(box.app, 'vieux-ğ-旧.dll'), 'dropped by the new release');
+  write(path.join(box.app, 'manifest.json'),
+    JSON.stringify({ version: '1.0', files: [{ path: 'vieux-ğ-旧.dll', size: 5, sha256: 'x' }] }));
+
+  const r = apply(box);
+  assert(r.applied === '1', `expected applied=1, got: ${r.out.trim()}`);
+  assert(fs.existsSync(path.join(box.app, 'café-中.dll')), 'a non-ASCII file name did not land');
+  assert(!fs.existsSync(path.join(box.app, 'vieux-ğ-旧.dll')), 'a tracked non-ASCII file was not removed');
+});
+
+test('an overlay that fails part-way leaves the installed version whole', (box) => {
+  // A write that failed mid-overlay left two versions in the tree, and the template then STARTED it.
+  write(path.join(box.app, 'a.dll'), 'v1');
+  write(path.join(box.app, 'b.dll'), 'v1');
+  write(path.join(box.release, 'a.dll'), 'v2');
+  write(path.join(box.release, 'b.dll'), 'v2');
+  write(path.join(box.release, 'c-new.dll'), 'v2');
+  stage(box);
+  fs.chmodSync(path.join(box.app, 'b.dll'), 0o444);   // read-only: its overwrite fails, whatever the walk order
+  try {
+    const r = apply(box);
+    assert(r.applied === '0' && r.attempted === '1', `expected a failed apply, got: ${r.out.trim()}`);
+    assert(fs.readFileSync(path.join(box.app, 'a.dll'), 'utf8') === 'v1', 'a replaced file was not put back');
+    assert(!fs.existsSync(path.join(box.app, 'c-new.dll')), 'a file the failed overlay added was left behind');
+    assert(fs.existsSync(path.join(box.root, '.update', 'ready.json')), 'the stage was not kept for a retry');
+  } finally {
+    fs.chmodSync(path.join(box.app, 'b.dll'), 0o644);
+  }
+});
+
+test('a process whose path only STARTS like the app tree is left running', (box) => {
+  // `…/app` matched `…/app-old/…` as a bare string prefix, and the apply closed, then killed, that process.
+  const tool = process.platform === 'win32' ? path.join(process.env.SystemRoot, 'System32', 'PING.EXE') : '/bin/sleep';
+  const copy = path.join(box.root, 'app-old', path.basename(tool));
+  fs.mkdirSync(path.dirname(copy));
+  fs.copyFileSync(tool, copy);
+  const child = spawn(copy, process.platform === 'win32' ? ['-n', '60', '127.0.0.1'] : ['60'], { stdio: 'ignore' });
+  try {
+    write(path.join(box.release, 'app.dll'), 'v2');
+    stage(box);
+    const r = apply(box);
+    assert(r.applied === '1', `expected applied=1, got: ${r.out.trim()}`);
+    let alive = true;
+    try { process.kill(child.pid, 0); } catch { alive = false; }
+    assert(alive, 'the apply stopped a process outside the app tree (app-old/)');
+  } finally {
+    child.kill();
+  }
 });
 
 // ── Run ─────────────────────────────────────────────────────────────────────────────────────────────

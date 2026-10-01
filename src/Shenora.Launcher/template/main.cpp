@@ -15,7 +15,6 @@
 #include "shenora/updater.hpp"
 
 #include <cstdio>
-#include <cstring>
 #include <string>
 #include <vector>
 
@@ -47,12 +46,13 @@ int main(int argc, char** argv) {
 
     bool applyAndExit = false;
     std::vector<std::string> forwarded;
-    for (int i = 1; i < argc; ++i) {
+    // UTF-8, as start_detached expects: on Windows `argv` is in the ANSI code page.
+    for (const std::string& arg : shenora::utf8_arguments(argc, argv)) {
         // The conformance harness drives the launcher with this: apply, report, and do NOT start the
         // app. It is what lets a Node harness test a PREBUILT binary end to end with no compiler and
         // no GUI — the model the design doc's §5 takes from the sibling.
-        if (std::strcmp(argv[i], "--apply-and-exit") == 0) applyAndExit = true;
-        else forwarded.emplace_back(argv[i]);
+        if (arg == "--apply-and-exit") applyAndExit = true;
+        else forwarded.push_back(arg);
     }
 
     shenora::ApplyOptions options;
@@ -86,12 +86,13 @@ int main(int argc, char** argv) {
 
     const fs::path app = root / kAppSubdir / kAppExecutable;
     // `--app-root` is the kit's own contract (`AppRootArgument` + `ShenoraPaths`), so the app never has
-    // to guess where it was installed.
-    std::vector<std::string> args{ "--app-root", root.string() };
+    // to guess where it was installed. u8string, never string(): on Windows that is the ANSI code page, which
+    // threw for an install path outside it and mangled one inside it.
+    std::vector<std::string> args{ "--app-root", root.u8string() };
     args.insert(args.end(), forwarded.begin(), forwarded.end());
 
     if (!shenora::start_detached(app, args)) {
-        std::fprintf(stderr, "could not start %s\n", app.string().c_str());
+        std::fprintf(stderr, "could not start %s\n", app.u8string().c_str());
         return 4;
     }
     // Return IMMEDIATELY. §4: the launcher must be gone before the app's single-instance gate runs,

@@ -126,6 +126,48 @@ at the first list and missed five more breaking changes.
 - **A segment-streamed video stalled on a seek back into media the browser had evicted.** The binder still counted
   the segment as appended and never fetched it again; it now fetches it again.
 
+- **On Android, every playback item after the first had no system media controls.** `IPlaybackSession.Clear` made
+  the session inactive and nothing made it active again. Publishing an item, or reporting it playing, now does.
+  Measured on an emulator: after a clear and a second publish, `dumpsys media_session` reads `active=true`.
+
+- **The launcher would not start an app on a machine whose .NET runtime it looked for in the wrong place.** It read
+  the installer's record from the 64-bit registry view, and the installer writes it in the 32-bit one, so on this
+  repository's own machine, with .NET 10 installed, it reported the runtime missing and exited. It reads both views,
+  then the runtime folders under `DOTNET_ROOT` and Program Files.
+
+- **The launcher on Windows broke on a path or argument outside the ANSI code page.** A non-ASCII file name in an
+  update stopped the apply with *"No mapping for the Unicode character exists in the target multi-byte code page"*,
+  so the update was retried on every start and never applied; an install folder with such a name could not start
+  the app, and a forwarded argument reached it mangled. Paths and arguments are UTF-8 throughout. Measured: the new
+  conformance case fails on the 0.19.0 launcher and passes now, and an app installed under a non-ASCII folder
+  receives its `--app-root` and arguments exactly.
+
+- **The launcher could close, then kill, a process outside the app.** It matched the app folder as a bare string
+  prefix, so `…\app` also claimed `…\app-old\`. **An overlay that failed part-way left two versions in the tree and
+  the launcher started it**; the files it replaced are now put back and the ones it added removed, so the installed
+  version starts and the update is retried. **An apply cut short during its removals never finished them**, because
+  the new baseline was written first; removals now come first. The first two have conformance cases that fail
+  without the fix.
+
+- **Android audio conversion fed a 5.1 source to an encoder configured for stereo**, so the soundtrack played three
+  times as long and garbled. The decoder is asked to downmix (Android 12L+), and what still arrives with more than
+  two channels is folded to stereo. A conversion whose setup failed part-way leaked the codecs and Surface it had
+  already made, on Android and on iOS, so the next conversion failed naming nothing. An Android video frame larger
+  than the decoder's input buffer kept that buffer, until the decoder had none left.
+
+- **Android: a failed or cancelled `SaveAsync` left an empty document behind**, since the picker creates it when the
+  user picks; an empty one is now removed, and one the copy had begun to write. A launch that threw kept its
+  activity request code for good, and once all 256 were gone the next request spun on the main thread.
+
+- **The safe-area script could take an iOS app down.** On iOS a script that throws in `EvaluateJavaScriptAsync`
+  aborts the app past any C# `catch`, and this one reads a document that may not exist yet. It catches its own
+  error now, and the shell retries.
+
+- **Docs:** the launcher package's stock binary starts `app/MyApp.exe`, which its description did not say; the
+  Android package's description claimed lock-screen controls, which need the app's MediaStyle notification; the iOS
+  description still said the app writes four SwiftUI views for a Live Activity; and `MobileIpcBridge.Dispose` said it
+  cancels in-flight requests, which it deliberately does not.
+
 ## 0.19.0 — 2026-09-30
 
 ### Breaking

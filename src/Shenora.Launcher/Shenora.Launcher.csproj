@@ -22,7 +22,7 @@
     <!-- IsPackable stays INLINE — the coverage gate finds shipped projects by text-matching it. -->
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.Launcher</PackageId>
-    <Description>Shenora launcher: the native applier that runs BEFORE your app and applies a staged update, for framework-dependent apps whose runtime may be absent and whose files may be held open. Ships per-RID binaries (win-x64, linux-x64) plus the C++17 library sources and the main.cpp template, so you can use the stock launcher or build your own from the same library. A self-contained app needs none of this — the Shenora package's UpdateStage.ApplyAsync already applies updates in portable .NET.</Description>
+    <Description>Shenora launcher: the native applier that runs BEFORE your app and applies a staged update, for framework-dependent apps whose runtime may be absent and whose files may be held open. Ships per-RID binaries (win-x64, linux-x64) plus the C++17 library sources and the main.cpp template, so you can build your launcher from the same library. The stock binary is the template built as it ships: it starts app/MyApp.exe, so it suits an app of that name or a trial of the protocol. A self-contained app needs none of this — the Shenora package's UpdateStage.ApplyAsync already applies updates in portable .NET.</Description>
 
     <!--
       ⚠ THIS PACKAGE HAS NO MANAGED SURFACE, and that is declared rather than inferred.
@@ -75,9 +75,9 @@
     <None Include="$(LauncherArtifacts)/runtimes/**/native/*" Pack="true" PackagePath="runtimes/" />
 
     <!--
-      The library SOURCES ship too. An adopter has two legitimate needs: use the stock binary (rename,
-      re-icon, sign) — that is `runtimes/` above — or build their own launcher from the same library with
-      their own main.cpp. A template left only in the repo rots and gets copied at the wrong version;
+      The library SOURCES ship too, and a product builds its launcher from them with its own main.cpp: the
+      stock binary in `runtimes/` above is the template as it ships, which starts `app/MyApp.exe` — enough
+      for an app of that name (renamed, re-iconed, signed) or a trial of the protocol, and no more. A template left only in the repo rots and gets copied at the wrong version;
       shipping it versions it in lockstep with the library it is built against (D4). A plain folder
       rather than `contentFiles/` deliberately: the consumer's launcher build is CMake, not MSBuild.
     -->

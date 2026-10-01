@@ -51,7 +51,7 @@ if(MSVC)
   # SIZE is a stated requirement (D50), so it is a build setting rather than a hope:
   #   /O1  optimise for size   /GL + /LTCG  whole-program  /GS-  no stack cookies in a trusted-input tool
   target_compile_options(shenora_launcher PRIVATE $<$<CONFIG:Release>:/O1 /GL>)
-  target_link_libraries(shenora_launcher PUBLIC psapi)
+  target_link_libraries(shenora_launcher PUBLIC psapi shell32)   # shell32: CommandLineToArgvW
 else()
   target_compile_options(shenora_launcher PRIVATE -Wall -Wextra -Werror)
   target_compile_options(shenora_launcher PRIVATE $<$<CONFIG:Release>:-Os -ffunction-sections -fdata-sections>)

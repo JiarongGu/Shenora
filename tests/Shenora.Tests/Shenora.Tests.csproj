@@ -64,6 +64,9 @@
          from the shipped one silently, which is the trap the Live Activity mirror already paid for. -->
     <Compile Include="..\..\src\Shenora.Mobile\Hosting\AppForegroundTracker.cs"
              Link="Ipc\AppForegroundTracker.cs" />
+    <!-- The same exception, for the same reason: arithmetic over PCM bytes, with no Android type in it. -->
+    <Compile Include="..\..\src\Shenora.Android\Services\PcmDownmix.cs"
+             Link="Media\PcmDownmix.cs" />
   </ItemGroup>
 
   <ItemGroup>

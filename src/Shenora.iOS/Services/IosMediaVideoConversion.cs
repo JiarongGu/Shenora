@@ -192,6 +192,9 @@ public static class IosMediaVideoConversion
             VTDecompressionSession? decoder = null;
             VTCompressionSession? encoder = null;
             Run? run = null;
+            // Released on EVERY exit but the hand-off to Run: only a throw did it, and the two `return null` paths
+            // below leaked the format, and the encoder session with it when the decoder was refused.
+            var handedOff = false;
 
             try
             {
@@ -222,16 +225,19 @@ public static class IosMediaVideoConversion
                 if (decoder is null) return null;
 
                 run = new Run(decoder, encoder, sourceFormat, codecType, width, height, codecPrivate, log);
+                handedOff = true;
                 AppCallback.Log(log, () => $"[Shenora.iOS] picture conversion ready: {codecType} -> h264 at "
                                          + $"{width}x{height}");
                 return run;
             }
-            catch
+            finally
             {
-                decoder?.Dispose();
-                encoder?.Dispose();
-                sourceFormat.Dispose();
-                throw;
+                if (!handedOff)
+                {
+                    decoder?.Dispose();
+                    encoder?.Dispose();
+                    sourceFormat.Dispose();
+                }
             }
         }
 

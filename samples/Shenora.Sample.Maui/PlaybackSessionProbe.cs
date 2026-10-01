@@ -82,6 +82,21 @@ internal static class PlaybackSessionProbe
                 Rate = 1.0,
             });
 
+            // A SECOND item after Clear, the way an app moves from one track to the next. Clear made the Android session
+            // inactive and nothing made it active again, so every item after the first had no system controls: the OS
+            // must read this session back as active (`dumpsys media_session`: active=true).
+            session.Clear();
+            session.Publish(new PlaybackInfo
+            {
+                Title = Title,
+                Subtitle = Subtitle,
+                GroupName = GroupName,
+                Artwork = artwork,
+                Duration = TimeSpan.FromSeconds(240),
+            });
+            session.Report(new PlaybackProgress { State = PlaybackState.Playing, Position = TimeSpan.FromSeconds(42), Rate = 1.0 });
+            log("[PLAYBACK] cleared and published again — the session must still be ACTIVE");
+
             log($"[PLAYBACK] published title='{Title}' subtitle='{Subtitle}' group='{GroupName}' "
                 + $"artwork={artwork.Length}B duration=240s state=Playing position=42s");
             if (artwork.IsEmpty)

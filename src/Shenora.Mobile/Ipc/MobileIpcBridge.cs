@@ -231,15 +231,15 @@ public sealed class MobileIpcBridge : IDisposable
 
     private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_log, message, exception: failure);
 
-    /// <summary>Stop the timer, detach the handler, cancel the dispatch lifetime and unsubscribe from the
-    /// bus. Without this the timer keeps firing into a torn-down page for the life of the process.</summary>
+    /// <summary>Stop the timer, detach the handler and unsubscribe from the bus. Without this the timer keeps firing
+    /// into a torn-down page for the life of the process. ⚠ In-flight requests are NOT cancelled: they run to the end,
+    /// and their responses are dropped with the page (see the constructor).</summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
 
-        // Signal FIRST, so an in-flight handler learns the page is gone while its await can still
-        // act on it — IpcHostBridge.Dispose owns the cancellation and its guard.
+        // FIRST, before the transport and subscriptions go. It cancels nothing here — CancelInFlightOnDispose is off.
         _host.Dispose();
 
         _flushTimer?.Stop();

@@ -173,6 +173,8 @@ public interface IFileDialogs
     /// <para>
     /// <b>The write is ATOMIC</b> (<see cref="Files.BeginReplace"/>): a save that is cancelled, throws,
     /// or is interrupted half-way leaves the user's existing file exactly as it was.
+    /// ⚠ Except during Android's last step: the content is produced in a temp file, then copied into the provider's
+    /// document, which cannot be replaced atomically, so a save that fails during that copy removes the document.
     /// </para>
     /// </summary>
     /// <param name="options">Dialog inputs; a host without an equivalent ignores what it cannot honour.</param>

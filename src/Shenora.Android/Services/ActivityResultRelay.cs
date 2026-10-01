@@ -44,6 +44,9 @@ public static class ActivityResultRelay
         int requestCode;
         lock (Gate)
         {
+            // A full window has no free code, and the search below would never end — on the main thread.
+            if (InFlight.Count >= RequestCodeWindow)
+                throw new InvalidOperationException($"{RequestCodeWindow} activity requests are already in flight.");
             // A rotating window; an in-flight code is skipped.
             do { requestCode = FirstRequestCode + (_next++ % RequestCodeWindow); }
             while (InFlight.ContainsKey(requestCode));
@@ -51,7 +54,16 @@ public static class ActivityResultRelay
         }
         // Outside the lock — this starts a real Intent. The FRAMEWORK call, not AndroidX's launcher,
         // which would route the result back through the registry.
-        activity.StartActivityForResult(contract.CreateIntent(activity, input), requestCode);
+        try
+        {
+            activity.StartActivityForResult(contract.CreateIntent(activity, input), requestCode);
+        }
+        catch
+        {
+            // The caller never got the code to release: kept, each failed launch took one for good.
+            lock (Gate) InFlight.Remove(requestCode);
+            throw;
+        }
         return requestCode;
     }
 

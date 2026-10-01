@@ -38,6 +38,7 @@ public sealed class AndroidFileDialogs : MobileFileDialogsBase
         // "wt" truncates it immediately, so a caller that throws half-way would already have destroyed
         // an existing file they picked to overwrite.
         var temp = NewTempPath(SuggestedName(options));
+        var copying = false;
         try
         {
             var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None);
@@ -46,11 +47,17 @@ public sealed class AndroidFileDialogs : MobileFileDialogsBase
                 await write(stream, cancellationToken).ConfigureAwait(false);
             }
 
+            copying = true;
             await CopyToDocumentAsync(temp, destination, cancellationToken).ConfigureAwait(false);
 
             // No path reported: a content URI is a revocable grant, not something the app can reopen
             // later, and the contract populates FilePath only for an addressable destination.
             return FileDialogResult.Completed();
+        }
+        catch
+        {
+            DiscardDocument(destination, written: copying);
+            throw;
         }
         finally
         {
@@ -103,6 +110,31 @@ public sealed class AndroidFileDialogs : MobileFileDialogsBase
         {
             // Release on every exit path, or the relay entry leaks for the life of the session.
             if (requestCode >= 0) ActivityResultRelay.Complete(requestCode);
+        }
+    }
+
+    /// <summary>
+    /// Take back the document a failed or cancelled save leaves: <c>ACTION_CREATE_DOCUMENT</c> creates it when the user
+    /// picks, so it stayed behind empty — or, failing during the copy, holding part of the content. Before the copy
+    /// only an EMPTY one goes, since the user may have picked an existing document to overwrite and it is still
+    /// whole; once the copy has truncated it, what is left is a fragment either way. Best effort.
+    /// </summary>
+    private static void DiscardDocument(AndroidUri destination, bool written)
+    {
+        try
+        {
+            var resolver = Platform.AppContext.ContentResolver;
+            if (resolver is null) return;
+            if (!written)
+            {
+                using var cursor = resolver.Query(destination, ["_size"], null, null, null);
+                if (cursor is null || !cursor.MoveToFirst() || cursor.IsNull(0) || cursor.GetLong(0) != 0) return;
+            }
+            global::Android.Provider.DocumentsContract.DeleteDocument(resolver, destination);
+        }
+        catch (Exception)
+        {
+            // The save's own failure is the answer; a document that will not go is left as it is.
         }
     }
 

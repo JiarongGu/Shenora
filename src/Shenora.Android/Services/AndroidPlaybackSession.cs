@@ -117,6 +117,9 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
             }
 
             _session.SetMetadata(builder.Build());
+            // A new item after Clear: Clear made the session inactive, and nothing else made it active again, so every
+            // item after the first played with the system's controls gone.
+            if (!_session.Active) _session.Active = true;
         }, nameof(Publish));
     }
 
@@ -136,6 +139,8 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
             builder.SetActions(ActionsFor(Supported));
             builder.SetState(StateFor(progress.State), _lastPositionMs, (float)RateFor(progress));
             _session.SetPlaybackState(builder.Build());
+            // Playing again after Clear is current again (see Publish); a Stopped report leaves a cleared session out.
+            if (progress.State != PortableState.Stopped && !_session.Active) _session.Active = true;
         }, nameof(Report));
     }
 

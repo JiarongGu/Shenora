@@ -103,27 +103,83 @@ ApplyResult apply_update_body(const ApplyOptions& options) {
         }
     }
 
-    // ── 5. Overlay, excluding the manifest (written explicitly in step 6) ─────────────────────────
+    // ── 5. Overlay, excluding the manifest (written explicitly in step 7) ─────────────────────────
+    //
+    // Every file it replaces is copied aside first and put back if any write fails, and every file it adds is
+    // removed: a failure part-way left a tree of two versions, and the caller then STARTED it. Now a failed
+    // overlay leaves the installed version whole, and the stage stays for the next start to retry.
+    const fs::path rollback = stageRoot / "rollback";
+    fs::remove_all(rollback, ec);   // a previous run's, cut short
+    std::vector<fs::path> replaced;
+    std::vector<fs::path> added;
+    const auto restore = [&]() {
+        std::error_code undoEc;
+        for (auto it = replaced.rbegin(); it != replaced.rend(); ++it) {
+            fs::copy_file(rollback / *it, appRoot / *it, fs::copy_options::overwrite_existing, undoEc);
+            if (undoEc) log("could not restore '" + it->generic_u8string() + "': " + undoEc.message());
+        }
+        for (const fs::path& relative : added) fs::remove(appRoot / relative, undoEc);
+        fs::remove_all(rollback, undoEc);
+    };
     fs::create_directories(appRoot, ec);
     for (const auto& entry : fs::recursive_directory_iterator(staged, ec)) {
         if (ec) break;
         if (!entry.is_regular_file()) continue;
         const fs::path relative = fs::relative(entry.path(), staged, ec);
         if (ec) continue;
-        if (normalize_path(relative.generic_string()) == kManifest) continue;
+        if (normalize_path(relative.generic_u8string()) == kManifest) continue;
 
         const fs::path target = appRoot / relative;
+        const bool existed = fs::exists(target, ec);
+        if (existed) {
+            fs::create_directories((rollback / relative).parent_path(), ec);
+            fs::copy_file(target, rollback / relative, fs::copy_options::overwrite_existing, ec);
+            if (ec) {
+                result.failure = "could not keep a copy of '" + relative.generic_u8string() + "': " + ec.message();
+                log(result.failure);
+                restore();
+                return result;
+            }
+            replaced.push_back(relative);
+        }
         fs::create_directories(target.parent_path(), ec);
         fs::copy_file(entry.path(), target, fs::copy_options::overwrite_existing, ec);
         if (ec) {
-            result.failure = "could not write '" + relative.generic_string() + "': " + ec.message();
+            result.failure = "could not write '" + relative.generic_u8string() + "': " + ec.message();
             log(result.failure);
+            if (!existed) added.push_back(relative);   // a failed copy can leave a partial file behind
+            restore();
             return result;
         }
-        result.written.push_back(relative.generic_string());
+        if (!existed) added.push_back(relative);
+        result.written.push_back(relative.generic_u8string());
     }
 
-    // ── 6. The new baseline, written explicitly ───────────────────────────────────────────────────
+    // ── 6. Removals: TRACKED paths only, never a directory sweep ──────────────────────────────────
+    //
+    // §4 and D30. User data lives in the same tree, so "delete what is not in the release" would
+    // destroy it. The set is exactly "in the old manifest, not in the new one".
+    //
+    // BEFORE the new baseline: an apply cut short here keeps its marker, and the next start recomputes the same
+    // removals from the old baseline. Written first, the baseline already matched the release, so the retry removed
+    // nothing and the dropped files stayed for good.
+    {
+        std::set<std::string> keep;
+        for (const auto& f : release.files) keep.insert(normalize_path(f.path));
+        for (const auto& f : installed.files) {
+            const std::string key = normalize_path(f.path);
+            if (keep.count(key) != 0) continue;
+            if (key == kManifest) continue;
+            // u8path, and generic_u8string above: manifest paths are UTF-8, and on Windows a narrow path is read in the
+            // ANSI code page, so a removal looked for another name and a name that code page cannot hold threw.
+            const fs::path victim = appRoot / fs::u8path(f.path).make_preferred();
+            if (!fs::exists(victim, ec)) continue;
+            fs::remove(victim, ec);
+            if (!ec) result.removed.push_back(f.path);
+        }
+    }
+
+    // ── 7. The new baseline, written explicitly ───────────────────────────────────────────────────
     {
         std::ofstream out(baseline, std::ios::binary | std::ios::trunc);
         if (!out) {
@@ -133,24 +189,6 @@ ApplyResult apply_update_body(const ApplyOptions& options) {
         }
         out << releaseJson;
         result.written.push_back(kManifest);
-    }
-
-    // ── 7. Removals: TRACKED paths only, never a directory sweep ──────────────────────────────────
-    //
-    // §4 and D30. User data lives in the same tree, so "delete what is not in the release" would
-    // destroy it. The set is exactly "in the old manifest, not in the new one".
-    {
-        std::set<std::string> keep;
-        for (const auto& f : release.files) keep.insert(normalize_path(f.path));
-        for (const auto& f : installed.files) {
-            const std::string key = normalize_path(f.path);
-            if (keep.count(key) != 0) continue;
-            if (key == kManifest) continue;
-            const fs::path victim = appRoot / fs::path(f.path).make_preferred();
-            if (!fs::exists(victim, ec)) continue;
-            fs::remove(victim, ec);
-            if (!ec) result.removed.push_back(f.path);
-        }
     }
 
     // ── 8. Clear the stage. Last, so a crash before here re-applies rather than losing the update ─

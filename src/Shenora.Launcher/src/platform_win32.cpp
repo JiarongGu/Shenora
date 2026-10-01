@@ -4,6 +4,7 @@
 
 #include <windows.h>
 #include <psapi.h>
+#include <shellapi.h>
 #include <tlhelp32.h>
 
 #include <algorithm>
@@ -57,7 +58,11 @@ fs::path executable_path() {
 std::vector<int> processes_using(const fs::path& root) {
     std::vector<int> holders;
     const DWORD self = GetCurrentProcessId();
-    const std::wstring prefix = fs::absolute(root).lexically_normal().wstring();
+    std::wstring prefix = fs::absolute(root).lexically_normal().wstring();
+    // Ending in a separator, so `…\app` does not also claim `…\app-old\…`: a bare prefix closed, then killed, a
+    // process that only shared the start of the name.
+    while (!prefix.empty() && (prefix.back() == L'\\' || prefix.back() == L'/')) prefix.pop_back();
+    prefix.push_back(L'\\');
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) return holders;   // cannot tell — never "definitely none"
@@ -128,25 +133,72 @@ bool start_detached(const fs::path& exe, const std::vector<std::string>& args) {
     return true;
 }
 
-bool dotnet_runtime_present(int major) {
-    // The registry is the cheap, offline answer and it is what both donors use. `dotnet --list-runtimes`
-    // would be more precise and costs a process launch on every single start, which is the wrong trade
-    // for a check whose false-negative merely triggers a (safe, idempotent) install prompt.
+namespace {
+
+/// A version named under the installer's `sharedfx` key, in one registry view.
+bool registered_runtime(REGSAM view, int major) {
     HKEY key{};
     const wchar_t* path = L"SOFTWARE\\dotnet\\Setup\\InstalledVersions\\x64\\sharedfx\\Microsoft.NETCore.App";
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, path, 0, KEY_READ | KEY_WOW64_64KEY, &key) != ERROR_SUCCESS) {
-        return false;
-    }
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, path, 0, KEY_READ | view, &key) != ERROR_SUCCESS) return false;
     bool found = false;
     for (DWORD index = 0;; ++index) {
         wchar_t name[256];
         DWORD nameLen = static_cast<DWORD>(std::size(name));
         if (RegEnumValueW(key, index, name, &nameLen, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS) break;
-        int found_major = _wtoi(name);
-        if (found_major >= major) { found = true; break; }
+        if (_wtoi(name) >= major) { found = true; break; }
     }
     RegCloseKey(key);
     return found;
+}
+
+std::wstring environment(const wchar_t* name) {
+    const DWORD need = GetEnvironmentVariableW(name, nullptr, 0);
+    if (need == 0) return {};
+    std::wstring value(need, L'\0');
+    value.resize(GetEnvironmentVariableW(name, value.data(), need));
+    return value;
+}
+
+/// A `shared/Microsoft.NETCore.App/<version>` folder of at least `major` under `root`.
+bool runtime_folder(const fs::path& root, int major) {
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(root / L"shared" / L"Microsoft.NETCore.App", ec)) {
+        if (ec) break;
+        if (entry.is_directory(ec) && _wtoi(entry.path().filename().c_str()) >= major) return true;
+    }
+    return false;
+}
+
+}  // namespace
+
+bool dotnet_runtime_present(int major) {
+    // The registry is the cheap, offline answer and it is what both donors use. `dotnet --list-runtimes`
+    // would be more precise and costs a process launch on every single start, which is the wrong trade
+    // for a check whose false-negative merely triggers a (safe, idempotent) install prompt.
+    // ⚠ The 32-bit VIEW first: the runtime installer writes InstalledVersions there even on x64 (where hostfxr reads
+    // it), and the 64-bit view alone answered "missing" on a machine with .NET 10 installed, so the app never started.
+    if (registered_runtime(KEY_WOW64_32KEY, major) || registered_runtime(KEY_WOW64_64KEY, major)) return true;
+    // Then the folders, for an install that left no registry trace: DOTNET_ROOT, then the default location.
+    const std::wstring dotnetRoot = environment(L"DOTNET_ROOT");
+    if (!dotnetRoot.empty() && runtime_folder(dotnetRoot, major)) return true;
+    const std::wstring programFiles = environment(L"ProgramFiles");
+    return !programFiles.empty() && runtime_folder(fs::path(programFiles) / L"dotnet", major);
+}
+
+std::vector<std::string> utf8_arguments(int, char**) {
+    std::vector<std::string> out;
+    int count = 0;
+    LPWSTR* wide = CommandLineToArgvW(GetCommandLineW(), &count);
+    if (!wide) return out;
+    for (int i = 1; i < count; ++i) {
+        const int length = static_cast<int>(wcslen(wide[i]));
+        const int need = WideCharToMultiByte(CP_UTF8, 0, wide[i], length, nullptr, 0, nullptr, nullptr);
+        std::string arg(static_cast<std::size_t>(need), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, wide[i], length, arg.data(), need, nullptr, nullptr);
+        out.push_back(std::move(arg));
+    }
+    LocalFree(wide);
+    return out;
 }
 
 }  // namespace shenora

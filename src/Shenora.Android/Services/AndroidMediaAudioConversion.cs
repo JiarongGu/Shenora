@@ -101,6 +101,8 @@ public static class AndroidMediaAudioConversion
         public int OutputFramesPerPacket => 1024;   // AAC-LC, always
         private int OutputSampleRate { get; set; }
         private int OutputChannels { get; set; }
+        private int _decodedChannels;
+        private bool _decodedFloat;
 
         /// <summary>
         /// The output as a stream description. ⚠ The ENCODER's numbers, not the source's — valid only
@@ -121,7 +123,11 @@ public static class AndroidMediaAudioConversion
             OutputSampleRate = source.SampleRate is > 0 ? source.SampleRate.Value : 48000;
             OutputChannels = source.Channels is > 0 ? Math.Min(source.Channels.Value, 2) : 2;
 
-            var input = MediaFormat.CreateAudioFormat(mime, OutputSampleRate, source.Channels is > 0 ? source.Channels.Value : 2);
+            _decodedChannels = source.Channels is > 0 ? source.Channels.Value : 2;
+            var input = MediaFormat.CreateAudioFormat(mime, OutputSampleRate, _decodedChannels);
+            // Asked to downmix itself where the platform allows it (API 32+); what it actually emits is read back from
+            // its output format, and folded in software when it is still more than the encoder takes — see Pump.
+            if (OperatingSystem.IsAndroidVersionAtLeast(32)) input.SetInteger(MediaFormat.KeyMaxOutputChannelCount, OutputChannels);
             // 🔴 SIZE THE INPUT BUFFERS, or the decoder sizes them itself and gets it wrong. Measured on
             // Android: without this the very first MP3 frame — 314 bytes — threw
             // `Java.Nio.BufferOverflowException` from `buffer.Put`, because MediaCodec had allocated input
@@ -135,17 +141,36 @@ public static class AndroidMediaAudioConversion
             }
 
             _decoder = MediaCodec.CreateDecoderByType(mime)!;
-            _decoder.Configure(input, null, null, MediaCodecConfigFlags.None);
-            _decoder.Start();
+            try
+            {
+                _decoder.Configure(input, null, null, MediaCodecConfigFlags.None);
+                _decoder.Start();
 
-            // ⚠ Downmixed to at most STEREO: this tier targets web playback, not fidelity.
-            var output = MediaFormat.CreateAudioFormat(AacMime, OutputSampleRate, OutputChannels);
-            output.SetInteger(MediaFormat.KeyAacProfile, (int)MediaCodecProfileType.Aacobjectlc);
-            output.SetInteger(MediaFormat.KeyBitRate, 128_000);
-            _encoder = MediaCodec.CreateEncoderByType(AacMime)!;
-            _encoder.Configure(output, null, null, MediaCodecConfigFlags.Encode);
-            _encoder.Start();
-            _encoderStarted = true;
+                // ⚠ Downmixed to at most STEREO: this tier targets web playback, not fidelity.
+                var output = MediaFormat.CreateAudioFormat(AacMime, OutputSampleRate, OutputChannels);
+                output.SetInteger(MediaFormat.KeyAacProfile, (int)MediaCodecProfileType.Aacobjectlc);
+                output.SetInteger(MediaFormat.KeyBitRate, 128_000);
+                _encoder = MediaCodec.CreateEncoderByType(AacMime)!;
+                _encoder.Configure(output, null, null, MediaCodecConfigFlags.Encode);
+                _encoder.Start();
+                _encoderStarted = true;
+            }
+            catch
+            {
+                // A constructor that throws is never disposed: what it made is released here, or the device's few
+                // codec instances leak and the NEXT conversion fails with a resource error naming nothing.
+                ReleaseQuietly(_encoder);
+                ReleaseQuietly(_decoder);
+                throw;
+            }
+        }
+
+        private static void ReleaseQuietly(MediaCodec? codec)
+        {
+            if (codec is null) return;
+            try { codec.Stop(); } catch (Exception) { }
+            try { codec.Release(); } catch (Exception) { }
+            codec.Dispose();
         }
 
         /// <summary>⚠ Wrapped so a platform failure names itself in the log; still rethrows.</summary>
@@ -246,6 +271,13 @@ public static class AndroidMediaAudioConversion
                 {
                     var format = _decoder.OutputFormat!;
                     if (format.ContainsKey(MediaFormat.KeySampleRate)) OutputSampleRate = format.GetInteger(MediaFormat.KeySampleRate);
+                    if (format.ContainsKey(MediaFormat.KeyChannelCount)) _decodedChannels = format.GetInteger(MediaFormat.KeyChannelCount);
+                    // Before API 24 a decoder emits 16-bit PCM only, and the key does not exist.
+                    _decodedFloat = OperatingSystem.IsAndroidVersionAtLeast(24)
+                                    && format.ContainsKey(MediaFormat.KeyPcmEncoding)
+                                    && format.GetInteger(MediaFormat.KeyPcmEncoding) == (int)global::Android.Media.Encoding.PcmFloat;
+                    if (_decodedChannels > OutputChannels)
+                        Report(_log, $"[Shenora.Android] the decoder emits {_decodedChannels} channel(s); folding them to {OutputChannels}.");
                     continue;
                 }
                 else if (decoded >= 0)
@@ -255,6 +287,10 @@ public static class AndroidMediaAudioConversion
                     pcm.Position(_info.Offset);
                     pcm.Get(bytes);
                     _decoder.ReleaseOutputBuffer(decoded, render: false);
+                    // More channels than the encoder was configured with were fed to it as they were, so 5.1 played
+                    // three times as long and garbled. 16-bit only: a float decoder is not what this encoder takes.
+                    if (_decodedChannels > OutputChannels && OutputChannels == 2 && !_decodedFloat)
+                        bytes = PcmDownmix.ToStereo(bytes, _decodedChannels);
                     FeedEncoder(bytes, last: false);
                 }
 

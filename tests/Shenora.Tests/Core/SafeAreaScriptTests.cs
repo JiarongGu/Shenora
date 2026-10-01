@@ -143,6 +143,18 @@ public class SafeAreaScriptTests
     // ── Hygiene ───────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public void A_runtime_error_is_caught_in_the_page_and_does_not_read_as_delivered()
+    {
+        // On iOS a script that throws takes the app down past any C# catch (mobile-shells.md). The answer from the
+        // catch must not carry the marker, or a failed delivery would read as a delivered one and never be retried.
+        var js = SafeAreaScript.Build(new SafeAreaOptions { Splash = true }, Real);
+        Assert.StartsWith("(function(){try{", js);
+        var caught = js[js.LastIndexOf("catch(e){", StringComparison.Ordinal)..];
+        Assert.Equal("catch(e){return 'failed: '+e;}})();", caught);
+        Assert.DoesNotContain(SafeAreaScript.DeliveredMarker, caught);
+    }
+
+    [Fact]
     public void An_app_supplied_colour_containing_a_quote_cannot_break_the_script()
     {
         // Not a security boundary — the app is being protected from its own typo — but an unescaped
