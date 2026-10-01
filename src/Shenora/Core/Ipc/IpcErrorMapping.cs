@@ -24,7 +24,8 @@ public static class IpcErrorMapping
     /// host-side.
     /// </summary>
     /// <param name="exception">The failure to translate.</param>
-    /// <param name="logger">Where the full detail goes. Null discards it — pass a real logger.</param>
+    /// <param name="logger">Where the full detail goes. Null discards it — pass a real logger. Guarded: it runs inside
+    /// the catch that keeps a dispatch from throwing, so a logger that throws is ignored.</param>
     /// <param name="context">Names the boundary for the log line (e.g. "dispatching"). Only ever logged.</param>
     /// <param name="module">Logged for correlation; optional.</param>
     /// <param name="type">Logged for correlation; optional.</param>
@@ -41,8 +42,8 @@ public static class IpcErrorMapping
             // Expected failure the app described itself — code, parameters AND MESSAGE pass through
             // verbatim. 🔴 So never build an ShenoraException from an arbitrary `ex.Message`: that turns
             // the one sanctioned channel into a bypass of the whole boundary.
-            log.LogWarning(operation, "Operation error {Context} {Module}/{Type}: [{Code}]",
-                context, where, what, operation.Code);
+            AppCallback.Run(() => log.LogWarning(operation, "Operation error {Context} {Module}/{Type}: [{Code}]",
+                context, where, what, operation.Code));
             return operation.ToError();
         }
 
@@ -51,12 +52,12 @@ public static class IpcErrorMapping
         // own code keeps its own words.
         if (exception is OperationCanceledException)
         {
-            log.LogDebug("Cancelled {Context} {Module}/{Type}", context, where, what);
+            AppCallback.Run(() => log.LogDebug("Cancelled {Context} {Module}/{Type}", context, where, what));
             return new IpcError { Code = IpcErrorCodes.OperationCancelled };
         }
 
         // Unexpected: the client learns only THAT it failed and the exception's type name.
-        log.LogError(exception, "Unhandled error {Context} {Module}/{Type}", context, where, what);
+        AppCallback.Run(() => log.LogError(exception, "Unhandled error {Context} {Module}/{Type}", context, where, what));
         return new IpcError
         {
             Code = IpcErrorCodes.UnknownError,

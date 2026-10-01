@@ -173,8 +173,9 @@ at the first list and missed five more breaking changes.
 
 - **`IUiDispatcher.Queue` on the main-form and page dispatchers of `Shenora.Windows` ran from the thread pool**, out
   of order with earlier posts and reporting success before anything was posted; they queue on the UI thread now.
-  **A logger that throws was not contained everywhere**: in the event bus, the IPC dispatcher, drop zones, secondary
-  windows, the tray and others, a failing logger could escape a handler, end a window's thread, or reach the caller;
+  **A logger that throws was not contained everywhere**: in the event bus, the IPC dispatcher (`IpcErrorMapping`
+  included, so `DispatchAsync` threw), `UseLogging`, drop zones, secondary windows, the tray and others, a failing
+  logger could escape a handler, end a window's thread, or reach the caller;
   every call now goes through the guard the rest of the kit uses. **A `ChromiumView` whose `Path` is not a valid URL
   failed out of handle creation**, which WinForms answers with a modal error dialog; it logs and stays empty.
 

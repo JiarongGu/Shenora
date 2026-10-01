@@ -53,10 +53,10 @@ public sealed class BackNavigationModule : ModuleBase
                 // The page gets the same fact back so it can log it without a device attached.
                 var accepted = _back.Resolve(token, handled);
                 if (!accepted)
-                    context.Logger.LogWarning(
+                    AppCallback.Run(() => context.Logger.LogWarning(
                         "back: an answer arrived for press {Token}, which is no longer waiting — it timed "
                       + "out or was already answered. This page's back handling is not taking effect.",
-                        token);
+                        token));
                 return Task.FromResult<object?>(new BackNavigationResult(accepted));
             }
 

@@ -57,19 +57,20 @@ public static class MessageDispatcherExtensions
         });
     }
 
-    /// <summary>Middleware that logs every request and its outcome.</summary>
+    /// <summary>Middleware that logs every request and its outcome. A logger that throws is ignored: logging never
+    /// changes a request's answer.</summary>
     public static IMessageDispatcher UseLogging(this IMessageDispatcher dispatcher, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         var log = ResolveLogger(dispatcher, logger, nameof(UseLogging));
         return dispatcher.Use(async (request, next, ct) =>
         {
-            log.LogDebug("Processing {Module}/{Type}", request.Module, request.Type);
+            AppCallback.Run(() => log.LogDebug("Processing {Module}/{Type}", request.Module, request.Type));
             var response = await next();
             if (response is { Success: true })
-                log.LogDebug("Success {Module}/{Type}", request.Module, request.Type);
+                AppCallback.Run(() => log.LogDebug("Success {Module}/{Type}", request.Module, request.Type));
             else if (response is { Success: false })
-                log.LogWarning("Failed {Module}/{Type}: [{Code}]", request.Module, request.Type, response.Error?.Code);
+                AppCallback.Run(() => log.LogWarning("Failed {Module}/{Type}: [{Code}]", request.Module, request.Type, response.Error?.Code));
             return response;
         });
     }
