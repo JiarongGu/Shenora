@@ -39,6 +39,16 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
     /// </summary>
     internal const string NoErrorDialogs = "noerrdialogs";
 
+    /// <summary>
+    /// Whether Chromium starts without its GPU path, decided before it starts, since its switches are fixed then. Off
+    /// where a Linux machine reaches its GPU through WSL's D3D12 passthrough (<c>/dev/dxg</c>): Chromium reports that
+    /// path as working, and on it making or closing a browser blocked the UI thread for about ten seconds (measured: 15 of
+    /// 17 runs, and 0 of 9 without the GPU path). Everywhere else Chromium keeps its own choice. Internal: tested.
+    /// </summary>
+    internal static bool WithoutGpu(Func<string, bool> deviceExists) => OperatingSystem.IsLinux() && deviceExists("/dev/dxg");
+
+    internal const string DisableGpu = "disable-gpu";
+
     private readonly ProcessHandler _process;
     private readonly bool _appPages;
 
@@ -104,6 +114,7 @@ internal sealed unsafe class ChromiumApp : CefObject<_cef_app_t>
 #if CEF_MACOS
             AppendSwitch(commandLine, MockKeychain);
 #endif
+            if (WithoutGpu(File.Exists)) AppendSwitch(commandLine, DisableGpu);
         });
     }
 

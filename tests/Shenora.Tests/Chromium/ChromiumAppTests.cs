@@ -26,4 +26,17 @@ public class ChromiumAppTests
     [Fact]
     public void Both_local_network_checks_are_off() =>
         Assert.Equal(["LocalNetworkAccessChecks", "LocalNetworkAccessChecksWebSockets"], ChromiumApp.DisabledFeatures);
+
+    /// <summary>Chromium goes without its GPU path only on Linux reaching the GPU through WSL's passthrough device, whose
+    /// presence is the whole test; elsewhere it keeps its own choice.</summary>
+    [Fact]
+    public void The_GPU_path_is_off_only_on_Linux_through_WSLs_passthrough()
+    {
+        var asked = new List<string>();
+        var withDevice = ChromiumApp.WithoutGpu(path => { asked.Add(path); return path == "/dev/dxg"; });
+        Assert.Equal(OperatingSystem.IsLinux(), withDevice);
+        Assert.False(ChromiumApp.WithoutGpu(_ => false));
+        if (OperatingSystem.IsLinux()) Assert.Equal(["/dev/dxg"], asked);
+        else Assert.Empty(asked);   // nothing is probed off Linux
+    }
 }

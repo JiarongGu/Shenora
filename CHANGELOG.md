@@ -32,6 +32,14 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **Under WSL, a Chromium app's UI froze for about ten seconds as a session browser was made or closed.** There
+  Chromium reaches the GPU through WSL's D3D12 passthrough, reports it as working, and on it CEF held its UI thread
+  that long creating or closing a browser, the app's own window included. The shell now decides before Chromium starts
+  whether to use the GPU path, and starts it without on a Linux machine that reaches its GPU through that passthrough
+  (`/dev/dxg`); everywhere else Chromium keeps its own choice. Measured under WSL: 15 runs of 17 froze before, and
+  Chromium reported hardware acceleration on; after, 6 of 6 ran in 1 to 4 s with no switch passed, and Chromium
+  reported the GPU path off. Windows and macOS never froze, minimized or not, and are unchanged.
+
 - **A Chromium session's first navigation could return before its page had loaded.** A windowless session browser
   was made on `about:blank`, and that page could finish loading after the first lease's `NavigateAsync` had begun,
   which took its completion for its own: a script run straight after read the blank page (an empty title). It is now
