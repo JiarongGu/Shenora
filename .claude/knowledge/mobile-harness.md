@@ -302,6 +302,11 @@ the alternative was believed and turned out wrong.
   idle; the cause was a keychain password prompt from SecurityAgent, readable with
   `osascript -e 'tell application "System Events" to get value of static texts of every window of process "SecurityAgent"'`
   (D85). Check SecurityAgent and UserNotificationCenter before theorising about a hang.
+- **A Mac desktop probe that runs the bundle's binary directly is NOT in the Dock**, so a Dock click cannot land
+  (measured once, 2026-10-02: the window counted through System Events, the Dock listed no item). For anything the
+  Dock or LaunchServices does, start it as a person does, with `open`. ⚠ On a Mac whose .NET lives under the home
+  folder that needs `open --env DOTNET_ROOT=$HOME/.dotnet`: without it the host finds no runtime, nothing starts, and
+  `open` still exits 0. The Dock names the item by `CFBundleName`, not the display name.
 - **⚠ Before changing ANY permission on a Mac's Homebrew tree, read `local/MAC-DIAGNOSTICS.md`.** That
   install is in a mixed-ownership state, a package install fails there in three DIFFERENT ways in
   sequence, and the donor's advice (`sudo chown -R` the tree) is wrong for the first two. The generic
