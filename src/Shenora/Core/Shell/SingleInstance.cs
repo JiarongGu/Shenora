@@ -504,7 +504,9 @@ public sealed class SingleInstanceHostOptions
 
     /// <summary>
     /// What the RUNNING instance does with a later launch, on the UI thread, once its main window has been brought
-    /// forward: the arguments that launch was given, such as a file to open. Null does nothing more.
+    /// forward: the arguments that launch was given, such as a file to open. Null does nothing more. A launch that came
+    /// through the native launcher carries its flags too (<c>--app-root &lt;path&gt;</c>, and
+    /// <c>--startup-screen &lt;id&gt;</c> when it shows a startup screen): skip them, as the app's own start does.
     /// <para>
     /// On macOS the Chromium shell brings files and links here too: Finder's "open with", a file dropped on the Dock
     /// icon and a link to a scheme the bundle declares reach an app as Apple Events rather than arguments, the first

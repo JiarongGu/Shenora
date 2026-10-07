@@ -86,6 +86,9 @@ public static class ChromiumHostExtensions
         }
         // Always, so an app may close it without asking whether it has one.
         builder.Services.AddSingleton(_ => new ChromiumSplash());
+        // The launcher's startup screen, from the arguments it started the app with (an app's own registration wins).
+        builder.Services.TryAddSingleton<IStartupScreen>(sp =>
+            StartupScreen.FromArguments(builder.Args, sp.GetService<ILogger<StartupScreen>>()));
         builder.Services.AddSingleton<IShenoraRunner>(sp => new ChromiumRunner(options, sp.GetRequiredService<CefUiDispatcher>(),
             sp.GetRequiredService<ChromiumWindows>(), sp.GetService<ChromiumTray>(), sp.GetService<ILogger<ChromiumRunner>>(),
             sp.GetRequiredService<ChromiumSplash>()));

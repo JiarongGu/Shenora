@@ -17,6 +17,7 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
     : IShenoraRunner
 {
     private SplashSession? _splash;
+    private Action? _closeAtCard;
 
     /// <summary>What the shell starts CEF with, from the app's options, paths and environment: the same whether it
     /// starts as the app is composed or when it runs.</summary>
@@ -55,6 +56,9 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
                 LogLevel.Warning);
         // The process's exception channels, from here on the app's OnUnhandledException (as WinFormsBootstrap wires them).
         ChromiumUnhandledExceptions.Install(options);
+        // The launcher's startup screen goes at the app's first window: the card when there is one, else the main window.
+        StartupScreenHandover.Wire(app.Services.GetRequiredService<IStartupScreen>(), options.StartupScreen,
+            close => _closeAtCard = close, close => windows.MainShown = close);
         // Past the gate, so a launch it turned away shows nothing; before CEF, which the splash exists not to wait on.
         if (options.Splash is { } splashOptions) StartSplash(app, splashOptions);
 
@@ -115,6 +119,7 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
             _splash = session;
             if (splash is not null) splash.Session = session;
             windows.Splash = session;
+            if (_closeAtCard is { } closeAtCard) session.CardShown += closeAtCard;   // the card shows inside Start
             // Only a card needs to know where the window will open, before CEF can say.
             if (splashOptions.Card is null) session.Start(default, []);
             else

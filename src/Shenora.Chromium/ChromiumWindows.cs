@@ -96,6 +96,9 @@ public sealed unsafe class ChromiumWindows
     /// UI thread.</summary>
     internal Func<string, bool>? CloseGuard { get; set; }
 
+    /// <summary>Invoked when the main window is shown, after the splash's own handler.</summary>
+    internal Action? MainShown { get; set; }
+
     /// <summary>The splash over the main window, while the app starts: told as the main window opens, moves, hides or
     /// goes, and when its page is ready.</summary>
     internal SplashSession? Splash { get; set; }
@@ -225,6 +228,15 @@ public sealed unsafe class ChromiumWindows
                 window.Moved = splash.OwnerMoved;
                 window.Painted = splash.WindowPainted;
                 window.Hidden = splash.Abort;   // the tray's close: a splash left over the desktop would cover it
+            }
+            if (name == MainWindowName && MainShown is { } mainShown)
+            {
+                var splashShown = window.Shown;
+                window.Shown = () =>
+                {
+                    splashShown?.Invoke();
+                    AppCallback.Run(mainShown, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] A main-window-shown hook failed", LogLevel.Warning, ex));
+                };
             }
             _open[name] = window;
 

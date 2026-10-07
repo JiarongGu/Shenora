@@ -371,6 +371,7 @@ Shenora.Windows.WindowsHostOptions
   property ColorScheme
   property MainForm
   property SingleInstance
+  property StartupScreen
   property WindowAnimations
   property WindowState
 Shenora.Windows.WindowsMediaCapability

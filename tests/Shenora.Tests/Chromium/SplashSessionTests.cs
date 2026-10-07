@@ -55,6 +55,31 @@ public class SplashSessionTests
     }
 
     [Fact]
+    public void The_card_on_screen_is_announced_once()
+    {
+        using var session = CardSession(new ChromiumSplashOptions { Card = new SplashCardOptions() });
+        var shown = 0;
+        session.CardShown += () => shown++;
+
+        session.Start(new(1000, 700, 100, 50, false), Desk);
+        session.WindowOpened(7, Framed);
+        session.WindowShown();
+
+        Assert.Equal(1, shown);
+    }
+
+    [Fact]
+    public void No_card_no_announcement()
+    {
+        using var session = Session(new ChromiumSplashOptions());
+        var shown = 0;
+        session.CardShown += () => shown++;
+        Open(session);
+        session.WindowShown();
+        Assert.Equal(0, shown);
+    }
+
+    [Fact]
     public void A_card_shows_at_start_and_goes_once_the_window_is_shown()
     {
         using var session = CardSession(new ChromiumSplashOptions { Card = new SplashCardOptions() });

@@ -172,6 +172,79 @@ public class WinFormsRunnerTests
         Assert.True(DwmTransitions.Disable(form.Handle));
     }
 
+    private sealed class RecordingStartupScreen(bool shown) : IStartupScreen
+    {
+        public int Closes;
+        public bool IsShown => shown && Closes == 0;
+        public void Close() => Interlocked.Increment(ref Closes);
+    }
+
+    [Fact]
+    public void The_launcher_s_screen_closes_when_the_main_form_is_shown() => Sta.Run(() =>
+    {
+        var screen = new RecordingStartupScreen(shown: true);
+        var builder = Builder(UniqueRoot());
+        builder.Services.AddSingleton<IStartupScreen>(screen);
+        builder.UseWindows(new WindowsHostOptions
+        {
+            MainForm = _ => new Form { ShowInTaskbar = false, WindowState = FormWindowState.Minimized },
+            SkipProcessInit = true,
+            SingleInstance = null,
+            MessageLoop = form => { form.Shown += (_, _) => form.Close(); Application.Run(form); },
+        });
+        using (var built = builder.Build()) built.Run();
+
+        Assert.Equal(1, screen.Closes);
+    });
+
+    [Fact]
+    public void An_app_that_starts_hidden_closes_it_on_its_first_idle()
+    {
+        var screen = new RecordingStartupScreen(shown: true);
+        var builder = Builder(UniqueRoot());
+        builder.Services.AddSingleton<IStartupScreen>(screen);
+        builder.UseWindows(new WindowsHostOptions
+        {
+            MainForm = _ => new Form(),
+            SkipProcessInit = true,
+            SingleInstance = null,
+            MessageLoop = _ => Application.RaiseIdle(EventArgs.Empty),
+        });
+        using (var built = builder.Build()) built.Run();
+
+        Assert.Equal(1, screen.Closes);
+    }
+
+    [Fact]
+    public void In_manual_mode_the_shell_leaves_it_to_the_app() => Sta.Run(() =>
+    {
+        var screen = new RecordingStartupScreen(shown: true);
+        var builder = Builder(UniqueRoot());
+        builder.Services.AddSingleton<IStartupScreen>(screen);
+        builder.UseWindows(new WindowsHostOptions
+        {
+            MainForm = _ => new Form { ShowInTaskbar = false, WindowState = FormWindowState.Minimized },
+            SkipProcessInit = true,
+            SingleInstance = null,
+            StartupScreen = StartupScreenMode.Manual,
+            MessageLoop = form => { form.Shown += (_, _) => form.Close(); Application.RaiseIdle(EventArgs.Empty); Application.Run(form); },
+        });
+        using (var built = builder.Build()) built.Run();
+
+        Assert.Equal(0, screen.Closes);
+    });
+
+    [Fact]
+    public void The_shell_registers_the_screen_the_arguments_name()
+    {
+        var builder = Builder(UniqueRoot(), "--startup-screen", "4242");
+        builder.UseWindows(new WindowsHostOptions { MainForm = _ => new Form(), SkipProcessInit = true, SingleInstance = null, MessageLoop = _ => { } });
+        using var built = builder.Build();
+
+        var screen = Assert.IsType<StartupScreen>(built.Services.GetRequiredService<IStartupScreen>());
+        Assert.Equal(4242UL, screen.Window);
+    }
+
     [Fact]
     public void A_losing_launch_hands_the_running_instance_its_arguments_by_default()
     {

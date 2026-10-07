@@ -49,6 +49,13 @@ public sealed class WindowsHostOptions
     /// secondary window keeps the system's.</summary>
     public WindowAnimations WindowAnimations { get; init; } = WindowAnimations.System;
 
+    /// <summary>When the launcher's startup screen (<see cref="IStartupScreen"/>) is closed: once the main form is
+    /// shown, or on the first idle of an app that starts hidden (<see cref="StartupScreenMode.FirstWindow"/>, the
+    /// default), or by the app (<see cref="StartupScreenMode.Manual"/>). Nothing happens without a launcher's screen.
+    /// ⚠ An app that shows its main form only after work of its own (a loading step) sets Manual and closes it then: the
+    /// first idle comes before that form, and would end the screen with nothing in its place.</summary>
+    public StartupScreenMode StartupScreen { get; init; } = StartupScreenMode.FirstWindow;
+
     /// <summary>Test seam: what turns a window's system animations off, given its handle (DWM's attribute cannot be read
     /// back).</summary>
     internal Action<nint>? DisableSystemAnimations { get; init; }
@@ -82,6 +89,9 @@ public static class WindowsHostExtensions
 
         // The native desktop services every WinForms app gets (TryAdd — an app registration wins).
         builder.Services.TryAddSingleton<IFormInteraction, FormInteraction>();
+        // The launcher's startup screen, from the arguments it started the app with (an app's own registration wins).
+        builder.Services.TryAddSingleton<IStartupScreen>(sp =>
+            StartupScreen.FromArguments(builder.Args, sp.GetService<ILogger<StartupScreen>>()));
         builder.Services.TryAddSingleton<IShellLauncher, ShellLauncher>();
         builder.Services.TryAddSingleton<IClipboardService, ClipboardService>();
         builder.Services.TryAddSingleton<IFileDialogs>(sp => new FileDialogs(
@@ -249,6 +259,21 @@ internal sealed class WinFormsRunner : IShenoraRunner
                     var disable = options.DisableSystemAnimations ?? (hwnd => DwmTransitions.Disable(hwnd));
                     form.HandleCreated += (_, _) => disable(form.Handle);
                     if (form.IsHandleCreated) disable(form.Handle);
+                }
+
+                // The app's first window is on screen: the launcher's screen goes. An app that starts hidden shows none,
+                // so its first idle does it instead.
+                if (options.StartupScreen is StartupScreenMode.FirstWindow
+                    && app.Services.GetService<IStartupScreen>() is { IsShown: true } startup)
+                {
+                    form.Shown += (_, _) => startup.Close();
+                    EventHandler? idle = null;
+                    idle = (_, _) =>
+                    {
+                        Application.Idle -= idle;
+                        if (!form.Visible) startup.Close();
+                    };
+                    Application.Idle += idle;
                 }
 
                 // A later launch of this scope reaches the guard's channel: bring the main window to the front, then

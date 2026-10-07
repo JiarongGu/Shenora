@@ -825,6 +825,9 @@ interface Shenora.Core.Shell.IShellLauncher : Shenora.Core.Shell.IUrlLauncher
   public abstract int? LaunchProcess(Shenora.Core.Shell.ProcessLaunchOptions options)
   public abstract void OpenDirectory(string directoryPath)
   public abstract void RevealInFileManager(string filePath)
+interface Shenora.Core.Shell.IStartupScreen
+  public abstract bool IsShown { get; }
+  public abstract void Close()
 interface Shenora.Core.Shell.IUiDispatcher
   public abstract Shenora.Core.Shell.UiTargetState State { get; }
   public abstract System.Threading.Tasks.Task InvokeAsync(System.Action work, System.Threading.CancellationToken cancellationToken = default)
@@ -910,6 +913,17 @@ enum Shenora.Core.Shell.SingleInstanceResult (int)
   public const Shenora.Core.Shell.SingleInstanceResult Acquired = 0
   public const Shenora.Core.Shell.SingleInstanceResult AlreadyRunning = 1
   public const Shenora.Core.Shell.SingleInstanceResult Unverified = 2
+  public int value__
+sealed class Shenora.Core.Shell.StartupScreen : Shenora.Core.Shell.IStartupScreen
+  public .ctor(ulong? window, Microsoft.Extensions.Logging.ILogger? log = null)
+  public bool IsShown { get; }
+  public const string Flag = "--startup-screen"
+  public static Shenora.Core.Shell.StartupScreen FromArguments(System.Collections.Generic.IReadOnlyList<string>? args, Microsoft.Extensions.Logging.ILogger? log = null)
+  public ulong? Window { get; }
+  public void Close()
+enum Shenora.Core.Shell.StartupScreenMode (int)
+  public const Shenora.Core.Shell.StartupScreenMode FirstWindow = 0
+  public const Shenora.Core.Shell.StartupScreenMode Manual = 1
   public int value__
 abstract class Shenora.Core.Shell.UiDispatcherBase : Shenora.Core.Shell.IUiDispatcher
   protected .ctor(System.Action<System.Exception>? onPostFailure = null)

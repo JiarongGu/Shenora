@@ -65,6 +65,11 @@ public sealed class ChromiumHostOptions
     /// on its <see cref="IColorScheme.Changed"/>.</summary>
     public ColorScheme ColorScheme { get; init; } = ColorScheme.System;
 
+    /// <summary>When the launcher's startup screen (<see cref="IStartupScreen"/>) is closed: once the splash card, or
+    /// with none the main window, is on screen (<see cref="StartupScreenMode.FirstWindow"/>, the default), or by the app
+    /// (<see cref="StartupScreenMode.Manual"/>). Nothing happens without a launcher's screen.</summary>
+    public StartupScreenMode StartupScreen { get; init; } = StartupScreenMode.FirstWindow;
+
     /// <summary>
     /// One running instance per install, on by default: a later launch has the running app bring its main window
     /// forward (shown, restored, or opened again if it was closed), hands it its arguments

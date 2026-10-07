@@ -109,9 +109,13 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
         StartWork(work);
     }
 
+    /// <summary>The card is on screen. Raised once, on the thread that started the session.</summary>
+    public event Action? CardShown;
+
     private void ShowCard(Rectangle dipRect)
     {
         ISplashSurface? surface = null;
+        var shown = false;
         try
         {
             // Closed during its own setup: no window at all, rather than one that flashes up and takes the foreground.
@@ -130,9 +134,12 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
                 {
                     _card = surface;
                     surface = null;
+                    shown = true;
                 }
             }
             AppCallback.Log(_log, () => "[Shenora.Chromium] Splash card shown");
+            if (shown && CardShown is { } cardShown)
+                AppCallback.Run(cardShown, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] A card-shown hook failed", LogLevel.Warning, ex));
         }
         catch (Exception ex)
         {

@@ -87,6 +87,7 @@ const SECTIONS = [
  */
 const NOT_WIRE = new Map([
   ['AppRootArgument', 'a command-line flag the launcher passes, never a message'],
+  ['StartupScreen', 'a command-line flag the launcher passes (its startup screen\'s window), never a message'],
   ['Files', 'a temp-file suffix on disk'],
   ['PathClaims', 'a mission claim-scope name, host-side scheduling only'],
   ['MissionScheduler', 'the global lane name, host-side scheduling only'],

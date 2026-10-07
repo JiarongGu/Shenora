@@ -91,6 +91,13 @@ at the first list and missed five more breaking changes.
   switch on the main window, before the setting existed, its pixels came ~40 ms after the show instead of ~130 ms (one
   A/B, three runs each). Through the setting itself, run twice on Windows: DWM accepts the call and the window opens and
   closes; not re-timed.
+- **The app's side of a launcher's startup screen (`IStartupScreen`, `StartupScreen`, `StartupScreenMode`)**: a native
+  launcher that shows a screen before the app starts passes it as `--startup-screen <window id>`; both desktop shells
+  register `IStartupScreen` from the arguments and close it once the app's first window is on screen (the Chromium
+  shell's splash card, else its main window; the WinForms shell's main form, or the first idle of an app that starts
+  hidden), or leave it to the app (`ChromiumHostOptions.StartupScreen` / `WindowsHostOptions.StartupScreen` = `Manual`).
+  The close is `WM_CLOSE` on Windows and the window manager's `WM_DELETE_WINDOW`, through xcb and only to a window whose
+  `WM_CLASS` is the launcher's, on Linux. Without the argument nothing happens.
 
 ### Fixed
 

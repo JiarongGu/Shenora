@@ -129,6 +129,11 @@ Windows
 # AppKit's `NSWindow.animationBehavior`).
 Animations
 Button
+# `Startup`, `Screen` (2026-10-08) — in `StartupScreen`, the window a launcher shows before the app has one: the
+# platforms' own term for it (Android's `SplashScreen`, WPF's `SplashScreen`, Java's "splash screen"), and the
+# launcher's "startup screen".
+Screen
+Startup
 Caption
 Colors
 Icon
