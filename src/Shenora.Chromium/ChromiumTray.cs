@@ -33,6 +33,10 @@ public sealed class ChromiumTrayOptions
     /// ⚠ A close from code hides it too (<see cref="ChromiumWindows.Close"/>, or the page's own close command): CEF
     /// asks the same question for both, so exit with <see cref="ChromiumTray.ExitApplication"/>.
     /// </para>
+    /// <para>
+    /// While an interactive session's window takes the main window's input, a person's close of it is refused rather
+    /// than hidden.
+    /// </para>
     /// </summary>
     public bool CloseToTray { get; init; } = true;
 

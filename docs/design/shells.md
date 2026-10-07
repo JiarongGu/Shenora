@@ -380,7 +380,11 @@ anything must not pay for it by calling `UseWindows`.
 **The Chromium shell's `IUiInteraction` disables the main window's Views** (the window and its browser view),
 and a main window opened while blocked opens blocked. ⚠ **On Windows it disables the HWND as well**: Views stops
 the page's input, not the frame's, and the kit's caption hit-test would still drag the window and press its
-caption buttons.
+caption buttons. **A close the app did not ask for is refused while blocked** (`can_close`): the window manager's,
+which the title bar offers (measured on Linux with Alt+F4; macOS by the same path, not tried), and on Windows a
+`WM_CLOSE` from a tool (End task, `taskkill`), which still reaches a disabled window; the kit's caption buttons and
+the splash strip's do nothing. The app's own `Close()` goes through, because CEF asks within `window->close()`
+(measured on Linux), where a flag marks it.
 
 ⚠ **The native player is OPT-IN, by name.** Registering it as `IMediaPlayer` would move audio out of the
 page's own element and leave `PLAYER_REPORT` landing on a player with no `Report` to take — nothing would

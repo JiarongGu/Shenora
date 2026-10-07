@@ -16,6 +16,8 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     private readonly ChromiumWindowOptions _options;
     private readonly Action<ChromiumWindow> _destroyed;
     private readonly Func<ChromiumWindow, bool>? _mayClose;
+    private bool _enabled = true;   // SetEnabled's, read by MayClose
+    private bool _closing;          // inside Close(): CEF asks can_close within window->close()
     private readonly ILogger? _log;
     private readonly WindowDelegate _delegate;
     private readonly BrowserViewDelegate _viewDelegate;
@@ -117,7 +119,13 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     // ── what the window commands ask of the window ────────────────────────────────────────────────────
 
     public void Minimize() { if (_window != null) _window->minimize(_window); }
-    public void Close() { if (_window != null) _window->close(_window); }
+    public void Close()
+    {
+        if (_window == null) return;
+        _closing = true;
+        try { _window->close(_window); }
+        finally { _closing = false; }
+    }
     public bool IsMaximized => _window != null && _window->is_maximized(_window) == 1;
 
     public void ToggleMaximize()
@@ -145,6 +153,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     /// <summary>Take or give back the window's input (IUiInteraction). UI thread.</summary>
     public void SetEnabled(bool enabled)
     {
+        _enabled = enabled;
         if (_window == null) return;
         ((_cef_view_t*)_window)->set_enabled((_cef_view_t*)_window, enabled ? 1 : 0);
         if (_browserView != null) ((_cef_view_t*)_browserView)->set_enabled((_cef_view_t*)_browserView, enabled ? 1 : 0);
@@ -163,6 +172,11 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     /// <summary>CEF asks before the window closes. UI thread.</summary>
     private bool MayClose()
     {
+        // A close nobody asked through Close() is refused while the window's input is taken (an interactive session's
+        // window shows): the window manager's on Linux and macOS, which the title bar offers, and a WM_CLOSE on Windows;
+        // the page's own window.close() too. Close() goes through: CEF asks within it (measured on Linux), where
+        // _closing marks it.
+        if (!_enabled && !_closing) return false;
         if (_mayClose is null || AppCallback.RunOrDefault(() => _mayClose(this), fallback: true)) return true;
         Hide();
         return false;
@@ -258,8 +272,11 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         }, immediate: true);
     }
 
+    // Always a person's press (the kit's hit-tested buttons, the splash's strip), so none while the window's input is
+    // taken: on Linux the splash strip is a window of its own, which the block does not disable.
     internal void InvokeCaptionButton(CaptionButtonKind kind)
     {
+        if (!_enabled) return;
         switch (kind)
         {
             case CaptionButtonKind.Minimize: Minimize(); break;

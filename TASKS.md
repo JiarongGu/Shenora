@@ -357,15 +357,14 @@ Once in five `verify` runs (2026-10-01), `vitest (cli package)` ended on an unha
 passed 5 of 5. A forks-pool worker whose IPC channel closed under load, unattributed. If it recurs: count it under
 `verify` and alone, then try `pool: 'threads'` in `src/Shenora.Cli/vitest.config.ts` as the A/B.
 
-### 🟡 On macOS and Linux a main window blocked by a modal session can still be closed
+### 🟡 A blocked main window's title-bar close is not tried on a Mac
 
-`IUiInteraction` disables the Chromium shell's main window while an interactive session's window shows. On Windows
-`EnableWindow` keeps the user from closing it; on macOS and Linux the title bar still closes it, the loop quits, and
-the session's window goes with it. Refusing in `can_close` while blocked would also refuse the app's own `Close`.
-Found in review, not seen live.
+The Chromium shell refuses a person's close of a main window whose input an interactive session has taken, and lets
+the app's own `Close()` through (measured on Linux and Windows). The code is shared; macOS's title-bar close was not
+tried.
 
-- [ ] Measure whether `can_close` runs inside `window->close()` (then a flag can tell the app's close from the
-  user's), and try the title-bar close on a Mac.
+- [ ] On a Mac, with an interactive session's window showing, close the main window from its title bar: it stays; and
+  the app's own close (`ChromiumWindows.Close("main")`, the tray's Exit) still ends it.
 
 ### 🟡 A background handoff resumes a film the user had paused
 

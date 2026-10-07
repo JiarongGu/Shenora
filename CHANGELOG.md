@@ -114,6 +114,13 @@ at the first list and missed five more breaking changes.
   `on_before_popup` with a reference the callee owns, and the shell never released it, so a session's or a window's
   client, and the shell's own object for that browser, were never freed after it closed. Measured on Windows: a pooled session
   whose page called `window.open` never freed its client (3 runs of 3, suppressed or allowed); released, all did.
+- **A Chromium main window blocked by an interactive session could still be closed**, and the session's window went
+  with the app: on Linux and macOS by the window manager's close, which the title bar offers, or the splash strip's
+  close button; on Windows by a `WM_CLOSE` from a tool (End task, `taskkill`), which reaches a disabled window. Those
+  are now refused while the main window's input is taken (with a tray, the close is refused rather than hidden); the
+  app's own `Close()`, and the tray's Exit, still go through. Measured under Xvfb and openbox on Linux (Alt+F4) and
+  with a posted `WM_CLOSE` on Windows: the app ended before (1 run and 2), stayed after (3 runs each), and ended on its
+  own close while blocked. The splash strip's button is guarded by the same rule, not run; not tried on macOS.
 
 ## 0.20.0 — 2026-10-07
 
