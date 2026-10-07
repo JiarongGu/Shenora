@@ -127,10 +127,14 @@ builder.UseChromium(new ChromiumHostOptions
   `NativeCaptionButtons` gives it the system's own buttons instead.
 - **`Shell` is what the page is told**: `getBridge().notifyReady()` answers with it, so the page shows what the app
   composed rather than guessing from the OS.
-- **A splash while Chromium starts** with `Splash = new ChromiumSplashOptions { Component = ... }`: the OS draws it,
-  from a setup that returns a render function over state, and the app's boot work runs in its `OnShown` and reports
-  there. The sample's is a title, a status line and a progress bar fed by a stand-in boot. On Linux it needs an X
-  display, as Chromium does; without one there is no splash, and the boot work runs all the same.
+- **A splash while Chromium starts** with `Splash = new ChromiumSplashOptions { Component = ... }`: the OS draws it
+  in the main window's render area, with the window's frame live around it, from a setup that returns a render
+  function over state; the app's boot work runs in its `OnShown` and reports there. On the sample's frameless window
+  it draws a title strip until the page's own title bar takes over (`TitleBar` sets its height to match). The
+  sample's is a skeleton of its page with a status line and a progress bar fed by a stand-in boot, held until the page
+  has painted; launched with `--splash-card` it also shows a `Card` before the window exists, drawn by the same
+  component (`context.Surface`). On Linux it needs an X display, as Chromium does; without one there is no splash,
+  and the boot work runs all the same.
 - **The window opens where it was left** with `WindowState = new WindowStateHostOptions { Store = sp => new
   JsonFileWindowStateStore(...) }`: its size, place and maximized state, per the sample.
 - **One instance per install, by default** (`SingleInstance`): a later launch has the running app bring its window

@@ -41,16 +41,32 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 > stays the small-app (WebView2) choice on Windows.
 
 What `Shenora.Windows` has and the Chromium shell does not, inventoried from the source, in the order to build:
+- [ ] **Owner decision: Chrome's own light theme in a frameless dark window's first frames.** Until the page paints,
+  the splash's title strip and resize band on Windows show what Views paints there; the window's background now goes
+  on the window and its browser view (and again on each theme change), but under a light Windows theme Chrome's own
+  light theme still shows in the window's first frames. Setting Chrome's colour scheme to dark removed
+  them in a trial (the strip #202020 from the first frame), but that is a global switch: it also changes Chrome's own
+  UI and likely what `prefers-color-scheme` reports. Options: that switch from the window's background (precedent:
+  `OptimizedForm` sets DWM's dark mode from its `BackColor`), the window's theme colour, or leaving it.
+- [ ] 🅿️ **The splash's frameless title strip with real input, on Windows.** Measured by hit-test only: the strip
+  answers `HTCAPTION` and its close button `HTCLOSE`, and that point answers the page after the lift. A real drag, a
+  double-click, and Snap Layouts on a hover over its maximize button need a person's mouse.
 - [ ] 🅿️ **The Linux splash on a real GNOME or KDE session.** Measured under openbox on Xvfb (order, bounds, the page
-  drawing beneath) and WSLg's Weston (timing, the page drawing); Weston keeps no EWMH stacking list, so its order was
-  not seen. Mutter and KWin are compositing managers, where the one-row gap the splash leaves should not be needed;
-  confirm it does no harm there, and that they keep a transient splash above its owner.
-- [ ] 🅿️ **The macOS splash's PIXELS.** Its presence, order, bounds and lift are measured through the window server's
-  list; a screen capture needs Screen Recording permission on the build Mac (without it `screencapture` shows only
-  the wallpaper), which a person grants. Then: CJK through CoreText, the corner radius against the main window's.
-- [ ] 🅿️ **The splash taking the foreground on a real launch, on Windows.** It asks for it, and a launch from a
+  drawing beneath, the strip's drag, double-click and close) and WSLg's Weston (timing, the page drawing); Weston
+  keeps no EWMH stacking list, so its order was not seen. Mutter and KWin are compositing managers, where the one-row
+  gap a framed window's splash leaves should not be needed; confirm it does no harm there, that they keep a transient
+  splash above its owner, and that they carry out the strip's `_NET_WM_MOVERESIZE`.
+- [ ] **Two small faults in the Linux splash's strip** (found in review, not fixed): after a click on maximize the
+  button stays drawn hot until the pointer next moves (no motion event arrives); and a
+  double-click whose second press then drags moves the window it has just maximized.
+- [ ] 🅿️ **The macOS splash's PIXELS and real input.** Its presence, order, bounds and lift are measured through the
+  window server's list; a screen capture needs Screen Recording permission on the build Mac (without it `screencapture`
+  shows only the wallpaper), which a person grants. Then: CJK through CoreText, the splash's rounded bottom corners
+  against the window's, a click on the splash bringing its window forward, and a drag on the frameless strip.
+- [ ] 🅿️ **The splash card taking the foreground on a real launch, on Windows.** It asks for it, and a launch from a
   background process is refused (measured: it opened under the app the user was in). Whether a double-click from
-  Explorer brings it to the front needs a real launch by a person.
+  Explorer brings it to the front needs a real launch by a person. The splash over the window needs none of this: its
+  owner takes the foreground.
 - [ ] **A splash drawn by the native launcher, from the previous run's first frame.** .NET's own start (~100 ms) and
   the app's composition still come before any splash. The shim could show the first frame the C# splash saved, before
   .NET starts, and the C# splash adopt that window (on Windows the HWND, through a runtime property as `SandboxInfo`

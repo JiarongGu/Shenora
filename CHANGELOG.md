@@ -28,6 +28,43 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Changed
+
+- **The Chromium shell's splash takes the main window's render area, and the window's own frame stays live around
+  it** (D92). 0.20.0's splash covered the window's whole place, frame included, so nothing could move, minimize or
+  close the window while the app loaded. Now the window can, as WinForms' `SplashPanel` window can: the splash sits
+  over the render area, follows the window as it moves, resizes, maximizes, minimizes and goes fullscreen, and is
+  shown once the window is, without CEF ever waiting on it. A frameless window gets a title strip until its page
+  reports a title bar of its own: on Windows the window's own caption buttons and hit-test (Snap Layouts included), on
+  macOS the traffic lights and a drag area, on Linux a strip the splash draws and hands to the window manager; and
+  Chromium's resize band inside its edges stays clear. With no `Card` nothing shows before the window exists, and CEF
+  starts as the app is composed again (D87). Measured on Windows 11 at 200 %: the splash at the client area exactly
+  (framed) or below the strip and inside the band (frameless), the title bar and close button answering the window's
+  own hit-test, 0 of 60 samples behind a resize storm, the page beneath at 122 frames a second; on macOS 15, below the
+  28-point title bar or the 32-point strip, through a move and into fullscreen, the page at 64 frames a second; on
+  Linux (openbox on Xvfb), a drag from the strip moving the window by exactly the drag, a double-click maximizing and
+  restoring it, a click on its close button ending the app.
+
+### Added
+
+- **`ChromiumSplashOptions.Card` (`SplashCardOptions`)**: a small borderless card centred where the main window will
+  open (on macOS where AppKit will centre it), shown from the app's first moments and gone once the window and its
+  splash are on screen; measured on Windows at ~0.3 s after launch, with no frame between it and the window.
+- **`ChromiumSplashOptions.TitleBar` (`SplashTitleBarOptions`)**: the strip's height (default 32 DIPs; match the page's
+  own title bar) and its buttons' `Glyph`, `Hover` and `Pressed` colours, which by default read on the background they
+  sit on rather than follow the system's theme.
+- **`SplashContext.Surface` (`SplashSurface.Card`, `SplashSurface.Window`)**: which window the render function is
+  drawing, so one component draws a compact card and an in-window layout from the same state.
+
+### Fixed
+
+- **A Chromium window showed Views' own light background until its page drew**, whatever `BackgroundColor` said:
+  the browser settings' colour is the renderer's, and Views resets a view's background whenever its theme applies.
+  The window and its browser view now paint the window's background, applied again on each theme change. Chrome's
+  own theme can still show in a frameless window's first frames before the page paints.
+
 ## 0.20.0 — 2026-10-07
 
 ### Added

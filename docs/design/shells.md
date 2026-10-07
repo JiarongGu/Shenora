@@ -184,64 +184,106 @@ it (2 zooms in 21 saved that frame as a Normal size before; none in 25 after).
 ## The Chromium shell's splash
 
 `ChromiumHostOptions.Splash` (D92). The WinForms shell needs none of this: its form paints `SplashPanel` at once,
-while the Chromium shell's first frame waits on Chromium's GPU process (D87).
+while the Chromium shell's first frame waits on Chromium's GPU process (D87). The splash takes what `SplashPanel`
+takes, the main window's render area, and leaves the window's frame to the window: it moves, resizes, maximizes,
+minimizes and closes from the moment CEF shows it.
 
 ```
-UseChromium        ← with a splash this build draws, CEF is NOT started early (D87's exception)
+UseChromium        ← with a Card, CEF is NOT started early (D87's exception); with none it is
 Run: gate          ← a launch turned away shows nothing
-     SplashSession.Start  ← setup, first frame, window shown; OnShown work starts on the pool
-     cef_initialize       ← holds this thread 360–540 ms; the splash draws on its own
-     context ready → app.Start (OnStarting) → main window: Opening → Attach, then CEF shows it
+     SplashSession.Start  ← setup; the card, if any; OnShown work starts on the pool
+     cef_initialize       ← holds this thread 360–540 ms; the card draws on its own
+     context ready → app.Start (OnStarting) → main window: Opening → Attach
+     WindowOpened         ← the splash made over the window's render area, owned by it, not shown
+     CEF's show → WindowShown ← the splash shows, never waited on; then the card goes
      main page handshake / closeSplash() → lift once every OnShown has finished
 ```
 
 - **Three layers.** The component (`SplashContext` + `SplashState`) produces an element tree; `SplashLayout`, the
   same on every OS, turns it into fills, text runs and images in pixels, measuring text through the platform's own
   engine; an `ISplashSurface` per OS paints and presents them. A component's failure costs a frame or the splash,
-  never the app.
-- **Placement before CEF can say:** `ChromiumWindows.MainWindowPlan` runs `ChromiumWindowGeometry.PlanFor` over the
-  OS's work areas (in DIP, taken at the primary display's scale) and the same window-state store the window then
-  restores from. Once the window exists the splash snaps to its real bounds, which absorbs what that approximation
-  misses on mixed-DPI desktops.
-- **Owned before shown.** `ChromiumWindow` hands its handle to the splash before calling CEF's `show`; owned later,
-  the activation raises the main window over it. An owned popup of the same process does not count as covering the
-  window for Chromium's occlusion tracking, so the page keeps painting under it (measured, CEF 154: 106–120 animation
-  frames a second under it; a foreign window over it: hidden, none).
-- **The splash takes the clicks over it**, so none reaches the page loading unseen beneath; a click never activates it,
-  so the keyboard stays with the main window once that exists.
-- **Windows** (`WindowsSplashSurface`): a layered popup on a thread of its own, presented whole with
-  `UpdateLayeredWindow`; GDI draws the text (it font-links, so CJK falls back), GDI+ the fills and images; corners
-  cut round on Windows 11 unless maximized. It asks for the foreground as it shows, because a non-foreground window
-  opens under the foreground one (measured); Windows' documented foreground rules grant that only to a launch allowed
-  to take the foreground, so one started in the background stays under (not yet seen on a real launch: TASKS).
+  never the app. One component draws both windows; `SplashContext.Surface` says which.
+- **The card is placed before CEF can say.** `ChromiumWindows.MainWindowPlan` runs `ChromiumWindowGeometry.PlanFor`
+  over the OS's work areas (in DIP, taken at the primary display's scale) and the window-state store the window then
+  restores from, and `SplashGeometry.CardRect` centres the card on that plan (on its display's work area when the
+  window opens maximized). The splash over the window reads the window's own bounds, so nothing there is approximated.
+- **The render area** is what the page will draw in: the window's client area; on a frameless window below the title
+  strip and inside the resize band Chromium keeps within its edges (`SplashGeometry.ResizeBandDips`, 4: its hit-test
+  answers `HTLEFT` and `HTBOTTOM` for the outer 8 pixels at 200 %), none while maximized. What the splash leaves is the
+  window's, so its title bar, buttons and edges answer the window's own hit-test.
+- **Made before the window shows, shown after.** `WindowOpened`, on CEF's UI thread before CEF's `show`, makes the
+  splash owned by the main window from its creation (owned later, the show would raise the main window over it) and
+  draws its first frame; `WindowShown`, from a hook right after `show`, reveals it and returns at once, so CEF never
+  waits on the splash's thread (measured on Windows: shown 3–7 ms after `show` returns, which itself took 39–85 ms).
+  Shown before `show`, it would stand alone until the window appeared, at the wrong size for a window that opens
+  maximized, which it is only once shown. The card goes once the splash is on screen, so nothing falls between them. An owned popup of the same process does
+  not count as covering the window for Chromium's occlusion tracking, so the page keeps painting under it (measured,
+  CEF 154: 106–120 animation frames a second under it; a foreign window over it: hidden, none).
+- **It follows the window**: the window's bounds callback snaps it, on its own thread; the OS hides it with its owner.
+- **The splash takes the clicks over it**, so none reaches the page loading unseen beneath; a click never activates it
+  but brings its window forward, as a click on that window would, so the keyboard stays with the main window.
+- **A frameless window's title strip** (`ChromiumSplashOptions.TitleBar`; `KitStrip` decides when) runs from the
+  window's show until the page reports caption buttons or drag regions of its own, or the lift, whichever comes first.
+  CEF reports an empty set of drag regions as each document starts; only a real set ends the strip. It ends at the
+  page's first drag regions rather than at the lift because those come 0.1–0.2 s before the page's title bar paints
+  (measured), and ending later showed the kit's buttons over the page's own. On Windows the strip's buttons are the
+  window's own, painted by `NativeCaptionButtons` and answered by its hit-test, which is what offers Snap Layouts, and
+  the rest of it is a drag region; on macOS the traffic lights and a drag region beside them; on Linux the splash draws
+  it (below). The strip on Windows and macOS is the window's own area, so it shows the window's background, which the
+  window and its browser view paint until the page draws (Views resets it on each theme change, so it is applied again
+  there). Its glyphs read on that background (`CaptionButtonPalette.ForBackground`; none or transparent counts as
+  light, since CEF paints white) unless the page has set a theme or colours.
+- **Windows** (`WindowsSplashSurface`): a layered popup on a per-monitor-aware thread of its own, presented whole with
+  `UpdateLayeredWindow`; GDI draws the text (it font-links, so CJK falls back), GDI+ the fills and images. Its bounds
+  are read on that thread: read on one that is not per-monitor aware, the client rect comes back scaled, and the splash
+  opened at half its size at 200 % (measured). Windows 11 rounds a normal window, so the card cuts all four corners and
+  the splash the two at its bottom; a maximized window is square. The card draws its own shadow in a margin (a layered
+  window gets none from the compositor) and asks for the foreground as it shows, because a non-foreground window opens
+  under the foreground one (measured); Windows' documented rules grant that only to a launch allowed to take the
+  foreground, so one started in the background stays under (not yet seen on a real launch: TASKS). The splash over the
+  window needs none of it: its owner takes the foreground. Measured on Windows 11 at 200 %: the splash at the client
+  area exactly (framed) or below the strip and inside the band (frameless); the title bar, the strip and the close
+  button answering the main window's hit-test; 0 of 60 samples behind a resize storm 16 ms apart; maximize, restore and
+  minimize followed; the page beneath at 122 frames a second; the card ~0.3 s after launch with no 10-ms sample
+  between it and the window showing nothing.
 - **macOS** (`MacSplashSurface`): a borderless `NSWindow` made on the main thread, after `MacPlatform.Prepare`, since
   `NSApp` must be CEF's own class before anything makes one. A thread of its own renders through CoreGraphics,
-  CoreText and ImageIO into a layer the splash owns (no delegate, so AppKit manages none of it): committed from that
-  thread in explicit Core Animation transactions, the only kind that reaches the screen from a thread with no run
-  loop, until the main window exists, and posted to the main thread once CEF's loop runs there. It joins the main
-  window as a child. A window with no saved place is centred by AppKit's `[NSWindow center]`, as Chromium centres the
-  main one; centred exactly it jumped 86 points as it snapped, centred this way 1. Measured through the window
-  server's list (macOS 15; `screencapture` without Screen Recording permission shows only the wallpaper): the first
-  frame about 0.4 s after launch and the splash alone on screen at 0.6 s, in front of the main window at its bounds
-  once that exists, the page beneath at 60 frames a second, and gone after the lift.
+  CoreText and ImageIO into a layer the splash owns (no delegate, so AppKit manages none of it). The card's frames are
+  committed from that thread in explicit Core Animation transactions, the only kind that reaches the screen from a
+  thread with no run loop, while the main thread composes the app and starts CEF. The splash over the window covers
+  its `contentRectForFrameRect:`, less a frameless window's strip, masks its bottom corners, has its frames posted to
+  the main thread, which CEF's loop runs, and joins the window as a child once that is on screen. With no saved place
+  CEF centres the window with AppKit's `[NSWindow center]`, above the middle, so the card asks AppKit where that is
+  (`MacScreens.CentredContentDip`, through a window never shown); centred on the work area it sat ~80 points low.
+  Measured through the window server's list (macOS 15; `screencapture` without Screen Recording permission shows only
+  the wallpaper): the splash below the 28-point title bar or the 32-point strip, through a move and resize and into
+  fullscreen, the page beneath at 64 frames a second, the card's centre the splash's. Its corners and a click on it are
+  not yet seen (TASKS).
 - **Linux** (`LinuxSplashSurface`): an X11 window on a connection and thread of its own, drawn by cairo and pango and
-  put up with `XPutImage`; typed `_NET_WM_WINDOW_TYPE_SPLASH`, undecorated, never given the keyboard, and transient for
-  the main window. The hint goes up again as the main window maps, because a manager reads one naming a window it
-  does not manage yet as nothing (openbox stacked the main window over the splash, measured). It leaves the main
-  window's bottom row of pixels uncovered: without a compositor X marks a window covered entirely as fully obscured,
-  and Chromium stops drawing it (0 frames a second and hidden under openbox on Xvfb; 60 and visible with the row
-  left). It sends the server only the pixels that changed (an indeterminate bar's slide is a few rows, the whole
-  window megabytes), fades through `_NET_WM_WINDOW_OPACITY` where a compositor runs (whether Weston honours it is
-  unseen; ignored, the fade ends in a cut), and has no splash without an X display.
+  put up with `XPutImage`; typed `_NET_WM_WINDOW_TYPE_SPLASH`, undecorated, never given the keyboard. Over the window
+  it covers the client window (the manager's frame is outside it), transient for it from its creation, so the manager
+  keeps it above it. Without a compositor X marks a window covered entirely as fully obscured, and Chromium stops
+  drawing it (0 frames a second and hidden under openbox on Xvfb; 60 and visible with a row left), so the splash never
+  covers it all: a frameless window's resize band stays clear on every side, a framed one's bottom row. It sends the
+  server only the pixels that changed (an indeterminate bar's slide is a few rows, the whole window megabytes), fades
+  through `_NET_WM_WINDOW_OPACITY` where a compositor runs, and has no splash without an X display.
+- **The Linux strip is the splash's.** The kit paints no caption buttons on Linux, so the splash covers a frameless
+  window's strip and draws it: minimize, maximize (restore when maximized) and close, in the palette Windows paints.
+  The kit's `CaptionButtons` model decides hover, press and click from X's pointer events, and a click calls the
+  window's own command; a press on the rest becomes a move once it travels 4 pixels (`StripGesture`), handed to the
+  manager as `_NET_WM_MOVERESIZE` after the pointer's grab is let go, and two presses within 400 ms (GTK's) maximize or
+  restore. Whether the window is maximized is the manager's `_NET_WM_STATE` (fullscreen counts: it keeps no band
+  either). It selects every click, which X would otherwise pass up to the manager's windows.
 - **Xlib's default error handler exits the process**, and the Linux splash names a window it does not own, the main
   one, which may be gone by the time a request reaches the server. So it calls `XInitThreads` before its first Xlib
   call (two threads hold connections) and installs a handler that answers errors on its own connections and hands
   every other to the one there before. It also sets `WM_DELETE_WINDOW`, which it ignores: a manager closes a window
   without it by killing its client's connection (ICCCM), and Xlib's I/O error handler would then exit the app.
-- Measured on Linux, under openbox on Xvfb: the splash alone before the main window, above it at its bounds after,
-  the page beneath at 60 frames a second, gone after the lift, and the app ending cleanly when its main window was
-  closed during the splash. Under WSLg's Weston: the same timings and 60 frames a second; its stacking was not
-  observable (it keeps no EWMH stacking list).
+- Measured on Linux, under openbox on Xvfb: a frameless window's splash inset by its 4-pixel band with the page beneath
+  at 60 frames a second; a drag from the strip moving the window by exactly the drag, the splash with it; a
+  double-click maximizing (no band, the bottom row kept) and a second restoring; a click on its close button ending
+  the app; a framed window's splash its client window less the bottom row; the card centred where the window opens and
+  gone within one 50-ms sample of the window's splash showing; 30 moves of the window drawing no frame.
 
 ## The WebView2 host
 
