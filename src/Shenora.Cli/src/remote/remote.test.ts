@@ -251,7 +251,9 @@ describe('remote probes', () => {
   });
 });
 
-describe('choosing what to push', () => {
+// These run git over a repository (this one, or a temporary one), so their time is git's and the machine's load: up to
+// 4.5 s under the full gate, and 6.2 s once, past vitest's default 5 s. A ceiling sized for the work, as `push` has.
+describe('choosing what to push', { timeout: 30_000 }, () => {
   it('lists source, not build output', () => {
     // 🔴 `git ls-files -co --exclude-standard` against a directory walk: measured on this repo, 625
     // files versus 23,882 on disk. The difference is bin/, obj/ and node_modules — and copying a
