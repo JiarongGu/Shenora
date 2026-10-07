@@ -102,6 +102,11 @@ at the first list and missed five more breaking changes.
   first frame, so the strip still drags, snaps and closes beneath it. Measured: the light now only in the window's
   first ~0.1–0.15 s as it appears, before the cover can be, and none after; with `ColorScheme.Dark` those first frames
   are `#202020`.
+- **A request that answered successfully after its token was cancelled was listed as cancelled.** A route that answers
+  rather than unwinding gave the page its result while `REQUEST_UPDATED` said `cancelled`: when the caller's lifetime
+  ended under it, or when it answered inside a `CANCEL`'s signal. Such a request is now `completed`, and that
+  `CANCEL` answers false rather than true. A `CANCEL` that lands before the dispatcher has the answer still records
+  `cancelled`, as `Cancel` documents.
 
 ## 0.20.0 — 2026-10-07
 

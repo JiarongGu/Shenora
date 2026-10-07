@@ -196,9 +196,9 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
         if (Finish(requestId, IpcRequestState.Cancelled, null)) return true;
 
         // Unless the signal itself ended it: a body that unwinds on the token, inline in the signal or on another
-        // thread, ends its scope as Cancelled first (its OPERATION_CANCELLED answer, or the scope's dispose). That is
-        // this cancel landing, and the entry says so even when an unannounced one has left the table; any other ending
-        // is another outcome.
+        // thread, ends its scope as Cancelled first (its OPERATION_CANCELLED answer). That is this cancel landing, and
+        // the entry says so even when an unannounced one has left the table; any other ending, a body that answered
+        // successfully when the token fired among them, is another outcome.
         lock (_lock) return entry.State == IpcRequestState.Cancelled;
     }
 
@@ -374,11 +374,9 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _finished, 1) == 1) return;
-            // A cancelled token means the body unwound rather than succeeded; recording Completed there
-            // would report success for work that stopped.
-            tracker.Finish(RequestId,
-                CancellationToken.IsCancellationRequested ? IpcRequestState.Cancelled : IpcRequestState.Completed,
-                null);
+            // Completed even when the token is cancelled: the dispatcher records every error answer through Fail, an
+            // unwound body's OPERATION_CANCELLED among them, so a scope that reaches here answered successfully.
+            tracker.Finish(RequestId, IpcRequestState.Completed, null);
         }
     }
 }

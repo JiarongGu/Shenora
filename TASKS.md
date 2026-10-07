@@ -387,14 +387,6 @@ user paused starts playing natively when they leave the app. Found in review, no
 - [ ] Measure on Android whether the platform's pause arrives while `document.hidden` is already true; if it does,
   `useMediaPlayer` can tell that pause from the user's, and the transfer can hand off only a film that was playing.
 
-### 🟡 A request that completed as a cancel landed is recorded as cancelled
-
-A route that has already answered, whose `CANCEL` lands before the dispatcher ends its scope, is recorded
-`Cancelled`: the scope's `Dispose` reads only the token, and the page has its result. Narrow, and it needs the
-dispatcher to tell the scope the request SUCCEEDED, which `IIpcRequestScope` (a public seam) has no member for.
-
-- [ ] Decide whether a success-aware end is worth the seam change (found in review, not seen live).
-
 ### 📱 WHAT IS LEFT ON ANDROID NEEDS A PHONE'S ENCODER, NOT AN EMULATOR'S
 
 The segment tier is answered on all three shells (`docs/design/media.md`), and the encoder's ARITHMETIC is

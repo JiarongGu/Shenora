@@ -240,6 +240,56 @@ public class IpcRequestDispatchTests
     }
 
     /// <summary>
+    /// A route that ANSWERS when its token fires, rather than unwinding, has succeeded: the page gets its result, so
+    /// the request is Completed and the cancel, which landed on a request already finished, answers false. The route
+    /// resumes inside the signal, so it answers before Cancel's own transition.
+    /// </summary>
+    [Fact]
+    public async Task A_route_that_answers_inside_the_cancel_signal_is_recorded_completed()
+    {
+        var (tracker, _, clock) = Tracking();
+        var dispatcher = new MessageDispatcher(requests: tracker)
+            .MapModule("SLOW", routes => routes.RouteAsync("WORK", async (_, ct) =>
+            {
+                var stopped = new TaskCompletionSource();
+                using var registration = ct.Register(() => stopped.TrySetResult());
+                await stopped.Task;
+                return "partial";
+            }));
+        Task<IpcResponse>? dispatch = null;
+        await Task.Run(() => { dispatch = dispatcher.DispatchAsync(Request(id: "req-10")); }).WaitAsync(TimeSpan.FromSeconds(5));
+        clock.Advance(TimeSpan.FromMilliseconds(50));
+
+        Assert.False(tracker.Cancel("req-10"));
+
+        Assert.True(dispatch!.IsCompleted);   // it answered inside the signal, the path this test exists for
+        Assert.True((await Bounded(dispatch)).Success);
+        Assert.Equal(IpcRequestState.Completed, tracker.GetAll().Single().State);
+    }
+
+    /// <summary>
+    /// The caller's lifetime is linked into the route's token, and a route that does not observe it still answers:
+    /// the page gets a success, so the request is Completed, not Cancelled.
+    /// </summary>
+    [Fact]
+    public async Task A_route_that_answers_after_the_callers_lifetime_ended_is_recorded_completed()
+    {
+        var (tracker, _, clock) = Tracking();
+        var gate = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var dispatcher = new MessageDispatcher(requests: tracker)
+            .MapModule("SLOW", routes => routes.RouteAsync("WORK", async (_, _) => await gate.Task));
+        using var lifetime = new CancellationTokenSource();
+
+        var dispatch = dispatcher.DispatchAsync(Request(id: "req-11"), lifetime.Token);
+        clock.Advance(TimeSpan.FromMilliseconds(50));
+        lifetime.Cancel();
+        gate.SetResult("done");
+
+        Assert.True((await Bounded(dispatch)).Success);
+        Assert.Equal(IpcRequestState.Completed, tracker.GetAll().Single().State);
+    }
+
+    /// <summary>
     /// The fast path is still free: a request that answers inside the grace period leaves NO event and NO
     /// history, even though every request is now tracked. This is what makes tracking-everything
     /// affordable, so it is worth pinning at the DISPATCHER and not only at the tracker.

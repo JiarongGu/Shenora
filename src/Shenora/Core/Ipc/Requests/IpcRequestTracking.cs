@@ -129,8 +129,9 @@ public interface IIpcRequestTracker
 
     /// <summary>
     /// Abort a request in flight: cancels the token the route runs under, then records
-    /// <see cref="IpcRequestState.Cancelled"/>. Returns false, changing nothing, for an unknown id or one
-    /// already finished.
+    /// <see cref="IpcRequestState.Cancelled"/>. Returns false for an unknown id, one already finished, or one that
+    /// ended another way as the token fired: a route that answers its token rather than unwinding has succeeded, and
+    /// is recorded <see cref="IpcRequestState.Completed"/>.
     /// </summary>
     bool Cancel(string requestId);
 
@@ -166,6 +167,11 @@ public interface IIpcRequestScope : IDisposable
     /// <summary>Report progress on this request. Silent while inside the grace period.</summary>
     void Report(IpcProgress? progress = null, IpcLabel? detail = null);
 
-    /// <summary>Record a structured failure. Terminal; further calls are no-ops.</summary>
+    /// <summary>
+    /// Record a structured failure. Terminal; further calls are no-ops. ⚠ An <c>OPERATION_CANCELLED</c> error while
+    /// <see cref="CancellationToken"/> is cancelled is a body that unwound on it: the cancel landing, recorded
+    /// <see cref="IpcRequestState.Cancelled"/>. The dispatch path records every error answer here, so a scope disposed
+    /// without one answered successfully.
+    /// </summary>
     void Fail(IpcError error);
 }
