@@ -57,6 +57,15 @@ export function App() {
   }, [hosted]);
   const can = (capability: string) => shell?.capabilities.includes(capability) ?? false;
 
+  // The splash is held (Program.cs, HoldUntilClosed) until the page has painted its first screen with what the
+  // handshake answered: the frame after the next is on screen, so the splash's skeleton turns into the page itself.
+  useEffect(() => {
+    if (!hosted || !shell) return;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      commands.closeSplash().catch((error: unknown) => console.error('[sample] closeSplash failed', error));
+    }));
+  }, [hosted, shell, commands]);
+
   // A typed round trip into the portable logic.
   const echo = useShenoraQuery<{ echoed: string; length: number }>(LOGIC, 'ECHO', { payload: { text: 'shenora' }, enabled: hosted });
 

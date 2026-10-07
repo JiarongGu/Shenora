@@ -42,6 +42,8 @@ internal static class Program
                 Height = 760,
                 Path = "chromium.html",
                 BackgroundColor = System.Drawing.Color.FromArgb(0x1e, 0x1e, 0x1e),
+                // The page draws its own title bar (App.tsx), with drag regions and buttons.
+                FramelessChrome = true,
             },
             // What the page may offer. Every name is something this app composed: the page reads the list from the
             // ready handshake and hides what is not there, instead of sniffing the OS.
@@ -67,16 +69,23 @@ internal static class Program
             {
                 OnActivated = (_, launch) => events?.Emit(Module, "LAUNCHED_AGAIN", new { launch.Arguments }),
             },
-            // A splash the OS draws from the moment the app runs, so the window is there while Chromium is still starting.
-            // Its boot work stands in for an app's own (opening a database, warming a cache) and reports as it goes; the
-            // last line comes from an event, as any module of the app could send one. It lifts once the boot work is done
-            // and the page has said it is ready.
+            // A splash in the window's render area while the page loads, drawn by the OS rather than Chromium: a skeleton of
+            // the page's first screen in its own colours, so the lift changes rows into content without moving anything.
+            // The frame stays the window's: on this frameless window the splash's title strip (the page's title bar's
+            // height) drags it and holds its buttons until the page's own title bar takes over. Its boot work stands in
+            // for an app's own (opening a database, warming a cache) and reports as it goes; the last line comes from an
+            // event, as any module of the app could send one. It lifts once the boot work is done and the page says it has
+            // painted (closeSplash() in App.tsx), not at its handshake, which comes before its first paint.
+            // Launched with --splash-card, a card shows from the app's first moments until the window exists.
             Splash = new ChromiumSplashOptions
             {
+                HoldUntilClosed = true,
+                Card = args.Contains("--splash-card") ? new SplashCardOptions { Width = 420, Height = 260 } : null,
+                TitleBar = new SplashTitleBarOptions { Height = 35 },   // the page's title bar: 2.2rem
                 Component = context =>
                 {
                     var status = context.State("Starting…");
-                    var progress = context.State<double?>(null);
+                    var progress = context.State<double?>(0);
                     context.OnShown(async ct =>
                     {
                         string[] steps = ["Opening the library…", "Warming the cache…", "Loading the interface…"];
@@ -88,28 +97,42 @@ internal static class Program
                         }
                     });
                     context.Subscribe(Module, "BOOT", message => status.Value = message.Payload as string ?? status.Value);
-                    var dim = System.Drawing.Color.FromArgb(0x9a, 0x9a, 0x9a);
-                    return () => new SplashLayer
-                    {
-                        Children =
-                        [
-                            new SplashStack
-                            {
-                                Spacing = 14,
-                                Children =
-                                [
-                                    new SplashText("Shenora Chromium Sample") { FontSize = 22, Bold = true },
-                                    new SplashText(status.Value) { FontSize = 13, Color = dim },
-                                    new SplashProgress { Value = progress.Value, Width = 260, Height = 3 },
-                                ],
-                            },
-                            new SplashText("Drawn by the OS before Chromium starts")
-                            {
-                                FontSize = 11, Color = dim, Margin = 16,
-                                HorizontalAlign = SplashAlign.End, VerticalAlign = SplashAlign.End,
-                            },
-                        ],
-                    };
+                    // The page's colours (chromium.html, App.tsx): its text, its controls, its quiet grey.
+                    var text = System.Drawing.Color.FromArgb(0xe8, 0xe8, 0xe8);
+                    var block = System.Drawing.Color.FromArgb(0x2c, 0x2c, 0x2c);
+                    var quiet = System.Drawing.Color.FromArgb(0x9a, 0x9a, 0x9a);
+                    SplashElement Row(double width) => new SplashLayer { Width = width, Height = 14, Background = block, HorizontalAlign = SplashAlign.Start };
+                    return () => context.Surface == SplashSurface.Card
+                        ? new SplashStack
+                        {
+                            Spacing = 12,
+                            Children =
+                            [
+                                new SplashText("神阙 Shenora") { FontSize = 26, Color = text },
+                                new SplashText(status.Value) { FontSize = 12, Color = quiet },
+                                new SplashProgress { Value = progress.Value, Width = 240, Height = 3 },
+                            ],
+                        }
+                        : new SplashLayer
+                        {
+                            Children =
+                            [
+                                new SplashProgress { Value = progress.Value, Height = 2, VerticalAlign = SplashAlign.Start, HorizontalAlign = SplashAlign.Stretch },
+                                // The page's column: 44rem wide, 1.5rem down, its heading, its rows and its drop box.
+                                new SplashStack
+                                {
+                                    Width = 704, VerticalAlign = SplashAlign.Start, Margin = new SplashInsets(0, 24, 0, 0), Spacing = 12,
+                                    Children =
+                                    [
+                                        new SplashText("神阙 Shenora") { FontSize = 32, Color = text, HorizontalAlign = SplashAlign.Start },
+                                        Row(420), Row(380), Row(460), Row(300),
+                                        new SplashLayer { Height = 56, Background = block },
+                                        Row(340), Row(400),
+                                        new SplashText(status.Value) { FontSize = 12, Color = quiet, HorizontalAlign = SplashAlign.Start, Margin = new SplashInsets(0, 12, 0, 0) },
+                                    ],
+                                },
+                            ],
+                        };
                 },
             },
             // The tray reopens the window, and one item of the app's own tells the page it was clicked: a native
