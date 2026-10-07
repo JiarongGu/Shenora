@@ -223,7 +223,8 @@ Run: gate          ← a launch turned away shows nothing
 - **The splash takes the clicks over it**, so none reaches the page loading unseen beneath; a click never activates it
   but brings its window forward, as a click on that window would, so the keyboard stays with the main window.
 - **A frameless window's title strip** (`ChromiumSplashOptions.TitleBar`; `KitStrip` decides when) runs from the
-  window's show until the page reports caption buttons or drag regions of its own, or the lift, whichever comes first.
+  window's show until the page reports caption buttons or drag regions of its own, or the lift, whichever comes first
+  (on Linux, where the splash draws it, until the lift).
   CEF reports an empty set of drag regions as each document starts; only a real set ends the strip. It ends at the
   page's first drag regions rather than at the lift because those come 0.1–0.2 s before the page's title bar paints
   (measured), and ending later showed the kit's buttons over the page's own. On Windows the strip's buttons are the
@@ -272,7 +273,7 @@ Run: gate          ← a launch turned away shows nothing
   The kit's `CaptionButtons` model decides hover, press and click from X's pointer events, and a click calls the
   window's own command; a press on the rest becomes a move once it travels 4 pixels (`StripGesture`), handed to the
   manager as `_NET_WM_MOVERESIZE` after the pointer's grab is let go, and two presses within 400 ms (GTK's) maximize or
-  restore. Whether the window is maximized is the manager's `_NET_WM_STATE` (fullscreen counts: it keeps no band
+  restore. It stays until the lift: the page's title bar beneath it is not seen before then. Whether the window is maximized is the manager's `_NET_WM_STATE` (fullscreen counts: it keeps no band
   either). It selects every click, which X would otherwise pass up to the manager's windows.
 - **Xlib's default error handler exits the process**, and the Linux splash names a window it does not own, the main
   one, which may be gone by the time a request reaches the server. So it calls `XInitThreads` before its first Xlib

@@ -1342,7 +1342,8 @@ docs cite them — so the number is the column to scan.
     before the window is what heavy apps show (Office, Visual Studio), so it is the option, not the default.
   - **A frameless window gets the kit's title strip** until its page reports a title bar of its own (caption buttons or
     drag regions) or the splash lifts: on Windows the window's own painted buttons and hit-test (Snap Layouts), on
-    macOS the traffic lights and a drag region, on Linux drawn by the splash and handed to the window manager.
+    macOS the traffic lights and a drag region; on Linux the splash draws it until the lift and hands its input to the
+    window manager.
     Chromium's resize band inside a frameless window's edges stays uncovered.
   - 🔴 **With a card, CEF does not start early (D87):** `cef_initialize` holds the thread, so the card shows first.
     With none, nothing can show before CEF makes the window, and CEF starts early as without a splash.

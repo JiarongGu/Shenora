@@ -202,9 +202,20 @@ internal sealed unsafe class MacSplashSurface(ILogger? log) : ISplashSurface
         var window = _window;
         if (_parent == 0 || window == 0) return;
         var frame = RenderArea(_parent, _layout);
+        var scale = GetDouble(_parent, "backingScaleFactor");
         SetFrame(window, frame);
-        Resize(frame, GetDouble(_parent, "backingScaleFactor"));
+        // A move keeps the frame drawn: a new one only when the size or the scale changed, or a drag would draw one per
+        // step.
+        if (SameSize(frame, scale)) return;
+        Resize(frame, scale);
         _wake.Set();
+    }
+
+    private bool SameSize(CGRect frame, double scale)
+    {
+        scale = scale > 0 ? scale : 1;
+        var sizePx = new Size((int)Math.Round(frame.Width * scale), (int)Math.Round(frame.Height * scale));
+        lock (_gate) return _scale == (float)scale && _sizePx == sizePx;
     }
 
     public void FadeOut(TimeSpan duration, Action done)

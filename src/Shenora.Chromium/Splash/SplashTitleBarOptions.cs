@@ -4,16 +4,16 @@ namespace Shenora.Chromium;
 
 /// <summary>
 /// The title strip a frameless main window has while its splash is up (<see cref="ChromiumSplashOptions.TitleBar"/>),
-/// before its page reports a title bar of its own: the window's drag area, and its caption buttons. The page's own
-/// caption buttons or drag regions, or the lift, end it.
+/// before its page reports a title bar of its own: the window's drag area, and its caption buttons. On Windows and macOS
+/// the page's own caption buttons or drag regions, or the lift, end it; on Linux the lift.
 /// <list type="bullet">
 /// <item>Windows: the window's own area, which the splash leaves uncovered, showing the window's background
 /// (<see cref="ChromiumWindowOptions.BackgroundColor"/>) and then the page's title bar once it paints. Its caption buttons
 /// are the kit's, painted and hit-tested by the window as real ones are, so maximize offers Snap Layouts.</item>
 /// <item>macOS: likewise uncovered; its buttons are the traffic lights, where
 /// <see cref="ChromiumWindowOptions.NativeCaptionButtons"/> shows them.</item>
-/// <item>Linux: drawn by the splash itself, in the splash's background, with minimize, maximize and close; a drag on it
-/// is handed to the window manager, and a double-click maximizes or restores.</item>
+/// <item>Linux: drawn by the splash itself, in the splash's background, with minimize, maximize and close, until the
+/// splash lifts; a drag on it is handed to the window manager, and a double-click maximizes or restores.</item>
 /// </list>
 /// Chromium's resize band inside a frameless window's edges is left uncovered on every desktop.
 /// </summary>

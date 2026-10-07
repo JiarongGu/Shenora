@@ -189,7 +189,6 @@ public class WindowsSplashTests
     }
 
     // Per-monitor aware, as the splash's own thread and CEF's windows are: every rectangle read here is physical pixels.
-    [DllImport("user32")] private static extern nint SetThreadDpiAwarenessContext(nint context);
     [DllImport("user32")] private static extern uint GetDpiForWindow(nint hwnd);
 
     private static SplashOverlayLayout Layout(bool frameless) => new(frameless, 32, new SplashTitleBarOptions(), null, null);
@@ -202,7 +201,7 @@ public class WindowsSplashTests
     {
         Sta.Run(() =>
         {
-            SetThreadDpiAwarenessContext(-4);
+            PerMonitorDpi.Enter();
             using var owner = new Form { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(200, 150, 800, 600), ShowInTaskbar = false };
             owner.Show();
             using var surface = new WindowsSplashSurface(null);
@@ -217,11 +216,44 @@ public class WindowsSplashTests
     }
 
     [Fact]
+    public void A_move_of_the_owner_moves_the_splash_without_drawing_it_again_and_a_resize_draws_it()
+    {
+        Sta.Run(() =>
+        {
+            PerMonitorDpi.Enter();
+            using var owner = new Form { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(200, 150, 800, 600), ShowInTaskbar = false };
+            owner.Show();
+            using var surface = new WindowsSplashSurface(null);
+            var renders = 0;
+            surface.ShowOver(owner.Handle, Layout(frameless: false), (size, scale, measurer) =>
+            {
+                Interlocked.Increment(ref renders);
+                return Blank(size, scale, measurer);
+            });
+            RevealAndWait(surface);
+            var before = Volatile.Read(ref renders);
+
+            for (var i = 1; i <= 10; i++)
+            {
+                owner.Location = new Point(200 + (i * 10), 150 + (i * 5));
+                surface.FollowOwner();
+                Wait(() => Rect(surface.Window) == owner.RectangleToScreen(owner.ClientRectangle), "the splash followed the move");
+            }
+            Assert.Equal(before, Volatile.Read(ref renders));   // a layered window keeps its bitmap as it moves
+
+            owner.Size = new Size(900, 700);
+            surface.FollowOwner();
+            Wait(() => Volatile.Read(ref renders) > before, "a resize draws the splash at its new size");   // just after it moves
+            Assert.Equal(owner.RectangleToScreen(owner.ClientRectangle), Rect(surface.Window));
+        });
+    }
+
+    [Fact]
     public void The_window_s_splash_stays_hidden_until_revealed_then_takes_the_owner_s_area_as_it_is_then()
     {
         Sta.Run(() =>
         {
-            SetThreadDpiAwarenessContext(-4);
+            PerMonitorDpi.Enter();
             using var owner = new Form { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(200, 150, 800, 600), ShowInTaskbar = false };
             owner.Show();
             using var surface = new WindowsSplashSurface(null);
@@ -243,7 +275,7 @@ public class WindowsSplashTests
     {
         Sta.Run(() =>
         {
-            SetThreadDpiAwarenessContext(-4);
+            PerMonitorDpi.Enter();
             using var owner = new Form
             {
                 StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(200, 150, 800, 600), ShowInTaskbar = false,
@@ -265,7 +297,7 @@ public class WindowsSplashTests
     {
         Sta.Run(() =>
         {
-            SetThreadDpiAwarenessContext(-4);
+            PerMonitorDpi.Enter();
             using var surface = new WindowsSplashSurface(null);
             var dip = new Rectangle(100, 100, 480, 300);
             surface.ShowCard(dip, Blank);

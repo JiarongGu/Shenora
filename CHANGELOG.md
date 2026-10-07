@@ -35,11 +35,12 @@ at the first list and missed five more breaking changes.
 - **The Chromium shell's splash takes the main window's render area, and the window's own frame stays live around
   it** (D92). 0.20.0's splash covered the window's whole place, frame included, so nothing could move, minimize or
   close the window while the app loaded. Now the window can, as WinForms' `SplashPanel` window can: the splash sits
-  over the render area, follows the window as it moves, resizes, maximizes, minimizes and goes fullscreen, and is
-  shown once the window is, without CEF ever waiting on it. A frameless window gets a title strip until its page
-  reports a title bar of its own: on Windows the window's own caption buttons and hit-test (Snap Layouts included), on
-  macOS the traffic lights and a drag area, on Linux a strip the splash draws and hands to the window manager; and
-  Chromium's resize band inside its edges stays clear. With no `Card` nothing shows before the window exists, and CEF
+  over the render area, follows the window as it moves, resizes, maximizes and minimizes (and on macOS into
+  fullscreen), and is shown once the window is, without CEF ever waiting on it; a move redraws nothing. A frameless
+  window gets a title strip until its page reports a title bar of its own (on Linux, until the lift): on Windows the
+  window's own caption buttons and hit-test (Snap Layouts included), on macOS the traffic lights and a drag area, on
+  Linux a strip the splash draws and hands to the window manager; and Chromium's resize band inside its edges stays
+  clear. With no `Card` nothing shows before the window exists, and CEF
   starts as the app is composed again (D87). Measured on Windows 11 at 200 %: the splash at the client area exactly
   (framed) or below the strip and inside the band (frameless), the title bar and close button answering the window's
   own hit-test, 0 of 60 samples behind a resize storm, the page beneath at 122 frames a second; on macOS 15, below the

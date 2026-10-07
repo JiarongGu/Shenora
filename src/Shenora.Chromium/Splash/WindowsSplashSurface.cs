@@ -49,6 +49,7 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
     private nint _owner;
     private byte _alpha = 255;
     private bool _animating;
+    private (Size Size, float Scale, OverlayCorners Corners) _presented;   // what the last frame was drawn for
     private long _fadeStart;
     private TimeSpan _fade;
     private Action? _fadeDone;
@@ -93,7 +94,9 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
             return;
         }
         _onShown = shown;
-        Volatile.Write(ref _revealed, 1);
+        // A full fence, as _ready.Set() is on the splash thread: each side then sees the other's write, so one of them
+        // shows it. A plain write before the read could be reordered after it, and neither would.
+        Interlocked.Exchange(ref _revealed, 1);
         if (!_ready.IsSet) return;                        // the splash thread shows it once it is made
         if (_failure is not null || !Post(ShowNow)) TakeShown()?.Invoke();
     }
@@ -263,8 +266,10 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
         GetWindowRect(_hwnd, out var r);
         var size = new Size(Math.Max(1, r.Right - r.Left - (2 * _shadow)), Math.Max(1, r.Bottom - r.Top - (2 * _shadow)));
         var scale = GetDpiForWindow(_hwnd) / 96f;
+        var corners = Corners();
         var frame = _render(size, scale > 0 ? scale : 1, _painter);
-        _painter.Paint(frame, (int)Math.Round(8 * (scale > 0 ? scale : 1)), Corners(), _shadow);
+        _painter.Paint(frame, (int)Math.Round(8 * (scale > 0 ? scale : 1)), corners, _shadow);
+        _presented = (size, scale, corners);
         var at = new POINT { X = r.Left, Y = r.Top };
         var extent = new SIZE { Cx = _painter.Size.Width, Cy = _painter.Size.Height };
         var origin = new POINT();
@@ -295,7 +300,9 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
         GetWindowRect(_hwnd, out var current);
         if (bounds.Left == current.Left && bounds.Top == current.Top && bounds.Right == current.Right && bounds.Bottom == current.Bottom) return;
         SetWindowPos(_hwnd, 0, bounds.Left, bounds.Top, bounds.Width, bounds.Height, SWP_NOZORDER | SWP_NOACTIVATE);
-        Present();
+        // A layered window keeps its bitmap as it moves: a frame only when what it was drawn for changed, or a drag
+        // would draw one per step.
+        if (_presented != (bounds.Size, GetDpiForWindow(_hwnd) / 96f, Corners())) Present();
     }
 
     private void FadeStep()
