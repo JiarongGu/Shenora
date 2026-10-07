@@ -60,10 +60,11 @@ internal static class MacScreens
 /// <summary>
 /// The macOS splash: a borderless <c>NSWindow</c> made on the main thread, showing frames a thread of its own renders
 /// through CoreGraphics and CoreText. They go into a layer the splash owns (no delegate, so AppKit manages none of it),
-/// over the window's own: committed from the render thread in explicit Core Animation transactions until the main window
-/// exists, the only way to draw while the main thread composes the app and starts CEF, and posted to the main thread
-/// once CEF's loop runs it. It takes the clicks over it (a borderless window never becomes key), and joins the main
-/// window as a child, so it stays above it and moves with it.
+/// over the window's own. Either the card, before the main window exists, its frames committed from the render thread in
+/// explicit Core Animation transactions (the only way to draw while the main thread composes the app and starts CEF); or
+/// the splash over the main window's content below its title bar or strip, its frames posted to the main thread, which
+/// CEF's loop runs, joined to the main window as a child once that is on screen, so it stays above it and moves with it.
+/// It takes the clicks over it (a borderless window never becomes key).
 /// </summary>
 internal sealed unsafe class MacSplashSurface(ILogger? log) : ISplashSurface
 {
@@ -75,6 +76,7 @@ internal sealed unsafe class MacSplashSurface(ILogger? log) : ISplashSurface
     private MacSplashPainter? _painter;
     private SplashRender? _render;
     private nint _window, _layer, _parent;
+    private SplashOverlayLayout _layout;
     private Size _sizePx;
     private float _scale = 1;
     private volatile bool _closing, _fading, _animating, _attached;
@@ -83,29 +85,69 @@ internal sealed unsafe class MacSplashSurface(ILogger? log) : ISplashSurface
     private Action? _fadeDone;
     private int _disposed;
 
-    public void Show(ChromiumWindowGeometry.Plan placement, SplashRender render)
+    public void ShowCard(Rectangle dipRect, SplashRender render)
     {
         // NSApp must be CEF's own before anything makes one, a window included (MacPlatform).
         MacPlatform.Prepare();
         LoadFrameworks();
         if (!IsMainThread) throw new InvalidOperationException("The macOS splash opens on the main thread.");
+        var (frame, scale) = MacScreens.ToFrame(new ChromiumWindowGeometry.Plan(dipRect.Width, dipRect.Height, dipRect.X, dipRect.Y, false), MacScreens.All());
+        Open(frame, scale, render);
+    }
+
+    // CEF's UI thread, which is the main thread on macOS, before CEF shows the main window. CEF hands over the window's
+    // content NSView. From here frames go to the main thread, which CEF's loop runs.
+    public void ShowOver(nint mainWindow, SplashOverlayLayout layout, SplashRender render)
+    {
+        LoadFrameworks();
+        if (!IsMainThread) throw new InvalidOperationException("The macOS splash opens on the main thread.");
+        var parent = GetBool(mainWindow, "isKindOfClass:", Class("NSWindow")) ? mainWindow : Send(mainWindow, "window");
+        if (parent == 0) throw new InvalidOperationException("The main window has no NSWindow.");
+        _parent = parent;
+        _layout = layout;
+        _attached = true;
+        Open(RenderArea(parent, layout), GetDouble(parent, "backingScaleFactor"), render);
+    }
+
+    // Main thread, the main window on screen: placed at its render area as it is now, then joined to it as a child,
+    // which orders it in above it. Until then it is made but not on screen, so it never floats alone.
+    public void Reveal(Action shown)
+    {
+        try
+        {
+            var window = _window;
+            if (_parent == 0 || window == 0) return;
+            FollowOwner();
+            AddChild(_parent, window);
+            Send(window, "orderFront:", 0);
+        }
+        finally
+        {
+            shown();
+        }
+    }
+
+    // The main window's render area in screen points: its content rect (below a framed window's title bar), below the
+    // strip on a frameless one. AppKit's y grows upward, so the strip comes off the height and the origin stays.
+    private static CGRect RenderArea(nint parent, SplashOverlayLayout layout)
+    {
+        var content = GetRect(parent, "contentRectForFrameRect:", GetRect(parent, "frame"));
+        if (layout.Frameless) content.Height = Math.Max(1, content.Height - layout.StripDips);
+        return content;
+    }
+
+    private void Open(CGRect frame, double scale, SplashRender render)
+    {
         _render = render;
-        var (frame, scale) = MacScreens.ToFrame(placement, MacScreens.All());
         var window = InitWindow(Send(Class("NSWindow"), "alloc"), frame);
         if (window == 0) throw new InvalidOperationException("The splash window could not be made.");
         _window = window;
-        // A window with no saved place is centred the way Chromium centres the main one, by AppKit's own [NSWindow
-        // center], which sits it above the middle: centred exactly, the splash jumped 86 points as it snapped; centred
-        // this way it moves 1 point (measured, macOS 15).
-        if (placement is { X: null } and { Maximized: false })
-        {
-            Send(window, "center");
-            frame = GetRect(window, "frame");
-        }
         SendBool(window, "setReleasedWhenClosed:", false);
         SendBool(window, "setOpaque:", false);
         Send(window, "setBackgroundColor:", Send(Class("NSColor"), "clearColor"));
-        SendBool(window, "setHasShadow:", false);
+        // The card's shadow is the system's own, cast from its rounded content; the window's splash has its window's.
+        var card = _parent == 0;
+        SendBool(window, "setHasShadow:", card);
         var view = Send(window, "contentView");
         SendBool(view, "setWantsLayer:", true);
         // The splash's own layer, +1 from new and held until its thread is done with it: the window's own layer goes
@@ -113,11 +155,14 @@ internal sealed unsafe class MacSplashSurface(ILogger? log) : ISplashSurface
         _layer = Send(Class("CALayer"), "new");
         SendBool(_layer, "setMasksToBounds:", true);
         SendDouble(_layer, "setCornerRadius:", CornerRadius);
+        // Over the main window only its bottom corners are the window's: the top ones sit under its title bar or strip.
+        // The content view is not flipped, so the bottom corners are the layer's minimum-y ones.
+        if (!card) SendLong(_layer, "setMaskedCorners:", 3 /* kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner */);
         Send(Send(view, "layer"), "addSublayer:", _layer);
         Resize(frame, scale);
         _painter = new MacSplashPainter(log);
         Present();
-        Send(window, "orderFrontRegardless");
+        if (card) Send(window, "orderFrontRegardless");
         Send(Class("CATransaction"), "flush");
         _thread = new Thread(Loop) { IsBackground = true, Name = "Shenora splash" };
         _thread.Start();
@@ -125,25 +170,12 @@ internal sealed unsafe class MacSplashSurface(ILogger? log) : ISplashSurface
 
     public void Invalidate() => _wake.Set();
 
-    // CEF's UI thread, which is the main thread on macOS. CEF hands over the window's content NSView.
-    public void Attach(nint mainWindow)
-    {
-        var window = _window;
-        if (window == 0 || mainWindow == 0 || Volatile.Read(ref _disposed) != 0) return;
-        var parent = GetBool(mainWindow, "isKindOfClass:", Class("NSWindow")) ? mainWindow : Send(mainWindow, "window");
-        if (parent == 0) return;
-        _parent = parent;
-        AddChild(parent, window);
-        _attached = true;   // from here frames go to the main thread, which CEF's loop now runs
-        FollowOwner();
-    }
-
     // Main thread.
     public void FollowOwner()
     {
         var window = _window;
         if (_parent == 0 || window == 0) return;
-        var frame = GetRect(_parent, "frame");
+        var frame = RenderArea(_parent, _layout);
         SetFrame(window, frame);
         Resize(frame, GetDouble(_parent, "backingScaleFactor"));
         _wake.Set();

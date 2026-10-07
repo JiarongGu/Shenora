@@ -99,10 +99,11 @@ public sealed unsafe class ChromiumWindows
     internal SplashSession? Splash { get; set; }
 
     /// <summary>
-    /// Where the main window will open, for a splash that shows before CEF can say: the state it restores (from the same
-    /// store the window then uses, against <paramref name="workAreas"/>, the displays' work areas in DIP, primary first),
-    /// else only its size, with no place: CEF centres such a window by each OS's own rule (on macOS, above the middle),
-    /// so the splash centres itself the same way rather than guess.
+    /// Where the main window will open, for a splash card that shows before CEF can say: the state it restores (from the
+    /// same store the window then uses, against <paramref name="workAreas"/>, the displays' work areas in DIP, primary
+    /// first), else only its size, with no place. The card centres on the restored rect, on its display's work area when
+    /// it opens maximized, or on the primary work area when there is no place (where CEF centres the window by each OS's
+    /// own rule: on macOS slightly above the middle).
     /// </summary>
     internal ChromiumWindowGeometry.Plan MainWindowPlan(IServiceProvider services, IReadOnlyList<Rectangle> workAreas)
     {
@@ -194,7 +195,18 @@ public sealed unsafe class ChromiumWindows
                 w => CloseGuard?.Invoke(w.Name) ?? true, GeometryFor(name, options));
             if (name == MainWindowName && Splash is { } splash)
             {
-                window.Opening = splash.WindowOpened;
+                var main = window;
+                var bar = _options.Splash?.TitleBar ?? new SplashTitleBarOptions();
+                var layout = new SplashOverlayLayout(options.FramelessChrome, bar.Height, bar,
+                    kind => CefTask.Post(cef_thread_id_t.TID_UI, () => main.InvokeCaptionButton(kind)),
+                    () => CefTask.Post(cef_thread_id_t.TID_UI, main.ToggleMaximize));
+                // Subscribed BEFORE the check, so a lift between the two still reaches the strip; a splash already gone
+                // (lifted, or its setup failed) leaves the window its own title bar from the start, and no handler.
+                splash.Lifted += main.SplashLifted;
+                if (splash.HasLifted) splash.Lifted -= main.SplashLifted;
+                else if (options.FramelessChrome) main.SplashStrip = bar;
+                window.Opening = handle => splash.WindowOpened(handle, layout);
+                window.Shown = splash.WindowShown;
                 window.Moved = splash.OwnerMoved;
                 window.Hidden = splash.Abort;   // the tray's close: a splash left over the desktop would cover it
             }

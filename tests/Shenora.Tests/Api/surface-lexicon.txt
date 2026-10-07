@@ -842,3 +842,8 @@ Stack
 Layer
 Image
 Component
+# `Card`, `Title` (2026-10-07) — the splash's optional window before the main one (`SplashCardOptions`: a small
+# borderless card, the shape Office and Visual Studio show) and a frameless window's strip (`SplashTitleBarOptions`:
+# the title bar's drag area and caption buttons). Window-chrome words, as `Bar` already is; neither names content.
+Card
+Title

@@ -37,13 +37,17 @@ public sealed class SplashContext
     /// The page learns the user's theme only once it runs, so this is how a splash matches it first.</summary>
     public bool? SystemDark { get; }
 
+    /// <summary>Which window the render function is drawing: <see cref="SplashSurface.Card"/> until the main window
+    /// exists, then <see cref="SplashSurface.Window"/>. Read it in the render function to draw the two differently.</summary>
+    public SplashSurface Surface => _sink.Surface;
+
     /// <summary>A value the render function reads. Setting a different one draws the splash again.</summary>
     /// <typeparam name="T">The value's type.</typeparam>
     /// <param name="initial">The first value.</param>
     public SplashState<T> State<T>(T initial) => new(this, initial);
 
     /// <summary>
-    /// Work the app does while the splash shows: started on the thread pool as the splash first shows, alongside the
+    /// Work the app does while the splash shows: started on the thread pool as the app runs, alongside the
     /// other <see cref="OnShown"/> work and Chromium's own start, before <c>OnStarting</c>. The splash stays until every
     /// one has finished; one that throws is logged and no longer waited on. The token is cancelled when the app stops,
     /// never by the splash lifting. ⚠ The UI dispatcher is not ready yet.

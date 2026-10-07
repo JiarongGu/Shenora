@@ -65,6 +65,32 @@ public class WindowsSplashTests
     }
 
     [Fact]
+    public void Only_the_corners_asked_for_are_cut()
+    {
+        // The splash in a window's render area: the title bar above it is square to it, the window's bottom is round.
+        using var painter = new WindowsSplashPainter(null);
+        painter.Paint(Frame(new Size(100, 100)), cornerRadius: 8, OverlayCorners.Bottom);
+        Assert.Equal(0xFFu, painter.Pixel(0, 0) >> 24);
+        Assert.Equal(0xFFu, painter.Pixel(99, 0) >> 24);
+        Assert.Equal(0u, painter.Pixel(0, 99) >> 24);
+        Assert.Equal(0u, painter.Pixel(99, 99) >> 24);
+    }
+
+    [Fact]
+    public void A_shadow_rings_the_frame_which_lands_inside_it()
+    {
+        using var painter = new WindowsSplashPainter(null);
+        painter.Paint(Frame(new Size(100, 60)), cornerRadius: 8, OverlayCorners.Top | OverlayCorners.Bottom, shadow: 12);
+        Assert.Equal(new Size(124, 84), painter.Size);
+        Assert.Equal(0xFFC81E28u, painter.Pixel(12 + 50, 12 + 30));      // the frame, opaque, inside the margin
+        var ring = painter.Pixel(6, 42);                                 // halfway out on the left, mid-height
+        Assert.InRange(ring >> 24, 1u, 0x40u);                           // a faint shadow
+        Assert.Equal(0u, ring & 0x00FFFFFF);                             // black, premultiplied
+        Assert.True((painter.Pixel(1, 42) >> 24) < (ring >> 24), "the shadow fades outward");
+        Assert.True((painter.Pixel(12, 12) >> 24) < 0xFF, "the frame's own corner is cut");
+    }
+
+    [Fact]
     public void A_missing_image_is_left_out_and_the_rest_draws()
     {
         using var painter = new WindowsSplashPainter(null);
@@ -131,11 +157,12 @@ public class WindowsSplashTests
             owner.Show();
             using var surface = new WindowsSplashSurface(null);
             var frames = 0;
-            surface.Show(new ChromiumWindowGeometry.Plan(300, 200, 10, 10, false), (size, scale, measurer) =>
+            surface.ShowOver(owner.Handle, new SplashOverlayLayout(false, 32, new SplashTitleBarOptions(), null, null), (size, scale, measurer) =>
             {
                 Interlocked.Increment(ref frames);
                 return SplashLayout.Build(new SplashText("splash"), Color.Black, size, scale, measurer, 0, _ => null);
             });
+            RevealAndWait(surface);
             var hwnd = surface.Window;
             Assert.NotEqual(0, hwnd);
             Assert.True(frames >= 1);
@@ -146,9 +173,8 @@ public class WindowsSplashTests
             Assert.Equal(0x80000L | 0x08000000 | 0x80, ex & (0x80000L | 0x20 | 0x08000000 | 0x80));
             Assert.True(IsWindowVisible(hwnd) != 0);
 
-            surface.Attach(owner.Handle);
-            Assert.Equal(owner.Handle, GetWindow(hwnd, 4));   // GW_OWNER, set before Attach returns
-            Wait(() => Rect(hwnd) == Rect(owner.Handle), "the splash snapped to its owner");
+            Assert.Equal(owner.Handle, GetWindow(hwnd, 4));   // GW_OWNER, from its creation
+            Assert.Equal(Rect(owner.Handle), Rect(hwnd));      // a borderless owner: its client area is all of it
 
             owner.Bounds = new Rectangle(200, 160, 500, 380);
             surface.FollowOwner();
@@ -162,6 +188,96 @@ public class WindowsSplashTests
         });
     }
 
+    // Per-monitor aware, as the splash's own thread and CEF's windows are: every rectangle read here is physical pixels.
+    [DllImport("user32")] private static extern nint SetThreadDpiAwarenessContext(nint context);
+    [DllImport("user32")] private static extern uint GetDpiForWindow(nint hwnd);
+
+    private static SplashOverlayLayout Layout(bool frameless) => new(frameless, 32, new SplashTitleBarOptions(), null, null);
+
+    private static SplashFrame Blank(Size size, float scale, ISplashTextMeasurer measurer) =>
+        SplashLayout.Build(new SplashStack(), Color.Black, size, scale, measurer, 0, _ => null);
+
+    [Fact]
+    public void The_window_s_splash_covers_a_framed_owner_s_client_area_and_follows_it()
+    {
+        Sta.Run(() =>
+        {
+            SetThreadDpiAwarenessContext(-4);
+            using var owner = new Form { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(200, 150, 800, 600), ShowInTaskbar = false };
+            owner.Show();
+            using var surface = new WindowsSplashSurface(null);
+            surface.ShowOver(owner.Handle, Layout(frameless: false), Blank);
+            RevealAndWait(surface);
+            Assert.Equal(owner.RectangleToScreen(owner.ClientRectangle), Rect(surface.Window));   // the frame stays uncovered
+
+            owner.Bounds = new Rectangle(300, 200, 900, 700);
+            surface.FollowOwner();
+            Wait(() => Rect(surface.Window) == owner.RectangleToScreen(owner.ClientRectangle), "the splash followed its owner's client area");
+        });
+    }
+
+    [Fact]
+    public void The_window_s_splash_stays_hidden_until_revealed_then_takes_the_owner_s_area_as_it_is_then()
+    {
+        Sta.Run(() =>
+        {
+            SetThreadDpiAwarenessContext(-4);
+            using var owner = new Form { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(200, 150, 800, 600), ShowInTaskbar = false };
+            owner.Show();
+            using var surface = new WindowsSplashSurface(null);
+            surface.ShowOver(owner.Handle, Layout(frameless: false), Blank);   // returns without waiting for the window
+            Wait(() => surface.Window != 0, "the splash's window was made");
+            Thread.Sleep(100);
+            Assert.Equal(0, IsWindowVisible(surface.Window));                  // nothing floats before the owner shows
+
+            // As a window opening maximized from saved state: maximized between the splash's creation and its reveal.
+            owner.WindowState = FormWindowState.Maximized;
+            RevealAndWait(surface);
+            Assert.NotEqual(0, IsWindowVisible(surface.Window));
+            Assert.Equal(owner.RectangleToScreen(owner.ClientRectangle), Rect(surface.Window));
+        });
+    }
+
+    [Fact]
+    public void The_window_s_splash_leaves_a_frameless_owner_s_strip()
+    {
+        Sta.Run(() =>
+        {
+            SetThreadDpiAwarenessContext(-4);
+            using var owner = new Form
+            {
+                StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(200, 150, 800, 600), ShowInTaskbar = false,
+                FormBorderStyle = FormBorderStyle.None,
+            };
+            owner.Show();
+            using var surface = new WindowsSplashSurface(null);
+            surface.ShowOver(owner.Handle, Layout(frameless: true), Blank);
+            RevealAndWait(surface);
+            var scale = GetDpiForWindow(owner.Handle) / 96.0;
+            var strip = (int)Math.Round(32 * scale);
+            var edge = (int)Math.Round(SplashGeometry.ResizeBandDips * scale);   // its resize band stays the window's
+            Assert.Equal(SplashGeometry.OverlayRect(owner.RectangleToScreen(owner.ClientRectangle), true, strip, edge), Rect(surface.Window));
+        });
+    }
+
+    [Fact]
+    public void The_card_opens_unowned_at_its_rect_inside_a_shadow_margin()
+    {
+        Sta.Run(() =>
+        {
+            SetThreadDpiAwarenessContext(-4);
+            using var surface = new WindowsSplashSurface(null);
+            var dip = new Rectangle(100, 100, 480, 300);
+            surface.ShowCard(dip, Blank);
+            Assert.Equal(0, GetWindow(surface.Window, 4));   // GW_OWNER: none
+            var card = WindowsScreens.ToPixels(new ChromiumWindowGeometry.Plan(dip.Width, dip.Height, dip.X, dip.Y, false), WindowsScreens.All());
+            var window = Rect(surface.Window);
+            var margin = card.Left - window.Left;
+            Assert.True(margin > 0, "the card has a shadow margin");
+            Assert.Equal(Rectangle.Inflate(card, margin, margin), window);
+        });
+    }
+
     [Fact]
     public void A_surface_disposed_before_its_window_exists_never_shows_one()
     {
@@ -169,7 +285,7 @@ public class WindowsSplashTests
         // makes it later, must not show it.
         var surface = new WindowsSplashSurface(null);
         surface.Dispose();
-        Assert.Throws<InvalidOperationException>(() => surface.Show(new ChromiumWindowGeometry.Plan(200, 100, null, null, false),
+        Assert.Throws<InvalidOperationException>(() => surface.ShowCard(new Rectangle(0, 0, 200, 100),
             (size, scale, measurer) => SplashLayout.Build(new SplashStack(), Color.Black, size, scale, measurer, 0, _ => null)));
         Assert.Equal(0, surface.Window);
     }
@@ -178,7 +294,7 @@ public class WindowsSplashTests
     public void Disposing_destroys_the_window_at_once()
     {
         using var surface = new WindowsSplashSurface(null);
-        surface.Show(new ChromiumWindowGeometry.Plan(200, 100, null, null, false),
+        surface.ShowCard(new Rectangle(0, 0, 200, 100),
             (size, scale, measurer) => SplashLayout.Build(new SplashStack(), Color.Black, size, scale, measurer, 0, _ => null));
         var hwnd = surface.Window;
         surface.Dispose();
@@ -192,6 +308,14 @@ public class WindowsSplashTests
     }
 
     // The owner's thread is this one, so its messages are pumped while waiting.
+    // Reveal returns at once; this thread owns the owner, so it pumps while it waits, as CEF's thread does.
+    private static void RevealAndWait(WindowsSplashSurface surface)
+    {
+        var shown = 0;
+        surface.Reveal(() => Interlocked.Exchange(ref shown, 1));
+        Wait(() => Volatile.Read(ref shown) == 1, "the splash showed over its owner");
+    }
+
     private static void Wait(Func<bool> condition, string what)
     {
         var until = DateTime.UtcNow.AddSeconds(3);

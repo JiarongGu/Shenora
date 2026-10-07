@@ -8,4 +8,7 @@ internal interface ISplashSessionSink
 
     /// <summary>The component asked to lift the splash now. Any thread.</summary>
     void Close();
+
+    /// <summary>Which window the render function is drawing for now.</summary>
+    SplashSurface Surface { get; }
 }

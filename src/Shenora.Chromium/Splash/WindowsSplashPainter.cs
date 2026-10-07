@@ -49,16 +49,22 @@ internal sealed unsafe class WindowsSplashPainter : ISplashTextMeasurer, IDispos
         return new SizeF(rect.Right - rect.Left, rect.Bottom - rect.Top);
     }
 
-    /// <summary>Draw <paramref name="frame"/>; <paramref name="cornerRadius"/> pixels of rounding, or 0 for square.</summary>
-    public void Paint(SplashFrame frame, int cornerRadius)
+    /// <summary>The bitmap's size: the frame's, and the shadow's margin round it.</summary>
+    public Size Size => _size;
+
+    /// <summary>Draw <paramref name="frame"/>; <paramref name="cornerRadius"/> pixels of rounding (0 for square) on the
+    /// <paramref name="corners"/> asked, inside a margin of <paramref name="shadow"/> pixels that holds a soft shadow.</summary>
+    public void Paint(SplashFrame frame, int cornerRadius, OverlayCorners corners = OverlayCorners.Top | OverlayCorners.Bottom, int shadow = 0)
     {
-        EnsureBitmap(frame.Size);
+        shadow = Math.Max(0, shadow);
+        EnsureBitmap(new Size(frame.Size.Width + (2 * shadow), frame.Size.Height + (2 * shadow)));
         new Span<uint>(_bits, _size.Width * _size.Height).Clear();
         nint graphics = 0;
         try
         {
-            foreach (var op in frame.Ops)
+            foreach (var original in frame.Ops)
             {
+                var op = shadow == 0 ? original : Offset(original, shadow);
                 switch (op)
                 {
                     case SplashFill fill:
@@ -81,8 +87,18 @@ internal sealed unsafe class WindowsSplashPainter : ISplashTextMeasurer, IDispos
             End(ref graphics);
         }
         GdiFlush();
-        Opaque(cornerRadius);
+        Opaque(cornerRadius, corners, shadow);
     }
+
+    private static SplashDrawOp Offset(SplashDrawOp op, int by) => op switch
+    {
+        SplashFill fill => fill with { Bounds = Moved(fill.Bounds, by) },
+        SplashImageDraw image => image with { Bounds = Moved(image.Bounds, by) },
+        SplashTextRun text => text with { Bounds = Moved(text.Bounds, by) },
+        _ => op,
+    };
+
+    private static RectangleF Moved(RectangleF bounds, int by) => bounds with { X = bounds.X + by, Y = bounds.Y + by };
 
     private void Begin(ref nint graphics)
     {
@@ -192,13 +208,17 @@ internal sealed unsafe class WindowsSplashPainter : ISplashTextMeasurer, IDispos
         _size = new Size(Math.Max(1, size.Width), Math.Max(1, size.Height));
     }
 
-    // GDI leaves alpha 0 wherever it draws; the frame is opaque, so every pixel takes 255. Then each corner is cut to a
-    // quarter circle, anti-aliased by coverage, its colour premultiplied as UpdateLayeredWindow's per-pixel alpha wants.
-    private void Opaque(int radius)
+    // GDI leaves alpha 0 wherever it draws; the frame is opaque, so every pixel of it takes 255. Then each corner asked
+    // for is cut to a quarter circle, anti-aliased by coverage, its colour premultiplied as UpdateLayeredWindow's
+    // per-pixel alpha wants. A margin round the frame holds a black shadow that fades outward.
+    private void Opaque(int radius, OverlayCorners corners, int shadow)
     {
-        int w = _size.Width, h = _size.Height;
-        var pixels = new Span<uint>(_bits, w * h);
-        for (var i = 0; i < pixels.Length; i++) pixels[i] |= 0xFF000000;
+        int stride = _size.Width, w = _size.Width - (2 * shadow), h = _size.Height - (2 * shadow);
+        var pixels = new Span<uint>(_bits, stride * _size.Height);
+        for (var y = 0; y < h; y++)
+        for (var x = 0; x < w; x++)
+            pixels[((y + shadow) * stride) + x + shadow] |= 0xFF000000;
+        if (shadow > 0) Shadow(pixels, stride, w, h, shadow, radius);
         radius = Math.Min(radius, Math.Min(w, h) / 2);
         for (var y = 0; y < radius; y++)
         for (var x = 0; x < radius; x++)
@@ -207,10 +227,40 @@ internal sealed unsafe class WindowsSplashPainter : ISplashTextMeasurer, IDispos
             var dy = radius - (y + 0.5);
             var coverage = Math.Clamp(radius - Math.Sqrt((dx * dx) + (dy * dy)) + 0.5, 0, 1);
             if (coverage >= 1) continue;
-            Cut(ref pixels[(y * w) + x], coverage);
-            Cut(ref pixels[(y * w) + (w - 1 - x)], coverage);
-            Cut(ref pixels[((h - 1 - y) * w) + x], coverage);
-            Cut(ref pixels[((h - 1 - y) * w) + (w - 1 - x)], coverage);
+            int left = shadow + x, right = shadow + w - 1 - x, top = shadow + y, bottom = shadow + h - 1 - y;
+            if (corners.HasFlag(OverlayCorners.Top))
+            {
+                Cut(ref pixels[(top * stride) + left], coverage);
+                Cut(ref pixels[(top * stride) + right], coverage);
+            }
+            if (corners.HasFlag(OverlayCorners.Bottom))
+            {
+                Cut(ref pixels[(bottom * stride) + left], coverage);
+                Cut(ref pixels[(bottom * stride) + right], coverage);
+            }
+        }
+    }
+
+    // A soft black shadow in the margin: its alpha falls with the distance from the frame's rounded edge, squared, from
+    // about a fifth at the edge to nothing at the margin's outer edge.
+    private static void Shadow(Span<uint> pixels, int stride, int w, int h, int shadow, int radius)
+    {
+        const double EdgeAlpha = 0x30;
+        int height = h + (2 * shadow);
+        double r = Math.Min(radius, Math.Min(w, h) / 2);
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < stride; x++)
+        {
+            // Distance to the frame's rounded rectangle, in pixels; inside it is zero or less.
+            double fx = x + 0.5 - shadow, fy = y + 0.5 - shadow;
+            var qx = Math.Max(Math.Abs(fx - (w / 2.0)) - ((w / 2.0) - r), 0);
+            var qy = Math.Max(Math.Abs(fy - (h / 2.0)) - ((h / 2.0) - r), 0);
+            var distance = Math.Sqrt((qx * qx) + (qy * qy)) - r;
+            if (distance <= 0 || distance >= shadow) continue;
+            var fade = 1 - (distance / shadow);
+            var alpha = (uint)Math.Round(EdgeAlpha * fade * fade);
+            ref var pixel = ref pixels[(y * stride) + x];
+            if ((pixel >> 24) < alpha) pixel = alpha << 24;
         }
     }
 

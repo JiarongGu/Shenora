@@ -17,10 +17,21 @@ public class SplashComponentTests
         public int Closes;
         public void Invalidate() => Interlocked.Increment(ref Invalidations);
         public void Close() => Interlocked.Increment(ref Closes);
+        public SplashSurface Surface { get; set; } = SplashSurface.Card;
     }
 
     private static SplashContext Context(Sink sink, IEventBus? bus = null, IServiceProvider? services = null, bool? dark = null) =>
         new(services ?? new ServiceCollection().BuildServiceProvider(), dark, bus, sink, log: null);
+
+    [Fact]
+    public void The_context_reports_the_surface_its_session_is_drawing()
+    {
+        var sink = new Sink();
+        var context = Context(sink);
+        Assert.Equal(SplashSurface.Card, context.Surface);
+        sink.Surface = SplashSurface.Window;
+        Assert.Equal(SplashSurface.Window, context.Surface);
+    }
 
     [Fact]
     public void A_state_change_asks_for_a_render_and_an_equal_set_does_not()

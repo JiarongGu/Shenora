@@ -96,9 +96,10 @@ public static class ChromiumHostExtensions
         builder.Services.AddShenoraFileDialogs();
         // Last, once the options are known good: CEF starts now, so its GPU process sets up while the app is built (D87).
         // The single-instance gate first, since CEF takes its data folder as it starts: a launch it turns away starts
-        // no CEF at all, and the runner lets it go. Not with a splash this build can draw, which must show before CEF's
-        // start holds the thread (D92): the runner shows it, then starts CEF.
-        if ((options.Splash is null || !SplashSurfaces.Supported) && ChromiumEarlyStart.LaunchedFromLayout
+        // no CEF at all, and the runner lets it go. Not with a splash card this build can draw, which must show before
+        // CEF's start holds the thread (D92): the runner shows it, then starts CEF. A splash with no card shows in the
+        // main window, which nothing earlier than CEF can make, so CEF still starts here.
+        if ((options.Splash?.Card is null || !SplashSurfaces.Supported) && ChromiumEarlyStart.LaunchedFromLayout
             && ChromiumSingleInstance.Process.Enter(options.SingleInstance, builder.ApplicationName, builder.Paths, builder.Args, log: null))
             ChromiumEarlyStart.Process.Start(options, ChromiumRunner.SettingsFor(options, builder.Paths, builder.Environment));
         return builder;

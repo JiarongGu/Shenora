@@ -10,14 +10,16 @@ using static Shenora.Chromium.Host.WindowsSplashNative;
 namespace Shenora.Chromium.Host;
 
 /// <summary>
-/// The Windows splash: a layered popup on a thread of its own, so it draws and animates while the main thread composes
-/// the app and starts CEF. <c>UpdateLayeredWindow</c> presents each frame whole, with no <c>WM_PAINT</c>. It takes the
-/// clicks over it, so none reaches the page loading unseen beneath it, and a click never activates it
-/// (<c>WS_EX_NOACTIVATE</c>); it has no taskbar button.
+/// The Windows splash: a layered popup on a thread of its own, so it draws and animates while CEF's thread is busy.
+/// <c>UpdateLayeredWindow</c> presents each frame whole, with no <c>WM_PAINT</c>. It takes the clicks over it, so none
+/// reaches the page loading unseen beneath it, and a click never activates it (<c>WS_EX_NOACTIVATE</c>); it has no
+/// taskbar button. Either the card, before the main window exists, with a shadow it draws in a margin of its own; or the
+/// splash over the main window's render area, owned by it from its creation, so it stays above that window only and
+/// minimises with it, while the window's frame stays the window's.
 /// <para>
-/// Once owned by the main window it stays above it and minimises with it. A same-process owned popup does not count as
-/// covering the main window for Chromium's occlusion tracking, so the page keeps painting underneath (measured, CEF 154:
-/// 106–120 animation frames a second under it, against a hidden page and none under a foreign window).
+/// A same-process owned popup does not count as covering the main window for Chromium's occlusion tracking, so the page
+/// keeps painting underneath (measured, CEF 154: 106–120 animation frames a second under it, against a hidden page and
+/// none under a foreign window).
 /// </para>
 /// </summary>
 internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
@@ -36,7 +38,14 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
     private GCHandle _self;
     private WindowsSplashPainter? _painter;
     private SplashRender? _render;
-    private ChromiumWindowGeometry.Plan _plan;
+    private const int ShadowDips = 12;
+    private Rectangle _bounds;   // where it opens, in physical pixels, the card's shadow margin included
+    private bool _isCard;
+    private int _shadow;         // the card's shadow margin in pixels; none over the main window
+    private Action? _onShown;    // Reveal's callback, run once it shows (or never will)
+    private int _revealed;       // Reveal has been asked
+    private bool _shownOnce;     // the splash thread's: it has been shown
+    private SplashOverlayLayout _layout;
     private nint _owner;
     private byte _alpha = 255;
     private bool _animating;
@@ -46,14 +55,82 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
     private int _renderQueued;
     private int _disposed;
 
-    public void Show(ChromiumWindowGeometry.Plan placement, SplashRender render)
+    // The card's window is its rect and a margin round it, where it draws its own shadow: a layered window gets none
+    // from the desktop compositor.
+    public void ShowCard(Rectangle dipRect, SplashRender render)
     {
-        _render = render;
-        _plan = placement;
-        _thread = new Thread(Run) { IsBackground = true, Name = "Shenora splash" };
-        _thread.Start();
+        _isCard = true;
+        var screens = WindowsScreens.All();
+        var card = WindowsScreens.ToPixels(new ChromiumWindowGeometry.Plan(dipRect.Width, dipRect.Height, dipRect.X, dipRect.Y, false), screens);
+        var centre = new Point(card.X + (card.Width / 2), card.Y + (card.Height / 2));
+        var scale = screens.FirstOrDefault(s => s.Monitor.Contains(centre)) is { Scale: > 0 } screen ? screen.Scale : 1f;
+        _shadow = (int)Math.Round(ShadowDips * scale);
+        _bounds = Rectangle.Inflate(card, _shadow, _shadow);
+        Open(render);
         if (!_ready.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("The splash window did not open within 5 seconds.");
         if (_failure is { } failure) throw new InvalidOperationException("The splash window could not be opened.", failure);
+    }
+
+    // CEF's UI thread, before CEF shows the main window. Returns at once: the splash thread makes the window, owned from
+    // its creation, and draws its first frame while CEF goes on to show the main window, which this would otherwise hold
+    // back. Owner and owned on two threads share an input queue from here on; the splash thread does nothing that waits
+    // on input.
+    public void ShowOver(nint mainWindow, SplashOverlayLayout layout, SplashRender render)
+    {
+        if (mainWindow == 0) throw new ArgumentException("The main window has no handle.", nameof(mainWindow));
+        _owner = mainWindow;
+        _layout = layout;
+        Open(render);
+    }
+
+    // CEF's UI thread, the main window on screen. Never waits: the splash shows once its window and first frame exist,
+    // which the splash thread may still be making (its window's owner is CEF's, which it may be waiting on).
+    public void Reveal(Action shown)
+    {
+        if (_isCard)
+        {
+            shown();
+            return;
+        }
+        _onShown = shown;
+        Volatile.Write(ref _revealed, 1);
+        if (!_ready.IsSet) return;                        // the splash thread shows it once it is made
+        if (_failure is not null || !Post(ShowNow)) TakeShown()?.Invoke();
+    }
+
+    // The splash thread. Placed now, not as it was made: a window opening maximized is maximized only by its show.
+    private void ShowNow()
+    {
+        if (_shownOnce) return;
+        _shownOnce = true;
+        Snap();
+        if (IsIconic(_owner) == 0) ShowWindow(_hwnd, SW_SHOWNOACTIVATE);
+        if (TakeShown() is { } shown) Guard(shown);
+    }
+
+    private Action? TakeShown() => Interlocked.Exchange(ref _onShown, null);
+
+    // The main window's render area in screen pixels: its client area, below the strip on a frameless window. On the
+    // splash thread, which is per-monitor aware: read on a thread that is not, the rectangle comes back in that thread's
+    // scaled coordinates, and the splash opened at half its size at 200 % (measured).
+    private static Rectangle OverlayBounds(nint owner, SplashOverlayLayout layout)
+    {
+        GetClientRect(owner, out var client);
+        var origin = new POINT();
+        ClientToScreen(owner, ref origin);
+        var dpi = GetDpiForWindow(owner) / 96.0;
+        var scale = dpi > 0 ? dpi : 1;
+        var area = new Rectangle(origin.X, origin.Y, client.Right - client.Left, client.Bottom - client.Top);
+        // A maximized window has no resize band to keep clear.
+        var edge = IsZoomed(owner) != 0 ? 0 : (int)Math.Round(SplashGeometry.ResizeBandDips * scale);
+        return SplashGeometry.OverlayRect(area, layout.Frameless, (int)Math.Round(layout.StripDips * scale), edge);
+    }
+
+    private void Open(SplashRender render)
+    {
+        _render = render;
+        _thread = new Thread(Run) { IsBackground = true, Name = "Shenora splash" };
+        _thread.Start();
     }
 
     private void Run()
@@ -62,21 +139,27 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
         {
             SetThreadDpiAwarenessContext(-4);   // per-monitor v2: every rectangle here is physical pixels
             _painter = new WindowsSplashPainter(log);
-            var bounds = WindowsScreens.ToPixels(_plan, WindowsScreens.All());
+            var bounds = _owner != 0 ? OverlayBounds(_owner, _layout) : _bounds;
             _self = GCHandle.Alloc(this);
             var hwnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, Class(), "", WS_POPUP,
-                bounds.X, bounds.Y, bounds.Width, bounds.Height, 0, 0, GetModuleHandleW(null), GCHandle.ToIntPtr(_self));
+                bounds.X, bounds.Y, bounds.Width, bounds.Height, _owner, 0, GetModuleHandleW(null), GCHandle.ToIntPtr(_self));
             if (hwnd == 0) throw new Win32Exception(Marshal.GetLastPInvokeError());
             // Published with a full fence, then the dispose flag read: a Dispose that saw no window yet (Show gave up
             // waiting) set the flag first, so this side sees it and the window never shows.
             Interlocked.Exchange(ref _hwnd, hwnd);
             if (Volatile.Read(ref _disposed) != 0) throw new ObjectDisposedException(nameof(WindowsSplashSurface));
             Present();
-            ShowWindow(_hwnd, SW_SHOWNOACTIVATE);
-            // A window that is not foreground opens UNDER the foreground window (measured: under the app the user was
-            // in), where a splash does no good. A launch the user made may take the foreground, as the window the splash
-            // stands in for would; one the OS does not allow it (started in the background) is refused, and stays put.
-            SetForegroundWindow(_hwnd);
+            // The splash over the main window stays hidden until Reveal: shown now, it would float alone until CEF showed
+            // its owner, for as long as the app's window-opened hooks took.
+            if (_isCard)
+            {
+                ShowWindow(_hwnd, SW_SHOWNOACTIVATE);
+                // A card that is not foreground opens UNDER the foreground window (measured: under the app the user was
+                // in), where it does no good. A launch the user made may take the foreground, as the window the card
+                // stands in for would; one the OS does not allow it (started in the background) is refused, and stays
+                // put. The window's splash needs none of this: it is owned, and its owner takes the foreground.
+                SetForegroundWindow(_hwnd);
+            }
         }
         catch (Exception ex)
         {
@@ -84,9 +167,13 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
             if (_hwnd != 0) DestroyWindow(_hwnd);   // before its handle to this object is freed
             Cleanup();
             _ready.Set();
+            // Revealed already, and now never to show: whoever waits on it is told.
+            if (Volatile.Read(ref _revealed) == 1 && TakeShown() is { } never) Guard(never);
             return;
         }
         _ready.Set();
+        // Revealed while it was being made (Reveal saw it not ready, so left the showing to this thread).
+        if (_owner != 0 && Volatile.Read(ref _revealed) == 1) Guard(ShowNow);
         MSG msg;
         while (GetMessageW(&msg, 0, 0, 0) > 0)
         {
@@ -104,20 +191,6 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
                 Volatile.Write(ref _renderQueued, 0);
                 Present();
             });
-    }
-
-    // Synchronous on the caller's thread for the owner itself: CEF shows the main window right after, and an owner set
-    // later would let that raise the main window over the splash. Owner and owned on two threads share an input queue
-    // from here on; the splash thread does nothing that waits on input.
-    public void Attach(nint mainWindow)
-    {
-        if (_hwnd == 0 || mainWindow == 0 || Volatile.Read(ref _disposed) != 0) return;
-        SetWindowLongPtrW(_hwnd, GWLP_HWNDPARENT, mainWindow);
-        Post(() =>
-        {
-            _owner = mainWindow;
-            Snap();
-        });
     }
 
     public void FollowOwner() => Post(Snap);
@@ -144,11 +217,11 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
         _thread?.Join(TimeSpan.FromSeconds(1));
     }
 
-    private void Post(Action work)
+    private bool Post(Action work)
     {
-        if (_hwnd == 0 || Volatile.Read(ref _disposed) != 0) return;
+        if (_hwnd == 0 || Volatile.Read(ref _disposed) != 0) return false;
         _work.Enqueue(work);
-        PostMessageW(_hwnd, WM_RUN, 0, 0);
+        return PostMessageW(_hwnd, WM_RUN, 0, 0) != 0;
     }
 
     private nint? Handle(uint msg, nint wParam)
@@ -156,6 +229,8 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
         switch (msg)
         {
             case WM_MOUSEACTIVATE:
+                // Never activated itself; a click on it brings its window forward, as a click on that window would.
+                if (_owner != 0) SetForegroundWindow(_owner);
                 return MA_NOACTIVATE;
             case WM_CLOSE:
                 return 0;   // Alt+F4 while it has the foreground: the session alone closes it
@@ -186,12 +261,12 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
     {
         if (_hwnd == 0 || _painter is null || _render is null) return;
         GetWindowRect(_hwnd, out var r);
-        var size = new Size(Math.Max(1, r.Right - r.Left), Math.Max(1, r.Bottom - r.Top));
+        var size = new Size(Math.Max(1, r.Right - r.Left - (2 * _shadow)), Math.Max(1, r.Bottom - r.Top - (2 * _shadow)));
         var scale = GetDpiForWindow(_hwnd) / 96f;
         var frame = _render(size, scale > 0 ? scale : 1, _painter);
-        _painter.Paint(frame, Rounded() ? (int)Math.Round(8 * scale) : 0);
+        _painter.Paint(frame, (int)Math.Round(8 * (scale > 0 ? scale : 1)), Corners(), _shadow);
         var at = new POINT { X = r.Left, Y = r.Top };
-        var extent = new SIZE { Cx = size.Width, Cy = size.Height };
+        var extent = new SIZE { Cx = _painter.Size.Width, Cy = _painter.Size.Height };
         var origin = new POINT();
         var blend = new BLENDFUNCTION { SourceConstantAlpha = _alpha, AlphaFormat = 1 };
         UpdateLayeredWindow(_hwnd, 0, &at, &extent, _painter.Dc, &origin, 0, &blend, ULW_ALPHA);
@@ -203,20 +278,23 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
         }
     }
 
-    // Windows 11 rounds a normal top-level window, the main window included, so the splash cuts its corners to match;
-    // a maximized one is square.
-    private bool Rounded() =>
-        OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) && !(_owner != 0 ? IsZoomed(_owner) != 0 : _plan.Maximized);
+    // Windows 11 rounds a normal top-level window, so the card cuts all four corners, and the splash over the main
+    // window the two at its bottom, below the title bar or strip; a maximized window is square.
+    private OverlayCorners Corners()
+    {
+        var rounded = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000);
+        if (_isCard) return rounded ? OverlayCorners.Top | OverlayCorners.Bottom : OverlayCorners.None;
+        return SplashGeometry.Corners(rounded, _owner != 0 && IsZoomed(_owner) != 0, framed: !_layout.Frameless);
+    }
 
+    // The splash thread. Nothing while the owner is minimized: the OS hides an owned window with its owner.
     private void Snap()
     {
-        if (_owner == 0 || _hwnd == 0) return;
-        RECT bounds;
-        if (DwmGetWindowAttribute(_owner, DWMWA_EXTENDED_FRAME_BOUNDS, &bounds, sizeof(RECT)) != 0 || bounds.Right <= bounds.Left)
-            GetWindowRect(_owner, out bounds);
+        if (_owner == 0 || _hwnd == 0 || IsIconic(_owner) != 0) return;
+        var bounds = OverlayBounds(_owner, _layout);
         GetWindowRect(_hwnd, out var current);
         if (bounds.Left == current.Left && bounds.Top == current.Top && bounds.Right == current.Right && bounds.Bottom == current.Bottom) return;
-        SetWindowPos(_hwnd, 0, bounds.Left, bounds.Top, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top, SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(_hwnd, 0, bounds.Left, bounds.Top, bounds.Width, bounds.Height, SWP_NOZORDER | SWP_NOACTIVATE);
         Present();
     }
 

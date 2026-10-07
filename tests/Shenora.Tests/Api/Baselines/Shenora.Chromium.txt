@@ -86,7 +86,9 @@ sealed class Shenora.Chromium.ChromiumSplash
   public void Close()
 sealed class Shenora.Chromium.ChromiumSplashOptions
   public .ctor()
+  public Shenora.Chromium.SplashCardOptions? Card { get; init; }
   public Shenora.Chromium.SplashComponent? Component { get; init; }
+  public Shenora.Chromium.SplashTitleBarOptions TitleBar { get; init; }
   public System.Drawing.Color? Background { get; init; }
   public System.TimeSpan FadeOut { get; init; }
   public System.TimeSpan Timeout { get; init; }
@@ -137,6 +139,10 @@ enum Shenora.Chromium.SplashAlign (int)
   public const Shenora.Chromium.SplashAlign Start = 0
   public const Shenora.Chromium.SplashAlign Stretch = 3
   public int value__
+sealed class Shenora.Chromium.SplashCardOptions
+  public .ctor()
+  public double Height { get; init; }
+  public double Width { get; init; }
 delegate Shenora.Chromium.SplashComponent
   public .ctor(object object, System.IntPtr method)
   public virtual System.Func<Shenora.Chromium.SplashElement> EndInvoke(System.IAsyncResult result)
@@ -144,6 +150,7 @@ delegate Shenora.Chromium.SplashComponent
   public virtual System.IAsyncResult BeginInvoke(Shenora.Chromium.SplashContext context, System.AsyncCallback callback, object object)
 sealed class Shenora.Chromium.SplashContext
   public Shenora.Chromium.SplashState<T> State<T>(T initial)
+  public Shenora.Chromium.SplashSurface Surface { get; }
   public System.IServiceProvider Services { get; }
   public bool? SystemDark { get; }
   public void Close()
@@ -251,6 +258,10 @@ sealed class Shenora.Chromium.SplashStack : Shenora.Chromium.SplashElement, Syst
   public virtual Shenora.Chromium.SplashStack <Clone>$()
 sealed class Shenora.Chromium.SplashState<T>
   public T Value { get; set; }
+enum Shenora.Chromium.SplashSurface (int)
+  public const Shenora.Chromium.SplashSurface Card = 0
+  public const Shenora.Chromium.SplashSurface Window = 1
+  public int value__
 sealed class Shenora.Chromium.SplashText : Shenora.Chromium.SplashElement, System.IEquatable<Shenora.Chromium.SplashText>
   protected override System.Type EqualityContract { get; }
   protected override bool PrintMembers(System.Text.StringBuilder builder)
@@ -269,3 +280,9 @@ sealed class Shenora.Chromium.SplashText : Shenora.Chromium.SplashElement, Syste
   public string? FontFamily { get; init; }
   public virtual Shenora.Chromium.SplashText <Clone>$()
   public void Deconstruct(out string Text)
+sealed class Shenora.Chromium.SplashTitleBarOptions
+  public .ctor()
+  public System.Drawing.Color? Glyph { get; init; }
+  public System.Drawing.Color? Hover { get; init; }
+  public System.Drawing.Color? Pressed { get; init; }
+  public double Height { get; init; }

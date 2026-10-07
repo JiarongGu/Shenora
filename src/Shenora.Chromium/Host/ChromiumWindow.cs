@@ -26,6 +26,11 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     private NativeCaptionButtons? _nativeCaptions;
     private CaptionButtonPalette? _theme;   // the page's, once it has said; else the system's
     private CaptionButtonPalette? _colors;  // the page's own colours, which win over any theme
+    private KitStrip? _kitStrip;            // a frameless main window's title strip while its splash is up
+    private bool _pageDragRegions;          // the page has laid out drag regions of its own
+#if CEF_WINDOWS
+    private bool _stripButtonsTemporary;    // the strip made the painted buttons, and takes them down with it
+#endif
     private readonly ChromiumWindowGeometry? _geometry;
     private ChromiumWindowGeometry.Plan? _plan;
 
@@ -58,6 +63,13 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
 
     /// <summary>The window was hidden (the tray's close). UI thread.</summary>
     public Action? Hidden { get; set; }
+
+    /// <summary>The window is on screen (after its show). UI thread.</summary>
+    public Action? Shown { get; set; }
+
+    /// <summary>A frameless window gets the splash's title strip until its page reports a title bar of its own. Set
+    /// before <see cref="Open"/>; ignored for a framed window.</summary>
+    public SplashTitleBarOptions? SplashStrip { get; set; }
 
     public string Name => Browser.Name;
 
@@ -206,6 +218,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     public void SetCaptionButtons(System.Text.Json.JsonElement? payload)
     {
         if (_window == null) return;
+        _kitStrip?.PageCaptionButtons();
         var scale = _captionHitTest?.Scale ?? 1.0;
         var regions = CaptionButtons.Parse(payload, scale);
         _captions.Set(regions);
@@ -226,7 +239,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         }, immediate: true);
     }
 
-    private void InvokeCaptionButton(CaptionButtonKind kind)
+    internal void InvokeCaptionButton(CaptionButtonKind kind)
     {
         switch (kind)
         {
@@ -239,9 +252,18 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     // ── what the page's browser asks of its window ────────────────────────────────────────────────────
 
     // Forwarding is what makes the page's drag bar a real caption: HTCAPTION with it, HTCLIENT without (A/B, CEF 154).
+    // A page with none yet (CEF reports an empty set as a document starts) leaves the splash's strip its drag region; the
+    // first real set is the page's title bar, which ends the strip.
     void IChromiumBrowserHost.DraggableRegionsChanged(nuint count, _cef_draggable_region_t* regions)
     {
-        if (_window != null) _window->set_draggable_regions(_window, count, regions);
+        if (_window == null) return;
+        if (count == 0 && _kitStrip is { Active: true }) return;
+        if (count > 0)
+        {
+            _pageDragRegions = true;
+            _kitStrip?.PageDragRegions();
+        }
+        _window->set_draggable_regions(_window, count, regions);
     }
 
     void IChromiumBrowserHost.TitleChanged(string title)
@@ -255,6 +277,89 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     {
         _captions.Set([]);
         _nativeCaptions?.Place([], 1.0);
+        // The splash's strip is the window's, not the old page's: it stays until the new page has a title bar.
+        if (_kitStrip is { Active: true }) PlaceStrip();
+    }
+
+    // ── the splash's title strip on a frameless window ────────────────────────────────────────────────
+
+    // The traffic lights' span at the left of a macOS window, in DIPs: left out of the strip's drag region.
+    private const int TrafficLightsDips = 80;
+
+    /// <summary>The splash lifted: its strip, if still up, ends. Any thread.</summary>
+    public void SplashLifted() => CefTask.Post(cef_thread_id_t.TID_UI, () => _kitStrip?.SplashLifted());
+
+    private void ApplyKitStrip(KitStrip.Apply what)
+    {
+        if (_window == null || SplashStrip is not { } bar) return;
+        if (what == KitStrip.Apply.Begin)
+        {
+#if CEF_WINDOWS
+            // Real caption buttons, painted and hit-tested by the window (which is what offers Snap Layouts), even where
+            // the app paints none of its own: those go again with the strip.
+            var palette = CaptionButtonPalette.ForStrip(bar, Palette);
+            if (_nativeCaptions is not null) _nativeCaptions.SetPalette(palette);
+            else if (_captionHitTest is not null)
+            {
+                _nativeCaptions = new NativeCaptionButtons(_window, palette);
+                _stripButtonsTemporary = true;
+            }
+#endif
+            PlaceStrip();
+            return;
+        }
+#if CEF_WINDOWS
+        _captions.Set([]);
+        if (_stripButtonsTemporary)
+        {
+            _nativeCaptions?.Dispose();
+            _nativeCaptions = null;
+            _stripButtonsTemporary = false;
+        }
+        else
+        {
+            _nativeCaptions?.Place([], 1.0);
+            _nativeCaptions?.SetPalette(Palette);
+        }
+        _captionHitTest?.Refresh();
+#endif
+        if (!_pageDragRegions) _window->set_draggable_regions(_window, 0, null);
+    }
+
+    // The strip's buttons at their default place and the rest of it a drag region, at the window's current width.
+    private void PlaceStrip()
+    {
+        if (_window == null || SplashStrip is not { } bar) return;
+#if CEF_WINDOWS
+        var scale = _captionHitTest?.Scale ?? 1.0;
+        WindowsSplashNative.GetClientRect(_window->get_window_handle(_window), out var client);
+        var width = client.Right - client.Left;
+        var stripPx = (int)Math.Round(bar.Height * scale);
+        var buttons = SplashGeometry.DefaultCaptionButtons(width, stripPx, scale);
+        _captions.Set(buttons);
+        _nativeCaptions?.Place(buttons, scale);
+        _captionHitTest?.Refresh();
+        var dragPx = SplashGeometry.StripDragRect(width, stripPx, buttons);
+        var drag = new _cef_draggable_region_t
+        {
+            bounds = new _cef_rect_t { x = 0, y = 0, width = (int)Math.Round(dragPx.Width / scale), height = (int)Math.Round(bar.Height) },
+            draggable = 1,
+        };
+#elif CEF_MACOS
+        // macOS: the caption buttons are the traffic lights, the window's own.
+        var size = ((_cef_view_t*)_window)->get_size((_cef_view_t*)_window);
+        var drag = new _cef_draggable_region_t
+        {
+            bounds = new _cef_rect_t { x = TrafficLightsDips, y = 0, width = Math.Max(0, size.width - TrafficLightsDips), height = (int)Math.Round(bar.Height) },
+            draggable = 1,
+        };
+#else
+        // Linux: the splash draws its strip over the window and forwards its input; the kit paints no caption buttons.
+        return;
+#endif
+#if CEF_WINDOWS || CEF_MACOS
+        _window->set_draggable_regions(_window, 1, &drag);
+#endif
     }
 
     // The window's own callbacks carry its lifetime (WindowCreated, WindowDestroyed), and CEF's own close request
@@ -288,6 +393,9 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             AppCallback.Run(() => opening(handle), ex => AppCallback.Log(_log, () => "[Shenora.Chromium] A window-opening hook failed", LogLevel.Warning, ex));
         }
         window->show(window);
+        // At once: the splash shows over the window as soon as it can, not after the frame's own set-up below.
+        if (Shown is { } shown)
+            AppCallback.Run(shown, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] A window-shown hook failed", LogLevel.Warning, ex));
 #if CEF_WINDOWS
         // Before the page can ask for anything: the drag area needs the frame's hit-test from the start.
         var hwnd = window->get_window_handle(window);
@@ -297,6 +405,11 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         // Without the hit-test, painted buttons would look real and do nothing.
         if (PaintsCaptionButtons && _captionHitTest is not null)
             _nativeCaptions = new NativeCaptionButtons(window, Palette);
+        if (SplashStrip is not null && _options.FramelessChrome)
+        {
+            _kitStrip = new KitStrip(ApplyKitStrip);
+            _kitStrip.Begin();
+        }
         AppCallback.Log(_log, () => $"[Shenora.Chromium] Window '{Name}' shown");
     }
 
@@ -404,6 +517,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             using var w = new CefRef<_cef_window_t>(window);
             var owner = From<WindowDelegate>(self)._owner;
             AppCallback.Run(() => owner._nativeCaptions?.WindowSized());
+            AppCallback.Run(() => { if (owner._kitStrip is { Active: true }) owner.PlaceStrip(); });
             var changed = *bounds;
             AppCallback.Run(() => owner._geometry?.Changed(window, changed));
             if (owner.Moved is { } moved) AppCallback.Run(moved);

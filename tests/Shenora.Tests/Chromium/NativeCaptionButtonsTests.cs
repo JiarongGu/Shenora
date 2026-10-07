@@ -101,4 +101,27 @@ public class NativeCaptionButtonsTests
         Assert.InRange(minX - (mask.Size - 1 - maxX), -1, 1);
         Assert.InRange(minY - (mask.Size - 1 - maxY), -1, 1);
     }
+
+    [Fact]
+    public void The_splash_strip_takes_the_app_s_colours_over_the_theme_and_keeps_close_red()
+    {
+        var bar = new Shenora.Chromium.SplashTitleBarOptions
+        {
+            Glyph = System.Drawing.Color.FromArgb(255, 0x10, 0x20, 0x30),
+            Hover = System.Drawing.Color.FromArgb(40, 255, 255, 255),
+        };
+        var palette = CaptionButtonPalette.ForStrip(bar, CaptionButtonPalette.Dark);
+        Assert.Equal(0xFF102030u, palette.Glyph);
+        Assert.Equal(0x28FFFFFFu, palette.Hover);
+        Assert.Equal(CaptionButtonPalette.Dark.Pressed, palette.Pressed);           // not given: the theme's
+        Assert.Equal(0x5A102030u, palette.InactiveGlyph);                           // the glyph at the system's inactive opacity
+        Assert.Equal(CaptionButtonPalette.Dark.CloseHover, palette.CloseHover);     // close stays the platform's red
+        Assert.Equal(CaptionButtonPalette.Dark.ClosePressed, palette.ClosePressed);
+    }
+
+    [Fact]
+    public void A_splash_strip_with_no_colours_is_the_theme()
+    {
+        Assert.Equal(CaptionButtonPalette.Light, CaptionButtonPalette.ForStrip(new Shenora.Chromium.SplashTitleBarOptions(), CaptionButtonPalette.Light));
+    }
 }

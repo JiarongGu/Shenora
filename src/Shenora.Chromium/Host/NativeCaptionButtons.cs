@@ -336,6 +336,20 @@ internal sealed record CaptionButtonPalette(
     /// <summary>The system's app theme (Settings → Personalization → Colors): light unless it says dark.</summary>
     public static CaptionButtonPalette SystemTheme() => ForTheme(global::Shenora.Chromium.Host.SystemTheme.IsDark() == true);
 
+    /// <summary>A splash's title strip (<see cref="SplashTitleBarOptions"/>): its colours over <paramref name="theme"/>,
+    /// close kept the platform's red. An inactive glyph is the app's glyph at the system's opacity for one.</summary>
+    public static CaptionButtonPalette ForStrip(SplashTitleBarOptions bar, CaptionButtonPalette theme)
+    {
+        static uint Argb(Color color) => (uint)color.ToArgb();
+        return theme with
+        {
+            Glyph = bar.Glyph is { } glyph ? Argb(glyph) : theme.Glyph,
+            InactiveGlyph = bar.Glyph is { } inactive ? Argb(Color.FromArgb(inactive.A * 0x5A / 255, inactive)) : theme.InactiveGlyph,
+            Hover = bar.Hover is { } hover ? Argb(hover) : theme.Hover,
+            Pressed = bar.Pressed is { } pressed ? Argb(pressed) : theme.Pressed,
+        };
+    }
+
     public CaptionButtonLook For(CaptionButtonKind kind, bool hot, bool pressed, bool active)
     {
         var close = kind == CaptionButtonKind.Close;

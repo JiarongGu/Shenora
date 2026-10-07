@@ -111,11 +111,19 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
             _splash = session;
             if (splash is not null) splash.Session = session;
             windows.Splash = session;
-            session.Start(windows.MainWindowPlan(app.Services, SplashSurfaces.WorkAreas()));
+            // Only a card needs to know where the window will open, before CEF can say.
+            if (splashOptions.Card is null) session.Start(default, []);
+            else
+            {
+                var workAreas = SplashSurfaces.WorkAreas();
+                session.Start(windows.MainWindowPlan(app.Services, workAreas), workAreas);
+            }
         }
         catch (Exception ex)
         {
             AppCallback.Log(log, () => "[Shenora.Chromium] The splash could not start; the app starts without it", LogLevel.Error, ex);
+            // Lifted, so the main window opens with no splash and no strip waiting on one.
+            _splash?.Abort();
         }
     }
 

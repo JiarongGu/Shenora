@@ -38,8 +38,8 @@ public class ChromiumWindowCommandsTests
         using var session = new SplashSession(new ChromiumSplashOptions { HoldUntilClosed = true, FadeOut = TimeSpan.Zero }, "App", null,
             new ServiceCollection().BuildServiceProvider(), null, () => surface,
             new FakeTimeProvider(), null, null);
-        session.Start(new ChromiumWindowGeometry.Plan(400, 300, 0, 0, false));
-        session.WindowOpened(1);
+        session.Start(new ChromiumWindowGeometry.Plan(400, 300, 0, 0, false), []);
+        session.WindowOpened(1, new SplashOverlayLayout(false, 32, new SplashTitleBarOptions(), null, null));
         session.PageReady();
         var main = Window(new ChromiumWindowOptions());
         var other = Window(new ChromiumWindowOptions(), "panel");
@@ -58,10 +58,11 @@ public class ChromiumWindowCommandsTests
     private sealed class DisposedSurface : ISplashSurface
     {
         public bool Disposed { get; private set; }
-        public void Show(ChromiumWindowGeometry.Plan placement, SplashRender render) { }
+        public void ShowCard(System.Drawing.Rectangle dipRect, SplashRender render) { }
+        public void ShowOver(nint mainWindow, SplashOverlayLayout layout, SplashRender render) { }
         public void Invalidate() { }
-        public void Attach(nint mainWindow) { }
         public void FollowOwner() { }
+        public void Reveal(Action shown) => shown();
         public void FadeOut(TimeSpan duration, Action done) => done();
         public void Dispose() => Disposed = true;
     }

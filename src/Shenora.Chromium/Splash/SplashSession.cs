@@ -6,11 +6,12 @@ using Shenora.Core.Events;
 namespace Shenora.Chromium.Host;
 
 /// <summary>
-/// One splash, from the runner's start to its lift: the component's setup, its boot work, the frames its surface draws,
+/// One splash, from the runner's start to its lift: the component's setup, its boot work, the frames its surfaces draw,
 /// and the rule that lifts it — every <see cref="SplashContext.OnShown"/> finished AND the page's condition (the
 /// handshake, or <c>closeSplash()</c> when held, or the timeout from the main window opening); or a
-/// <see cref="Close"/>; or an <see cref="Abort"/>. Nothing here throws to its caller: a failure costs the splash, never
-/// the app.
+/// <see cref="Close"/>; or an <see cref="Abort"/>. Two surfaces: the optional card from <see cref="Start"/> until the
+/// main window is on screen, and the splash over the main window's render area from <see cref="WindowOpened"/> until
+/// the lift. Nothing here throws to its caller: a failure costs the splash, never the app.
 /// </summary>
 internal sealed class SplashSession : ISplashSessionSink, IDisposable
 {
@@ -29,10 +30,13 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
     private readonly CancellationTokenSource _appStopping = new();
     private readonly ConcurrentDictionary<SplashImage, Size?> _imageSizes = new(SplashImageSource.Comparer);
     private readonly Lock _gate = new();
+    private readonly Lock _renderGate = new();   // the card's thread and the window's may both draw for a moment
+    private readonly ThreadLocal<SplashSurface?> _renderingFor = new();
     private SplashContext? _context;
     private Func<SplashElement>? _render;
     private SplashElement? _lastGood;
-    private ISplashSurface? _surface;
+    private ISplashSurface? _card, _overlay;
+    private volatile SplashSurface _drawing = SplashSurface.Card;
     private ITimer? _timeout;
     private long _startedAt;
     private bool _started, _bootDone, _windowOpened, _pageReady, _released, _timedOut, _lifted, _renderFailureLogged;
@@ -51,17 +55,33 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
         _systemDark = systemDark;
     }
 
+    /// <summary>Raised once, after the lift (on the thread that lifted it): the main window's kit strip ends with it.</summary>
+    public event Action? Lifted;
+
     /// <summary>A window is up and has not lifted.</summary>
     public bool IsShowing
     {
         get
         {
-            lock (_gate) return _surface is not null && !_lifted;
+            lock (_gate) return (_card ?? _overlay) is not null && !_lifted;
         }
     }
 
-    /// <summary>Set up the component, show its first frame, and start its boot work. Once; the runner's thread.</summary>
-    public void Start(ChromiumWindowGeometry.Plan placement)
+    /// <summary>It has lifted, or never could show (its setup failed).</summary>
+    public bool HasLifted
+    {
+        get
+        {
+            lock (_gate) return _lifted;
+        }
+    }
+
+    // Inside a render, the surface that render is for; anywhere else, the phase the splash is in.
+    SplashSurface ISplashSessionSink.Surface => _renderingFor.Value ?? _drawing;
+
+    /// <summary>Set up the component, show the card when there is one, and start the boot work. Once; the runner's
+    /// thread. <paramref name="workAreas"/>, the displays' work areas in DIP with the primary first, place the card.</summary>
+    public void Start(ChromiumWindowGeometry.Plan placement, IReadOnlyList<Rectangle> workAreas)
     {
         lock (_gate)
         {
@@ -69,6 +89,7 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
             _started = true;
         }
         _startedAt = _time.GetTimestamp();
+        if (_options.Card is null) _drawing = SplashSurface.Window;
         var context = new SplashContext(_services, _systemDark, _bus, this, _log);
         _context = context;
         try
@@ -81,11 +102,11 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
         }
         var work = context.TakeShownWork();
         if (_render is null) Lift("its setup failed", fade: false);
-        else Show(placement);
+        else if (_options.Card is { } card) ShowCard(SplashGeometry.CardRect(placement, workAreas, card.Width, card.Height));
         StartWork(work);
     }
 
-    private void Show(ChromiumWindowGeometry.Plan placement)
+    private void ShowCard(Rectangle dipRect)
     {
         ISplashSurface? surface = null;
         try
@@ -99,20 +120,20 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
                 AppCallback.Log(_log, () => "[Shenora.Chromium] No splash: this platform has no display to draw one on", LogLevel.Warning);
                 return;
             }
-            surface.Show(placement, Render);
+            surface.ShowCard(dipRect, RenderFor(SplashSurface.Card));
             lock (_gate)
             {
-                if (!_lifted)
+                if (!_lifted && !_windowOpened)
                 {
-                    _surface = surface;
+                    _card = surface;
                     surface = null;
                 }
             }
-            AppCallback.Log(_log, () => "[Shenora.Chromium] Splash shown");
+            AppCallback.Log(_log, () => "[Shenora.Chromium] Splash card shown");
         }
         catch (Exception ex)
         {
-            AppCallback.Log(_log, () => "[Shenora.Chromium] The splash window could not be shown; the app starts without it", LogLevel.Warning, ex);
+            AppCallback.Log(_log, () => "[Shenora.Chromium] The splash card could not be shown; the splash waits for the window", LogLevel.Warning, ex);
         }
         finally
         {
@@ -120,23 +141,34 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
         }
     }
 
-    // The surface's thread. The component's own failure keeps the last tree it drew.
-    private SplashFrame Render(Size windowPx, float scale, ISplashTextMeasurer measurer)
+    private SplashRender RenderFor(SplashSurface surface) => (windowPx, scale, measurer) => Render(windowPx, scale, measurer, surface);
+
+    // The surface's thread. One render at a time, each reading its own surface from the context; the component's own
+    // failure keeps the last tree it drew.
+    private SplashFrame Render(Size windowPx, float scale, ISplashTextMeasurer measurer, SplashSurface surface)
     {
         SplashElement tree;
-        try
+        lock (_renderGate)
         {
-            tree = _render!();
-            _lastGood = tree;
-        }
-        catch (Exception ex)
-        {
-            if (!_renderFailureLogged)
+            _renderingFor.Value = surface;
+            try
             {
-                _renderFailureLogged = true;
-                AppCallback.Log(_log, () => "[Shenora.Chromium] The splash's render threw; it keeps its last frame", LogLevel.Warning, ex);
+                tree = _render!();
+                _lastGood = tree;
             }
-            tree = _lastGood ?? new SplashStack();
+            catch (Exception ex)
+            {
+                if (!_renderFailureLogged)
+                {
+                    _renderFailureLogged = true;
+                    AppCallback.Log(_log, () => "[Shenora.Chromium] The splash's render threw; it keeps its last frame", LogLevel.Warning, ex);
+                }
+                tree = _lastGood ?? new SplashStack();
+            }
+            finally
+            {
+                _renderingFor.Value = null;
+            }
         }
         var elapsed = _time.GetElapsedTime(_startedAt).TotalMilliseconds / AnimationPeriod.TotalMilliseconds;
         return SplashLayout.Build(tree, _background, windowPx, scale, measurer, elapsed - Math.Floor(elapsed), ImageSize);
@@ -179,23 +211,83 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
         Evaluate();
     }
 
-    /// <summary>The main window exists. CEF's UI thread, before the window shows.</summary>
-    public void WindowOpened(nint mainWindow)
+    /// <summary>The main window exists: the splash opens over its render area. CEF's UI thread, before the window
+    /// shows: an overlay owned later would let CEF's show raise the main window over it.</summary>
+    public void WindowOpened(nint mainWindow, SplashOverlayLayout layout)
     {
-        ISplashSurface? surface;
+        bool show;
         lock (_gate)
         {
             if (_windowOpened) return;
             _windowOpened = true;
-            surface = _lifted ? null : _surface;
+            show = !_lifted && _render is not null;
         }
-        // Attached FIRST: CEF shows the window as this returns, and an unowned splash would end up under it.
-        if (surface is not null)
-            AppCallback.Run(() => surface.Attach(mainWindow),
-                ex => AppCallback.Log(_log, () => "[Shenora.Chromium] The splash could not attach to the main window", LogLevel.Warning, ex));
+        _drawing = SplashSurface.Window;
+        if (show) ShowOver(mainWindow, layout);
         StartTimeout();
         _context?.RaiseWindowOpened();
         Evaluate();
+    }
+
+    private void ShowOver(nint mainWindow, SplashOverlayLayout layout)
+    {
+        ISplashSurface? surface = null;
+        try
+        {
+            surface = _surfaces();
+            if (surface is null)
+            {
+                AppCallback.Log(_log, () => "[Shenora.Chromium] No splash: this platform has no display to draw one on", LogLevel.Warning);
+                return;
+            }
+            surface.ShowOver(mainWindow, layout, RenderFor(SplashSurface.Window));
+            lock (_gate)
+            {
+                if (!_lifted)
+                {
+                    _overlay = surface;
+                    surface = null;
+                }
+            }
+            AppCallback.Log(_log, () => "[Shenora.Chromium] Splash shown over the main window");
+        }
+        catch (Exception ex)
+        {
+            AppCallback.Log(_log, () => "[Shenora.Chromium] The splash could not show over the main window; the app starts without it", LogLevel.Warning, ex);
+        }
+        finally
+        {
+            if (surface is not null) AppCallback.Run(surface.Dispose);
+        }
+    }
+
+    /// <summary>The main window is on screen: the splash shows over it, and once it does, the card, if any, goes. CEF's
+    /// UI thread; returns at once.</summary>
+    public void WindowShown()
+    {
+        ISplashSurface? overlay;
+        lock (_gate) overlay = _lifted ? null : _overlay;
+        if (overlay is null)
+        {
+            CardGone();
+            return;
+        }
+        var revealed = AppCallback.RunOrDefault(() => { overlay.Reveal(CardGone); return true; }, false,
+            ex => AppCallback.Log(_log, () => "[Shenora.Chromium] The splash could not show over the main window", LogLevel.Warning, ex));
+        if (!revealed) CardGone();
+    }
+
+    // The card is no longer needed. Any thread; once.
+    private void CardGone()
+    {
+        ISplashSurface? card;
+        lock (_gate)
+        {
+            card = _card;
+            _card = null;
+        }
+        if (card is not null)
+            AppCallback.Run(card.Dispose, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] Closing the splash card failed", LogLevel.Warning, ex));
     }
 
     // A timeout past what a timer can hold (about 49 days) is as good as none.
@@ -217,11 +309,11 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
         timer?.Dispose();
     }
 
-    /// <summary>The main window moved or resized.</summary>
+    /// <summary>The main window moved, resized, maximized or changed DPI.</summary>
     public void OwnerMoved()
     {
         ISplashSurface? surface;
-        lock (_gate) surface = _lifted ? null : _surface;
+        lock (_gate) surface = _lifted ? null : _overlay;
         if (surface is not null) AppCallback.Run(surface.FollowOwner);
     }
 
@@ -245,9 +337,15 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
 
     void ISplashSessionSink.Invalidate()
     {
-        ISplashSurface? surface;
-        lock (_gate) surface = _lifted ? null : _surface;
-        if (surface is not null) AppCallback.Run(surface.Invalidate);
+        ISplashSurface? card, overlay;
+        lock (_gate)
+        {
+            if (_lifted) return;
+            card = _card;
+            overlay = _overlay;
+        }
+        if (card is not null) AppCallback.Run(card.Invalidate);
+        if (overlay is not null) AppCallback.Run(overlay.Invalidate);
     }
 
     /// <summary>Destroy it now, with no fade: the loop ended, the app failed to start, or the main window went.</summary>
@@ -293,25 +391,33 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
 
     private void Lift(string why, bool fade)
     {
-        ISplashSurface? surface;
+        ISplashSurface? card, overlay;
         lock (_gate)
         {
             if (_lifted) return;
             _lifted = true;
-            surface = _surface;
-            _surface = null;
+            card = _card;
+            overlay = _overlay;
+            _card = null;
+            _overlay = null;
         }
         _timeout?.Dispose();
         _context?.Lifted();
-        if (surface is null) return;
+        // Raised once, and let go of: the handlers hold the main windows that subscribed.
+        var lifted = Interlocked.Exchange(ref Lifted, null);
+        if (lifted is not null) AppCallback.Run(lifted, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] A splash-lifted hook failed", LogLevel.Warning, ex));
+        // The card goes at once: only the window's splash fades, into the page.
+        if (card is not null)
+            AppCallback.Run(card.Dispose, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] Closing the splash card failed", LogLevel.Warning, ex));
+        if (overlay is null) return;
         AppCallback.Log(_log, () => $"[Shenora.Chromium] Splash lifted: {why}");
         if (fade && _options.FadeOut > TimeSpan.Zero)
-            AppCallback.Run(() => surface.FadeOut(_options.FadeOut, surface.Dispose), ex =>
+            AppCallback.Run(() => overlay.FadeOut(_options.FadeOut, overlay.Dispose), ex =>
             {
                 AppCallback.Log(_log, () => "[Shenora.Chromium] The splash's fade failed", LogLevel.Warning, ex);
-                AppCallback.Run(surface.Dispose);
+                AppCallback.Run(overlay.Dispose);
             });
         else
-            AppCallback.Run(surface.Dispose, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] Closing the splash failed", LogLevel.Warning, ex));
+            AppCallback.Run(overlay.Dispose, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] Closing the splash failed", LogLevel.Warning, ex));
     }
 }

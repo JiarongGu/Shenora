@@ -62,6 +62,18 @@ internal static unsafe class MacSplashNative
         return objc_msgSend_rect_ret(receiver, Sel(selector));
     }
 
+    /// <summary>A method taking one NSRect and returning one (<c>contentRectForFrameRect:</c>), with the same x86-64 rule
+    /// as <see cref="GetRect(nint, string)"/>.</summary>
+    public static CGRect GetRect(nint receiver, string selector, CGRect argument)
+    {
+        if (RuntimeInformation.ProcessArchitecture == Architecture.X64)
+        {
+            objc_msgSend_stret_rect(out var rect, receiver, Sel(selector), argument);
+            return rect;
+        }
+        return objc_msgSend_rect_rect(receiver, Sel(selector), argument);
+    }
+
     public static void SetFrame(nint window, CGRect frame) => objc_msgSend_frame(window, Sel("setFrame:display:"), frame, 1);
 
     /// <summary>A method taking one CGRect by value (CALayer's <c>setFrame:</c>).</summary>
@@ -120,6 +132,8 @@ internal static unsafe class MacSplashNative
     [DllImport(ObjC, EntryPoint = "objc_msgSend")] private static extern void objc_msgSend_long2(nint receiver, nint selector, nint first, long second);
     [DllImport(ObjC, EntryPoint = "objc_msgSend")] private static extern CGRect objc_msgSend_rect_ret(nint receiver, nint selector);
     [DllImport(ObjC, EntryPoint = "objc_msgSend_stret")] private static extern void objc_msgSend_stret(out CGRect result, nint receiver, nint selector);
+    [DllImport(ObjC, EntryPoint = "objc_msgSend_stret")] private static extern void objc_msgSend_stret_rect(out CGRect result, nint receiver, nint selector, CGRect argument);
+    [DllImport(ObjC, EntryPoint = "objc_msgSend")] private static extern CGRect objc_msgSend_rect_rect(nint receiver, nint selector, CGRect argument);
     [DllImport(ObjC, EntryPoint = "objc_msgSend")] private static extern void objc_msgSend_frame(nint receiver, nint selector, CGRect frame, byte display);
     [DllImport(ObjC, EntryPoint = "objc_msgSend")] private static extern void objc_msgSend_rect_arg(nint receiver, nint selector, CGRect rect);
     [DllImport(ObjC, EntryPoint = "objc_msgSend")] private static extern nint objc_msgSend_initWindow(nint receiver, nint selector, CGRect frame, ulong style, ulong backing, byte defer);

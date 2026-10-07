@@ -114,11 +114,12 @@ internal static unsafe class LinuxScreens
 }
 
 /// <summary>
-/// The Linux splash: an X11 window on a connection and thread of its own, so it draws and animates while the main thread
-/// composes the app and starts CEF. A managed window typed <c>_NET_WM_WINDOW_TYPE_SPLASH</c>, undecorated and never given
-/// the keyboard, made transient for the main window once that exists, so the window manager keeps it above it; not
-/// override-redirect, which would float it over every other app for as long as a held splash lasts. It takes the clicks
-/// over it. Frames go up with <c>XPutImage</c>, only where they changed; it fades through <c>_NET_WM_WINDOW_OPACITY</c>
+/// The Linux splash: an X11 window on a connection and thread of its own, so it draws and animates while CEF's thread is
+/// busy. A managed window typed <c>_NET_WM_WINDOW_TYPE_SPLASH</c>, undecorated and never given the keyboard: either the
+/// card, before the main window exists, or the splash over the main window's client window (the manager's frame is
+/// outside it), transient for it from its creation and mapped once it is shown, so the window manager keeps it above it;
+/// not override-redirect, which would float it over every other app for as long as a held splash lasts. It takes the
+/// clicks over it. Frames go up with <c>XPutImage</c>, only where they changed; it fades through <c>_NET_WM_WINDOW_OPACITY</c>
 /// where a compositor runs, and closes at once where none does.
 /// </summary>
 internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
@@ -129,6 +130,7 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
     private Thread? _thread;
     private Exception? _failure;
     private ChromiumWindowGeometry.Plan _plan;
+    private nuint _overOwner;   // the main window the splash opens over; zero for the card
     private SplashRender? _render;
     private LinuxSplashPainter? _painter;
     private nint _display, _visual, _gc, _image;
@@ -145,9 +147,24 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
     private int _renderQueued;
     private int _disposed;
 
-    public void Show(ChromiumWindowGeometry.Plan placement, SplashRender render)
+    public void ShowCard(Rectangle dipRect, SplashRender render)
     {
-        _plan = placement;
+        _plan = new ChromiumWindowGeometry.Plan(dipRect.Width, dipRect.Height, dipRect.X, dipRect.Y, false);
+        Start(render);
+    }
+
+    // CEF's UI thread, before CEF maps the main window. Synchronous: the transient-for hint is up as this returns, and a
+    // manager stacks a transient above its owner from then on.
+    public void ShowOver(nint mainWindow, SplashOverlayLayout layout, SplashRender render)
+    {
+        if (mainWindow == 0) throw new ArgumentException("The main window has no X window.", nameof(mainWindow));
+        _overOwner = (nuint)mainWindow;
+        _ = layout;   // a framed window's frame is the manager's, outside the window this covers
+        Start(render);
+    }
+
+    private void Start(SplashRender render)
+    {
         _render = render;
         _thread = new Thread(Run) { IsBackground = true, Name = "Shenora splash" };
         _thread.Start();
@@ -193,7 +210,7 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
             throw new InvalidOperationException($"The X display's default visual is not 24-bit RGB (depth {_depth}); the splash draws in that only.");
         var (work, scale) = LinuxScreens.Read(_display);
         _scale = scale;
-        var bounds = LinuxScreens.ToPixels(_plan, work, scale);
+        var bounds = _overOwner != 0 && OwnerBounds(_overOwner) is { } over ? over : LinuxScreens.ToPixels(_plan, work, scale);
         _size = bounds.Size;
         _painter = new LinuxSplashPainter(log);
         var background = Render(bounds.Size);
@@ -203,9 +220,62 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
         if (Volatile.Read(ref _disposed) != 0) throw new ObjectDisposedException(nameof(LinuxSplashSurface));
         Describe(window, bounds);
         XSelectInput(_display, window, ExposureMask | StructureNotifyMask);
+        if (_overOwner != 0)
+        {
+            // Over the main window: transient for it before it maps, and its structure events on this connection too: a
+            // manager reads a transient hint naming a window it does not manage yet as nothing (openbox stacked the main
+            // window over the splash as it mapped, measured), so the hint goes up again as it maps; its moves are
+            // followed, and its end noticed.
+            _owner = _overOwner;
+            XSetTransientForHint(_display, window, _owner);
+            XSelectInput(_display, _owner, StructureNotifyMask);
+            // Mapped by Reveal, once the main window is: mapped now, it would float alone until CEF showed its owner.
+            XFlush(_display);
+            return;
+        }
         XMapWindow(_display, window);
         XMoveWindow(_display, window, bounds.X, bounds.Y);   // a manager may place a window as it maps it
         XFlush(_display);
+    }
+
+    // CEF's UI thread, the main window shown: the splash maps over it at its client area as it is then, on the splash's
+    // own connection and thread. Made already (ShowOver waited for that), so this only posts.
+    public void Reveal(Action shown)
+    {
+        var once = 0;
+        void Shown()
+        {
+            if (Interlocked.Exchange(ref once, 1) == 0) shown();
+        }
+        if (_overOwner == 0 || _failure is not null)
+        {
+            Shown();
+            return;
+        }
+        Post(() =>
+        {
+            try
+            {
+                if (_window == 0) return;
+                XMapWindow(_display, _window);
+                Restack();
+                XFlush(_display);
+            }
+            finally
+            {
+                Shown();
+            }
+        });
+        // Disposed meanwhile: the posted work never runs.
+        if (Volatile.Read(ref _disposed) != 0) Shown();
+    }
+
+    // The main window's client area, in root coordinates, less its bottom row (see Snap); null if X cannot say.
+    private Rectangle? OwnerBounds(nuint owner)
+    {
+        if (XGetGeometry(_display, owner, out _, out _, out _, out var width, out var height, out _, out _) == 0) return null;
+        XTranslateCoordinates(_display, owner, XRootWindow(_display, XDefaultScreen(_display)), 0, 0, out var x, out var y, out _);
+        return new Rectangle(x, y, (int)width, (int)(height > 1 ? height - 1 : height));
     }
 
     // What a window manager reads: a splash, undecorated, placed where it says, never given the keyboard, of this app,
@@ -246,36 +316,6 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
                 Volatile.Write(ref _renderQueued, 0);
                 Present(whole: false);
             });
-    }
-
-    // The transient-for hint goes up synchronously, on a connection of the caller's own (Xlib connections are one thread
-    // each): CEF maps the main window right after, and a manager stacks a transient above its owner from then on. Under
-    // the lock, so the splash thread cannot destroy the window meanwhile.
-    public void Attach(nint mainWindow)
-    {
-        if (mainWindow == 0 || Volatile.Read(ref _disposed) != 0) return;
-        lock (_gate)
-        {
-            if (_window == 0) return;
-            var display = SplashX11.Open();
-            if (display != 0)
-            {
-                XSetTransientForHint(display, _window, (nuint)mainWindow);
-                XRaiseWindow(display, _window);
-                XFlush(display);
-                SplashX11.Close(display);
-            }
-        }
-        Post(() =>
-        {
-            _owner = (nuint)mainWindow;
-            // Its structure events on this connection too: a manager reads a transient hint naming a window it does not
-            // manage yet as nothing (openbox stacked the main window over the splash as it mapped, measured), so the
-            // hint goes up again as it maps; its moves are followed, and its end noticed. Restacked once at once as well,
-            // in case it mapped before this selection reached the server.
-            XSelectInput(_display, _owner, StructureNotifyMask);
-            Restack();
-        });
     }
 
     public void FollowOwner() => Post(Snap);

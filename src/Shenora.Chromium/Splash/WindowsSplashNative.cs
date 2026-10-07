@@ -89,6 +89,9 @@ internal static unsafe class WindowsSplashNative
     [DllImport("user32")] public static extern nint SetWindowLongPtrW(nint hwnd, int index, nint value);
     [DllImport("user32")] public static extern nint GetWindowLongPtrW(nint hwnd, int index);
     [DllImport("user32")] public static extern int GetWindowRect(nint hwnd, out RECT rect);
+    [DllImport("user32")] public static extern int GetClientRect(nint hwnd, out RECT rect);
+    [DllImport("user32")] public static extern int ClientToScreen(nint hwnd, ref POINT point);
+    [DllImport("user32")] public static extern int IsIconic(nint hwnd);
     [DllImport("user32")] public static extern int PostMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
     [DllImport("user32")] public static extern int GetMessageW(MSG* msg, nint hwnd, uint min, uint max);
     [DllImport("user32")] public static extern int TranslateMessage(MSG* msg);
