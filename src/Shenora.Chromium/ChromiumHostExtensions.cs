@@ -42,6 +42,7 @@ public static class ChromiumHostExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
         options.Window.Validate(nameof(options));
+        options.Splash?.Validate(nameof(options));
         if (options.Window.StateStore is not null)
             throw new ArgumentException($"The main window keeps its state through {nameof(ChromiumHostOptions)}.{nameof(ChromiumHostOptions.WindowState)}, "
                 + $"not {nameof(ChromiumWindowOptions)}.{nameof(ChromiumWindowOptions.StateStore)}.", nameof(options));
@@ -77,8 +78,11 @@ public static class ChromiumHostExtensions
             builder.Services.AddSingleton(sp => new ChromiumTray(tray, sp.GetRequiredService<ChromiumWindows>(),
                 options.Window.Title ?? name, sp.GetService<ILogger<ChromiumTray>>()));
         }
+        // Always, so an app may close it without asking whether it has one.
+        builder.Services.AddSingleton(_ => new ChromiumSplash());
         builder.Services.AddSingleton<IShenoraRunner>(sp => new ChromiumRunner(options, sp.GetRequiredService<CefUiDispatcher>(),
-            sp.GetRequiredService<ChromiumWindows>(), sp.GetService<ChromiumTray>(), sp.GetService<ILogger<ChromiumRunner>>()));
+            sp.GetRequiredService<ChromiumWindows>(), sp.GetService<ChromiumTray>(), sp.GetService<ILogger<ChromiumRunner>>(),
+            sp.GetRequiredService<ChromiumSplash>()));
         // The browsers the auxiliary sessions drive (D91): windowless CEF browsers, each profile in a request context.
         var dataFolder = options.UserDataFolder ?? builder.Paths.DataArea("chromium");
         builder.Services.TryAddSingleton(sp => new ChromiumSessionHost(sp.GetRequiredService<CefUiDispatcher>(), dataFolder,
@@ -92,8 +96,9 @@ public static class ChromiumHostExtensions
         builder.Services.AddShenoraFileDialogs();
         // Last, once the options are known good: CEF starts now, so its GPU process sets up while the app is built (D87).
         // The single-instance gate first, since CEF takes its data folder as it starts: a launch it turns away starts
-        // no CEF at all, and the runner lets it go.
-        if (ChromiumEarlyStart.LaunchedFromLayout
+        // no CEF at all, and the runner lets it go. Not with a splash this build can draw, which must show before CEF's
+        // start holds the thread (D92): the runner shows it, then starts CEF.
+        if ((options.Splash is null || !SplashSurfaces.Supported) && ChromiumEarlyStart.LaunchedFromLayout
             && ChromiumSingleInstance.Process.Enter(options.SingleInstance, builder.ApplicationName, builder.Paths, builder.Args, log: null))
             ChromiumEarlyStart.Process.Start(options, ChromiumRunner.SettingsFor(options, builder.Paths, builder.Environment));
         return builder;

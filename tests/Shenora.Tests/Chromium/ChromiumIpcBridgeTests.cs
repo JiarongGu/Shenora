@@ -79,6 +79,24 @@ public class ChromiumIpcBridgeTests
     }
 
     [Fact]
+    public async Task The_handshake_tells_whoever_asked_once_per_handshake()
+    {
+        var host = new FakeHost();
+        var ready = 0;
+        var bridge = new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher(), OnClientReady = () => ready++ },
+            host.Dispatcher, host.Pushed.Add, host.Schedule);
+        bridge.Start();
+        host.RunUi();
+
+        bridge.Incoming(Request("TEST", "ECHO"));
+        await SettleAsync(host);
+        Assert.Equal(0, ready);
+        bridge.Incoming(Request(IpcHostBridge.HandshakeModule, IpcHostBridge.HandshakeType));
+        await SettleAsync(host);
+        Assert.Equal(1, ready);
+    }
+
+    [Fact]
     public async Task Notifications_wait_for_the_handshake_then_arrive_batched_on_the_tick()
     {
         var (bridge, host, bus) = Make();

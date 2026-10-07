@@ -146,6 +146,23 @@ public class WindowCommandModuleTests
         Assert.Equal([false], applied);
     }
 
+    [Fact]
+    public async Task Close_splash_requires_the_seam_and_calls_it()
+    {
+        using var form = CreateForm();
+        var closed = 0;
+        var without = new WindowCommandModule(new WindowCommandOptions { Window = form });
+        var with = new WindowCommandModule(new WindowCommandOptions { Window = form, CloseSplash = () => closed++ });
+
+        var refused = await without.HandleMessageAsync(Request(WindowCommandModule.CloseSplashType));
+        Assert.Equal(IpcErrorCodes.NoRoute, refused.Error!.Code);
+
+        var accepted = await with.HandleMessageAsync(Request(WindowCommandModule.CloseSplashType));
+        Application.DoEvents();
+        Assert.True(accepted.Success);
+        Assert.Equal(1, closed);
+    }
+
     // ── SET_CAPTION_BUTTONS (P5.6) ────────────────────────────────────────────────────────────────
     // The page re-sends this on every layout change, so the parser has to be TOTAL: one odd entry
     // must not cost the other buttons their hit-test, since the result is a caption button that

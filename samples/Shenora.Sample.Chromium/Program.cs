@@ -67,6 +67,51 @@ internal static class Program
             {
                 OnActivated = (_, launch) => events?.Emit(Module, "LAUNCHED_AGAIN", new { launch.Arguments }),
             },
+            // A splash the OS draws from the moment the app runs, so the window is there while Chromium is still starting.
+            // Its boot work stands in for an app's own (opening a database, warming a cache) and reports as it goes; the
+            // last line comes from an event, as any module of the app could send one. It lifts once the boot work is done
+            // and the page has said it is ready.
+            Splash = new ChromiumSplashOptions
+            {
+                Component = context =>
+                {
+                    var status = context.State("Starting…");
+                    var progress = context.State<double?>(null);
+                    context.OnShown(async ct =>
+                    {
+                        string[] steps = ["Opening the library…", "Warming the cache…", "Loading the interface…"];
+                        for (var i = 0; i < steps.Length; i++)
+                        {
+                            status.Value = steps[i];
+                            progress.Value = (i + 1) / (double)(steps.Length + 1);
+                            await Task.Delay(250, ct);
+                        }
+                    });
+                    context.Subscribe(Module, "BOOT", message => status.Value = message.Payload as string ?? status.Value);
+                    var dim = System.Drawing.Color.FromArgb(0x9a, 0x9a, 0x9a);
+                    return () => new SplashLayer
+                    {
+                        Children =
+                        [
+                            new SplashStack
+                            {
+                                Spacing = 14,
+                                Children =
+                                [
+                                    new SplashText("Shenora Chromium Sample") { FontSize = 22, Bold = true },
+                                    new SplashText(status.Value) { FontSize = 13, Color = dim },
+                                    new SplashProgress { Value = progress.Value, Width = 260, Height = 3 },
+                                ],
+                            },
+                            new SplashText("Drawn by the OS before Chromium starts")
+                            {
+                                FontSize = 11, Color = dim, Margin = 16,
+                                HorizontalAlign = SplashAlign.End, VerticalAlign = SplashAlign.End,
+                            },
+                        ],
+                    };
+                },
+            },
             // The tray reopens the window, and one item of the app's own tells the page it was clicked: a native
             // event reaching React through the event bus. CloseToTray off, so closing the window ends the app.
             Tray = new ChromiumTrayOptions
@@ -91,6 +136,7 @@ internal static class Program
         builder.OnStarting(app =>
         {
             events = app.Services.GetRequiredService<IEventBus>();
+            events.Emit(Module, "BOOT", "Starting the app's services…");
             app.Services.GetRequiredService<MissionSchedulerOptions>().Observers =
                 [new MissionEventPublisher(events, PortableSampleModule.Module)];
             app.Services.GetRequiredService<IMissionScheduler>().Lane(MissionLanes.DemoIo).Capacity = 2;

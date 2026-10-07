@@ -334,19 +334,7 @@ internal sealed record CaptionButtonPalette(
     }
 
     /// <summary>The system's app theme (Settings → Personalization → Colors): light unless it says dark.</summary>
-    public static CaptionButtonPalette SystemTheme()
-    {
-        if (!OperatingSystem.IsWindows()) return Light;
-        try
-        {
-            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-            return key?.GetValue("AppsUseLightTheme") is int light && light == 0 ? Dark : Light;
-        }
-        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
-        {
-            return Light;
-        }
-    }
+    public static CaptionButtonPalette SystemTheme() => ForTheme(global::Shenora.Chromium.Host.SystemTheme.IsDark() == true);
 
     public CaptionButtonLook For(CaptionButtonKind kind, bool hot, bool pressed, bool active)
     {

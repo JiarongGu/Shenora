@@ -148,6 +148,7 @@ docs cite them — so the number is the column to scan.
 | **D89** | A MACOS APP'S DATA DEFAULTS TO ITS APPLICATION SUPPORT FOLDER; EVERY OTHER APP KEEPS ITS DATA BESIDE IT. |
 | **D90** | IN THE CHROMIUM SHELL THE PAGE'S MEDIA SESSION IS THE OS'S; THE KIT BUILDS NO NATIVE MEDIA THERE UNTIL AN APP NEEDS IT. |
 | **D91** | THE AUXILIARY BROWSERS ARE ONE IMPLEMENTATION IN CORE, OVER BROWSERS EACH SHELL MAKES. |
+| **D92** | THE CHROMIUM SHELL'S SPLASH IS A NATIVE WINDOW AN APP COMPOSES IN C#, SHOWN BEFORE CEF STARTS. |
 
 <!-- decisions-index:end -->
 
@@ -1241,7 +1242,7 @@ docs cite them — so the number is the column to scan.
 - **D87 — THE CHROMIUM SHELL STARTS CEF WHILE THE APP IS COMPOSED.** Run from its layout (on Windows through CEF's
   launcher and the kit's shim, on macOS from its bundle), the app has `UseChromium` start CEF on the calling thread,
   and the runner takes it over; run from anywhere else (a test host, `dotnet` running the app's dll) the runner starts
-  it, as before. Owner, 2026-09-30, before 0.18.0, after comparing the shell's cold start with Electron's.
+  it, as before, and so it does after an app's splash (D92). Owner, 2026-09-30, comparing cold starts with Electron's.
   - 🔴 **Why: the first frame waits on Chromium's GPU process, which starts only once CEF does.** Setting up the GPU
     took about half a second on the reference machine, in CEF and Electron alike, and the window, the page and
     the app's own start all finish inside that wait. So the app's composition, which ran before CEF, was the kit's
@@ -1324,6 +1325,21 @@ docs cite them — so the number is the column to scan.
     arguments; in CEF switches are the process's); and in the Chromium shell a session's profile must be a folder
     directly inside the shell's data folder, since CEF opens a profile nowhere else and opens any other path off the
     record.
+
+- **D92 — THE CHROMIUM SHELL'S SPLASH IS A NATIVE WINDOW AN APP COMPOSES IN C#, SHOWN BEFORE CEF STARTS.**
+  `ChromiumHostOptions.Splash` covers the main window's place until the app's boot work and the page are ready; its
+  content is a component (a setup that runs once and returns a render function over state), drawn by each OS's own 2D
+  and text APIs. Owner, 2026-10-07: *"in c# to pervent loading delay on chrome"*, *"more like react or MAUI"*.
+  - 🔴 **Why native and not a page:** Chromium's first frame waits on its GPU process (D87), so an HTML splash would
+    wait for the start it is meant to cover.
+  - 🔴 **With a splash the OS can draw, CEF does not start early (D87).** `cef_initialize` holds the thread for
+    hundreds of milliseconds, so the splash shows first and CEF starts after it, and the main window comes no later.
+  - **It lifts when every `OnShown` has finished AND the page is ready** (its handshake, or `closeSplash()` when
+    held). The timeout stands in for the page only and never cuts the app's boot work short.
+  - **It is owned by the main window before CEF shows it,** so the page keeps painting under it: Chromium ignores an
+    owned popup of its own process when it decides whether a window is covered.
+  - **The constraints:** one splash per process, over the main window; a closed set of elements laid out the same on
+    every OS; a setup must be quick, since it runs on the thread that then starts CEF.
 
 ## Anti-goals — deliberately NOT built
 

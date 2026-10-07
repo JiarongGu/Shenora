@@ -834,3 +834,11 @@ Drag
 Press
 # `Action` (2026-09-29) — for `ChromiumDragAreaAction`: which caption gesture a drag-area press is (move, maximize).
 Action
+# `Stack`, `Layer`, `Image`, `Component` (2026-10-07) — the Chromium shell's splash, which an app composes as a
+# tree a setup function builds (`SplashStack`, `SplashLayer`, `SplashImage`, `SplashComponent`). Layout and
+# composition words every UI platform uses for exactly these (WPF/MAUI `StackLayout`, CSS layers, an image
+# element, a React/Blazor component); none names what an app's splash SAYS.
+Stack
+Layer
+Image
+Component

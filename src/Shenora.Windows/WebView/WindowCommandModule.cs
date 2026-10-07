@@ -46,6 +46,13 @@ public sealed class WindowCommandOptions
     public Action<IReadOnlyList<CaptionButtonRegion>>? SetCaptionButtons { get; init; }
 
     /// <summary>
+    /// When set, the <c>CLOSE_SPLASH</c> route is enabled: the page says its own state is ready to be seen, and this lifts
+    /// the app's splash (removes its <see cref="SplashPanel"/>, say). The Chromium shell answers the same route with its
+    /// own splash, so one page works on either engine. Only the main window's page reaches it.
+    /// </summary>
+    public Action? CloseSplash { get; init; }
+
+    /// <summary>
     /// The control a send from no page reads its caption rectangles against, when
     /// <see cref="SetCaptionButtons"/> is set; null means <see cref="Window"/>. Its <c>DeviceDpi</c>
     /// converts CSS px to physical px, per-monitor under PerMonitorV2. A page the kit's transports
@@ -129,6 +136,10 @@ public sealed class WindowCommandModule : ModuleBase
     /// </summary>
     public const string SetCaptionButtonColorsType = "SET_CAPTION_BUTTON_COLORS";
 
+    /// <summary>Route: lift the app's splash, once the page's own state is ready. No payload. Opt-in — unset
+    /// <see cref="WindowCommandOptions.CloseSplash"/> answers <c>NO_ROUTE</c>, and so does a secondary window.</summary>
+    public const string CloseSplashType = "CLOSE_SPLASH";
+
     /// <summary>
     /// Event, under <see cref="Module"/>: <c>{ hot?, pressed? }</c>, which caption button the OS is hovering or
     /// pressing, for a page that draws its buttons and lost their mouse events to the hit-test (the client's
@@ -152,7 +163,7 @@ public sealed class WindowCommandModule : ModuleBase
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _log = logger;
         _own = new Target(_options.Window, _options.CoordinateSpace ?? _options.Window, _options.ToggleMaximize,
-            _options.IsMaximized, _options.ApplyTheme, _options.SetCaptionButtons, logger);
+            _options.IsMaximized, _options.ApplyTheme, _options.SetCaptionButtons, logger, _options.CloseSplash);
     }
 
     /// <inheritdoc />
@@ -232,6 +243,10 @@ public sealed class WindowCommandModule : ModuleBase
                 window.Post(() => painted.CaptionButtonColors = colors);
                 return Done();
 
+            case CloseSplashType when window.CloseSplash is { } closeSplash:
+                window.Post(closeSplash);
+                return Done();
+
             default:
                 throw UnknownType(request);   // ModuleBase owns the shape
         }
@@ -273,7 +288,7 @@ public sealed class WindowCommandModule : ModuleBase
 
     /// <summary>A window, what its page's coordinates are relative to, and its callbacks (null: the default, or no route).</summary>
     private sealed class Target(Form form, Control space, Action? toggleMaximize, Func<bool>? isMaximized,
-        Action<bool>? applyTheme, Action<IReadOnlyList<CaptionButtonRegion>>? setCaptionButtons, ILogger? log)
+        Action<bool>? applyTheme, Action<IReadOnlyList<CaptionButtonRegion>>? setCaptionButtons, ILogger? log, Action? closeSplash = null)
     {
         // The one marshalling owner. It also GUARDS the posted body, which matters here: SET_THEME runs
         // an app-supplied callback and CLOSE runs app FormClosing logic, and an exception from either
@@ -286,6 +301,7 @@ public sealed class WindowCommandModule : ModuleBase
         public Action? ToggleMaximize => toggleMaximize;
         public Action<bool>? ApplyTheme => applyTheme;
         public Action<IReadOnlyList<CaptionButtonRegion>>? SetCaptionButtons => setCaptionButtons;
+        public Action? CloseSplash => closeSplash;
 
         public bool Maximized() => isMaximized?.Invoke() ?? form.WindowState == FormWindowState.Maximized;
 

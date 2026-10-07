@@ -241,7 +241,11 @@ Shenora.slnx
 │   │                                          the in-process DevTools channel (Host/DevToolsChannel).
 │   │                                          Serving/ answers the app's origin (the bundle, marked,
 │   │                                          then the app's interceptor pipeline; the IPC route only
-│   │                                          for the app's own browser and origin). Interop/Generated/ is
+│   │                                          for the app's own browser and origin). Splash/ is the
+│   │                                          native splash (D92): the component model, one layout
+│   │                                          for every OS, the session that lifts it, and a
+│   │                                          surface per OS (Windows: a layered popup on its own
+│   │                                          thread). Interop/Generated/ is
 │   │                                          written by `dev.mjs cef-binding` (ClangSharp over CEF's C
 │   │                                          API at ONE Stable API version, pinned in cef.json):
 │   │                                          Common/ plus one folder per OS, and a build compiles

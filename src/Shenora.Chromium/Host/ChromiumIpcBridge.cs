@@ -24,6 +24,9 @@ internal sealed class ChromiumIpcBridgeOptions
     /// <summary>Entered around each dispatch, so a module learns which window's page asked
     /// (<see cref="ChromiumBrowserContext"/>).</summary>
     public Func<IDisposable>? EnterWindow { get; init; }
+
+    /// <summary>Called on each ready handshake, on the bridge's thread (the main window's lifts the splash).</summary>
+    public Action? OnClientReady { get; init; }
 }
 
 /// <summary>
@@ -73,6 +76,7 @@ internal sealed class ChromiumIpcBridge : IDisposable
             Pump = _pump,
             Shell = options.Shell,
             Log = options.Log,
+            OnClientReady = options.OnClientReady is { } ready ? _ => ready() : null,
         });
     }
 

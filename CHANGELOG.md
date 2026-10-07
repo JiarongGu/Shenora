@@ -28,6 +28,28 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **The Chromium shell's splash: a native window over the main window's place, shown before Chromium starts.**
+  `ChromiumHostOptions.Splash` (D92). The OS draws it (Windows today; macOS and Linux show none yet), so it does not
+  wait on Chromium's GPU process, which Chromium's first frame does. Its content is a component: a setup
+  function that runs once and returns a render function over `SplashState` values, built from `SplashStack`,
+  `SplashLayer`, `SplashText`, `SplashImage` (PNG) and `SplashProgress`, or a class (`ISplashComponent`, constructor
+  injection, `Splash.Of<T>()`); `Splash.Preset` is the default. A setup hooks `OnShown` (boot work, started at once
+  beside Chromium's own start and before `OnStarting`), `OnWindowOpened`, `OnPageReady`, and the app's events
+  (`Subscribe`), and reads `SystemDark`. It lifts once every `OnShown` has finished and the page is ready: its ready
+  handshake, or, with `HoldUntilClosed`, the page's `closeSplash()`; `Timeout` (15 s) stands in for the page only.
+  `FadeOut` (150 ms) fades it, and `ChromiumSplash.Close()` lifts it from code outside the component. It takes the
+  clicks over it, so none reaches the page loading unseen beneath. With a splash, CEF no longer starts inside
+  `UseChromium` (D87) on Windows: the splash shows first.
+  Measured on Windows (Release, ten interleaved pairs): the splash 219 ms after `Main` against 666 ms with CEF started
+  first, and the main window no later (907 against 949 ms); the page was painted under it as it lifted.
+- **`WindowCommands.closeSplash()`** (`@shenora/react`) and its route `SHENORA.WINDOW` / `CLOSE_SPLASH`: the page
+  says its own state is ready. The Chromium shell releases a held splash with it; the WebView2 shell calls the new
+  `WindowCommandOptions.CloseSplash`, so the app's `SplashPanel` lifts on the same call.
+
 ## 0.19.1 — 2026-10-01
 
 ### Fixed

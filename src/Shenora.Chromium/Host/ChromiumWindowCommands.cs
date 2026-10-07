@@ -18,7 +18,9 @@ namespace Shenora.Chromium.Host;
 /// </para>
 /// </summary>
 /// <param name="current">The window whose page sent the request being handled.</param>
-internal sealed class ChromiumWindowCommands(Func<ChromiumWindow?> current) : ModuleBase
+/// <param name="splash">The splash, while there is one: <c>CLOSE_SPLASH</c> from the main window's page releases it, and
+/// from any other window's does nothing.</param>
+internal sealed class ChromiumWindowCommands(Func<ChromiumWindow?> current, Func<SplashSession?>? splash = null) : ModuleBase
 {
     public const string Module = "SHENORA.WINDOW";
     public const string MinimizeType = "MINIMIZE";
@@ -36,6 +38,10 @@ internal sealed class ChromiumWindowCommands(Func<ChromiumWindow?> current) : Mo
     /// <summary>Route: <c>{ colors? }</c>, the page's own colours for a window that paints its caption buttons, which win
     /// over its theme; no <c>colors</c> goes back to the theme.</summary>
     public const string SetCaptionButtonColorsType = "SET_CAPTION_BUTTON_COLORS";
+
+    /// <summary>Route: the main window's page is ready to be seen, which lifts a splash held for it
+    /// (<see cref="ChromiumSplashOptions.HoldUntilClosed"/>). Always wired, so a page calls it on any shell.</summary>
+    public const string CloseSplashType = "CLOSE_SPLASH";
 
     /// <summary>
     /// The event this window's page receives when the OS changes what it is doing to a caption button:
@@ -70,6 +76,9 @@ internal sealed class ChromiumWindowCommands(Func<ChromiumWindow?> current) : Mo
                 return Done();
             case SetCaptionButtonColorsType when window is { PaintsCaptionButtons: true }:
                 window.SetCaptionButtonColors(CaptionButtonPalette.FromPayload(request.Payload));
+                return Done();
+            case CloseSplashType:
+                if (window?.Name == ChromiumWindows.MainWindowName) splash?.Invoke()?.Release();
                 return Done();
             default: throw UnknownType(request);
         }

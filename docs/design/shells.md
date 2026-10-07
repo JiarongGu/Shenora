@@ -181,6 +181,42 @@ frame of the animation (1673×949) as the size to restore to. And a window maxim
 normal-looking bounds unsettled, because macOS can end a zoom on its full-screen frame with no maximized change after
 it (2 zooms in 21 saved that frame as a Normal size before; none in 25 after).
 
+## The Chromium shell's splash
+
+`ChromiumHostOptions.Splash` (D92). The WinForms shell needs none of this: its form paints `SplashPanel` at once,
+while the Chromium shell's first frame waits on Chromium's GPU process (D87).
+
+```
+UseChromium        ← with a splash this build draws, CEF is NOT started early (D87's exception)
+Run: gate          ← a launch turned away shows nothing
+     SplashSession.Start  ← setup, first frame, window shown; OnShown work starts on the pool
+     cef_initialize       ← holds this thread 360–540 ms; the splash draws on its own
+     context ready → app.Start (OnStarting) → main window: Opening → Attach, then CEF shows it
+     main page handshake / closeSplash() → lift once every OnShown has finished
+```
+
+- **Three layers.** The component (`SplashContext` + `SplashState`) produces an element tree; `SplashLayout`, the
+  same on every OS, turns it into fills, text runs and images in pixels, measuring text through the platform's own
+  engine; an `ISplashSurface` per OS paints and presents them. A component's failure costs a frame or the splash,
+  never the app.
+- **Placement before CEF can say:** `ChromiumWindows.MainWindowPlan` runs `ChromiumWindowGeometry.PlanFor` over the
+  OS's work areas (in DIP, taken at the primary display's scale) and the same window-state store the window then
+  restores from. Once the window exists the splash snaps to its real bounds, which absorbs what that approximation
+  misses on mixed-DPI desktops.
+- **Owned before shown.** `ChromiumWindow` hands its handle to the splash before calling CEF's `show`; owned later,
+  the activation raises the main window over it. An owned popup of the same process does not count as covering the
+  window for Chromium's occlusion tracking, so the page keeps painting under it (measured, CEF 154: 106–120 animation
+  frames a second under it; a foreign window over it: hidden, none).
+- **The splash takes the clicks over it**, so none reaches the page loading unseen beneath; a click never activates it,
+  so the keyboard stays with the main window once that exists.
+- **Windows** (`WindowsSplashSurface`): a layered popup on a thread of its own, presented whole with
+  `UpdateLayeredWindow`; GDI draws the text (it font-links, so CJK falls back), GDI+ the fills and images; corners
+  cut round on Windows 11 unless maximized. It asks for the foreground as it shows, because a non-foreground window
+  opens under the foreground one (measured); Windows' documented foreground rules grant that only to a launch allowed
+  to take the foreground, so one started in the background stays under (not yet seen on a real launch: TASKS).
+- **macOS and Linux** show no splash yet: `SplashSurfaces.Create` answers none there, and the app's `OnShown` work
+  still runs.
+
 ## The WebView2 host
 
 `WebViewHost` is the ONE place a WebView2 is configured. `WebViewEnvironment` is separate and built once

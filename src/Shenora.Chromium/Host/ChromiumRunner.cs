@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Shenora.Chromium.Interop;
+using Shenora.Core.Events;
 using Shenora.Core.Shell;
 
 namespace Shenora.Chromium.Host;
@@ -12,9 +13,11 @@ namespace Shenora.Chromium.Host;
 /// down.
 /// </summary>
 internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDispatcher ui, ChromiumWindows windows, ChromiumTray? tray = null,
-    ILogger<ChromiumRunner>? log = null)
+    ILogger<ChromiumRunner>? log = null, ChromiumSplash? splash = null)
     : IShenoraRunner
 {
+    private SplashSession? _splash;
+
     /// <summary>What the shell starts CEF with, from the app's options, paths and environment: the same whether it
     /// starts as the app is composed or when it runs.</summary>
     internal static CefStartup.Settings SettingsFor(ChromiumHostOptions options, ShenoraPaths paths, ShenoraEnvironment environment) =>
@@ -50,6 +53,8 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
                 LogLevel.Warning);
         // The process's exception channels, from here on the app's OnUnhandledException (as WinFormsBootstrap wires them).
         ChromiumUnhandledExceptions.Install(options);
+        // Past the gate, so a launch it turned away shows nothing; before CEF, which the splash exists not to wait on.
+        if (options.Splash is { } splashOptions) StartSplash(app, splashOptions);
 
         try
         {
@@ -76,6 +81,8 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
             {
                 // Still on CEF's UI thread, where the icon was made; before CEF goes, or it lingers until hovered.
                 AppCallback.Run(() => tray?.Stop(), ex => AppCallback.Log(log, () => "[Shenora.Chromium] Removing the tray icon failed", LogLevel.Warning, ex));
+                // Its boot work told to stop before the app's services go.
+                _splash?.Dispose();
                 ui.MarkGone();
                 AppCallback.Run(app.Stop, ex => AppCallback.Log(log, () => "[Shenora.Chromium] Stopping the app failed", LogLevel.Error, ex));
                 Cef.cef_shutdown();
@@ -86,8 +93,29 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
         }
         finally
         {
+            // A CEF that would not start leaves no splash behind it.
+            _splash?.Dispose();
             // Released LAST and explicitly, so a --restarted relaunch waiting on it proceeds the moment shutdown is done.
             single.Release();
+        }
+    }
+
+    // Never throws: a splash that cannot start costs the splash.
+    private void StartSplash(ShenoraApplication app, ChromiumSplashOptions splashOptions)
+    {
+        try
+        {
+            var session = new SplashSession(splashOptions, options.Window.Title ?? app.ApplicationName, options.Window.BackgroundColor,
+                app.Services, app.Services.GetService<IEventBus>(), () => SplashSurfaces.Create(log), TimeProvider.System, log,
+                SystemTheme.IsDark());
+            _splash = session;
+            if (splash is not null) splash.Session = session;
+            windows.Splash = session;
+            session.Start(windows.MainWindowPlan(app.Services, SplashSurfaces.WorkAreas()));
+        }
+        catch (Exception ex)
+        {
+            AppCallback.Log(log, () => "[Shenora.Chromium] The splash could not start; the app starts without it", LogLevel.Error, ex);
         }
     }
 
@@ -113,6 +141,7 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
         catch (Exception ex)
         {
             AppCallback.Log(log, () => "[Shenora.Chromium] The app could not start; quitting", LogLevel.Critical, ex);
+            _splash?.Abort();
             Cef.cef_quit_message_loop();
         }
     }

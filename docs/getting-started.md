@@ -127,6 +127,10 @@ builder.UseChromium(new ChromiumHostOptions
   `NativeCaptionButtons` gives it the system's own buttons instead.
 - **`Shell` is what the page is told**: `getBridge().notifyReady()` answers with it, so the page shows what the app
   composed rather than guessing from the OS.
+- **A splash while Chromium starts** with `Splash = new ChromiumSplashOptions { Component = ... }`: the OS draws it,
+  from a setup that returns a render function over state, and the app's boot work runs in its `OnShown` and reports
+  there. The sample's is a title, a status line and a progress bar fed by a stand-in boot. Windows draws it today;
+  macOS and Linux show none yet, and the boot work runs all the same.
 - **The window opens where it was left** with `WindowState = new WindowStateHostOptions { Store = sp => new
   JsonFileWindowStateStore(...) }`: its size, place and maximized state, per the sample.
 - **One instance per install, by default** (`SingleInstance`): a later launch has the running app bring its window

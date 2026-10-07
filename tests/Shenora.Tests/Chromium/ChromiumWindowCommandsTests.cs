@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Shenora.Chromium;
 using Shenora.Chromium.Host;
 using Shenora.Chromium.Serving;
@@ -26,6 +28,42 @@ public class ChromiumWindowCommandsTests
         Assert.Equal(WindowCommandModule.SetThemeType, ChromiumWindowCommands.SetThemeType);
         Assert.Equal(WindowCommandModule.ShowSystemMenuType, ChromiumWindowCommands.ShowSystemMenuType);
         Assert.Equal(WindowCommandModule.SetCaptionButtonColorsType, ChromiumWindowCommands.SetCaptionButtonColorsType);
+        Assert.Equal(WindowCommandModule.CloseSplashType, ChromiumWindowCommands.CloseSplashType);
+    }
+
+    [Fact]
+    public async Task The_main_windows_page_releases_a_held_splash_and_another_windows_page_does_not()
+    {
+        var surface = new DisposedSurface();
+        using var session = new SplashSession(new ChromiumSplashOptions { HoldUntilClosed = true, FadeOut = TimeSpan.Zero }, "App", null,
+            new ServiceCollection().BuildServiceProvider(), null, () => surface,
+            new FakeTimeProvider(), null, null);
+        session.Start(new ChromiumWindowGeometry.Plan(400, 300, 0, 0, false));
+        session.WindowOpened(1);
+        session.PageReady();
+        var main = Window(new ChromiumWindowOptions());
+        var other = Window(new ChromiumWindowOptions(), "panel");
+        ChromiumWindow? current = other;
+        var module = new ChromiumWindowCommands(() => current, () => session);
+        var close = new IpcRequest { Id = "s", Module = ChromiumWindowCommands.Module, Type = ChromiumWindowCommands.CloseSplashType };
+
+        Assert.True((await module.HandleMessageAsync(close)).Success);
+        Assert.False(surface.Disposed);
+
+        current = main;
+        Assert.True((await module.HandleMessageAsync(close)).Success);
+        Assert.True(surface.Disposed);
+    }
+
+    private sealed class DisposedSurface : ISplashSurface
+    {
+        public bool Disposed { get; private set; }
+        public void Show(ChromiumWindowGeometry.Plan placement, SplashRender render) { }
+        public void Invalidate() { }
+        public void Attach(nint mainWindow) { }
+        public void FollowOwner() { }
+        public void FadeOut(TimeSpan duration, Action done) => done();
+        public void Dispose() => Disposed = true;
     }
 
     [Fact]
@@ -132,11 +170,11 @@ public class ChromiumWindowCommandsTests
         return new ChromiumWindowCommands(() => window);
     }
 
-    private static ChromiumWindow Window(ChromiumWindowOptions options)
+    private static ChromiumWindow Window(ChromiumWindowOptions options, string name = ChromiumWindows.MainWindowName)
     {
         var origins = ChromiumOrigins.For("app.local", null, isDevelopment: false);
         var ui = new CefUiDispatcher(_ => true, () => true);
-        return new ChromiumWindow("main", options, new ChromiumServing(null, origins, new ChromiumInterceptor()), origins,
+        return new ChromiumWindow(name, options, new ChromiumServing(null, origins, new ChromiumInterceptor()), origins,
             w => new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher() }, ui, _ => { }, (_, _) => true),
             _ => { }, null);
     }

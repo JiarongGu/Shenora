@@ -52,6 +52,10 @@ public sealed class ChromiumHostOptions
     /// reaches it as <see cref="ChromiumTray"/>.</summary>
     public ChromiumTrayOptions? Tray { get; init; }
 
+    /// <summary>A splash over the main window's place from the moment the app runs until its boot work and the page are
+    /// ready, drawn by the operating system so it does not wait on Chromium. Null (the default) shows none.</summary>
+    public ChromiumSplashOptions? Splash { get; init; }
+
     /// <summary>
     /// One running instance per install, on by default: a later launch has the running app bring its main window
     /// forward (shown, restored, or opened again if it was closed), hands it its arguments

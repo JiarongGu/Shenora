@@ -76,6 +76,7 @@ interface WindowRequests {
   SET_THEME: { dark: boolean };
   SET_CAPTION_BUTTONS: { buttons: CaptionButtonRect[] };
   SET_CAPTION_BUTTON_COLORS: { colors?: CaptionButtonColors };
+  CLOSE_SPLASH: void;
 }
 
 /**
@@ -177,6 +178,21 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
    */
   setCaptionButtonColors(colors: CaptionButtonColors | null): Promise<void> {
     return this.send('SET_CAPTION_BUTTON_COLORS', { payload: colors ? { colors } : {} });
+  }
+
+  /**
+   * Tell the shell the page's own state is ready to be seen, so it lifts its splash. Call it once the first screen
+   * has its data, from the main window's page.
+   *
+   * On the Chromium shell this releases a splash held with `ChromiumSplashOptions.HoldUntilClosed` (one not held lifts
+   * at the ready handshake by itself), which still waits for the app's own `OnShown` boot work; with no splash it does
+   * nothing. On the WebView2 shell it calls `WindowCommandOptions.CloseSplash`, the app's own splash.
+   *
+   * ⚠ Rejects with `NO_ROUTE` on the WebView2 shell unless the host set `WindowCommandOptions.CloseSplash`, and always
+   * from a secondary window there.
+   */
+  closeSplash(): Promise<void> {
+    return this.send('CLOSE_SPLASH');
   }
 }
 

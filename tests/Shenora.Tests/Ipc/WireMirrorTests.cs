@@ -891,6 +891,7 @@ public class WireMirrorTests
             WindowCommandModule.SetThemeType,
             WindowCommandModule.SetCaptionButtonsType,
             WindowCommandModule.SetCaptionButtonColorsType,
+            WindowCommandModule.CloseSplashType,
         };
         Assert.Equal(hostRoutes, routes);
 

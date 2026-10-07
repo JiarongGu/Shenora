@@ -47,6 +47,15 @@ describe('WindowCommands', () => {
     expect(transport.posted[1]?.payload).toEqual({});
   });
 
+  it('closeSplash asks the shell to lift its splash, with no payload', () => {
+    const { transport, commands } = createCommands();
+
+    void commands.closeSplash();
+
+    expect(transport.posted.map((r) => `${r.module}.${r.type}`)).toEqual(['SHENORA.WINDOW.CLOSE_SPLASH']);
+    expect(transport.posted[0]?.payload).toBeUndefined();
+  });
+
   it('isMaximized unwraps the host answer', async () => {
     const { transport, commands } = createCommands();
 

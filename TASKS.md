@@ -41,6 +41,19 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 > stays the small-app (WebView2) choice on Windows.
 
 What `Shenora.Windows` has and the Chromium shell does not, inventoried from the source, in the order to build:
+- [ ] **The splash on macOS and Linux** (D92). Windows draws it; `SplashSurfaces.Create` answers none on the other
+  two. macOS: an `NSWindow` on the main thread, CoreGraphics + CoreText rendered off it into a layer, a child window
+  of the main one; first measure whether a window ordered front before CEF's loop runs appears at all, and whether
+  Chromium's occlusion check counts a child window over the main one. Linux: X11 with its own connection and thread,
+  cairo + pango, `_NET_WM_WINDOW_TYPE_SPLASH` and `WM_TRANSIENT_FOR`; first measure that openbox and WSLg's Weston
+  honour its position.
+- [ ] 🅿️ **The splash taking the foreground on a real launch, on Windows.** It asks for it, and a launch from a
+  background process is refused (measured: it opened under the app the user was in). Whether a double-click from
+  Explorer brings it to the front needs a real launch by a person.
+- [ ] **A splash drawn by the native launcher, from the previous run's first frame.** .NET's own start (~100 ms) and
+  the app's composition still come before any splash. The shim could show the first frame the C# splash saved, before
+  .NET starts, and the C# splash adopt that window (on Windows the HWND, through a runtime property as `SandboxInfo`
+  travels). Owner, 2026-10-07: a follow-up, decided on v1's numbers.
 - [ ] 🅿️ **Whether a later launch's window takes the foreground on Linux and macOS.** Not observed: WSL's desktop and
   Xvfb enforce no focus-stealing prevention, so they cannot show it. On Linux a later launch could hand over its
   activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands over the foreground; it needs a

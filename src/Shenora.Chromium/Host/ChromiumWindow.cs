@@ -50,6 +50,15 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     /// <summary>The page this window shows.</summary>
     public ChromiumBrowser Browser { get; }
 
+    /// <summary>The window exists and is about to show, with its native handle. UI thread.</summary>
+    public Action<nint>? Opening { get; set; }
+
+    /// <summary>The window moved or resized. UI thread.</summary>
+    public Action? Moved { get; set; }
+
+    /// <summary>The window was hidden (the tray's close). UI thread.</summary>
+    public Action? Hidden { get; set; }
+
     public string Name => Browser.Name;
 
     /// <summary>Create the browser view and the window. UI thread, once CEF's context exists. Once: the delegates
@@ -105,7 +114,12 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         if (_window->is_minimized(_window) == 1) _window->restore(_window);
         _window->activate(_window);
     }
-    public void Hide() { if (_window != null) _window->hide(_window); }
+    public void Hide()
+    {
+        if (_window == null) return;
+        _window->hide(_window);
+        if (Hidden is { } hidden) AppCallback.Run(hidden, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] A window-hidden hook failed", LogLevel.Warning, ex));
+    }
 
     /// <summary>Take or give back the window's input (IUiInteraction). UI thread.</summary>
     public void SetEnabled(bool enabled)
@@ -267,6 +281,12 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             var size = new _cef_size_t { width = _plan?.Width ?? _options.Width, height = _plan?.Height ?? _options.Height };
             window->center_window(window, &size);
         }
+        // Before it shows: a splash must be owned by the window by then, or showing the window raises it over the splash.
+        if (Opening is { } opening)
+        {
+            var handle = (nint)window->get_window_handle(window);   // an HWND, an NSView*, or an X11 window id
+            AppCallback.Run(() => opening(handle), ex => AppCallback.Log(_log, () => "[Shenora.Chromium] A window-opening hook failed", LogLevel.Warning, ex));
+        }
         window->show(window);
 #if CEF_WINDOWS
         // Before the page can ask for anything: the drag area needs the frame's hit-test from the start.
@@ -386,6 +406,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             AppCallback.Run(() => owner._nativeCaptions?.WindowSized());
             var changed = *bounds;
             AppCallback.Run(() => owner._geometry?.Changed(window, changed));
+            if (owner.Moved is { } moved) AppCallback.Run(moved);
         }
 
         // The restored position, in DIP screen coordinates; empty lets CEF place the window, which is then centred.

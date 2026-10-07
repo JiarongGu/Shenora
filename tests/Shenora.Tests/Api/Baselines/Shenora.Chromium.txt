@@ -60,6 +60,7 @@ static class Shenora.Chromium.ChromiumHostExtensions
   public static Shenora.ShenoraApplicationBuilder UseChromium(Shenora.ShenoraApplicationBuilder builder, Shenora.Chromium.ChromiumHostOptions options)
 sealed class Shenora.Chromium.ChromiumHostOptions
   public .ctor()
+  public Shenora.Chromium.ChromiumSplashOptions? Splash { get; init; }
   public Shenora.Chromium.ChromiumTrayOptions? Tray { get; init; }
   public Shenora.Chromium.ChromiumWindowOptions Window { get; init; }
   public Shenora.Core.Ipc.ShellInfo? Shell { get; init; }
@@ -81,6 +82,15 @@ sealed class Shenora.Chromium.ChromiumSessionHost : Shenora.Core.Sessions.ISessi
   public System.Threading.Tasks.Task<Shenora.Core.Sessions.ISessionBrowser> CreateAsync(Shenora.Core.Sessions.SessionBrowserDefinition definition, System.Threading.CancellationToken cancellationToken)
   public System.Threading.Tasks.Task<Shenora.Core.Sessions.ISessionWindow> OpenWindowAsync(Shenora.Core.Sessions.SessionWindowDefinition definition, System.Threading.CancellationToken cancellationToken)
   public string ProfilesDirectory { get; }
+sealed class Shenora.Chromium.ChromiumSplash
+  public void Close()
+sealed class Shenora.Chromium.ChromiumSplashOptions
+  public .ctor()
+  public Shenora.Chromium.SplashComponent? Component { get; init; }
+  public System.Drawing.Color? Background { get; init; }
+  public System.TimeSpan FadeOut { get; init; }
+  public System.TimeSpan Timeout { get; init; }
+  public bool HoldUntilClosed { get; init; }
 sealed class Shenora.Chromium.ChromiumTray
   public void ExitApplication()
   public void ShowWindow()
@@ -116,3 +126,146 @@ sealed class Shenora.Chromium.ChromiumWindows
   public bool HasWindow(string name)
   public bool Open(string name, Shenora.Chromium.ChromiumWindowOptions options)
   public const string MainWindowName = "main"
+interface Shenora.Chromium.ISplashComponent
+  public abstract System.Func<Shenora.Chromium.SplashElement> Setup(Shenora.Chromium.SplashContext context)
+static class Shenora.Chromium.Splash
+  public static Shenora.Chromium.SplashComponent Of<T>() where T : Shenora.Chromium.ISplashComponent
+  public static Shenora.Chromium.SplashComponent Preset(string? image = null, string? title = null)
+enum Shenora.Chromium.SplashAlign (int)
+  public const Shenora.Chromium.SplashAlign Center = 1
+  public const Shenora.Chromium.SplashAlign End = 2
+  public const Shenora.Chromium.SplashAlign Start = 0
+  public const Shenora.Chromium.SplashAlign Stretch = 3
+  public int value__
+delegate Shenora.Chromium.SplashComponent
+  public .ctor(object object, System.IntPtr method)
+  public virtual System.Func<Shenora.Chromium.SplashElement> EndInvoke(System.IAsyncResult result)
+  public virtual System.Func<Shenora.Chromium.SplashElement> Invoke(Shenora.Chromium.SplashContext context)
+  public virtual System.IAsyncResult BeginInvoke(Shenora.Chromium.SplashContext context, System.AsyncCallback callback, object object)
+sealed class Shenora.Chromium.SplashContext
+  public Shenora.Chromium.SplashState<T> State<T>(T initial)
+  public System.IServiceProvider Services { get; }
+  public bool? SystemDark { get; }
+  public void Close()
+  public void OnPageReady(System.Action callback)
+  public void OnShown(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
+  public void OnWindowOpened(System.Action callback)
+  public void Subscribe(string module, string type, System.Action<Shenora.Core.Events.EventMessage> handler)
+abstract class Shenora.Chromium.SplashElement : System.IEquatable<Shenora.Chromium.SplashElement>
+  protected .ctor(Shenora.Chromium.SplashElement original)
+  protected virtual System.Type EqualityContract { get; }
+  protected virtual bool PrintMembers(System.Text.StringBuilder builder)
+  public Shenora.Chromium.SplashAlign HorizontalAlign { get; init; }
+  public Shenora.Chromium.SplashAlign VerticalAlign { get; init; }
+  public Shenora.Chromium.SplashInsets Margin { get; init; }
+  public abstract Shenora.Chromium.SplashElement <Clone>$()
+  public bool Visible { get; init; }
+  public double? Height { get; init; }
+  public double? Width { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Chromium.SplashElement? left, Shenora.Chromium.SplashElement? right)
+  public static bool op_Inequality(Shenora.Chromium.SplashElement? left, Shenora.Chromium.SplashElement? right)
+  public virtual bool Equals(Shenora.Chromium.SplashElement? other)
+sealed class Shenora.Chromium.SplashImage : Shenora.Chromium.SplashElement, System.IEquatable<Shenora.Chromium.SplashImage>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor(System.ReadOnlyMemory<byte> png)
+  public .ctor(string path)
+  public System.ReadOnlyMemory<byte> Bytes { get; }
+  public bool Equals(Shenora.Chromium.SplashImage? other)
+  public override bool Equals(Shenora.Chromium.SplashElement? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Chromium.SplashImage? left, Shenora.Chromium.SplashImage? right)
+  public static bool op_Inequality(Shenora.Chromium.SplashImage? left, Shenora.Chromium.SplashImage? right)
+  public string? Path { get; }
+  public virtual Shenora.Chromium.SplashImage <Clone>$()
+struct Shenora.Chromium.SplashInsets : System.IEquatable<Shenora.Chromium.SplashInsets>
+  public .ctor(double Left, double Top, double Right, double Bottom)
+  public .ctor(double all)
+  public bool Equals(Shenora.Chromium.SplashInsets other)
+  public double Bottom { get; init; }
+  public double Left { get; init; }
+  public double Right { get; init; }
+  public double Top { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static Shenora.Chromium.SplashInsets op_Implicit(double all)
+  public static bool op_Equality(Shenora.Chromium.SplashInsets left, Shenora.Chromium.SplashInsets right)
+  public static bool op_Inequality(Shenora.Chromium.SplashInsets left, Shenora.Chromium.SplashInsets right)
+  public void Deconstruct(out double Left, out double Top, out double Right, out double Bottom)
+sealed class Shenora.Chromium.SplashLayer : Shenora.Chromium.SplashElement, System.IEquatable<Shenora.Chromium.SplashLayer>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor()
+  public Shenora.Chromium.SplashInsets Padding { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Chromium.SplashElement> Children { get; init; }
+  public System.Drawing.Color? Background { get; init; }
+  public bool Equals(Shenora.Chromium.SplashLayer? other)
+  public override bool Equals(Shenora.Chromium.SplashElement? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Chromium.SplashLayer? left, Shenora.Chromium.SplashLayer? right)
+  public static bool op_Inequality(Shenora.Chromium.SplashLayer? left, Shenora.Chromium.SplashLayer? right)
+  public virtual Shenora.Chromium.SplashLayer <Clone>$()
+enum Shenora.Chromium.SplashOrientation (int)
+  public const Shenora.Chromium.SplashOrientation Horizontal = 1
+  public const Shenora.Chromium.SplashOrientation Vertical = 0
+  public int value__
+sealed class Shenora.Chromium.SplashProgress : Shenora.Chromium.SplashElement, System.IEquatable<Shenora.Chromium.SplashProgress>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor()
+  public System.Drawing.Color? Fill { get; init; }
+  public System.Drawing.Color? Track { get; init; }
+  public bool Equals(Shenora.Chromium.SplashProgress? other)
+  public double? Value { get; init; }
+  public override bool Equals(Shenora.Chromium.SplashElement? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Chromium.SplashProgress? left, Shenora.Chromium.SplashProgress? right)
+  public static bool op_Inequality(Shenora.Chromium.SplashProgress? left, Shenora.Chromium.SplashProgress? right)
+  public virtual Shenora.Chromium.SplashProgress <Clone>$()
+sealed class Shenora.Chromium.SplashStack : Shenora.Chromium.SplashElement, System.IEquatable<Shenora.Chromium.SplashStack>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor()
+  public Shenora.Chromium.SplashInsets Padding { get; init; }
+  public Shenora.Chromium.SplashOrientation Orientation { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Chromium.SplashElement> Children { get; init; }
+  public System.Drawing.Color? Background { get; init; }
+  public bool Equals(Shenora.Chromium.SplashStack? other)
+  public double Spacing { get; init; }
+  public override bool Equals(Shenora.Chromium.SplashElement? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Chromium.SplashStack? left, Shenora.Chromium.SplashStack? right)
+  public static bool op_Inequality(Shenora.Chromium.SplashStack? left, Shenora.Chromium.SplashStack? right)
+  public virtual Shenora.Chromium.SplashStack <Clone>$()
+sealed class Shenora.Chromium.SplashState<T>
+  public T Value { get; set; }
+sealed class Shenora.Chromium.SplashText : Shenora.Chromium.SplashElement, System.IEquatable<Shenora.Chromium.SplashText>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor(string Text)
+  public System.Drawing.Color? Color { get; init; }
+  public bool Bold { get; init; }
+  public bool Equals(Shenora.Chromium.SplashText? other)
+  public double FontSize { get; init; }
+  public override bool Equals(Shenora.Chromium.SplashElement? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Chromium.SplashText? left, Shenora.Chromium.SplashText? right)
+  public static bool op_Inequality(Shenora.Chromium.SplashText? left, Shenora.Chromium.SplashText? right)
+  public string Text { get; init; }
+  public string? FontFamily { get; init; }
+  public virtual Shenora.Chromium.SplashText <Clone>$()
+  public void Deconstruct(out string Text)

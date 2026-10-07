@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Net.Http;
 using Microsoft.Extensions.Logging;
 using Shenora.Chromium.Host;
@@ -93,6 +94,31 @@ public sealed unsafe class ChromiumWindows
     /// UI thread.</summary>
     internal Func<string, bool>? CloseGuard { get; set; }
 
+    /// <summary>The splash over the main window, while the app starts: told as the main window opens, moves, hides or
+    /// goes, and when its page is ready.</summary>
+    internal SplashSession? Splash { get; set; }
+
+    /// <summary>
+    /// Where the main window will open, for a splash that shows before CEF can say: the state it restores (from the same
+    /// store the window then uses), else its own size centred on the primary work area. <paramref name="workAreas"/> are
+    /// the displays' work areas in DIP, primary first; with none there is no place, only a size.
+    /// </summary>
+    internal ChromiumWindowGeometry.Plan MainWindowPlan(IServiceProvider services, IReadOnlyList<Rectangle> workAreas)
+    {
+        int width = _options.Window.Width, height = _options.Window.Height;
+        if (_options.WindowState is { } state)
+        {
+            _windowStore ??= state.Store(services);
+            WindowState? saved = null;
+            try { saved = _windowStore.Load(); }
+            catch (Exception ex) { AppCallback.Log(_log, () => "[Shenora.Chromium] The window state could not be read for the splash", LogLevel.Warning, ex); }
+            return ChromiumWindowGeometry.PlanFor(saved, state.Options ?? new WindowStateOptions(), width, height, workAreas);
+        }
+        if (workAreas.Count == 0) return new(width, height, null, null, false);
+        var primary = workAreas[0];
+        return new(width, height, primary.X + ((primary.Width - width) / 2), primary.Y + ((primary.Height - height) / 2), false);
+    }
+
     /// <summary>Close every open window; the shell quits as the last one goes. Any thread.</summary>
     internal bool CloseAll() => _ui.Post(() => { foreach (var w in _open.Values) w?.Close(); });
 
@@ -139,7 +165,7 @@ public sealed unsafe class ChromiumWindows
     internal void Initialize(ShenoraApplication app, bool isDevelopment)
     {
         _isDevelopment = isDevelopment;
-        _windowStore = _options.WindowState?.Store(app.Services);
+        _windowStore ??= _options.WindowState?.Store(app.Services);   // the splash may have asked for it first
         _origins = ChromiumOrigins.For(_options.VirtualHost, _options.DevUrl, isDevelopment);
         var interceptor = new ChromiumInterceptor();
         app.Pipeline.ApplyTo(interceptor);   // the app's UseFiles and routes reach every window (D64)
@@ -155,7 +181,7 @@ public sealed unsafe class ChromiumWindows
         // window. An app that mapped its own SHENORA.WINDOW wins. The drop zones are under the engine's own name,
         // where each page's requests are addressed, so they always answer this engine's pages: their protocol is
         // not the WebView2 module's.
-        _dispatcher.TryMapModule(new ChromiumWindowCommands(() => ChromiumBrowserContext.Current?.Host as ChromiumWindow));
+        _dispatcher.TryMapModule(new ChromiumWindowCommands(() => ChromiumBrowserContext.Current?.Host as ChromiumWindow, () => Splash));
         _dispatcher.TryMapModule(new ChromiumDropZones(() => ChromiumBrowserContext.Current));
     }
 
@@ -167,6 +193,12 @@ public sealed unsafe class ChromiumWindows
             if (_serving is null || _origins is null) throw new InvalidOperationException("The Chromium shell has not started.");
             window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls,
                 w => CloseGuard?.Invoke(w.Name) ?? true, GeometryFor(name, options));
+            if (name == MainWindowName && Splash is { } splash)
+            {
+                window.Opening = splash.WindowOpened;
+                window.Moved = splash.OwnerMoved;
+                window.Hidden = splash.Abort;   // the tray's close: a splash left over the desktop would cover it
+            }
             _open[name] = window;
 
             var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
@@ -198,16 +230,18 @@ public sealed unsafe class ChromiumWindows
         return options.Path is { } path ? new Uri(root, path) : root;
     }
 
-    private ChromiumIpcBridge NewBridge(ChromiumBrowser browser) =>
+    internal ChromiumIpcBridge NewBridge(ChromiumBrowser browser) =>
         new(new ChromiumIpcBridgeOptions
             {
                 Dispatcher = _dispatcher, EventBus = _events, Shell = _options.Shell, Log = _log,
                 EnterWindow = () => ChromiumBrowserContext.Enter(browser),
+                OnClientReady = browser.Name == MainWindowName ? () => Splash?.PageReady() : null,
             },
             _ui, browser.Push, (delay, work) => CefTask.PostDelayed(cef_thread_id_t.TID_UI, delay, work));
 
     private void Closed(ChromiumWindow window)
     {
+        if (window.Name == MainWindowName) Splash?.Abort();
         _open.TryRemove(KeyValuePair.Create(window.Name, (ChromiumWindow?)window));
         if (_open.Count == 0) Cef.cef_quit_message_loop();
     }
