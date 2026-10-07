@@ -36,6 +36,32 @@ internal static class MacScreens
         return [.. screens.Select(s => new Rectangle((int)s.Visible.X, (int)(top - s.Visible.Y - s.Visible.Height), (int)s.Visible.Width, (int)s.Visible.Height))];
     }
 
+    /// <summary>
+    /// Where a new window with a content of <paramref name="width"/>×<paramref name="height"/> opens when nothing places
+    /// it: CEF centres it with AppKit's own [NSWindow center], which sits it above the middle, so this asks AppKit, with a
+    /// window that is never shown (titled, or borderless when <paramref name="frameless"/>, so its frame is the same
+    /// size). Its content's rect in CEF's top-left DIPs. Main thread.
+    /// </summary>
+    public static Rectangle CentredContentDip(int width, int height, bool frameless)
+    {
+        const ulong Titled = 1, Closable = 2, Miniaturizable = 4, Resizable = 8;
+        var window = InitWindow(Send(Class("NSWindow"), "alloc"), new CGRect(0, 0, width, height),
+            frameless ? 0 : Titled | Closable | Miniaturizable | Resizable);
+        if (window == 0) throw new InvalidOperationException("A window could not be made to centre the card on.");
+        try
+        {
+            Send(window, "center");
+            var frame = GetRect(window, "frame");
+            var titleBar = frame.Height - height;
+            var top = All() is { Count: > 0 } screens ? screens[0].Frame.Height : frame.Y + frame.Height;
+            return new Rectangle((int)Math.Round(frame.X), (int)Math.Round(top - frame.Y - frame.Height + titleBar), width, height);
+        }
+        finally
+        {
+            Send(window, "release");
+        }
+    }
+
     /// <summary>The window frame (Cocoa coordinates) for a plan, and its display's backing scale.</summary>
     public static (CGRect Frame, double Scale) ToFrame(ChromiumWindowGeometry.Plan plan, IReadOnlyList<Screen> screens)
     {

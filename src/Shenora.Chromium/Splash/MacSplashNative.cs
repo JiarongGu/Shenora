@@ -79,8 +79,8 @@ internal static unsafe class MacSplashNative
     /// <summary>A method taking one CGRect by value (CALayer's <c>setFrame:</c>).</summary>
     public static void SendRect(nint receiver, string selector, CGRect rect) => objc_msgSend_rect_arg(receiver, Sel(selector), rect);
 
-    public static nint InitWindow(nint window, CGRect frame) =>
-        objc_msgSend_initWindow(window, Sel("initWithContentRect:styleMask:backing:defer:"), frame, 0 /* borderless */, 2 /* buffered */, 0);
+    public static nint InitWindow(nint window, CGRect frame, ulong style = 0 /* borderless */) =>
+        objc_msgSend_initWindow(window, Sel("initWithContentRect:styleMask:backing:defer:"), frame, style, 2 /* buffered */, 0);
 
     public static void AddChild(nint parent, nint child) => objc_msgSend_long2(parent, Sel("addChildWindow:ordered:"), child, 1 /* above */);
 

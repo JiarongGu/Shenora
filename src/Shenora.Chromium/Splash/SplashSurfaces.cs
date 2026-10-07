@@ -16,6 +16,20 @@ internal static class SplashSurfaces
         false;
 #endif
 
+    /// <summary>Where this platform's CEF puts a main window with no saved place, when that is not simply the middle of
+    /// the primary work area (which the card already centres on): on macOS, above the middle, AppKit's way. Null
+    /// elsewhere. On macOS, on the main thread.</summary>
+    public static ChromiumWindowGeometry.Plan? CentredPlan(int width, int height, bool frameless)
+    {
+#if CEF_MACOS
+        var at = MacScreens.CentredContentDip(width, height, frameless);
+        return new ChromiumWindowGeometry.Plan(width, height, at.X, at.Y, false);
+#else
+        _ = (width, height, frameless);
+        return null;
+#endif
+    }
+
     /// <summary>A splash window for this platform, or null where it cannot draw one.</summary>
     public static ISplashSurface? Create(ILogger? log)
     {

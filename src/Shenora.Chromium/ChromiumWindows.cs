@@ -101,9 +101,9 @@ public sealed unsafe class ChromiumWindows
     /// <summary>
     /// Where the main window will open, for a splash card that shows before CEF can say: the state it restores (from the
     /// same store the window then uses, against <paramref name="workAreas"/>, the displays' work areas in DIP, primary
-    /// first), else only its size, with no place. The card centres on the restored rect, on its display's work area when
-    /// it opens maximized, or on the primary work area when there is no place (where CEF centres the window by each OS's
-    /// own rule: on macOS slightly above the middle).
+    /// first); else, on macOS, where AppKit will centre it (above the middle); else only its size, with no place, which
+    /// the card centres on the primary work area, as CEF centres the window on Windows and Linux. The card centres on
+    /// the restored rect, or on its display's work area when it opens maximized.
     /// </summary>
     internal ChromiumWindowGeometry.Plan MainWindowPlan(IServiceProvider services, IReadOnlyList<Rectangle> workAreas)
     {
@@ -114,9 +114,13 @@ public sealed unsafe class ChromiumWindows
             WindowState? saved = null;
             try { saved = _windowStore.Load(); }
             catch (Exception ex) { AppCallback.Log(_log, () => "[Shenora.Chromium] The window state could not be read for the splash", LogLevel.Warning, ex); }
-            return ChromiumWindowGeometry.PlanFor(saved, state.Options ?? new WindowStateOptions(), width, height, workAreas);
+            var restored = ChromiumWindowGeometry.PlanFor(saved, state.Options ?? new WindowStateOptions(), width, height, workAreas);
+            if (restored is { X: not null, Y: not null }) return restored;
         }
-        return new(width, height, null, null, false);
+        // With no place, where this OS's CEF will centre it, when that is not the middle of the primary work area.
+        var centred = AppCallback.RunOrDefault(() => SplashSurfaces.CentredPlan(width, height, _options.Window.FramelessChrome), null,
+            ex => AppCallback.Log(_log, () => "[Shenora.Chromium] Where the window will be centred could not be asked; the card centres on the screen", LogLevel.Debug, ex));
+        return centred ?? new(width, height, null, null, false);
     }
 
     /// <summary>Close every open window; the shell quits as the last one goes. Any thread.</summary>
