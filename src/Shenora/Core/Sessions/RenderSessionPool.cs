@@ -149,6 +149,12 @@ public sealed class RenderSessionPool : IDisposable
         internal bool Poisoned { get; set; }
 
         /// <summary>
+        /// Set when the page was allowed a window (<see cref="SessionBrowserOptions.OnWindowRequest"/>). The reset closes
+        /// no window, so <see cref="Return"/> discards the instance, and its windows close with its browser.
+        /// </summary>
+        internal bool OpenedWindow { get; set; }
+
+        /// <summary>
         /// The identity of the lease currently holding this instance: the SCOPE of everything its browser publishes on
         /// <see cref="SessionBrowserOptions.Events"/>. Re-assigned on every lease AND on every return, because the
         /// browser outlives the lease.
@@ -233,7 +239,7 @@ public sealed class RenderSessionPool : IDisposable
                 var n = Volatile.Read(ref _created);
                 made = await host.CreateAsync(new SessionBrowserDefinition
                 {
-                    Options = _options.Browser,
+                    Options = WatchWindows(_options.Browser, pending),
                     // Read per emit, not captured: this browser is re-leased under a NEW identity each time, and the
                     // handlers wired for it are wired once. Never null, even before the instance exists (see Scope).
                     Scope = () => pending.Instance?.Scope ?? pending.Scope,
@@ -247,7 +253,7 @@ public sealed class RenderSessionPool : IDisposable
                     VisibleTitle = _options.VisiblePerSession ? $"Render session {n + 1}" : null,
                 }, cancellationToken).ConfigureAwait(true);
 
-                var instance = new PoolInstance(made) { Poisoned = pending.Gone };
+                var instance = new PoolInstance(made) { Poisoned = pending.Gone, OpenedWindow = pending.OpenedWindow };
                 pending.Instance = instance;
                 WireNavigationPolicy(instance);
                 // An off-screen page never saves a file: DOWNLOAD_STARTING still reports it. Left on, a WebView2 pool
@@ -279,7 +285,27 @@ public sealed class RenderSessionPool : IDisposable
         public readonly string Scope = NewSessionId();
         public volatile PoolInstance? Instance;
         public volatile bool Gone;
+        public volatile bool OpenedWindow;
     }
+
+    // The app's own policy decides, as before; an answer of "allow" marks the instance. Marked in a finally: a policy
+    // that set Allow and then threw meant it (SessionPolicy.Decide), and the engine opens the window.
+    private static SessionBrowserOptions WatchWindows(SessionBrowserOptions options, PendingInstance pending) =>
+        options.OnWindowRequest is not { } decide ? options : options with
+        {
+            OnWindowRequest = request =>
+            {
+                try { decide(request); }
+                finally
+                {
+                    if (request.Allow)
+                    {
+                        pending.OpenedWindow = true;
+                        if (pending.Instance is { } alive) alive.OpenedWindow = true;
+                    }
+                }
+            },
+        };
 
     /// <summary>
     /// Cancel an UNVETTED navigation to another authority for the instance's whole life: wired once, on the UI thread,
@@ -341,7 +367,11 @@ public sealed class RenderSessionPool : IDisposable
             try
             {
                 // A crashed renderer can never be reset back to a usable state, so don't try: discard it straight away.
-                ok = !instance.Poisoned && await (ResetOverride ?? ResetToBlankAsync)(instance).ConfigureAwait(true);
+                // Nor a page that opened a window: the reset closes none, and the next lease would inherit it. Read again
+                // after the reset, since a page can open one as the reset navigates it away.
+                ok = !instance.Poisoned && !instance.OpenedWindow
+                     && await (ResetOverride ?? ResetToBlankAsync)(instance).ConfigureAwait(true)
+                     && !instance.OpenedWindow;
             }
             catch
             {
@@ -364,7 +394,9 @@ public sealed class RenderSessionPool : IDisposable
                     // leak the permit.
                     var reason = instance.Poisoned
                         ? "the instance is poisoned: a dead renderer, or an operation that was abandoned"
-                        : $"reset to about:blank did not complete within {_options.ResetTimeout.TotalSeconds:0}s";
+                        : instance.OpenedWindow
+                            ? "its page was allowed a window, which a reset would not close"
+                            : $"reset to about:blank did not complete within {_options.ResetTimeout.TotalSeconds:0}s";
                     SessionLog.Try(_options.Log, l => l.LogInformation(
                         "Discarding a session instance instead of re-pooling it ({Reason}); a fresh one will be created " +
                         "on the next lease.", reason));

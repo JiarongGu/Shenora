@@ -58,7 +58,7 @@ internal sealed class FakeSessionHost(TestUiThread ui) : ISessionHost
 
     public Task<ISessionBrowser> CreateAsync(SessionBrowserDefinition definition, CancellationToken cancellationToken)
     {
-        var browser = new FakeSessionBrowser();
+        var browser = new FakeSessionBrowser { Definition = definition };
         Created.Add(browser);
         return Task.FromResult<ISessionBrowser>(browser);
     }

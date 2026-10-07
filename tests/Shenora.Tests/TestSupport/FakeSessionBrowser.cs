@@ -11,6 +11,13 @@ internal sealed class FakeSessionBrowser : ISessionBrowser
     public List<string> Navigations { get; } = [];
     public bool IsClosed { get; private set; }
 
+    /// <summary>What the host was asked to make this browser with, when a <see cref="FakeSessionHost"/> made it.</summary>
+    public SessionBrowserDefinition? Definition { get; init; }
+
+    /// <summary>The page asks for a window, as <c>window.open</c> does: true when the session's policy allows it.</summary>
+    public bool OpenWindow(string uri) =>
+        SessionPolicy.Decide(Definition?.Options.OnWindowRequest, new SessionWindowRequest(uri, UserInitiated: false)).Allow;
+
     /// <summary>False: a navigation never completes, as a renderer that stopped answering.</summary>
     public bool CompletesNavigations { get; set; } = true;
 

@@ -60,6 +60,9 @@ var html = await session.GetHtmlAsync(ct);
   are shared across every lease of one pool, by design. **Separate trust domains need separate pools.**
 - An operation that outruns `OpTimeout` (60 s) poisons that instance: it is discarded on return rather
   than re-pooled, because a session that stopped answering will not start.
+- A lease whose page `OnWindowRequest` allowed a window is discarded on return too: the reset would close none, and
+  the next lease would inherit it. In the Chromium shell the window closes with the discarded browser; in WebView2 it
+  is a window of its own (below).
 
 ## The interactive window
 

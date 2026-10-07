@@ -357,17 +357,6 @@ Once in five `verify` runs (2026-10-01), `vitest (cli package)` ended on an unha
 passed 5 of 5. A forks-pool worker whose IPC channel closed under load, unattributed. If it recurs: count it under
 `verify` and alone, then try `pool: 'threads'` in `src/Shenora.Cli/vitest.config.ts` as the A/B.
 
-### 🟡 Two session leaks the review left for a minor release
-
-Found in review, neither seen live; each needs more than a patch.
-
-- [ ] **A popup a pool lease allowed outlives the lease.** The pool's reset navigates to `about:blank` and closes no
-  popup, so the next lease's browser still has the last one's windows. Needs a way for the pool to close a browser's
-  popups, which is a new `ISessionBrowser` member.
-- [ ] **CEF's `on_before_popup` may leak a reference to the session's client** through its `client**` parameter.
-  Whether CEF hands that reference over is the question, and releasing one it did not is a use-after-free, so it is
-  settled by experiment: count the client's `OnFreed` after a page opens a popup and the browser closes.
-
 ### 🟡 On macOS and Linux a main window blocked by a modal session can still be closed
 
 `IUiInteraction` disables the Chromium shell's main window while an interactive session's window shows. On Windows

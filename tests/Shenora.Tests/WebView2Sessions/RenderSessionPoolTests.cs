@@ -66,6 +66,108 @@ public class RenderSessionPoolTests
         public void Dispose() => Anchor.Dispose();
     }
 
+    /// <summary>
+    /// The reset navigates to about:blank and closes no window the page opened, so a popup outlived its lease: the next
+    /// lease's browser still had it. A browser whose page was allowed one is ended rather than re-pooled, and its windows
+    /// close with it.
+    /// </summary>
+    [Fact]
+    public async Task A_lease_that_allowed_a_popup_hands_the_next_lease_a_fresh_browser()
+    {
+        using var ui = new TestUiThread();
+        var host = new FakeSessionHost(ui);
+        using var pool = Pool(host, onWindowRequest: r => r.Allow = true);
+
+        var first = await pool.LeaseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(await ui.InvokeAsync(() => Task.FromResult(host.Created[0].OpenWindow("https://example.test/popup"))));
+        await first.DisposeAsync();
+
+        await using var second = await pool.LeaseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(2, host.Created.Count);
+        Assert.True(host.Created[0].IsClosed);
+    }
+
+    [Fact]
+    public async Task A_lease_whose_popup_was_suppressed_keeps_its_browser()
+    {
+        using var ui = new TestUiThread();
+        var host = new FakeSessionHost(ui);
+        using var pool = Pool(host, onWindowRequest: null);
+
+        var first = await pool.LeaseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(await ui.InvokeAsync(() => Task.FromResult(host.Created[0].OpenWindow("https://example.test/popup"))));
+        await first.DisposeAsync();
+
+        await using var second = await pool.LeaseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Single(host.Created);
+        Assert.False(host.Created[0].IsClosed);
+    }
+
+    /// <summary>A hook that set Allow and then threw meant it (SessionPolicy.Decide), and the engine opens the window.</summary>
+    [Fact]
+    public async Task A_lease_whose_hook_allowed_a_popup_and_then_threw_hands_the_next_lease_a_fresh_browser()
+    {
+        using var ui = new TestUiThread();
+        var host = new FakeSessionHost(ui);
+        using var pool = Pool(host, onWindowRequest: r => { r.Allow = true; throw new InvalidOperationException("the app's logger"); });
+
+        var first = await pool.LeaseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(await ui.InvokeAsync(() => Task.FromResult(host.Created[0].OpenWindow("https://example.test/popup"))));
+        await first.DisposeAsync();
+
+        await using var second = await pool.LeaseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(2, host.Created.Count);
+        Assert.True(host.Created[0].IsClosed);
+    }
+
+    [Fact]
+    public async Task A_lease_whose_hook_declined_a_popup_keeps_its_browser()
+    {
+        using var ui = new TestUiThread();
+        var host = new FakeSessionHost(ui);
+        using var pool = Pool(host, onWindowRequest: r => r.Allow = false);
+
+        var first = await pool.LeaseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(await ui.InvokeAsync(() => Task.FromResult(host.Created[0].OpenWindow("https://example.test/popup"))));
+        await first.DisposeAsync();
+
+        await using var second = await pool.LeaseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Single(host.Created);
+        Assert.False(host.Created[0].IsClosed);
+    }
+
+    /// <summary>A page can open a window as it is navigated away by the reset (a <c>pagehide</c> handler).</summary>
+    [Fact]
+    public async Task A_window_allowed_during_the_reset_discards_the_browser()
+    {
+        using var ui = new TestUiThread();
+        var host = new FakeSessionHost(ui);
+        using var pool = Pool(host, onWindowRequest: r => r.Allow = true);
+
+        var first = await pool.LeaseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        var browser = host.Created[0];
+        browser.NavigationCompleted += result =>
+        {
+            if (result.Uri == "about:blank") browser.OpenWindow("https://example.test/on-pagehide");
+        };
+        await first.DisposeAsync();
+
+        await using var second = await pool.LeaseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(2, host.Created.Count);
+        Assert.True(browser.IsClosed);
+    }
+
+    private static RenderSessionPool Pool(FakeSessionHost host, Action<SessionWindowRequest>? onWindowRequest) => new(new RenderSessionPoolOptions
+    {
+        Host = host,
+        Capacity = 1,
+        Browser = new SessionBrowserOptions
+        {
+            ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused"),
+            OnWindowRequest = onWindowRequest,
+        },
+    });
+
     [Fact]
     public async Task Lease_and_return_recycles_via_lifo()
     {

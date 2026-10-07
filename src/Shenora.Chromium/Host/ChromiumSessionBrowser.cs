@@ -620,6 +620,9 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
         {
             using var b = new CefRef<_cef_browser_t>(browser);
             using var f = new CefRef<_cef_frame_t>(frame);
+            // The client CEF hands in carries a reference the callee owns, left unchanged or not (CEF's own C++ wrapper
+            // releases it): kept, every window.open, allowed or not, held the session's client alive for good.
+            using var c = new CefRef<_cef_client_t>(client == null ? null : *client);
             var owner = From<LifeSpan>(self)._owner;
             var request = SessionPolicy.Decide(owner._options.OnWindowRequest, new SessionWindowRequest(CefStrings.Read(targetUrl), userGesture == 1),
                 ex => owner.SessionLog(l => l.LogError(ex, "OnWindowRequest threw; suppressing.")));

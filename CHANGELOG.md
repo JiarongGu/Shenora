@@ -107,6 +107,13 @@ at the first list and missed five more breaking changes.
   ended under it, or when it answered inside a `CANCEL`'s signal. Such a request is now `completed`, and that
   `CANCEL` answers false rather than true. A `CANCEL` that lands before the dispatcher has the answer still records
   `cancelled`, as `Cancel` documents.
+- **A popup a pool lease allowed outlived the lease.** The reset between leases navigates to `about:blank` and closes
+  no window, so the next lease's browser still had the last one's popup. A lease whose page `OnWindowRequest` allowed
+  a window is now discarded on return, as a poisoned one is; in the Chromium shell the popup closes with it.
+- **Every `window.open` in a Chromium browser kept its client alive for good**, allowed or not: CEF hands the client to
+  `on_before_popup` with a reference the callee owns, and the shell never released it, so a session's or a window's
+  client, and the shell's own object for that browser, were never freed after it closed. Measured on Windows: a pooled session
+  whose page called `window.open` never freed its client (3 runs of 3, suppressed or allowed); released, all did.
 
 ## 0.20.0 — 2026-10-07
 

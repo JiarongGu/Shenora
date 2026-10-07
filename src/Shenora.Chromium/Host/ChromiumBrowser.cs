@@ -664,6 +664,9 @@ internal sealed unsafe class ChromiumBrowser
         {
             using var b = new CefRef<_cef_browser_t>(browser);
             using var f = new CefRef<_cef_frame_t>(frame);
+            // The client CEF hands in carries a reference the callee owns (CEF's own C++ wrapper releases it): kept, every
+            // window.open held the window's client alive for good.
+            using var c = new CefRef<_cef_client_t>(client == null ? null : *client);
             var owner = From<LifeSpan>(self)._owner;
             var url = CefStrings.Read(targetUrl);
             AppCallback.Run(() =>
