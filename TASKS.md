@@ -56,6 +56,11 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   keeps no EWMH stacking list, so its order was not seen. Mutter and KWin are compositing managers, where the one-row
   gap a framed window's splash leaves should not be needed; confirm it does no harm there, that they keep a transient
   splash above its owner, and that they carry out the strip's `_NET_WM_MOVERESIZE`.
+- [ ] **Two small gaps in the splash on Windows and macOS** (found in review, not fixed): on Windows, a window minimized
+  between CEF's show and the splash's first frame (Win+D in those ~40–85 ms) never shows its splash when restored, and
+  a card then stays until the lift (`Snap` moves the splash but never shows it); on macOS a frameless window whose app
+  paints its own caption buttons (`NativeCaptionButtons` false, the default) has none during the strip, and the strip's
+  first 80 DIPs, kept for traffic lights it does not show, are not a drag area.
 - [ ] **Two small faults in the Linux splash's strip** (found in review, not fixed): after a click on maximize the
   button stays drawn hot until the pointer next moves (no motion event arrives); and a
   double-click whose second press then drags moves the window it has just maximized.
