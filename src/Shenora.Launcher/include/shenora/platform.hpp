@@ -33,12 +33,26 @@ std::vector<int> processes_using(const std::filesystem::path& root);
 /// Ask a process to exit, then wait up to `timeout_ms`. Returns true if it is gone.
 bool stop_process(int pid, int timeout_ms);
 
-/// Start `exe` with `args`, detached, and DO NOT wait.
+/// Start `exe` with `args`, detached, and DO NOT wait. The caller may return from main at once.
 ///
-/// ⚠ §4: the launcher must have exited before the app's single-instance gate runs, or the new
-/// instance bounces off the old one. So this launches and returns; the caller returns from main
-/// immediately after.
+/// The launcher holds no single-instance lock: the guard in the retired update design's §4 was about the OLD APP
+/// instance on a restart, so a launcher that stays alive while the app starts (a startup screen) is safe.
 bool start_detached(const std::filesystem::path& exe, const std::vector<std::string>& args);
+
+/// A started app the launcher keeps watching (a startup screen waits for it).
+struct StartedProcess { int pid = 0; void* handle = nullptr; };
+
+/// As start_detached, but the launcher can watch the app: `has_exited`, then `release_process`.
+bool start_watched(const std::filesystem::path& exe, const std::vector<std::string>& args, StartedProcess& out);
+
+/// Has the app exited (and, on POSIX, been reaped)?
+bool has_exited(StartedProcess& process);
+
+/// Let go of the app without waiting for it.
+void release_process(StartedProcess& process);
+
+/// A message a person must read: a message box on Windows (a GUI launcher has no console), stderr elsewhere.
+void show_error(const std::string& title, const std::string& message);
 
 /// Is a .NET runtime of at least `major` present? False also means "cannot tell" — the caller's job is
 /// then to install, which is safe to do redundantly.

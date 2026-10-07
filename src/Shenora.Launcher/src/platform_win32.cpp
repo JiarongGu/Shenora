@@ -115,22 +115,51 @@ bool stop_process(int pid, int timeout_ms) {
     return exited;
 }
 
-bool start_detached(const fs::path& exe, const std::vector<std::string>& args) {
+namespace {
+
+bool create(const fs::path& exe, const std::vector<std::string>& args, PROCESS_INFORMATION& info) {
     std::wstring command = quote_arg(exe.wstring());
     for (const auto& arg : args) { command.push_back(L' '); command += quote_arg(widen(arg)); }
 
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
+    // The launcher holds the foreground (the person just started it); the app's first window may take it.
+    AllowSetForegroundWindow(ASFW_ANY);
+    // DETACHED_PROCESS: a child sharing the launcher's console would be orphaned onto a console that is going away.
+    return CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS, nullptr,
+                          exe.parent_path().wstring().c_str(), &startup, &info) != FALSE;
+}
+
+}  // namespace
+
+bool start_detached(const fs::path& exe, const std::vector<std::string>& args) {
     PROCESS_INFORMATION info{};
-    // DETACHED_PROCESS: the launcher is about to exit, and a child sharing its console would be
-    // orphaned onto a console that is going away.
-    const BOOL ok = CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE,
-                                   DETACHED_PROCESS, nullptr,
-                                   exe.parent_path().wstring().c_str(), &startup, &info);
-    if (!ok) return false;
+    if (!create(exe, args, info)) return false;
     CloseHandle(info.hThread);
     CloseHandle(info.hProcess);
     return true;
+}
+
+bool start_watched(const fs::path& exe, const std::vector<std::string>& args, StartedProcess& out) {
+    PROCESS_INFORMATION info{};
+    if (!create(exe, args, info)) return false;
+    CloseHandle(info.hThread);
+    out.pid = static_cast<int>(info.dwProcessId);
+    out.handle = info.hProcess;
+    return true;
+}
+
+bool has_exited(StartedProcess& process) {
+    return !process.handle || WaitForSingleObject(static_cast<HANDLE>(process.handle), 0) == WAIT_OBJECT_0;
+}
+
+void release_process(StartedProcess& process) {
+    if (process.handle) CloseHandle(static_cast<HANDLE>(process.handle));
+    process.handle = nullptr;
+}
+
+void show_error(const std::string& title, const std::string& message) {
+    MessageBoxW(nullptr, widen(message).c_str(), widen(title).c_str(), MB_OK | MB_ICONERROR);
 }
 
 namespace {

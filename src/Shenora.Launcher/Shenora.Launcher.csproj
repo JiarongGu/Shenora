@@ -85,6 +85,10 @@
     <None Include="include/**/*" Pack="true" PackagePath="launcher-src/include/" />
     <None Include="src/**/*" Pack="true" PackagePath="launcher-src/src/" />
     <None Include="template/**/*" Pack="true" PackagePath="launcher-src/template/" />
+    <!-- shenora_launcher_startup_screen() and stb_image (Linux's PNG decoder, public domain / MIT — D51). The harness's
+         tests/ are not shipped. -->
+    <None Include="cmake/**/*" Pack="true" PackagePath="launcher-src/cmake/" />
+    <None Include="third_party/**/*" Pack="true" PackagePath="launcher-src/third_party/" />
   </ItemGroup>
 
 </Project>

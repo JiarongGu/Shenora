@@ -24,7 +24,16 @@ add_library(shenora_launcher STATIC
   src/manifest.cpp
   src/updater.cpp
   src/platform_win32.cpp
-  src/platform_posix.cpp)
+  src/platform_posix.cpp
+  src/startup_screen_compose.cpp
+  src/startup_screen_win32.cpp)
+
+# The template runs the update apply on a worker thread while a startup screen keeps moving.
+find_package(Threads REQUIRED)
+target_link_libraries(shenora_launcher PUBLIC Threads::Threads)
+
+# shenora_launcher_startup_screen(): an adopter's launcher compiles its screen in with it.
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/ShenoraStartupScreen.cmake)
 
 # Both platform files are always compiled; each is a no-op on the other OS via its own #ifdef. That is
 # deliberate rather than a CMake conditional: a source file excluded by the build system is one nobody
@@ -40,6 +49,9 @@ add_library(shenora_launcher STATIC
 # prove the platform it cannot compile. Run it whenever you touch the POSIX half — D5 means there is no
 # push CI, so a release is otherwise the first thing that compiles it.
 target_include_directories(shenora_launcher PUBLIC include)
+# PUBLIC, so an adopter's launcher that add_subdirectory()s this library compiles its headers as C++17 too: the
+# CMAKE_CXX_STANDARD above is this directory's, and MSVC's default (C++14) has no std::filesystem.
+target_compile_features(shenora_launcher PUBLIC cxx_std_17)
 
 if(MSVC)
   # /utf-8 is NOT optional on this family's machines, and it is the C++ half of a trap the repo already
@@ -51,7 +63,9 @@ if(MSVC)
   # SIZE is a stated requirement (D50), so it is a build setting rather than a hope:
   #   /O1  optimise for size   /GL + /LTCG  whole-program  /GS-  no stack cookies in a trusted-input tool
   target_compile_options(shenora_launcher PRIVATE $<$<CONFIG:Release>:/O1 /GL>)
-  target_link_libraries(shenora_launcher PUBLIC psapi shell32)   # shell32: CommandLineToArgvW
+  # shell32: CommandLineToArgvW; user32: MessageBoxW and the screen's window; the rest: the startup screen (GDI's DIB,
+  # DWM's transitions, shcore's per-monitor DPI, WIC's PNG decoder over COM).
+  target_link_libraries(shenora_launcher PUBLIC psapi shell32 user32 gdi32 dwmapi shcore windowscodecs ole32)
 else()
   target_compile_options(shenora_launcher PRIVATE -Wall -Wextra -Werror)
   target_compile_options(shenora_launcher PRIVATE $<$<CONFIG:Release>:-Os -ffunction-sections -fdata-sections>)
@@ -61,25 +75,56 @@ endif()
 #
 # Building the template is not a demo — it is what keeps the template compiling. A template nobody
 # builds is a snippet that rots, and this one is the file every adopter starts from.
-add_executable(shenora-launcher template/main.cpp)
-target_link_libraries(shenora-launcher PRIVATE shenora_launcher)
+function(shenora_launcher_executable name)
+  add_executable(${name} template/main.cpp)
+  target_link_libraries(${name} PRIVATE shenora_launcher)
+  if(MSVC)
+    target_compile_options(${name} PRIVATE /utf-8 /W4 /WX /permissive-)
+    target_compile_options(${name} PRIVATE $<$<CONFIG:Release>:/O1 /GL>)
+    target_link_options(${name} PRIVATE $<$<CONFIG:Release>:/LTCG /OPT:REF /OPT:ICF>)
+    # Statically link the CRT so the binary runs on a machine with no VC++ redistributable — a launcher
+    # that needs a redistributable installed has the same bootstrap problem it exists to solve.
+    set_property(TARGET ${name} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  else()
+    target_compile_options(${name} PRIVATE -Wall -Wextra -Werror)
+    target_compile_options(${name} PRIVATE $<$<CONFIG:Release>:-Os -ffunction-sections -fdata-sections>)
+    target_link_options(${name} PRIVATE $<$<CONFIG:Release>:-Wl,--gc-sections -s>)
+  endif()
+  if(WIN32)
+    # A GUI-subsystem executable: a console one opens a console window on a double-click, the opposite of a smooth
+    # start. main() stays the entry point; what a person must read goes to a message box (show_error).
+    set_target_properties(${name} PROPERTIES WIN32_EXECUTABLE ON)
+    if(MSVC)
+      target_link_options(${name} PRIVATE /ENTRY:mainCRTStartup)
+    endif()
+  endif()
+endfunction()
 
 if(MSVC)
-  target_compile_options(shenora-launcher PRIVATE /utf-8 /W4 /WX /permissive-)
-  target_compile_options(shenora-launcher PRIVATE $<$<CONFIG:Release>:/O1 /GL>)
-else()
-  target_compile_options(shenora-launcher PRIVATE -Wall -Wextra -Werror)
-  target_compile_options(shenora-launcher PRIVATE $<$<CONFIG:Release>:-Os -ffunction-sections -fdata-sections>)
+  set_property(TARGET shenora_launcher PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-if(MSVC)
-  target_link_options(shenora-launcher PRIVATE $<$<CONFIG:Release>:/LTCG /OPT:REF /OPT:ICF>)
-  # Statically link the CRT so the binary runs on a machine with no VC++ redistributable — a launcher
-  # that needs a redistributable installed has the same bootstrap problem it exists to solve.
-  set_property(TARGET shenora_launcher shenora-launcher
-               PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-else()
-  target_link_options(shenora-launcher PRIVATE $<$<CONFIG:Release>:-Wl,--gc-sections -s>)
+shenora_launcher_executable(shenora-launcher)
+
+# The conformance harness's launchers: the template with a small startup screen compiled in. Not shipped.
+option(SHENORA_LAUNCHER_TESTS "Build the conformance harness's startup-screen launchers" OFF)
+if(SHENORA_LAUNCHER_TESTS)
+  shenora_launcher_executable(shenora-launcher-screen)
+  shenora_launcher_startup_screen(shenora-launcher-screen IMAGE "${CMAKE_CURRENT_LIST_DIR}/tests/screen.png"
+    WIDTH 200 HEIGHT 100 BACKGROUND "#FF102030" PROGRESS_BAR ON PROGRESS_COLOR "#FFFF0000" CORNERS ROUNDED TIMEOUT_SECONDS 3)
+  shenora_launcher_executable(shenora-launcher-wide)
+  shenora_launcher_startup_screen(shenora-launcher-wide IMAGE "${CMAKE_CURRENT_LIST_DIR}/tests/wide.png"
+    WIDTH 200 HEIGHT 100 BACKGROUND "#FF102030" CORNERS SQUARE TIMEOUT_SECONDS 3)
+  # The app those launchers start: records its arguments and closes, leaves or ignores the screen.
+  add_executable(shenora-fake-app tests/fake_app.cpp)
+  target_link_libraries(shenora-fake-app PRIVATE ${CMAKE_DL_LIBS})
+  if(MSVC)
+    target_compile_options(shenora-fake-app PRIVATE /utf-8 /W4 /WX)
+    target_compile_definitions(shenora-fake-app PRIVATE _CRT_SECURE_NO_WARNINGS)   # getenv, in a test-only app
+    set_property(TARGET shenora-fake-app PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  else()
+    target_compile_options(shenora-fake-app PRIVATE -Wall -Wextra -Werror)
+  endif()
 endif()
 
 # Report the size at build time. D50 records the expected bands as BANDS nobody had measured; this is

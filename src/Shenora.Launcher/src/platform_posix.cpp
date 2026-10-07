@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <system_error>
 #include <thread>
@@ -105,6 +106,43 @@ bool start_detached(const fs::path& exe, const std::vector<std::string>& args) {
     fs::current_path(exe.parent_path(), ec);
     execv(exeStr.c_str(), argv.data());
     _exit(127);   // only reached if execv failed
+}
+
+bool start_watched(const fs::path& exe, const std::vector<std::string>& args, StartedProcess& out) {
+    // One fork, not start_detached's two: the launcher waits for the app, so it must know its pid. If the launcher
+    // exits first, init adopts and reaps the app.
+    const pid_t child = fork();
+    if (child < 0) return false;
+    if (child == 0) {
+        setsid();
+        std::vector<char*> argv;
+        std::string exeStr = exe.string();
+        argv.push_back(exeStr.data());
+        std::vector<std::string> owned(args);
+        for (auto& a : owned) argv.push_back(a.data());
+        argv.push_back(nullptr);
+        std::error_code ec;
+        fs::current_path(exe.parent_path(), ec);
+        execv(exeStr.c_str(), argv.data());
+        _exit(127);
+    }
+    out.pid = static_cast<int>(child);
+    return true;
+}
+
+bool has_exited(StartedProcess& process) {
+    if (process.pid <= 0) return true;
+    int status = 0;
+    const pid_t r = waitpid(process.pid, &status, WNOHANG);
+    if (r == 0) return false;
+    process.pid = 0;   // reaped, or not ours any more
+    return true;
+}
+
+void release_process(StartedProcess& process) { process.pid = 0; }
+
+void show_error(const std::string& title, const std::string& message) {
+    std::fprintf(stderr, "%s: %s\n", title.c_str(), message.c_str());
 }
 
 bool dotnet_runtime_present(int major) {

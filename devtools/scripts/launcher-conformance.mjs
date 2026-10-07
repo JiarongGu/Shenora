@@ -10,6 +10,9 @@
 // themselves and prove nothing.
 //
 // Usage: node devtools/scripts/launcher-conformance.mjs <launcher-exe> <update-probe-exe>
+//          [--screen <screen-launcher> <wide-launcher> <fake-app>]
+// --screen adds the startup screen's cases: launchers built with SHENORA_LAUNCHER_TESTS=ON (the template with a small
+// screen compiled in) and the fake app they start, which records its arguments and closes, leaves or ignores the screen.
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -226,6 +229,116 @@ test('a process whose path only STARTS like the app tree is left running', (box)
   }
 });
 
+// ── The startup screen (--screen) ───────────────────────────────────────────────────────────────────
+// What the app is passed, that the screen is up before the app starts, the three ways it ends (the app closes it, the
+// app exits, the timeout), and the frame the compositor draws. The stock launcher, built with no screen, passes nothing.
+
+const screenAt = process.argv.indexOf('--screen');
+const screenRoots = [];   // removed at the end: a fake app in "close" mode holds its exe a few seconds more
+if (screenAt > 0) {
+  const [screenLauncher, wideLauncher, fakeApp] = process.argv.slice(screenAt + 1, screenAt + 4);
+  for (const [what, exe] of [['screen launcher', screenLauncher], ['wide launcher', wideLauncher], ['fake app', fakeApp]]) {
+    if (!exe || !fs.existsSync(exe)) {
+      console.error(`launcher-conformance: no ${what} at ${exe} — build with -DSHENORA_LAUNCHER_TESTS=ON.`);
+      process.exit(2);
+    }
+  }
+  const appName = 'MyApp.exe';   // the template's kAppExecutable
+
+  /** A sandbox with `launcherExe` at its root and the fake app as the app. */
+  const screenBox = (launcherExe) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shenora-screen-'));
+    screenRoots.push(root);
+    fs.mkdirSync(path.join(root, 'app'));
+    const exe = path.join(root, path.basename(launcherExe));
+    fs.copyFileSync(launcherExe, exe);
+    fs.copyFileSync(fakeApp, path.join(root, 'app', appName));
+    if (process.platform !== 'win32') {
+      fs.chmodSync(exe, 0o755);
+      fs.chmodSync(path.join(root, 'app', appName), 0o755);
+    }
+    return { root, exe, app: path.join(root, 'app') };
+  };
+
+  /** Run the launcher with the fake app in `mode`; resolve with how long the launcher ran, in ms. */
+  const runScreen = (box, mode) => new Promise((resolve, reject) => {
+    const started = Date.now();
+    const child = spawn(box.exe, [], { cwd: box.root, env: { ...process.env, SHENORA_FAKE_APP: mode }, stdio: 'ignore' });
+    const timer = setTimeout(() => { child.kill(); reject(new Error('the launcher did not exit within 20 s')); }, 20000);
+    child.on('error', (e) => { clearTimeout(timer); reject(e); });
+    child.on('exit', (code) => { clearTimeout(timer); resolve({ code, ms: Date.now() - started }); });
+  });
+  const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
+  const argsOf = (box) => read(path.join(box.app, 'args.txt')).split(/\r?\n/).filter(Boolean);
+  const until = async (ok, ms) => { for (let t = 0; t < ms && !ok(); t += 100) await new Promise((r) => setTimeout(r, 100)); };
+
+  /** A launcher's frame, from --startup-screen-dump: w, h, then premultiplied 0xAARRGGBB, top row first. */
+  const dump = (launcherExe, phase) => {
+    const file = path.join(os.tmpdir(), `shenora-dump-${process.pid}-${path.basename(launcherExe)}.bin`);
+    execFileSync(launcherExe, ['--startup-screen-dump', file, String(phase)]);
+    const buf = fs.readFileSync(file);
+    fs.rmSync(file, { force: true });
+    const w = buf.readInt32LE(0), h = buf.readInt32LE(4);
+    return { w, h, px: (x, y) => buf.readUInt32LE(8 + (y * w + x) * 4) };
+  };
+  const hex = (v) => '0x' + (v >>> 0).toString(16).padStart(8, '0');
+
+  test('screen: the app is passed --startup-screen, the screen is up when it starts, and its close ends the launcher', async () => {
+    const box = screenBox(screenLauncher);
+    const { ms } = await runScreen(box, 'close');
+    const args = argsOf(box);
+    const at = args.indexOf('--startup-screen');
+    assert(at >= 0 && /^\d+$/.test(args[at + 1] ?? ''), `no --startup-screen <id> in ${JSON.stringify(args)}`);
+    assert(read(path.join(box.app, 'seen.txt')).includes('visible=1'), 'the screen was not visible when the app started');
+    assert(ms < 2500, `the launcher ran ${ms} ms: its screen's close did not end it before the 3 s timeout`);
+    assert(read(path.join(box.root, 'launcher.log')).includes('startup screen closed by the app'), 'launcher.log does not say the app closed it');
+  });
+
+  test('screen: an app that exits at once (a second launch handed over) ends it', async () => {
+    const box = screenBox(screenLauncher);
+    const { ms } = await runScreen(box, 'exit');
+    assert(ms < 2500, `the launcher outlived the app by ${ms} ms`);
+  });
+
+  test('screen: an app that never closes it is outlived only by the timeout', async () => {
+    const box = screenBox(screenLauncher);
+    try {
+      const { ms } = await runScreen(box, 'stay');
+      assert(ms >= 2800 && ms < 8000, `the launcher exited after ${ms} ms, not at its 3 s timeout`);
+    } finally {
+      fs.writeFileSync(path.join(box.app, 'stop.txt'), '');
+    }
+  });
+
+  test('screen: a launcher built with no screen passes no argument', async () => {
+    const box = screenBox(launcher);
+    await runScreen(box, 'exit');
+    // The stock launcher does not wait for the app: give it a moment to write what it was passed.
+    const file = path.join(box.app, 'args.txt');
+    await until(() => fs.existsSync(file), 5000);
+    assert(fs.existsSync(file), 'the app never started');
+    assert(!argsOf(box).includes('--startup-screen'), 'the stock launcher passed --startup-screen');
+  });
+
+  test('screen: the frame — rounded corners, the background, the image centred, the bar', () => {
+    const { w, h, px } = dump(screenLauncher, 0.5);
+    assert(w === 200 && h === 100, `frame ${w}x${h}`);
+    assert(px(0, 0) >>> 24 === 0, `a rounded corner is opaque: ${hex(px(0, 0))}`);
+    assert(px(4, 50) === 0xff102030, `the background ${hex(px(4, 50))}`);
+    assert(px(100, 50) === 0xff00ff00, `the image's centre ${hex(px(100, 50))}`);   // 100x100 green fits 100x100, centred
+    assert(px(40, 50) === 0xff102030, `left of the image ${hex(px(40, 50))}`);
+    assert(px(100, 99) === 0xffff0000, `the bar at phase 0.5 ${hex(px(100, 99))}`);
+  });
+
+  test('screen: a wide image keeps its aspect (square corners, no bar)', () => {
+    const { px } = dump(wideLauncher, 0.5);
+    assert(px(0, 0) === 0xff102030, `a square corner is not the background: ${hex(px(0, 0))}`);
+    assert(px(100, 50) === 0xff0000ff, `the 4:1 image is not across the middle: ${hex(px(100, 50))}`);   // 200x50 at 200 wide
+    assert(px(100, 10) === 0xff102030, `above the 4:1 image is not the background: ${hex(px(100, 10))}`);
+    assert(px(100, 99) === 0xff102030, `a launcher with no bar drew one: ${hex(px(100, 99))}`);
+  });
+}
+
 // ── Run ─────────────────────────────────────────────────────────────────────────────────────────────
 
 console.log(`launcher : ${launcher}`);
@@ -233,7 +346,7 @@ console.log(`probe    : ${probe}\n`);
 for (const [name, fn] of cases) {
   const box = sandbox();
   try {
-    fn(box);
+    await fn(box);
     console.log(`  ok    ${name}`);
   } catch (e) {
     failures++;
@@ -241,6 +354,14 @@ for (const [name, fn] of cases) {
   } finally {
     try { fs.rmSync(box.root, { recursive: true, force: true }); } catch { /* best effort */ }
   }
+}
+
+// The screen cases' sandboxes, once their fake apps have let go of their executables.
+for (let attempt = 0; attempt < 50 && screenRoots.length; attempt++) {
+  for (const root of [...screenRoots]) {
+    try { fs.rmSync(root, { recursive: true, force: true }); screenRoots.splice(screenRoots.indexOf(root), 1); } catch { /* still held */ }
+  }
+  if (screenRoots.length) await new Promise((r) => setTimeout(r, 200));
 }
 
 console.log(failures === 0

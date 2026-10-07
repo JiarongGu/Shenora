@@ -1791,7 +1791,7 @@ switch (cmd) {
     }
     const build = path.join(repo, 'devtools', '_launcher-build');
     const src = path.join(repo, 'src', 'Shenora.Launcher');
-    const ok = step('cmake configure', () => run(cmake, ['-S', src, '-B', build, '-DCMAKE_BUILD_TYPE=Release']))
+    const ok = step('cmake configure', () => run(cmake, ['-S', src, '-B', build, '-DCMAKE_BUILD_TYPE=Release', '-DSHENORA_LAUNCHER_TESTS=ON']))
       && step('cmake build', () => run(cmake, ['--build', build, '--config', 'Release']));
     if (!ok) { process.exitCode = 1; break; }
 
@@ -1805,7 +1805,10 @@ switch (cmd) {
 
     const probe = ensureTool('update-probe');
     if (!probe) { process.exitCode = 1; break; }
-    run('node', [path.join(repo, 'devtools', 'scripts', 'launcher-conformance.mjs'), exe, probe]);
+    // The startup screen's cases, against the launchers built with SHENORA_LAUNCHER_TESTS=ON beside the stock one.
+    const beside = (name) => path.join(path.dirname(exe), process.platform === 'win32' ? `${name}.exe` : name);
+    const screen = ['shenora-launcher-screen', 'shenora-launcher-wide', 'shenora-fake-app'].map(beside);
+    run('node', [path.join(repo, 'devtools', 'scripts', 'launcher-conformance.mjs'), exe, probe, '--screen', ...screen]);
     break;
   }
 
