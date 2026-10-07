@@ -18,7 +18,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     private readonly Func<ChromiumWindow, bool>? _mayClose;
     private readonly ILogger? _log;
     private readonly WindowDelegate _delegate;
-    private readonly BrowserViewDelegate _viewDelegate = new();
+    private readonly BrowserViewDelegate _viewDelegate;
     private readonly CaptionButtons _captions;
     private _cef_browser_view_t* _browserView;
     private _cef_window_t* _window;
@@ -47,6 +47,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         _log = log;
         Browser = new ChromiumBrowser(name, serving, origins, bridge, log, urls) { Host = this };
         _delegate = new WindowDelegate(this);
+        _viewDelegate = new BrowserViewDelegate(this);
         // The click runs AFTER the message that delivered it: closing the window from inside its own subclassed
         // window procedure would destroy it mid-call.
         _captions = new CaptionButtons(CaptionStateChanged, kind => CefTask.Post(cef_thread_id_t.TID_UI, () => InvokeCaptionButton(kind)));
@@ -70,6 +71,10 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     /// <summary>A frameless window gets the splash's title strip until its page reports a title bar of its own. Set
     /// before <see cref="Open"/>; ignored for a framed window.</summary>
     public SplashTitleBarOptions? SplashStrip { get; set; }
+
+    /// <summary>What the window and its browser view paint until the page draws (the window's or the host's
+    /// <see cref="ChromiumWindowOptions.BackgroundColor"/>). Set before <see cref="Open"/>.</summary>
+    public System.Drawing.Color? Background { get; set; }
 
     public string Name => Browser.Name;
 
@@ -381,6 +386,15 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
         ((_cef_base_ref_counted_t*)_browserView)->add_ref((_cef_base_ref_counted_t*)_browserView);
         window->@base.add_child_view(&window->@base, &_browserView->@base);
         if (_options.Title is { } title) SetTitle(title);
+        // Views paints a window and its browser view in its own light default until the page draws: a dark app showed a
+        // light window for its first frames, and a splash's uncovered title strip and resize band light around it
+        // (measured, Windows).
+        if (Background is { } background)
+        {
+            var argb = (uint)background.ToArgb();
+            ((_cef_view_t*)window)->set_background_color((_cef_view_t*)window, argb);
+            ((_cef_view_t*)_browserView)->set_background_color((_cef_view_t*)_browserView, argb);
+        }
         // A restored position was CEF's initial bounds already; anything else is centred, at the restored size if any.
         if (_plan is not { X: not null, Y: not null })
         {
@@ -456,6 +470,7 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             Struct->can_maximize = &Yes;
             Struct->can_minimize = &Yes;
             Struct->@base.@base.get_preferred_size = &PreferredSize;
+            Struct->@base.@base.on_theme_changed = &ThemeChanged;
             Struct->on_window_activation_changed = &ActivationChanged;
             Struct->on_window_bounds_changed = &BoundsChanged;
             if (owner._geometry is not null)
@@ -551,6 +566,16 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             return new _cef_size_t { width = minimum.Width, height = minimum.Height };
         }
 
+        // Views resets a view's background to its theme's whenever the theme applies, the window's show included: set
+        // only before it, it was gone by the first frame (measured, Windows). So again here.
+        [UnmanagedCallersOnly]
+        private static void ThemeChanged(_cef_view_delegate_t* self, _cef_view_t* view)
+        {
+            using var v = new CefRef<_cef_view_t>(view);
+            try { From<WindowDelegate>(self)._owner.PaintBackground(view); }
+            catch { /* nothing may unwind into CEF */ }
+        }
+
         // Still whole: its bounds can be read, and the state is saved for the next launch.
         [UnmanagedCallersOnly]
         private static void Closing(_cef_window_delegate_t* self, _cef_window_t* window)
@@ -608,9 +633,31 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     /// </summary>
     private sealed class BrowserViewDelegate : CefObject<_cef_browser_view_delegate_t>
     {
-        public BrowserViewDelegate() => Struct->get_browser_runtime_style = &Style;
+        private readonly ChromiumWindow _owner;
+
+        public BrowserViewDelegate(ChromiumWindow owner)
+        {
+            _owner = owner;
+            Struct->get_browser_runtime_style = &Style;
+            Struct->@base.on_theme_changed = &ThemeChanged;
+        }
 
         [UnmanagedCallersOnly]
         private static cef_runtime_style_t Style(_cef_browser_view_delegate_t* self) => cef_runtime_style_t.CEF_RUNTIME_STYLE_ALLOY;
+
+        // As the window's: Views resets the view's background whenever its theme applies.
+        [UnmanagedCallersOnly]
+        private static void ThemeChanged(_cef_view_delegate_t* self, _cef_view_t* view)
+        {
+            using var v = new CefRef<_cef_view_t>(view);
+            try { From<BrowserViewDelegate>(self)._owner.PaintBackground(view); }
+            catch { /* nothing may unwind into CEF */ }
+        }
+    }
+
+    // The window's background on a view of it: until the page draws, what shows.
+    private void PaintBackground(_cef_view_t* view)
+    {
+        if (Background is { } background) view->set_background_color(view, (uint)background.ToArgb());
     }
 }
