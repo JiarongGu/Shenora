@@ -10,6 +10,19 @@ internal static unsafe class LinuxSplashNative
     private const string GObject = "libgobject-2.0.so.0", LibC = "libc";
 
     public const long ExposureMask = 1L << 15, StructureNotifyMask = 1L << 17;
+    public const long ButtonPressMask = 1L << 2, ButtonReleaseMask = 1L << 3, LeaveWindowMask = 1L << 5, PointerMotionMask = 1L << 6;
+    public const long SubstructureNotifyMask = 1L << 19, SubstructureRedirectMask = 1L << 20;
+    public const long PropertyChangeMask = 1L << 22;
+    public const int ButtonPress = 4, ButtonRelease = 5, MotionNotify = 6, LeaveNotify = 8, PropertyNotify = 28, ClientMessage = 33;
+    // XButtonEvent / XMotionEvent / XCrossingEvent on LP64: time, x, y, x_root, y_root; then, for button and motion
+    // events, state (Button1Mask is its bit 8) and, for button events, button.
+    public const int PointerTimeOffset = 56, PointerXOffset = 64, PointerRootXOffset = 72, PointerStateOffset = 80, PointerButtonOffset = 84;
+    public const uint Button1Mask = 1 << 8;
+    // XPropertyEvent on LP64: window, then atom.
+    public const int PropertyWindowOffset = 32, PropertyAtomOffset = 40;
+    // XClientMessageEvent on LP64: window, message_type, format, then data as five longs.
+    public const int ClientWindowOffset = 32, ClientTypeOffset = 40, ClientFormatOffset = 48, ClientDataOffset = 56;
+    public const int MoveResizeMove = 8;   // _NET_WM_MOVERESIZE_MOVE
     public const int Expose = 12, DestroyNotify = 17, MapNotify = 19, ConfigureNotify = 22, PropModeReplace = 0, ZPixmap = 2;
     public const int OCloexec = 0x80000, ONonblock = 0x800;
 
@@ -84,6 +97,12 @@ internal static unsafe class LinuxSplashNative
     [DllImport(X11)] public static extern int XGetWindowProperty(nint display, nuint window, nuint property, long offset, long length, int delete, nuint type,
         out nuint actualType, out int actualFormat, out nuint items, out nuint bytesAfter, out nint data);
 
+    [DllImport(X11)] public static extern int XSendEvent(nint display, nuint window, int propagate, long mask, XEvent* evt);
+    [DllImport(X11)] public static extern int XUngrabPointer(nint display, nuint time);
+
+    [DllImport(Cairo)] public static extern void cairo_line_to(nint cr, double x, double y);
+    [DllImport(Cairo)] public static extern void cairo_stroke(nint cr);
+    [DllImport(Cairo)] public static extern void cairo_set_line_width(nint cr, double width);
     [DllImport(Cairo)] public static extern nint cairo_image_surface_create(int format, int width, int height);
     [DllImport(Cairo)] public static extern byte* cairo_image_surface_get_data(nint surface);
     [DllImport(Cairo)] public static extern int cairo_image_surface_get_stride(nint surface);

@@ -297,7 +297,8 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
 #if CEF_WINDOWS
             // Real caption buttons, painted and hit-tested by the window (which is what offers Snap Layouts), even where
             // the app paints none of its own: those go again with the strip.
-            var palette = CaptionButtonPalette.ForStrip(bar, Palette);
+            // The page's colours or theme if it has said; else what reads on the window's background the strip shows.
+            var palette = CaptionButtonPalette.ForStrip(bar, _colors ?? _theme ?? CaptionButtonPalette.ForBackground(_options.BackgroundColor));
             if (_nativeCaptions is not null) _nativeCaptions.SetPalette(palette);
             else if (_captionHitTest is not null)
             {

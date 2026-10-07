@@ -65,6 +65,20 @@ public class SplashGeometryTests
         Assert.Equal(new Rectangle(108, 148, 984, 644), SplashGeometry.OverlayRect(new(100, 100, 1000, 700), frameless: true, stripPx: 48, edgePx: 8));
 
     [Fact]
+    public void On_linux_a_framed_window_keeps_its_bottom_row_uncovered() =>
+        // Covered entirely, X counts the window fully obscured and Chromium stops drawing it.
+        Assert.Equal(new Rectangle(100, 100, 1000, 699), SplashGeometry.LinuxOverlayRect(new(100, 100, 1000, 700), frameless: false, maximized: false, bandPx: 4));
+
+    [Fact]
+    public void On_linux_a_frameless_window_keeps_its_resize_band_on_every_side() =>
+        // The splash covers the strip and draws it, so the top band is the splash's to leave too.
+        Assert.Equal(new Rectangle(104, 104, 992, 692), SplashGeometry.LinuxOverlayRect(new(100, 100, 1000, 700), frameless: true, maximized: false, bandPx: 4));
+
+    [Fact]
+    public void On_linux_a_maximized_frameless_window_has_no_band_and_keeps_its_row() =>
+        Assert.Equal(new Rectangle(0, 0, 1920, 1039), SplashGeometry.LinuxOverlayRect(new(0, 0, 1920, 1040), frameless: true, maximized: true, bandPx: 4));
+
+    [Fact]
     public void Overlay_ignores_the_resize_band_of_a_framed_window() =>
         Assert.Equal(new Rectangle(100, 100, 1000, 700), SplashGeometry.OverlayRect(new(100, 100, 1000, 700), frameless: false, stripPx: 48, edgePx: 8));
 

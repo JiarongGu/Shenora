@@ -336,6 +336,13 @@ internal sealed record CaptionButtonPalette(
     /// <summary>The system's app theme (Settings → Personalization → Colors): light unless it says dark.</summary>
     public static CaptionButtonPalette SystemTheme() => ForTheme(global::Shenora.Chromium.Host.SystemTheme.IsDark() == true);
 
+    /// <summary>The theme that reads on <paramref name="background"/>: dark (white glyphs) where its luminance is below
+    /// half, else light; light with none, or one with no alpha, which CEF paints white. What a splash's strip sits on
+    /// decides its glyphs, not the system's theme: a dark window on a light desktop drew black glyphs on black
+    /// (measured, Linux).</summary>
+    public static CaptionButtonPalette ForBackground(Color? background) =>
+        background is { A: > 0 } c ? ForTheme(((0.2126 * c.R) + (0.7152 * c.G) + (0.0722 * c.B)) / 255 < 0.5) : Light;
+
     /// <summary>A splash's title strip (<see cref="SplashTitleBarOptions"/>): its colours over <paramref name="theme"/>,
     /// close kept the platform's red. An inactive glyph is the app's glyph at the system's opacity for one.</summary>
     public static CaptionButtonPalette ForStrip(SplashTitleBarOptions bar, CaptionButtonPalette theme)

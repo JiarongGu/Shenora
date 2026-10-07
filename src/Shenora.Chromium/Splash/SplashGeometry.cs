@@ -52,6 +52,18 @@ internal static class SplashGeometry
             clientScreenPx.Height - strip - bottom);
     }
 
+    /// <summary>
+    /// The splash over a window's client area on Linux, where it covers a frameless window's strip too and draws it: the
+    /// resize band Chromium keeps inside a frameless window's edges is left on every side (unless maximized); otherwise
+    /// its bottom row of pixels, since X counts a window covered entirely as fully obscured and Chromium stops drawing it.
+    /// </summary>
+    public static Rectangle LinuxOverlayRect(Rectangle client, bool frameless, bool maximized, int bandPx)
+    {
+        if (frameless && !maximized && bandPx > 0 && client.Width > 2 * bandPx && client.Height > 2 * bandPx)
+            return Rectangle.Inflate(client, -bandPx, -bandPx);
+        return new Rectangle(client.X, client.Y, client.Width, client.Height > 1 ? client.Height - 1 : client.Height);
+    }
+
     /// <summary>The corners the window rounds below its title area: the bottom two, except when maximized or on a
     /// platform that does not round windows. <paramref name="framed"/> does not change it: a framed window's title bar and
     /// a frameless one's strip are both above the overlay.</summary>

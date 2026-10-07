@@ -131,6 +131,17 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
     private Exception? _failure;
     private ChromiumWindowGeometry.Plan _plan;
     private nuint _overOwner;   // the main window the splash opens over; zero for the card
+    private SplashOverlayLayout _layout;
+    // A frameless window's strip, which this window covers and draws: its buttons' model, their state and places, the
+    // press on its drag area, its height here, and whether the window is maximized (the restore glyph, no resize band).
+    private CaptionButtons? _buttons;
+    private CaptionButtonState _stripState = new(null, null);
+    private CaptionButtonRect[] _stripButtons = [];
+    private readonly StripGesture _gesture = new();
+    private CaptionButtonPalette? _palette;
+    private int _stripTop;
+    private bool _ownerMaximized, _stripDirty;
+    private nuint _netWmState;
     private SplashRender? _render;
     private LinuxSplashPainter? _painter;
     private nint _display, _visual, _gc, _image;
@@ -159,7 +170,17 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
     {
         if (mainWindow == 0) throw new ArgumentException("The main window has no X window.", nameof(mainWindow));
         _overOwner = (nuint)mainWindow;
-        _ = layout;   // a framed window's frame is the manager's, outside the window this covers
+        _layout = layout;
+        if (layout.Frameless)
+        {
+            // Fed and answered on the splash's thread: a state to draw, a click for the window.
+            _buttons = new CaptionButtons(state =>
+            {
+                _stripState = state;
+                _stripDirty = true;
+                Present(whole: false);
+            }, kind => layout.CaptionClicked?.Invoke(kind));
+        }
         Start(render);
     }
 
@@ -219,7 +240,10 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
         lock (_gate) _window = window;
         if (Volatile.Read(ref _disposed) != 0) throw new ObjectDisposedException(nameof(LinuxSplashSurface));
         Describe(window, bounds);
-        XSelectInput(_display, window, ExposureMask | StructureNotifyMask);
+        // Its clicks, always: unselected, X passes a click up to the window's ancestors, which are the window manager's.
+        // The pointer's moves too where it draws a strip.
+        XSelectInput(_display, window, ExposureMask | StructureNotifyMask | ButtonPressMask | ButtonReleaseMask
+            | (_buttons is null ? 0 : PointerMotionMask | LeaveWindowMask));
         if (_overOwner != 0)
         {
             // Over the main window: transient for it before it maps, and its structure events on this connection too: a
@@ -228,7 +252,10 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
             // followed, and its end noticed.
             _owner = _overOwner;
             XSetTransientForHint(_display, window, _owner);
-            XSelectInput(_display, _owner, StructureNotifyMask);
+            // Its state too, where it draws the strip: a manager may change _NET_WM_STATE (maximized, fullscreen) after it
+            // configures the window, or without configuring it at all.
+            _netWmState = XInternAtom(_display, "_NET_WM_STATE", 0);
+            XSelectInput(_display, _owner, StructureNotifyMask | (_buttons is null ? 0 : PropertyChangeMask));
             // Mapped by Reveal, once the main window is: mapped now, it would float alone until CEF showed its owner.
             XFlush(_display);
             return;
@@ -270,12 +297,47 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
         if (Volatile.Read(ref _disposed) != 0) Shown();
     }
 
-    // The main window's client area, in root coordinates, less its bottom row (see Snap); null if X cannot say.
+    // Where the splash goes over the main window, in root coordinates (SplashGeometry.LinuxOverlayRect), and how much of
+    // a frameless window's strip is then in it; null if X cannot say.
     private Rectangle? OwnerBounds(nuint owner)
     {
         if (XGetGeometry(_display, owner, out _, out _, out _, out var width, out var height, out _, out _) == 0) return null;
         XTranslateCoordinates(_display, owner, XRootWindow(_display, XDefaultScreen(_display)), 0, 0, out var x, out var y, out _);
-        return new Rectangle(x, y, (int)width, (int)(height > 1 ? height - 1 : height));
+        var client = new Rectangle(x, y, (int)width, (int)height);
+        var maximized = _layout.Frameless && Maximized(owner);
+        if (maximized != _ownerMaximized) _stripDirty = true;   // the restore glyph
+        _ownerMaximized = maximized;
+        var over = SplashGeometry.LinuxOverlayRect(client, _layout.Frameless, maximized, (int)Math.Round(SplashGeometry.ResizeBandDips * _scale));
+        _stripTop = _layout.Frameless ? Math.Max(0, (int)Math.Round(_layout.StripDips * _scale) - (over.Y - client.Y)) : 0;
+        return over;
+    }
+
+    // The manager's word on it: both _NET_WM_STATE_MAXIMIZED atoms, or fullscreen, where Chromium keeps no resize band
+    // either.
+    private bool Maximized(nuint window)
+    {
+        if (XGetWindowProperty(_display, window, XInternAtom(_display, "_NET_WM_STATE", 0), 0, 64, 0, 4 /* ATOM */,
+                out _, out var format, out var items, out _, out var data) != 0 || data == 0)
+            return false;
+        try
+        {
+            if (format != 32) return false;
+            nuint horizontal = XInternAtom(_display, "_NET_WM_STATE_MAXIMIZED_HORZ", 0), vertical = XInternAtom(_display, "_NET_WM_STATE_MAXIMIZED_VERT", 0),
+                fullscreen = XInternAtom(_display, "_NET_WM_STATE_FULLSCREEN", 0);
+            var atoms = (long*)data;   // format 32 arrives as C longs
+            bool h = false, v = false, f = false;
+            for (nuint i = 0; i < items; i++)
+            {
+                h |= (nuint)atoms[i] == horizontal;
+                v |= (nuint)atoms[i] == vertical;
+                f |= (nuint)atoms[i] == fullscreen;
+            }
+            return (h && v) || f;
+        }
+        finally
+        {
+            XFree(data);
+        }
     }
 
     // What a window manager reads: a splash, undecorated, placed where it says, never given the keyboard, of this app,
@@ -421,7 +483,70 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
             case DestroyNotify when about == _owner && _owner != 0:
                 _owner = 0;   // nothing more to follow; the session closes the splash
                 break;
+            case PropertyNotify when _owner != 0 && *(nuint*)((byte*)evt + PropertyWindowOffset) == _owner
+                && *(nuint*)((byte*)evt + PropertyAtomOffset) == _netWmState:
+                Snap();   // maximized, fullscreen or back: the band, and the restore glyph
+                break;
+            case MotionNotify or ButtonPress or ButtonRelease or LeaveNotify when _buttons is not null:
+                Pointer(evt);
+                break;
         }
+    }
+
+    // The strip's pointer: its buttons as CaptionButtons decides (hover, press, a click on release), and a press on the
+    // rest of it as StripGesture decides (a drag the manager carries out, or a double-click that maximizes).
+    private void Pointer(XEvent* evt)
+    {
+        var at = (byte*)evt;
+        int x = *(int*)(at + PointerXOffset), y = *(int*)(at + PointerXOffset + 4);
+        int rootX = *(int*)(at + PointerRootXOffset), rootY = *(int*)(at + PointerRootXOffset + 4);
+        var time = *(nuint*)(at + PointerTimeOffset);
+        var inStrip = y >= 0 && y < _stripTop;
+        var kind = inStrip ? _buttons!.At(x, y) : null;
+        switch (evt->Type)
+        {
+            case LeaveNotify:
+                _buttons!.Leave();
+                break;
+            case MotionNotify:
+                _buttons!.Hover(kind);
+                // A press whose release never came (the grab was lost) is over: no drag without the button down.
+                if ((*(uint*)(at + PointerStateOffset) & Button1Mask) == 0) _gesture.Up();
+                else if (_gesture.Move(rootX, rootY) == StripGesture.Act.Drag) Drag(time);
+                break;
+            case ButtonPress when *(uint*)(at + PointerButtonOffset) == 1 && inStrip:
+                if (kind is { } button) _buttons!.Press(button);
+                else if (_gesture.Down(rootX, rootY, (long)time) == StripGesture.Act.ToggleMaximize) _layout.ToggleMaximize?.Invoke();
+                break;
+            case ButtonRelease when *(uint*)(at + PointerButtonOffset) == 1:
+                _gesture.Up();
+                if (_buttons!.IsPressed) _buttons.Release(kind);
+                break;
+        }
+    }
+
+    // The manager moves the MAIN window from where the press was made: the pointer's grab let go of first, then
+    // _NET_WM_MOVERESIZE sent to the root, as a client asks for an interactive move.
+    private void Drag(nuint time)
+    {
+        _gesture.Up();
+        if (_owner == 0) return;
+        var (fromX, fromY) = _gesture.DragFrom;
+        XUngrabPointer(_display, time);
+        XEvent message = default;
+        var at = (byte*)&message;
+        message.Type = ClientMessage;
+        *(nuint*)(at + ClientWindowOffset) = _owner;
+        *(nuint*)(at + ClientTypeOffset) = XInternAtom(_display, "_NET_WM_MOVERESIZE", 0);
+        *(int*)(at + ClientFormatOffset) = 32;
+        var data = (long*)(at + ClientDataOffset);
+        data[0] = fromX;
+        data[1] = fromY;
+        data[2] = MoveResizeMove;
+        data[3] = 1;   // button 1
+        data[4] = 1;   // from an application
+        XSendEvent(_display, XRootWindow(_display, XDefaultScreen(_display)), 0, SubstructureRedirectMask | SubstructureNotifyMask, &message);
+        XFlush(_display);
     }
 
     private void Guard(Action work) => AppCallback.Run(work, ex => AppCallback.Log(log, () => "[Shenora.Chromium] The splash failed to draw", LogLevel.Warning, ex));
@@ -436,14 +561,31 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
 
     private Rectangle _lastDamage;
 
-    // Renders at the size, and answers the frame's background as an X pixel, which the window is made with.
+    // Renders at the size (the component below the strip, where there is one), and answers the frame's background as an
+    // X pixel, which the window is made with.
     private nuint Render(Size size)
     {
         if (_painter is null || _render is null) return 0;
-        var frame = _render(size, _scale, _painter);
-        _lastDamage = _painter.Paint(frame);
+        var top = Math.Min(_stripTop, Math.Max(0, size.Height - 1));
+        var frame = _render(new Size(size.Width, size.Height - top), _scale, _painter);
+        _lastDamage = _painter.Paint(frame, top);
         _animating = frame.Animated;
         var background = frame.Ops.Count > 0 && frame.Ops[0] is SplashFill fill ? fill.Color : Color.Black;
+        if (top > 0 && _buttons is not null)
+        {
+            // The glyphs read on what they sit on: the splash's background, not the system's theme.
+            _palette ??= CaptionButtonPalette.ForStrip(_layout.TitleBar, CaptionButtonPalette.ForBackground(background));
+            var buttons = SplashGeometry.DefaultCaptionButtons(size.Width, top, _scale);
+            if (!buttons.SequenceEqual(_stripButtons))
+            {
+                _stripButtons = buttons;
+                _buttons.Set(buttons);
+                _stripDirty = true;
+            }
+            var strip = _painter.PaintStrip(top, background, _stripButtons, _stripState, _palette, _ownerMaximized, _scale);
+            if (_stripDirty) _lastDamage = _lastDamage.IsEmpty ? strip : Rectangle.Union(_lastDamage, strip);
+        }
+        _stripDirty = false;   // drawn, or no strip to draw: either way nothing waits on it
         return (nuint)((background.R << 16) | (background.G << 8) | background.B);
     }
 
@@ -477,15 +619,16 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
         Snap();
     }
 
+    // Never over the whole main window: with no compositor X counts a window covered entirely as fully obscured, and
+    // Chromium stops drawing it (measured under openbox on Xvfb: 0 frames a second and hidden; 60 and visible with a row
+    // left). OwnerBounds leaves a frameless window's resize band, or else that bottom row.
     private void Snap()
     {
-        if (_owner == 0 || _window == 0) return;
-        if (XGetGeometry(_display, _owner, out _, out _, out _, out var width, out var height, out _, out _) == 0) return;
-        XTranslateCoordinates(_display, _owner, XRootWindow(_display, XDefaultScreen(_display)), 0, 0, out var x, out var y, out _);
-        // Its bottom row of pixels left uncovered: with no compositor X counts a window covered entirely as fully
-        // obscured, and Chromium stops drawing it (measured under openbox on Xvfb: 0 frames a second and hidden; 60 and
-        // visible with the row left). The row shows the main window's own background until the page paints.
-        XMoveResizeWindow(_display, _window, x, y, width, height > 1 ? height - 1 : height);
+        if (_owner == 0 || _window == 0 || OwnerBounds(_owner) is not { } bounds) return;
+        XMoveResizeWindow(_display, _window, bounds.X, bounds.Y, (uint)bounds.Width, (uint)bounds.Height);
+        // Maximized or restored: the strip's glyph changed, and the size may not have. Only then: every other move of the
+        // window is the window's alone, and a render per move would be a render per frame of a drag.
+        if (_buttons is not null && _stripDirty) Present(whole: false);
         XFlush(_display);
     }
 

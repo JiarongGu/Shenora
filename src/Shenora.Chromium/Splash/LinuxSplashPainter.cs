@@ -17,7 +17,8 @@ internal sealed unsafe class LinuxSplashPainter(ILogger? log) : ISplashTextMeasu
     private readonly Dictionary<SplashImage, nint> _images = new(SplashImageSource.Comparer);
     private readonly nint _measureSurface = cairo_image_surface_create(0, 1, 1);
     private nint _measure, _surface, _cr;
-    private Size _size;
+    private Size _size, _frameSize;   // the surface's; the last frame's, below the strip
+    private int _top;
     private IReadOnlyList<SplashDrawOp> _last = [];
 
     /// <summary>The last frame's pixels.</summary>
@@ -37,16 +38,21 @@ internal sealed unsafe class LinuxSplashPainter(ILogger? log) : ISplashTextMeasu
         return new SizeF(width, height);
     }
 
-    /// <summary>Draw <paramref name="frame"/>; returns the pixels that differ from the last frame, which is all an X
-    /// server need be sent (an indeterminate bar's slide is a few rows, where the whole window would be megabytes).</summary>
-    public Rectangle Paint(SplashFrame frame)
+    /// <summary>Draw <paramref name="frame"/>, <paramref name="top"/> pixels down (a strip above it is drawn by
+    /// <see cref="PaintStrip"/>); returns the pixels that differ from the last frame, which is all an X server need be sent
+    /// (an indeterminate bar's slide is a few rows, where the whole window would be megabytes).</summary>
+    public Rectangle Paint(SplashFrame frame, int top = 0)
     {
-        var damage = Damage(frame);
+        var damage = top == _top ? Damage(frame) : new Rectangle(Point.Empty, frame.Size);
         _last = frame.Ops;
-        EnsureSurface(frame.Size);
+        _frameSize = frame.Size;
+        _top = top;
+        EnsureSurface(new Size(frame.Size.Width, frame.Size.Height + top));
         cairo_set_operator(_cr, 0);   // clear
         cairo_paint(_cr);
         cairo_set_operator(_cr, 2);   // over
+        cairo_save(_cr);
+        cairo_translate(_cr, 0, top);
         foreach (var op in frame.Ops)
         {
             switch (op)
@@ -68,16 +74,83 @@ internal sealed unsafe class LinuxSplashPainter(ILogger? log) : ISplashTextMeasu
                     break;
             }
         }
+        cairo_restore(_cr);
         cairo_surface_flush(_surface);
-        return damage;
+        return damage.IsEmpty ? damage : damage with { Y = damage.Y + top };
     }
+
+    /// <summary>
+    /// The title strip a frameless window's splash draws over its top <paramref name="height"/> pixels (Linux, where the
+    /// kit paints no caption buttons on the window): <paramref name="background"/>, and in each of
+    /// <paramref name="buttons"/> its fill and glyph for <paramref name="state"/>, drawn as lines of one DIP. Returns the
+    /// strip's rectangle. After <see cref="Paint"/>, which clears it.
+    /// </summary>
+    public Rectangle PaintStrip(int height, Color background, IReadOnlyList<CaptionButtonRect> buttons, CaptionButtonState state,
+        CaptionButtonPalette palette, bool maximized, double scale)
+    {
+        var strip = new Rectangle(0, 0, _size.Width, Math.Min(height, _size.Height));
+        if (_cr == 0 || strip.Height <= 0) return Rectangle.Empty;
+        Source(background);
+        cairo_rectangle(_cr, 0, 0, strip.Width, strip.Height);
+        cairo_fill(_cr);
+        var line = Math.Max(1, Math.Round(scale));
+        var half = 5 * scale;
+        foreach (var b in buttons)
+        {
+            var look = palette.For(b.Kind, hot: state.Hot == b.Kind, pressed: state.Pressed == b.Kind, active: true);
+            Source(look.Background);
+            cairo_rectangle(_cr, b.X, b.Y, b.Width, Math.Min(b.Height, strip.Height));
+            cairo_fill(_cr);
+            // Whole pixels plus a half, so a one-pixel line covers one row of pixels instead of two at half strength.
+            var cx = Math.Floor(b.X + (b.Width / 2.0)) + 0.5;
+            var cy = Math.Floor(b.Y + (Math.Min(b.Height, strip.Height) / 2.0)) + 0.5;
+            Source(look.Glyph);
+            cairo_set_line_width(_cr, line);
+            switch (b.Kind)
+            {
+                case CaptionButtonKind.Minimize:
+                    Line(cx - half, cy, cx + half, cy);
+                    break;
+                case CaptionButtonKind.Maximize when maximized:
+                    var r = 0.8 * half;   // restore: a square, and the corner of one behind it
+                    cairo_rectangle(_cr, cx - half, cy - half + (2 * scale), 2 * r, 2 * r);
+                    cairo_stroke(_cr);
+                    cairo_move_to(_cr, cx - half + (2 * scale), cy - half);
+                    cairo_line_to(_cr, cx + half, cy - half);
+                    cairo_line_to(_cr, cx + half, cy + half - (2 * scale));
+                    cairo_stroke(_cr);
+                    break;
+                case CaptionButtonKind.Maximize:
+                    cairo_rectangle(_cr, cx - half, cy - half, 2 * half, 2 * half);
+                    cairo_stroke(_cr);
+                    break;
+                case CaptionButtonKind.Close:
+                    Line(cx - half, cy - half, cx + half, cy + half);
+                    Line(cx + half, cy - half, cx - half, cy + half);
+                    break;
+            }
+        }
+        cairo_surface_flush(_surface);
+        return strip;
+    }
+
+    private void Line(double x1, double y1, double x2, double y2)
+    {
+        cairo_move_to(_cr, x1, y1);
+        cairo_line_to(_cr, x2, y2);
+        cairo_stroke(_cr);
+    }
+
+    private void Source(Color color) => cairo_set_source_rgba(_cr, color.R / 255.0, color.G / 255.0, color.B / 255.0, color.A / 255.0);
+
+    private void Source(uint argb) => Source(Color.FromArgb((int)argb));
 
     // The ops that changed place or content since the last frame (by position in the list), old and new bounds both;
     // the whole frame when the size or the number of ops changed.
     private Rectangle Damage(SplashFrame frame)
     {
         var whole = new Rectangle(Point.Empty, frame.Size);
-        if (frame.Size != _size || frame.Ops.Count != _last.Count) return whole;
+        if (frame.Size != _frameSize || frame.Ops.Count != _last.Count) return whole;
         RectangleF? dirty = null;
         for (var i = 0; i < frame.Ops.Count; i++)
         {

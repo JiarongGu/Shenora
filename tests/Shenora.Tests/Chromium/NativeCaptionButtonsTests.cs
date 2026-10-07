@@ -119,6 +119,22 @@ public class NativeCaptionButtonsTests
         Assert.Equal(CaptionButtonPalette.Dark.ClosePressed, palette.ClosePressed);
     }
 
+    [Theory]
+    [InlineData(0x1E, 0x1E, 0x1E, true)]    // the sample's dark window
+    [InlineData(0xF3, 0xF3, 0xF3, false)]   // a light one
+    [InlineData(0x20, 0x60, 0xC0, true)]    // a saturated blue reads dark: white glyphs on it
+    [InlineData(0xFF, 0xD0, 0x40, false)]   // a yellow reads light: black glyphs on it
+    public void The_strip_s_theme_is_its_background_s(int r, int g, int b, bool dark) =>
+        Assert.Equal(CaptionButtonPalette.ForTheme(dark), CaptionButtonPalette.ForBackground(System.Drawing.Color.FromArgb(r, g, b)));
+
+    [Fact]
+    public void With_no_background_or_a_transparent_one_the_strip_is_light_on_CEF_s_white()
+    {
+        // CEF paints a windowed browser white when it has no colour, or one with no alpha: dark glyphs read on that.
+        Assert.Equal(CaptionButtonPalette.Light, CaptionButtonPalette.ForBackground(null));
+        Assert.Equal(CaptionButtonPalette.Light, CaptionButtonPalette.ForBackground(System.Drawing.Color.FromArgb(0, 0, 0, 0)));
+    }
+
     [Fact]
     public void A_splash_strip_with_no_colours_is_the_theme()
     {

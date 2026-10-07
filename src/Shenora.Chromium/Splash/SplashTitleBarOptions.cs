@@ -4,12 +4,18 @@ namespace Shenora.Chromium;
 
 /// <summary>
 /// The title strip a frameless main window has while its splash is up (<see cref="ChromiumSplashOptions.TitleBar"/>),
-/// before its page reports a title bar of its own: the splash leaves it uncovered, and it drags the window. On Windows it
-/// holds the kit's caption buttons, painted and hit-tested by the window as real ones are (a double-click on it maximizes
-/// or restores, and maximize offers Snap Layouts); on macOS, the traffic lights, where
-/// <see cref="ChromiumWindowOptions.NativeCaptionButtons"/> shows them. The page's own caption buttons or drag regions,
-/// or the lift, end it. It is the window's own area, so it shows the window's background
-/// (<see cref="ChromiumWindowOptions.BackgroundColor"/>), and the page's title bar as soon as the page paints one.
+/// before its page reports a title bar of its own: the window's drag area, and its caption buttons. The page's own
+/// caption buttons or drag regions, or the lift, end it.
+/// <list type="bullet">
+/// <item>Windows: the window's own area, which the splash leaves uncovered, showing the window's background
+/// (<see cref="ChromiumWindowOptions.BackgroundColor"/>) and then the page's title bar once it paints. Its caption buttons
+/// are the kit's, painted and hit-tested by the window as real ones are, so maximize offers Snap Layouts.</item>
+/// <item>macOS: likewise uncovered; its buttons are the traffic lights, where
+/// <see cref="ChromiumWindowOptions.NativeCaptionButtons"/> shows them.</item>
+/// <item>Linux: drawn by the splash itself, in the splash's background, with minimize, maximize and close; a drag on it
+/// is handed to the window manager, and a double-click maximizes or restores.</item>
+/// </list>
+/// Chromium's resize band inside a frameless window's edges is left uncovered on every desktop.
 /// </summary>
 public sealed class SplashTitleBarOptions
 {
@@ -17,14 +23,15 @@ public sealed class SplashTitleBarOptions
     /// lifts.</summary>
     public double Height { get; init; } = 32;
 
-    /// <summary>The caption buttons' glyphs. Null follows the system theme.</summary>
+    /// <summary>The caption buttons' glyphs. Null: white on a dark background, black on a light one (on Windows, the
+    /// page's own theme once it sets one).</summary>
     public Color? Glyph { get; init; }
 
-    /// <summary>A caption button's fill under the pointer. Null follows the system theme. Close is always the platform's
-    /// red.</summary>
+    /// <summary>A caption button's fill under the pointer. Null: the platform's for that background. Close is always the
+    /// platform's red.</summary>
     public Color? Hover { get; init; }
 
-    /// <summary>A caption button's fill while pressed. Null follows the system theme.</summary>
+    /// <summary>A caption button's fill while pressed. Null: the platform's for that background.</summary>
     public Color? Pressed { get; init; }
 }
 
