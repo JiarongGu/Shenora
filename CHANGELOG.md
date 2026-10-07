@@ -30,6 +30,15 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Breaking
+
+- **An enum on the IPC wire crosses only as its name, both ways.** A number in a request's payload was read as the
+  enum's underlying value, so an out-of-range one reached the route as a value no member has and an in-range one as a
+  member the page never named; both now answer `INVALID_PAYLOAD_VALUE` at the boundary, as an unknown name does. The
+  kit's clients send names; a page that hand-wrote numbers must send the names. And a value with no name (an app's enum
+  left at a default no member has) no longer crosses as a number on the way out: a notification carrying it is dropped
+  as unserializable (logged by module and type), and a response carrying it answers `UNKNOWN_ERROR`.
+
 ### Changed
 
 - **The Chromium shell's splash takes the main window's render area, and the window's own frame stays live around
@@ -47,7 +56,6 @@ at the first list and missed five more breaking changes.
   28-point title bar or the 32-point strip, through a move and into fullscreen, the page at 64 frames a second; on
   Linux (openbox on Xvfb), a drag from the strip moving the window by exactly the drag, a double-click maximizing and
   restoring it, a click on its close button ending the app.
-
 ### Added
 
 - **`ChromiumSplashOptions.Card` (`SplashCardOptions`)**: a small borderless card centred where the main window will
@@ -65,9 +73,10 @@ at the first list and missed five more breaking changes.
   `WebViewHostOptions.ColorScheme` is given it. The page's `prefers-color-scheme` follows it, as do Chrome's own UI and
   a window's frame; the app changes it through `IColorScheme.Set` and keeps the choice from `Changed`.
   `AddShenoraColorScheme()` mounts the page's route (`SHENORA.COLOR_SCHEME`, read and set; advertise
-  `ShellCapability.ColorScheme`), and `@shenora/react` has its client, `ColorScheme`. Measured on the Chromium shell
-  under a light Windows theme: the page's `prefers-color-scheme` dark when started `Dark`, light when started `Light` or
-  `System`, and its own change event whenever a later change altered it.
+  `ShellCapability.ColorScheme`), and `@shenora/react` has its client, `ColorScheme`. Measured under a light Windows
+  theme, on the Chromium shell and on a real WebView2: the page's `prefers-color-scheme` dark when started `Dark`,
+  light when started `Light` or `System`, and following each later change (on the Chromium shell with the page's own
+  change event).
 - **`SplashContext.Dark`**: the app's colour scheme as light or dark, else the system's; the splash's default
   background follows it.
 

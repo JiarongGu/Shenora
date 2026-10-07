@@ -75,7 +75,8 @@ public sealed class WebViewHost
         if (options.ColorScheme is { } scheme)
         {
             scheme.Changed += ColorSchemeChanged;
-            webView.Disposed += (_, _) => scheme.Changed -= ColorSchemeChanged;
+            webView.Disposed += (_, _) => Shenora.AppCallback.Run(() => scheme.Changed -= ColorSchemeChanged,
+                ex => Log(() => "[Shenora.Windows] The app's colour scheme would not let the WebView go", ex));
         }
     }
 

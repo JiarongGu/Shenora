@@ -231,7 +231,8 @@ WinForms primitives and not WebView2.
 Bootstrap with global exception handling, window-state persistence (DPI-correct, via `GetMonitorInfo`
 rather than the mis-scaled `Screen.WorkingArea`), single-instance guard, secondary windows on their
 own STA pumps, tray icon, frameless `OptimizedForm` with optional native caption buttons, splash
-panel, and the Windows implementations of the Core contracts.
+panel, the app's colour scheme (`WindowsHostOptions.ColorScheme`, D93, set on each WebView it is given), and the
+Windows implementations of the Core contracts.
 
 ```csharp
 builder.UseWindows(new WindowsHostOptions { MainForm = sp => new MainForm(sp) });

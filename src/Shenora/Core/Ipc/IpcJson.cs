@@ -70,7 +70,9 @@ public static class IpcJson
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             PropertyNameCaseInsensitive = true,
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+            // An enum crosses as its name. A number is refused like an unknown name, at the boundary: read as the
+            // underlying integer it became a value no member has, or one the page never meant.
+            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) }
         };
 
         // App resolvers FIRST, the reflection resolver LAST — see AddTypeInfoResolver.

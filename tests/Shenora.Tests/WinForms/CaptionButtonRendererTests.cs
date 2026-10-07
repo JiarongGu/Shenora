@@ -15,10 +15,6 @@ namespace Shenora.Tests.WinForms;
 /// </summary>
 public class CaptionButtonRendererTests
 {
-    [System.Runtime.InteropServices.DllImport("user32")] private static extern nint GetThreadDpiAwarenessContext();
-    [System.Runtime.InteropServices.DllImport("user32")] private static extern int GetAwarenessFromDpiAwarenessContext(nint c);
-    [System.Runtime.InteropServices.DllImport("user32")] private static extern uint GetDpiForSystem();
-
     /// <summary>
     /// The maximize button is the only one whose glyph depends on STATE, and it is behaviour rather
     /// than styling: a maximize glyph on an already-maximized window is simply wrong. Pinned because
@@ -228,19 +224,15 @@ public class CaptionButtonRendererTests
             return max;
         }
 
-        // Seen failing about one full run in two inside `verify` (the hovered glyph's brightest pixel 184), never alone
-        // and never in eight plain full-suite runs; not the glyph font, not WinForms' first-thread DPI. So a failure says
-        // what it ran with.
-        string Why()
-        {
-            using var renderer = new CaptionButtonRenderer();
-            var font = renderer.GlyphFont(96);
-            var measured = TextRenderer.MeasureText(CaptionButtonRenderer.Glyph(CaptionButtonKind.Minimize, false), font);
-            return $"thread awareness {GetAwarenessFromDpiAwarenessContext(GetThreadDpiAwarenessContext())}, system DPI {GetDpiForSystem()}, "
-                + $"font {font.Name} {font.Size}{font.Unit} (height {font.Height}), glyph measured {measured}";
-        }
+        // Against the active glyph, not against 255: in a process that has also run the Windows splash's window tests,
+        // GDI draws this one-pixel stroke unhinted, about 0.72 of a pixel (brightest 184, where it is otherwise 255; one run
+        // in two of the suite, never alone). The ratios are the renderer's; the stroke's coverage is GDI's.
         int active = Brightest(null, active: true), inactive = Brightest(null, active: false), hovered = Brightest(CaptionButtonKind.Minimize, active: false);
-        if (active != 255 || hovered != 255) Assert.Fail($"brightest {active} active, {hovered} hovered inactive (both 255 expected): {Why()}");
-        Assert.Equal(CaptionButtonRenderer.Over(Color.FromArgb(0x5A, Color.White), Color.Black).R, inactive);
+        Assert.True(active > 150, $"the active glyph draws (brightest {active})");
+        Assert.Equal(active, hovered);   // a hovered button keeps its full glyph
+        // 0x5A of 0xFF (0.353) exactly at full coverage; GDI's blend of a partly covered pixel is not quite linear (0.364
+        // measured at 184), so a band that still tells a dimmed glyph from an undimmed one or a wrong opacity.
+        Assert.Equal(0x5A, CaptionButtonRenderer.Over(Color.FromArgb(0x5A, Color.White), Color.Black).R);
+        Assert.InRange(inactive / (double)active, 0.32, 0.39);
     }
 }

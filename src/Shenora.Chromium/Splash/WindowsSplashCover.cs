@@ -32,6 +32,7 @@ internal sealed unsafe class WindowsSplashCover
     private uint* _bits;
     private Size _size;
     private (Size Size, float Scale, bool Maximized) _presented;
+    private bool _wanted;   // Show was asked: shown as soon as its window is not minimized
 
     private WindowsSplashCover(nint owner, SplashOverlayLayout layout, uint background)
     {
@@ -50,12 +51,14 @@ internal sealed unsafe class WindowsSplashCover
         try
         {
             var client = ClientBounds(owner);
+            var windowClass = Class();   // first: a class that will not register must not leave the cover rooted
             cover._self = GCHandle.Alloc(cover);
-            var hwnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, Class(), "", WS_POPUP,
+            var hwnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, windowClass, "", WS_POPUP,
                 client.X, client.Y, client.Width, client.Height, owner, 0, GetModuleHandleW(null), GCHandle.ToIntPtr(cover._self));
             if (hwnd == 0)
             {
-                cover._self.Free();
+                // A creation that failed after WM_NCCREATE has been through WM_NCDESTROY, which freed it already.
+                if (cover._self.IsAllocated) cover._self.Free();
                 return null;
             }
             cover._hwnd = hwnd;
@@ -77,7 +80,9 @@ internal sealed unsafe class WindowsSplashCover
     /// before, the window opened under the terminal it was launched from in the one run tried.</summary>
     public void Show()
     {
-        if (Window == 0 || IsIconic(_owner) != 0) return;
+        if (Window == 0) return;
+        _wanted = true;
+        if (IsIconic(_owner) != 0) return;   // shown on the restore, by Follow
         Follow();
         ShowWindow(_hwnd, SW_SHOWNOACTIVATE);
     }
@@ -85,7 +90,7 @@ internal sealed unsafe class WindowsSplashCover
     /// <summary>The window moved, resized, maximized or changed DPI. The owner's thread.</summary>
     public void Follow()
     {
-        if (Window == 0) return;
+        if (Window == 0 || IsIconic(_owner) != 0) return;   // the OS hides it with its owner; it follows on the restore
         var previous = SetThreadDpiAwarenessContext(-4);
         try
         {
@@ -93,6 +98,8 @@ internal sealed unsafe class WindowsSplashCover
             SetWindowPos(_hwnd, 0, client.X, client.Y, client.Width, client.Height, SWP_NOZORDER | SWP_NOACTIVATE);
             // A layered window keeps its bitmap as it moves: drawn again only for a new size, scale or maximize glyph.
             if (_presented != (client.Size, Scale(), IsZoomed(_owner) != 0)) Present();
+            // Asked to show while its window was minimized: the OS does not show it with its owner.
+            if (_wanted && IsWindowVisible(_hwnd) == 0) ShowWindow(_hwnd, SW_SHOWNOACTIVATE);
         }
         finally
         {

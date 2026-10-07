@@ -97,6 +97,14 @@ public class ColorSchemeModuleTests
         Assert.False(unknown.Success);
         Assert.Equal(IpcErrorCodes.InvalidPayloadValue, unknown.Error!.Code);
 
+        // The wire spells an enum as its name: a number, defined or not, is refused as the name would be.
+        foreach (var number in new object[] { 7, 2 })
+        {
+            var numeric = await DispatchAsync(setting, Request(ColorSchemeModule.SetSchemeType, new { scheme = number }));
+            Assert.False(numeric.Success);
+            Assert.Equal(IpcErrorCodes.InvalidPayloadValue, numeric.Error!.Code);
+        }
+
         // An enum's default is a real value: a missing key would otherwise set the app to follow the system.
         var missing = await DispatchAsync(setting, Request(ColorSchemeModule.SetSchemeType, new { }));
         Assert.False(missing.Success);

@@ -390,6 +390,31 @@ public class WindowsSplashTests
     }
 
     [Fact]
+    public void A_window_minimized_before_its_splash_shows_gets_it_and_its_cover_when_restored()
+    {
+        Sta.Run(() =>
+        {
+            PerMonitorDpi.Enter();
+            using var owner = new Form
+            {
+                StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(200, 150, 800, 600), ShowInTaskbar = false,
+                FormBorderStyle = FormBorderStyle.None,
+            };
+            owner.Show();
+            owner.WindowState = FormWindowState.Minimized;   // Win+D between CEF's show and the splash's first frame
+            using var surface = new WindowsSplashSurface(null);
+            surface.ShowOver(owner.Handle, Layout(frameless: true) with { WindowBackground = Color.FromArgb(0x1E, 0x1E, 0x1E) }, Blank);
+            RevealAndWait(surface);
+            Assert.Equal(0, IsWindowVisible(surface.Window));
+
+            owner.WindowState = FormWindowState.Normal;
+            surface.FollowOwner();   // the restore moves the window, which the session forwards
+            Wait(() => IsWindowVisible(surface.Window) != 0, "the splash showed once its window was restored");
+            Assert.NotEqual(0, IsWindowVisible(surface.CoverWindow));
+        });
+    }
+
+    [Fact]
     public void A_framed_owner_or_one_with_no_background_is_not_covered()
     {
         Sta.Run(() =>

@@ -366,11 +366,13 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             draggable = 1,
         };
 #elif CEF_MACOS
-        // macOS: the caption buttons are the traffic lights, the window's own.
+        // macOS: the caption buttons are the traffic lights, the window's own, where NativeCaptionButtons shows them; with
+        // none, the whole strip is the drag area.
         var size = ((_cef_view_t*)_window)->get_size((_cef_view_t*)_window);
+        var lights = _options.NativeCaptionButtons ? TrafficLightsDips : 0;
         var drag = new _cef_draggable_region_t
         {
-            bounds = new _cef_rect_t { x = TrafficLightsDips, y = 0, width = Math.Max(0, size.width - TrafficLightsDips), height = (int)Math.Round(bar.Height) },
+            bounds = new _cef_rect_t { x = lights, y = 0, width = Math.Max(0, size.width - lights), height = (int)Math.Round(bar.Height) },
             draggable = 1,
         };
 #else

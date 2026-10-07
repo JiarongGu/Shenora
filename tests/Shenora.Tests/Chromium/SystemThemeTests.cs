@@ -12,9 +12,4 @@ public class SystemThemeTests
         bool? expected = key?.GetValue("AppsUseLightTheme") is int light ? light == 0 : null;
         Assert.Equal(expected, SystemTheme.IsDark());
     }
-
-    [Fact]
-    public void The_caption_buttons_follow_it() =>
-        Assert.Equal(SystemTheme.IsDark() == true ? CaptionButtonPalette.ForTheme(dark: true) : CaptionButtonPalette.ForTheme(dark: false),
-            CaptionButtonPalette.SystemTheme());
 }

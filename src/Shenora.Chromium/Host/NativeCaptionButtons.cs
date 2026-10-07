@@ -333,9 +333,6 @@ internal sealed record CaptionButtonPalette(
             CloseGlyphHot: Argb(PayloadHelper.GetOptionalColor(c, "closeGlyphHot") ?? glyph));
     }
 
-    /// <summary>The system's app theme (Settings → Personalization → Colors): light unless it says dark.</summary>
-    public static CaptionButtonPalette SystemTheme() => ForTheme(global::Shenora.Chromium.Host.SystemTheme.IsDark() == true);
-
     /// <summary>The theme that reads on <paramref name="background"/>: dark (white glyphs) where its luminance is below
     /// half, else light; light with none, or one with no alpha, which CEF paints white. What a splash's strip sits on
     /// decides its glyphs, not the system's theme: a dark window on a light desktop drew black glyphs on black

@@ -63,6 +63,21 @@ public class StripGestureTests
     }
 
     [Fact]
+    public void The_press_that_completed_a_double_click_drags_nothing()
+    {
+        // It has just maximized the window: moving on from it must not then drag the maximized window away.
+        var gesture = new StripGesture();
+        gesture.Down(100, 10, 0);
+        gesture.Up();
+        Assert.Equal(StripGesture.Act.ToggleMaximize, gesture.Down(101, 10, 200));
+        Assert.Equal(StripGesture.Act.None, gesture.Move(300, 40));
+        gesture.Up();
+
+        Assert.Equal(StripGesture.Act.None, gesture.Down(500, 10, 2000));   // the next press is an ordinary one
+        Assert.Equal(StripGesture.Act.Drag, gesture.Move(520, 10));
+    }
+
+    [Fact]
     public void A_move_with_nothing_pressed_does_nothing() =>
         Assert.Equal(StripGesture.Act.None, new StripGesture().Move(300, 20));
 }

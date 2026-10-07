@@ -85,6 +85,7 @@ internal static unsafe class WindowsSplashNative
     [DllImport("user32")] public static extern int DestroyWindow(nint hwnd);
     [DllImport("user32")] public static extern int IsWindow(nint hwnd);
     [DllImport("user32")] public static extern int ShowWindow(nint hwnd, int cmd);
+    [DllImport("user32")] public static extern int IsWindowVisible(nint hwnd);
     [DllImport("user32")] public static extern int SetWindowPos(nint hwnd, nint after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32")] public static extern nint SetWindowLongPtrW(nint hwnd, int index, nint value);
     [DllImport("user32")] public static extern nint GetWindowLongPtrW(nint hwnd, int index);

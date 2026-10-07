@@ -24,6 +24,20 @@ public class CaptionButtonsTests
     }
 
     [Fact]
+    public void Buttons_placed_anew_forget_the_hover_until_the_pointer_moves_and_the_same_places_keep_it()
+    {
+        // A click on maximize moves the buttons under a pointer that stays put: no motion follows to say it left.
+        var (buttons, states, _) = Create();
+        buttons.Hover(CaptionButtonKind.Maximize);
+
+        buttons.Set([Min, Max, Close]);
+        Assert.Equal(new CaptionButtonState(CaptionButtonKind.Maximize, null), states[^1]);
+
+        buttons.Set([Min with { X = 900 }, Max with { X = 946 }, Close with { X = 992 }]);
+        Assert.Equal(new CaptionButtonState(null, null), states[^1]);
+    }
+
+    [Fact]
     public void A_point_finds_its_button_and_the_right_edge_is_exclusive()
     {
         var (buttons, _, _) = Create();

@@ -12,9 +12,11 @@ internal sealed class ChromiumColorSchemes : IDisposable
 {
     private readonly IColorScheme _setting;
     private readonly Func<Action, bool> _postToUi;
-    private readonly List<Action<cef_color_variant_t>> _targets = [];   // CEF's UI thread only
+    private readonly Lock _gate = new();
+    // Copy-on-write, so a pass reads one array whatever thread adds, removes or disposes meanwhile.
+    private Action<cef_color_variant_t>[] _targets = [];
     private int _posted;
-    private bool _disposed;
+    private int _disposed;
 
     /// <param name="setting">The app's setting.</param>
     /// <param name="postToUi">Runs work on CEF's UI thread; false when it cannot.</param>
@@ -25,10 +27,11 @@ internal sealed class ChromiumColorSchemes : IDisposable
         _setting.Changed += OnChanged;
     }
 
-    /// <summary>Apply the setting to a context now and after each change, until disposed. CEF's UI thread.</summary>
+    /// <summary>Apply the setting to a context now and after each change, until disposed. CEF's UI thread, where each
+    /// apply runs.</summary>
     public IDisposable Add(Action<cef_color_variant_t> apply)
     {
-        _targets.Add(apply);
+        lock (_gate) _targets = [.. _targets, apply];
         AppCallback.Run(() => apply(Variant(_setting.Scheme)));
         return new Target(this, apply);
     }
@@ -75,21 +78,30 @@ internal sealed class ChromiumColorSchemes : IDisposable
     private void ApplyAll()
     {
         Volatile.Write(ref _posted, 0);
-        if (_disposed) return;
+        if (Volatile.Read(ref _disposed) != 0) return;
         var variant = Variant(_setting.Scheme);
-        foreach (var apply in _targets.ToArray()) AppCallback.Run(() => apply(variant));
+        foreach (var apply in Volatile.Read(ref _targets)) AppCallback.Run(() => apply(variant));
     }
 
+    // Any thread: DI's disposal, or the engine's stop. The setting may be the app's own, so letting go of it is guarded.
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _setting.Changed -= OnChanged;
-        _targets.Clear();
+        if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
+        AppCallback.Run(() => _setting.Changed -= OnChanged);
+        lock (_gate) _targets = [];
+    }
+
+    private void Remove(Action<cef_color_variant_t> apply)
+    {
+        lock (_gate)
+        {
+            var at = Array.IndexOf(_targets, apply);
+            if (at >= 0) _targets = [.. _targets[..at], .. _targets[(at + 1)..]];
+        }
     }
 
     private sealed class Target(ChromiumColorSchemes owner, Action<cef_color_variant_t> apply) : IDisposable
     {
-        public void Dispose() => owner._targets.Remove(apply);
+        public void Dispose() => owner.Remove(apply);
     }
 }

@@ -57,6 +57,31 @@ public class WebViewColorSchemeTests
         Assert.Equal(0, scheme.Listeners);
     }
 
+    /// <summary>An app's own setting, whose remover fails.</summary>
+    private sealed class ThrowingScheme : IColorScheme
+    {
+        public ColorScheme Scheme => ColorScheme.System;
+        public void Set(ColorScheme scheme) { }
+        public event Action<ColorScheme>? Changed
+        {
+            add { }
+            remove => throw new InvalidOperationException("an app's setting failed");
+        }
+    }
+
+    [Fact]
+    public void An_app_s_setting_that_fails_to_let_go_does_not_fail_the_control_s_dispose()
+    {
+        var webView = new Microsoft.Web.WebView2.WinForms.WebView2();
+        _ = new WebViewHost(webView, new WebViewHostOptions
+        {
+            Environment = new WebViewEnvironmentOptions { UserDataFolder = Path.GetTempPath() },
+            ColorScheme = new ThrowingScheme(),
+        });
+
+        webView.Dispose();   // WinForms' own dispose path: an exception here escapes into the app's teardown
+    }
+
     [Fact]
     public void UseWindows_registers_the_setting_seeded_from_its_options()
     {

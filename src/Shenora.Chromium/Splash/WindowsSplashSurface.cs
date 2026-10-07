@@ -318,11 +318,16 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
         if (_owner == 0 || _hwnd == 0 || IsIconic(_owner) != 0) return;
         var bounds = OverlayBounds(_owner, _layout);
         GetWindowRect(_hwnd, out var current);
-        if (bounds.Left == current.Left && bounds.Top == current.Top && bounds.Right == current.Right && bounds.Bottom == current.Bottom) return;
-        SetWindowPos(_hwnd, 0, bounds.Left, bounds.Top, bounds.Width, bounds.Height, SWP_NOZORDER | SWP_NOACTIVATE);
-        // A layered window keeps its bitmap as it moves: a frame only when what it was drawn for changed, or a drag
-        // would draw one per step.
-        if (_presented != (bounds.Size, GetDpiForWindow(_hwnd) / 96f, Corners())) Present();
+        if (bounds.Left != current.Left || bounds.Top != current.Top || bounds.Right != current.Right || bounds.Bottom != current.Bottom)
+        {
+            SetWindowPos(_hwnd, 0, bounds.Left, bounds.Top, bounds.Width, bounds.Height, SWP_NOZORDER | SWP_NOACTIVATE);
+            // A layered window keeps its bitmap as it moves: a frame only when what it was drawn for changed, or a drag
+            // would draw one per step.
+            if (_presented != (bounds.Size, GetDpiForWindow(_hwnd) / 96f, Corners())) Present();
+        }
+        // Revealed while its window was minimized, it stayed hidden: the OS shows an owned window again with its owner
+        // only if it was showing as the owner went.
+        if (_shownOnce && IsWindowVisible(_hwnd) == 0) ShowWindow(_hwnd, SW_SHOWNOACTIVATE);
     }
 
     private void FadeStep()

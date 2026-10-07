@@ -55,30 +55,15 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   keeps no EWMH stacking list, so its order was not seen. Mutter and KWin are compositing managers, where the one-row
   gap a framed window's splash leaves should not be needed; confirm it does no harm there, that they keep a transient
   splash above its owner, and that they carry out the strip's `_NET_WM_MOVERESIZE`.
-- [ ] **Small points the colour scheme and cover review left (D93, D92)**, none a defect in normal use:
-  `ChromiumColorSchemes.Dispose` clears its targets off CEF's UI thread while a posted pass may read them (shutdown
-  only); `WindowsSplashCover.Make` allocates its handle before the window class can fail and frees it twice if window
-  creation fails after `WM_NCCREATE`; `{ scheme: 7 }` answers `UNKNOWN_ERROR`, not `INVALID_PAYLOAD_VALUE`, and
-  `{ scheme: 2 }` is accepted (`IpcJson` allows integer enums; the orientation route shares it); an app's own
-  `IColorScheme` has its `Changed` remover run unguarded on dispose; `CaptionButtonPalette.SystemTheme()` is now used
-  only by a test; `WindowsHostOptions.ColorScheme` and `WebViewHostOptions.ColorScheme` share a name and not a type;
-  without a first paint the cover stays until the lift and snaps away at the end of the fade, its glyphs are always the
-  active ones, and it re-presents while the window is minimized.
-- [ ] 🅿️ **The WebView2 shell's colour scheme on a real WebView2.** `WebViewHost` applies the setting to its profile's
-  `PreferredColorScheme`; its tests never start a browser, so a run of the desktop sample with the setting held (the
-  page's `matchMedia`) is still owed.
-- [ ] **Two small gaps in the splash on Windows and macOS** (found in review, not fixed): on Windows, a window minimized
-  between CEF's show and the splash's first frame (Win+D in those ~40–85 ms) never shows its splash when restored, and
-  a card then stays until the lift (`Snap` moves the splash but never shows it); on macOS a frameless window whose app
-  paints its own caption buttons (`NativeCaptionButtons` false, the default) has none during the strip, and the strip's
-  first 80 DIPs, kept for traffic lights it does not show, are not a drag area.
-- [ ] **Two small faults in the Linux splash's strip** (found in review, not fixed): after a click on maximize the
-  button stays drawn hot until the pointer next moves (no motion event arrives); and a
-  double-click whose second press then drags moves the window it has just maximized.
+- [ ] **Two small points the colour scheme and cover review left (D93, D92)**, neither a defect in normal use:
+  `WindowsHostOptions.ColorScheme` (the enum) and `WebViewHostOptions.ColorScheme` (the `IColorScheme`) share a name
+  and not a type; and without a first paint the cover stays until the lift, snaps away at the end of the fade, and
+  always draws the active glyphs.
 - [ ] 🅿️ **The macOS splash's PIXELS and real input.** Its presence, order, bounds and lift are measured through the
   window server's list; a screen capture needs Screen Recording permission on the build Mac (without it `screencapture`
   shows only the wallpaper), which a person grants. Then: CJK through CoreText, the splash's rounded bottom corners
-  against the window's, a click on the splash bringing its window forward, and a drag on the frameless strip.
+  against the window's, a click on the splash bringing its window forward, and a drag on the frameless strip (with no
+  traffic lights, from its whole width: compiled, not run).
 - [ ] 🅿️ **The splash card taking the foreground on a real launch, on Windows.** It asks for it, and a launch from a
   background process is refused (measured: it opened under the app the user was in). Whether a double-click from
   Explorer brings it to the front needs a real launch by a person. The splash over the window needs none of this: its

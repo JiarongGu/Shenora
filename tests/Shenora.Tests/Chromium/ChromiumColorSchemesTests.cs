@@ -92,6 +92,25 @@ public class ChromiumColorSchemesTests
         Assert.Equal([cef_color_variant_t.CEF_COLOR_VARIANT_SYSTEM], applied);
     }
 
+    /// <summary>An app's own setting, whose remover fails.</summary>
+    private sealed class ThrowingScheme : IColorScheme
+    {
+        public ColorScheme Scheme => ColorScheme.System;
+        public void Set(ColorScheme scheme) { }
+        public event Action<ColorScheme>? Changed
+        {
+            add { }
+            remove => throw new InvalidOperationException("an app's setting failed");
+        }
+    }
+
+    [Fact]
+    public void An_app_s_setting_that_fails_to_let_go_does_not_fail_the_dispose()
+    {
+        var schemes = new ChromiumColorSchemes(new ThrowingScheme(), new Ui().Post);
+        schemes.Dispose();   // DI's or the engine's shutdown: an exception here would stop what follows it
+    }
+
     [Theory]
     [InlineData(ColorScheme.System, null, null)]
     [InlineData(ColorScheme.System, true, true)]

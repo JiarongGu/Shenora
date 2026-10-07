@@ -51,8 +51,12 @@ internal sealed class CaptionButtons(Action<CaptionButtonState> changed, Action<
     /// rendering a hover that can never end.</summary>
     public void Set(IReadOnlyList<CaptionButtonRect> regions)
     {
+        var moved = !regions.SequenceEqual(_regions);
         _regions = [.. regions];
         if (_regions.Length == 0) Cancel();
+        // Placed anew under a pointer that has not moved (a click on maximize does it): which button it is over is
+        // unknown until it moves, and no motion may come. A press held through it keeps its own state.
+        else if (moved && _held is null) Update(null, null);
     }
 
     /// <summary>The button at a point in client pixels, or null.</summary>

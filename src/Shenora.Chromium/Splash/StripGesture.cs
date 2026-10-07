@@ -42,6 +42,7 @@ internal sealed class StripGesture
         if (second)
         {
             _lastClickAt = long.MinValue;   // a third press starts afresh
+            _dragged = true;                // and this one drags nothing: it has just maximized or restored the window
             return Act.ToggleMaximize;
         }
         _lastClickAt = atMs;
