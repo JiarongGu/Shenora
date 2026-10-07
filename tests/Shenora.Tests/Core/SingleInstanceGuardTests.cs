@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text;
 using Shenora.Core.Shell;
@@ -183,6 +184,119 @@ public class SingleInstanceGuardTests
         Assert.True(arrived.TryTake(out var activation, TimeSpan.FromSeconds(10)));
         Assert.Equal(["late"], activation!.Arguments);
         later.Dispose();
+    }
+
+    [Fact]
+    public void A_running_instance_that_stopped_listening_takes_no_later_launch()
+    {
+        var scope = UniqueScope();
+        var arrived = new BlockingCollection<SingleInstanceLaunch>();
+        using var running = new ThreadHeldGuard("Shenora.Tests", scope, activated: arrived.Add);
+        running.StopListening();   // its shutdown began
+
+        using var later = new SingleInstanceGuard("Shenora.Tests", scope);
+        Assert.Equal(SingleInstanceResult.AlreadyRunning, later.TryAcquire());   // the scope is still held
+        Assert.False(later.ActivateRunning(["late"], TimeSpan.FromMilliseconds(300)));
+        Assert.False(arrived.TryTake(out _, TimeSpan.FromMilliseconds(200)));
+    }
+
+    [Fact]
+    public void A_launch_that_finds_the_running_instance_shutting_down_starts_in_its_place()
+    {
+        var scope = UniqueScope();
+        var running = new ThreadHeldGuard("Shenora.Tests", scope, activated: _ => { });
+        running.StopListening();
+        _ = Task.Run(() =>
+        {
+            Thread.Sleep(300);   // the rest of its shutdown, then the scope let go, last
+            running.Dispose();
+        });
+
+        using var later = new SingleInstanceGuard("Shenora.Tests", scope);
+        Assert.Equal(SingleInstanceResult.AlreadyRunning, later.TryAcquire());
+        var clock = Stopwatch.StartNew();
+        Assert.Equal(SingleInstanceResult.Acquired, later.ActivateOrTakeOver(["late"], TimeSpan.FromSeconds(10)));
+        // As soon as the scope is let go, not after a hand-over that spins out its whole timeout on a channel already
+        // gone: closing the app and opening it again lands here.
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), $"started after {clock.Elapsed}");
+    }
+
+    [Fact]
+    public void A_launch_that_arrives_before_the_running_instance_listens_is_handed_over_once_it_does()
+    {
+        var scope = UniqueScope();
+        var arrived = new BlockingCollection<SingleInstanceLaunch>();
+        using var starting = new ThreadHeldGuard("Shenora.Tests", scope);
+        _ = Task.Run(() =>
+        {
+            Thread.Sleep(300);   // the rest of its start
+            starting.Listen(arrived.Add);
+        });
+
+        using var later = new SingleInstanceGuard("Shenora.Tests", scope);
+        Assert.Equal(SingleInstanceResult.AlreadyRunning, later.TryAcquire());
+        Assert.Equal(SingleInstanceResult.AlreadyRunning, later.ActivateOrTakeOver(["late"], TimeSpan.FromSeconds(10)));
+        Assert.True(arrived.TryTake(out var launch, TimeSpan.FromSeconds(10)));
+        Assert.Equal(["late"], launch!.Arguments);
+    }
+
+    [Fact]
+    public void Two_launches_that_meet_one_shutdown_start_one_instance_and_hand_it_the_other()
+    {
+        var scope = UniqueScope();
+        var running = new ThreadHeldGuard("Shenora.Tests", scope, activated: _ => { });
+        running.StopListening();
+        var arrived = new BlockingCollection<SingleInstanceLaunch>();
+        using var finished = new ManualResetEventSlim();
+
+        SingleInstanceResult Launch(string name)
+        {
+            using var guard = new SingleInstanceGuard("Shenora.Tests", scope);
+            var result = guard.ActivateOrTakeOver([name], TimeSpan.FromSeconds(10));
+            if (result is SingleInstanceResult.Acquired)
+            {
+                guard.Listen(arrived.Add);
+                finished.Wait(TimeSpan.FromSeconds(30));   // released on this, the owning, thread
+            }
+            return result;
+        }
+        var first = Task.Run(() => Launch("first"));
+        var second = Task.Run(() => Launch("second"));
+        Thread.Sleep(300);
+        running.Dispose();
+
+        var handed = arrived.TryTake(out var launch, TimeSpan.FromSeconds(10));
+        finished.Set();
+        SingleInstanceResult[] results = [first.Result, second.Result];
+        Assert.True(handed);
+        Assert.Single(results, r => r is SingleInstanceResult.Acquired);
+        Assert.Equal(results[0] is SingleInstanceResult.Acquired ? "second" : "first", launch!.Arguments.Single());
+    }
+
+    [Fact]
+    public void A_launch_handed_to_a_listening_instance_does_not_take_over()
+    {
+        var scope = UniqueScope();
+        var arrived = new BlockingCollection<SingleInstanceLaunch>();
+        using var running = new ThreadHeldGuard("Shenora.Tests", scope, activated: arrived.Add);
+
+        using var later = new SingleInstanceGuard("Shenora.Tests", scope);
+        Assert.Equal(SingleInstanceResult.AlreadyRunning, later.TryAcquire());
+        Assert.Equal(SingleInstanceResult.AlreadyRunning, later.ActivateOrTakeOver(["late"], TimeSpan.FromSeconds(10)));
+        Assert.True(arrived.TryTake(out var launch, TimeSpan.FromSeconds(10)));
+        Assert.Equal(["late"], launch!.Arguments);
+    }
+
+    [Fact]
+    public void A_launch_that_cannot_reach_an_instance_still_running_exits_after_the_wait()
+    {
+        // Still starting and never listening within the wait: it keeps the scope, and the launch exits when the wait ends.
+        var scope = UniqueScope();
+        using var starting = new ThreadHeldGuard("Shenora.Tests", scope);
+
+        using var later = new SingleInstanceGuard("Shenora.Tests", scope);
+        Assert.Equal(SingleInstanceResult.AlreadyRunning, later.TryAcquire());
+        Assert.Equal(SingleInstanceResult.AlreadyRunning, later.ActivateOrTakeOver(["late"], TimeSpan.FromMilliseconds(600)));
     }
 
     [Fact]

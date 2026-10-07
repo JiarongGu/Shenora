@@ -99,12 +99,20 @@ arguments and working directory to the running instance. `TryAcquire` answers **
   instance overlaps its predecessor's shutdown, while a genuine double-launch keeps the instant answer.
   The blocking wait also observes an abandoned mutex as soon as the kernel does, which the zero-wait path
   can race.
-- **The running instance listens once it can come forward** (WinForms: the main form's `Shown`; Chromium: the
-  main window open), and only when it `Acquired` the scope; a later launch waits up to 5 s for the channel. It brings the main window to the front,
+- **The running instance listens once it can come forward** (WinForms: the main form's handle created, so an app
+  that starts hidden is reachable; Chromium: the main window open), and only when it `Acquired` the scope. It brings the main window to the front,
   restored and shown, then runs `OnActivated` with the launch. A channel that cannot be opened is logged as a
   WARNING: single instance still works, but a later launch exits quietly and nothing comes forward.
 - **The losing launch hands the foreground over** on Windows (`AllowSetForegroundWindow`), since it holds it and
   Windows keeps it from a process the user is not using.
+- **A launch that meets an instance starting or shutting down waits for one of them** (`ActivateOrTakeOver`, up to
+  `RestartWaitTimeout`), taking short turns at handing itself over and at taking the scope. An instance starting takes
+  it once it listens. One shutting down stops listening as its shutdown begins (`StopListening`, as its loop ends,
+  before the stop hooks) and lets the scope go last, and the launch starts in its place; of two launches meeting
+  one shutdown, the one that takes the scope receives the other. Before, a launch waited 5 s for the channel and
+  exited, and one meeting a shutdown connected, handed over its arguments, reported success and exited, and nothing
+  came forward. Neither within the wait, and the launch exits. The pipe's messages are unchanged, so a launch of this
+  version and an instance of an older one still meet.
 - **The Chromium shell has a second rule behind the gate: CEF's.** One process per data folder, and a later
   launch on the same folder is handed to it (`on_already_running_app_relaunch`). A process with the app's pages
   always answers it: left unanswered, CEF opens a Chrome-style window there on the app's profile. The shell takes

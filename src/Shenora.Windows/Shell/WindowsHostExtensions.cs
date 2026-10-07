@@ -192,9 +192,14 @@ internal sealed class WinFormsRunner : IShenoraRunner
                 // This launch holds the foreground, which Windows lets the running instance take only when handed.
                 AllowSetForegroundWindow(ASFW_ANY);
                 if (single.OnSecondInstance is { } onSecond) onSecond(app, guard);
-                else guard.ActivateRunning(app.Args);
-                guard.Dispose();
-                return;
+                // An instance shutting down lets the scope go last, and this launch starts in its place.
+                else if (guard.ActivateOrTakeOver(app.Args, single.RestartWaitTimeout) is SingleInstanceResult.Acquired)
+                    owned = true;
+                if (!owned)
+                {
+                    guard.Dispose();
+                    return;
+                }
             }
         }
 
@@ -242,6 +247,8 @@ internal sealed class WinFormsRunner : IShenoraRunner
             }
             finally
             {
+                // Shutdown begins: a later launch from here on waits to start in this one's place.
+                guard?.StopListening();
                 app.Stop();
             }
         }

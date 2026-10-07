@@ -45,8 +45,10 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
         }
         if (!single.Enter(options.SingleInstance, app.ApplicationName, app.Paths, app.Args, app.Services.GetService<ILogger<SingleInstanceGuard>>()))
         {
-            single.Lose(app, options.SingleInstance!);
-            return;
+            if (!single.Lose(app, options.SingleInstance!)) return;
+            // The running instance was shutting down and let the scope go: this launch starts in its place, with the CEF
+            // it did not start when the gate turned it away.
+            cefApp ??= new ChromiumApp(() => Started(app, isDevelopment), relaunched: single.Relaunched);
         }
         if (single.Result is SingleInstanceResult.Unverified)
             AppCallback.Log(log, () => "[Shenora.Chromium] The single-instance gate could not tell whether another instance runs; this one starts unguarded",
@@ -79,6 +81,8 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
             }
             finally
             {
+                // Shutdown begins: a later launch from here on waits to start in this one's place.
+                single.StopListening();
                 // Still on CEF's UI thread, where the icon was made; before CEF goes, or it lingers until hovered.
                 AppCallback.Run(() => tray?.Stop(), ex => AppCallback.Log(log, () => "[Shenora.Chromium] Removing the tray icon failed", LogLevel.Warning, ex));
                 // Its boot work told to stop before the app's services go.

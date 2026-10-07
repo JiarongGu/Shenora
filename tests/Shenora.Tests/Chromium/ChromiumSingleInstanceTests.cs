@@ -76,6 +76,29 @@ public class ChromiumSingleInstanceTests
     }
 
     [Fact]
+    public void A_launch_that_finds_the_running_app_shutting_down_starts_in_its_place()
+    {
+        var root = UniqueRoot();
+        using var app = App(root, "--open", "a.txt");
+        var running = new ThreadHeldGuard(app.ApplicationName, app.Paths.RootDir, activated: _ => { });
+        running.StopListening();   // its loop ended: shutdown began
+        _ = Task.Run(() =>
+        {
+            Thread.Sleep(300);
+            running.Dispose();     // the rest of its shutdown, then the scope, last
+        });
+        var gate = new ChromiumSingleInstance();
+        var options = new SingleInstanceHostOptions { RestartWaitTimeout = TimeSpan.FromSeconds(10) };
+        try
+        {
+            Assert.False(gate.Enter(options, app.ApplicationName, app.Paths, app.Args, null));
+            Assert.True(gate.Lose(app, options));                       // start here
+            Assert.Equal(SingleInstanceResult.Acquired, gate.Result);  // and own the scope, to listen in turn
+        }
+        finally { gate.Release(); }
+    }
+
+    [Fact]
     public void An_apps_own_second_instance_callback_replaces_the_activation()
     {
         var root = UniqueRoot();

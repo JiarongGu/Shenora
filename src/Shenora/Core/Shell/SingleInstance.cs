@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
@@ -33,7 +34,9 @@ public sealed record SingleInstanceLaunch(IReadOnlyList<string> Arguments, strin
 /// side-by-side, on every OS. A later launch calls <see cref="TryAcquire()"/>
 /// (<see cref="SingleInstanceResult.AlreadyRunning"/>), then <see cref="ActivateRunning"/>, and exits; the running
 /// instance, which called <see cref="Listen"/>, receives its arguments and comes to the front. The shells do all of
-/// it (<see cref="SingleInstanceHostOptions"/>).
+/// it (<see cref="SingleInstanceHostOptions"/>), with <see cref="ActivateOrTakeOver"/> in place of
+/// <see cref="ActivateRunning"/>, so a launch that meets the running instance starting waits for it to listen and one
+/// that meets it shutting down starts in its place.
 /// <para>
 /// The scope is a named mutex limited to the user, and on Windows to the logon session as well, as it always was
 /// there. On Linux and macOS it is not limited to the session, which is one terminal: two launches from two
@@ -60,6 +63,7 @@ public sealed class SingleInstanceGuard : IDisposable
     private readonly ILogger? _log;
     // Held for the process lifetime; the OS releases it at process exit either way.
     private Mutex? _mutex;
+    private readonly Lock _gate = new();
     private CancellationTokenSource? _listening;
     private Task? _listener;
 
@@ -146,6 +150,16 @@ public sealed class SingleInstanceGuard : IDisposable
     /// </summary>
     public SingleInstanceResult TryAcquire(TimeSpan waitForPredecessor)
     {
+        var result = Take(waitForPredecessor, out var failure);
+        if (result is SingleInstanceResult.Unverified)
+            AppCallback.Log(_log, () => $"[Shenora] The single-instance mutex '{MutexName}' could not be taken; this launch runs unguarded",
+                LogLevel.Warning, failure);
+        return result;
+    }
+
+    private SingleInstanceResult Take(TimeSpan waitForPredecessor, out Exception? failure)
+    {
+        failure = null;
         // 🔴 IDEMPOTENT: already holding it IS success. An OS mutex is per-thread REENTRANT, so taking a
         // second handle succeeds on the same thread even when this process is the owner — and Dispose
         // could then release only one, leaving the mutex held after shutdown and timing the `--restarted`
@@ -179,8 +193,7 @@ public sealed class SingleInstanceGuard : IDisposable
             // trade for most apps, but it is a different fact from owning the scope.
             _mutex?.Dispose();
             _mutex = null;
-            AppCallback.Log(_log, () => $"[Shenora] The single-instance mutex '{MutexName}' could not be taken; this launch runs unguarded",
-                LogLevel.Warning, ex);
+            failure = ex;
             return SingleInstanceResult.Unverified;
         }
     }
@@ -200,11 +213,14 @@ public sealed class SingleInstanceGuard : IDisposable
         ArgumentNullException.ThrowIfNull(activated);
         if (_mutex is null)
             throw new InvalidOperationException("Only the instance that owns the scope listens: TryAcquire first.");
-        if (_listening is not null) throw new InvalidOperationException("The guard already listens.");
-        var first = NewServer();   // here, so a channel that cannot be opened is the caller's to report
-        _listening = new CancellationTokenSource();
-        var stop = _listening.Token;
-        _listener = Task.Run(() => ListenAsync(first, activated, stop));
+        lock (_gate)
+        {
+            if (_listening is not null) throw new InvalidOperationException("The guard already listens.");
+            var first = NewServer();   // here, so a channel that cannot be opened is the caller's to report
+            _listening = new CancellationTokenSource();
+            var stop = _listening.Token;
+            _listener = Task.Run(() => ListenAsync(first, activated, stop));
+        }
     }
 
     /// <summary>
@@ -217,20 +233,92 @@ public sealed class SingleInstanceGuard : IDisposable
     /// <param name="timeout">How long to wait for the running instance to accept. Null waits 5 s.</param>
     public bool ActivateRunning(IReadOnlyList<string>? arguments = null, TimeSpan? timeout = null)
     {
+        if (HandOver(arguments, timeout ?? TimeSpan.FromSeconds(5), out var failure)) return true;
+        AppCallback.Log(_log, () => $"[Shenora] The running instance of {ApplicationName} could not be reached to bring it forward",
+            LogLevel.Warning, failure);
+        return false;
+    }
+
+    private bool HandOver(IReadOnlyList<string>? arguments, TimeSpan timeout, out Exception? failure)
+    {
+        failure = null;
         try
         {
             using var client = new NamedPipeClientStream(".", ChannelName, PipeDirection.Out, PipeOptions.CurrentUserOnly);
-            client.Connect(timeout ?? TimeSpan.FromSeconds(5));
+            client.Connect(timeout);
             client.Write(Encode(new SingleInstanceLaunch(arguments ?? [], Environment.CurrentDirectory)));
             client.Flush();
             return true;
         }
         catch (Exception ex)
         {
-            AppCallback.Log(_log, () => $"[Shenora] The running instance of {ApplicationName} could not be reached to bring it forward",
-                LogLevel.Warning, ex);
+            failure = ex;
             return false;
         }
+    }
+
+    /// <summary>
+    /// The later launch's side when the running instance may be starting or going: until one of them happens, within
+    /// <paramref name="wait"/>, hand it this launch as <see cref="ActivateRunning"/> does, or take the scope. An
+    /// instance still starting takes the launch once it listens; one shutting down stopped listening
+    /// (<see cref="StopListening"/>) and lets the scope go last, and this launch then starts in its place. Neither
+    /// within <paramref name="wait"/>, and this launch exits.
+    /// </summary>
+    /// <returns><see cref="SingleInstanceResult.Acquired"/> to start, the scope now this launch's;
+    /// <see cref="SingleInstanceResult.AlreadyRunning"/> to exit, the running instance having taken the launch or kept
+    /// the scope.</returns>
+    /// <param name="arguments">This launch's arguments, without the executable. Null sends none.</param>
+    /// <param name="wait">How long to keep trying both.</param>
+    public SingleInstanceResult ActivateOrTakeOver(IReadOnlyList<string>? arguments, TimeSpan wait)
+    {
+        // Short turns at each rather than one wait after the other: a hand-over to a channel that is gone spins out its
+        // whole timeout, which kept a launch meeting a shutdown waiting that long for a scope already free, and a wait
+        // for the scope never saw an instance that began listening meanwhile.
+        var turn = TimeSpan.FromMilliseconds(250);
+        var started = Stopwatch.GetTimestamp();
+        Exception? unreached;
+        do
+        {
+            if (HandOver(arguments, turn, out unreached)) return SingleInstanceResult.AlreadyRunning;
+            switch (Take(turn, out var failure))
+            {
+                case SingleInstanceResult.Acquired:
+                    AppCallback.Log(_log, () => $"[Shenora] {ApplicationName} was shutting down as this launch arrived; this launch starts in its place",
+                        LogLevel.Information);
+                    return SingleInstanceResult.Acquired;
+                case SingleInstanceResult.Unverified:
+                    // A scope the OS would not answer for is not one to start in: another instance was there a moment ago.
+                    AppCallback.Log(_log, () => $"[Shenora] The single-instance mutex '{MutexName}' could not be taken; this launch exits",
+                        LogLevel.Warning, failure);
+                    return SingleInstanceResult.AlreadyRunning;
+            }
+        }
+        while (Stopwatch.GetElapsedTime(started) < wait);
+
+        AppCallback.Log(_log, () => $"[Shenora] The running instance of {ApplicationName} could not be reached to bring it forward",
+            LogLevel.Warning, unreached);
+        return SingleInstanceResult.AlreadyRunning;
+    }
+
+    /// <summary>
+    /// The running instance's shutdown has begun: later launches stop reaching it, so each waits for the scope
+    /// (<see cref="ActivateOrTakeOver"/>) rather than handing itself to an instance that will not come forward. The
+    /// scope stays held until <see cref="Dispose"/>. Idempotent; the first call waits for the channel to close. A
+    /// launch that has already handed itself over is not taken back.
+    /// </summary>
+    public void StopListening()
+    {
+        CancellationTokenSource? listening;
+        Task? listener;
+        lock (_gate)
+        {
+            (listening, listener) = (_listening, _listener);
+            (_listening, _listener) = (null, null);
+        }
+        if (listening is null) return;
+        listening.Cancel();
+        try { listener?.Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
+        listening.Dispose();
     }
 
     /// <summary>
@@ -240,14 +328,7 @@ public sealed class SingleInstanceGuard : IDisposable
     /// </summary>
     public void Dispose()
     {
-        if (_listening is { } listening)
-        {
-            listening.Cancel();
-            try { _listener?.Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
-            listening.Dispose();
-            _listening = null;
-            _listener = null;
-        }
+        StopListening();
         // ReleaseMutex throws when called off the owning thread or when never acquired — both
         // fine to swallow here (the OS still cleans up at process exit).
         try { _mutex?.ReleaseMutex(); } catch { }
@@ -408,14 +489,16 @@ public sealed class SingleInstanceHostOptions
 
     /// <summary>
     /// How long a restart-relaunch waits for its predecessor's mutex — a graceful shutdown can spend
-    /// many seconds draining before the mutex releases.
+    /// many seconds draining before the mutex releases. Also how long a later launch waits for the running instance
+    /// to take it or, when it is shutting down, to let the scope go (<see cref="SingleInstanceGuard.ActivateOrTakeOver"/>).
     /// </summary>
     public TimeSpan RestartWaitTimeout { get; init; } = TimeSpan.FromSeconds(25);
 
     /// <summary>
-    /// What a LOSING launch does before exiting. Null = <see cref="SingleInstanceGuard.ActivateRunning"/> with the
-    /// launch's own arguments (the running instance comes to the front). A custom callback replaces that entirely,
-    /// and receives the guard so it can still activate.
+    /// What a LOSING launch does before exiting. Null = <see cref="SingleInstanceGuard.ActivateOrTakeOver"/> with the
+    /// launch's own arguments: the running instance comes to the front, or, when it is shutting down, this launch
+    /// starts in its place once it has gone. A custom callback replaces that entirely, and receives the guard so it can
+    /// still activate; the launch then always exits.
     /// </summary>
     public Action<ShenoraApplication, SingleInstanceGuard>? OnSecondInstance { get; init; }
 

@@ -79,9 +79,20 @@ at the first list and missed five more breaking changes.
   change event).
 - **`SplashContext.Dark`**: the app's colour scheme as light or dark, else the system's; the splash's default
   background follows it.
+- **`SingleInstanceGuard.StopListening()` and `ActivateOrTakeOver(...)`**: the running instance's side of a shutdown
+  (later launches stop reaching it; the scope stays held until `Dispose`) and a later launch's side of it (until one
+  succeeds within the wait, hand itself over or take the scope and start). Both desktop shells use them.
 
 ### Fixed
 
+- **A later launch that arrived while the app shut down was lost.** The single-instance channel stayed open until the
+  guard was released, last in shutdown, so the launch connected, handed over its arguments, reported success and exited,
+  and nothing came forward; no instance started either. Both desktop shells now stop listening as their loop ends, and
+  a later launch takes turns, up to `RestartWaitTimeout`, at handing itself over and at taking the scope: it starts in
+  the going instance's place as soon as the scope is free, and a launch that meets an instance still starting is handed
+  to it once it listens, where it used to exit after 5 s. Tested with a running instance on another thread (the guard,
+  both shells' losing launch, and the WinForms shell's own shutdown order); the Chromium shell's shutdown order is not
+  tested, since it needs CEF. The pipe's messages are unchanged.
 - **A Chromium window showed Views' own light background until its page drew**, whatever `BackgroundColor` said:
   the browser settings' colour is the renderer's, and Views resets a view's background whenever its theme applies.
   The window and its browser view now paint the window's background, applied again on each theme change.

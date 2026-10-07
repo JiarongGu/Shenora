@@ -149,6 +149,75 @@ public class WinFormsRunnerTests
     }
 
     [Fact]
+    public void A_launch_that_finds_the_running_instance_shutting_down_starts_in_its_place()
+    {
+        var root = UniqueRoot();
+        var running = new ThreadHeldGuard("Shenora.Tests.Host", root, activated: _ => { });
+        running.StopListening();
+        _ = Task.Run(() =>
+        {
+            Thread.Sleep(300);
+            running.Dispose();
+        });
+
+        bool? listening = null;
+        var builder = Builder(root, "--open", "report.txt");
+        builder.UseWindows(new WindowsHostOptions
+        {
+            MainForm = _ => new Form(),
+            SkipProcessInit = true,
+            MessageLoop = _ => listening = Reach(root),
+            SingleInstance = new SingleInstanceHostOptions { Scope = root, RestartWaitTimeout = TimeSpan.FromSeconds(10) },
+        });
+        using (var built = builder.Build()) built.Run();
+
+        Assert.True(listening);                                                // it started, and takes later launches
+        Assert.Equal(SingleInstanceResult.Acquired, TakeElsewhere(root));       // and let the scope go as it stopped
+    }
+
+    [Fact]
+    public void The_running_instance_stops_taking_launches_before_its_stop_hooks_and_lets_the_scope_go_last()
+    {
+        // A later launch that reached the instance once its shutdown began was handed to an app that would not come
+        // forward, and lost. So the channel closes before the stop hooks run, while the scope stays held through them.
+        var root = UniqueRoot();
+        bool? reachedRunning = null, reachedStopping = null;
+        SingleInstanceResult? scopeStopping = null;
+        var builder = Builder(root);
+        builder.OnStopping(_ =>
+        {
+            reachedStopping = Reach(root);
+            scopeStopping = TakeElsewhere(root);
+        });
+        builder.UseWindows(new WindowsHostOptions
+        {
+            MainForm = _ => new Form(),
+            SkipProcessInit = true,
+            MessageLoop = _ => reachedRunning = Reach(root),
+            SingleInstance = new SingleInstanceHostOptions { Scope = root },
+        });
+        using (var built = builder.Build()) built.Run();
+
+        Assert.True(reachedRunning);
+        Assert.False(reachedStopping);
+        Assert.Equal(SingleInstanceResult.AlreadyRunning, scopeStopping);
+        Assert.Equal(SingleInstanceResult.Acquired, TakeElsewhere(root));
+    }
+
+    private static bool Reach(string root)
+    {
+        using var later = new SingleInstanceGuard("Shenora.Tests.Host", root);
+        return later.ActivateRunning([], TimeSpan.FromMilliseconds(300));
+    }
+
+    // On another thread, as another process: an OS mutex is reentrant on the thread that holds it.
+    private static SingleInstanceResult TakeElsewhere(string root) => Task.Run(() =>
+    {
+        using var other = new SingleInstanceGuard("Shenora.Tests.Host", root);
+        return other.TryAcquire();
+    }).GetAwaiter().GetResult();
+
+    [Fact]
     public void The_running_instance_restores_its_form_and_hands_OnActivated_the_launch()
     {
         // The whole running side through a real show sequence: Shown → the channel opens → a later launch arrives on the

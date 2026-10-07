@@ -378,15 +378,6 @@ Found in review, not seen live.
 - [ ] Measure whether `can_close` runs inside `window->close()` (then a flag can tell the app's close from the
   user's), and try the title-bar close on a Mac.
 
-### 🟡 A launch that arrives while the app shuts down is lost
-
-The single-instance channel stays open until the guard is disposed, last in shutdown, so a later launch arriving
-after the window has gone connects, hands over its arguments, reports success, and exits; nothing comes forward and
-no instance starts. Found in review, not seen live.
-
-- [ ] Stop listening when shutdown begins (a new `SingleInstanceGuard` member, so not a patch), and have a losing
-  launch whose activation failed wait for the mutex and start in its place.
-
 ### 🟡 A background handoff resumes a film the user had paused
 
 `BackgroundPlaybackTransfer.ToBackgroundAsync` hands off a `Paused` player as well as a `Playing` one, because the

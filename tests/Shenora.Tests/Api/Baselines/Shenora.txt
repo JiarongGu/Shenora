@@ -877,6 +877,7 @@ sealed class Shenora.Core.Shell.ShellLauncher : Shenora.Core.Shell.IShellLaunche
   public void RevealInFileManager(string filePath)
 sealed class Shenora.Core.Shell.SingleInstanceGuard : System.IDisposable
   public .ctor(string applicationName, string? scope = null, Microsoft.Extensions.Logging.ILogger? log = null)
+  public Shenora.Core.Shell.SingleInstanceResult ActivateOrTakeOver(System.Collections.Generic.IReadOnlyList<string>? arguments, System.TimeSpan wait)
   public Shenora.Core.Shell.SingleInstanceResult TryAcquire()
   public Shenora.Core.Shell.SingleInstanceResult TryAcquire(System.TimeSpan waitForPredecessor)
   public bool ActivateRunning(System.Collections.Generic.IReadOnlyList<string>? arguments = null, System.TimeSpan? timeout = null)
@@ -885,6 +886,7 @@ sealed class Shenora.Core.Shell.SingleInstanceGuard : System.IDisposable
   public string MutexName { get; }
   public void Dispose()
   public void Listen(System.Action<Shenora.Core.Shell.SingleInstanceLaunch> activated)
+  public void StopListening()
 sealed class Shenora.Core.Shell.SingleInstanceHostOptions
   public .ctor()
   public System.Action<Shenora.ShenoraApplication, Shenora.Core.Shell.SingleInstanceGuard>? OnSecondInstance { get; init; }

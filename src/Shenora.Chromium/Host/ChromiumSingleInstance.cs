@@ -90,11 +90,13 @@ internal sealed class ChromiumSingleInstance
 
     /// <summary>
     /// The losing launch, in the runner: the running instance is asked to come forward (or the app's own
-    /// <see cref="SingleInstanceHostOptions.OnSecondInstance"/> runs), and the scope is let go.
+    /// <see cref="SingleInstanceHostOptions.OnSecondInstance"/> runs), and the scope is let go. True when the running
+    /// instance was shutting down and this launch took the scope over: it starts instead.
     /// </summary>
-    public void Lose(ShenoraApplication app, SingleInstanceHostOptions options)
+    public bool Lose(ShenoraApplication app, SingleInstanceHostOptions options)
     {
         var guard = _guard!;
+        var startHere = false;
         try
         {
 #if CEF_WINDOWS
@@ -102,12 +104,25 @@ internal sealed class ChromiumSingleInstance
             WindowsForeground.AllowAny();
 #endif
             if (options.OnSecondInstance is { } onSecond) onSecond(app, guard);
-            else guard.ActivateRunning(app.Args);
+            else if (guard.ActivateOrTakeOver(app.Args, options.RestartWaitTimeout) is SingleInstanceResult.Acquired)
+            {
+                lock (_gate) _result = SingleInstanceResult.Acquired;
+                startHere = true;
+            }
         }
         finally
         {
-            Release();
+            if (!startHere) Release();
         }
+        return startHere;
+    }
+
+    /// <summary>The running instance's shutdown has begun: a later launch from now on waits to start in its place.</summary>
+    public void StopListening()
+    {
+        SingleInstanceGuard? guard;
+        lock (_gate) guard = _guard;
+        guard?.StopListening();
     }
 
     /// <summary>

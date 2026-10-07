@@ -14,6 +14,7 @@ internal sealed class ThreadHeldGuard : IDisposable
     private readonly Thread _thread;
     private readonly ManualResetEventSlim _release = new();
     private bool _disposed;
+    private SingleInstanceGuard? _guard;
 
     public bool Acquired { get; private set; }
 
@@ -22,7 +23,7 @@ internal sealed class ThreadHeldGuard : IDisposable
         using var acquired = new ManualResetEventSlim();
         _thread = new Thread(() =>
         {
-            var guard = new SingleInstanceGuard(applicationName, scope);
+            var guard = _guard = new SingleInstanceGuard(applicationName, scope);
             Acquired = guard.TryAcquire() is SingleInstanceResult.Acquired;
             if (Acquired && activated is not null) guard.Listen(activated);
             acquired.Set();
@@ -33,6 +34,12 @@ internal sealed class ThreadHeldGuard : IDisposable
         _thread.Start();
         acquired.Wait(TimeSpan.FromSeconds(30));
     }
+
+    /// <summary>The running instance begins its shutdown: later launches stop reaching it; the scope stays held.</summary>
+    public void StopListening() => _guard!.StopListening();
+
+    /// <summary>The running instance, started, begins taking later launches.</summary>
+    public void Listen(Action<SingleInstanceLaunch> activated) => _guard!.Listen(activated);
 
     /// <summary>Let the holding thread finish (releasing or abandoning) and join it.</summary>
     public void Dispose()
