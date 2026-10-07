@@ -44,7 +44,7 @@ at the first list and missed five more breaking changes.
   `FadeOut` (150 ms) fades it, and `ChromiumSplash.Close()` lifts it from code outside the component. It takes the
   clicks over it, so none reaches the page loading unseen beneath. With a splash, CEF no longer starts inside
   `UseChromium` (D87): the splash shows first. On macOS its first frame came about 0.4 s after launch and the main
-  window about 0.4 s after that, with the splash in front of it at its bounds and the page beneath at 60 frames a
+  window 0.4 to 0.7 s after that, with the splash in front of it at its bounds and the page beneath at 60 frames a
   second; on Linux (openbox on Xvfb) the same order, with the splash leaving the main window's bottom row of pixels
   uncovered, without which X counts the window obscured and Chromium stops drawing it.
   Measured on Windows (Release, ten interleaved pairs): the splash 219 ms after `Main` against 666 ms with CEF started
