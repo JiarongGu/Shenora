@@ -11,7 +11,7 @@ internal static unsafe class WindowsSplashNative
     public const int GWLP_HWNDPARENT = -8, GWLP_USERDATA = -21;
     public const uint WM_NCCREATE = 0x81, WM_DESTROY = 0x2, WM_TIMER = 0x113, WM_MOUSEACTIVATE = 0x21, WM_APP = 0x8000;
     public const int MA_NOACTIVATE = 3, SW_SHOWNOACTIVATE = 4;
-    public const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10;
+    public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10;
     public const uint ULW_ALPHA = 2;
     public const uint DT_CENTER = 0x1, DT_WORDBREAK = 0x10, DT_CALCRECT = 0x400, DT_NOPREFIX = 0x800, DT_EDITCONTROL = 0x2000;
     public const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
@@ -125,6 +125,8 @@ internal static unsafe class WindowsSplashNative
 
     [DllImport("shcore")] public static extern int GetDpiForMonitor(nint monitor, int type, out uint dpiX, out uint dpiY);
     [DllImport("dwmapi")] public static extern int DwmGetWindowAttribute(nint hwnd, int attribute, RECT* value, int size);
+    [DllImport("dwmapi")] public static extern int DwmSetWindowAttribute(nint hwnd, int attribute, int* value, int size);
+    public const int DWMWA_TRANSITIONS_FORCEDISABLED = 3;
     [DllImport("shlwapi")] public static extern nint SHCreateMemStream(byte* data, uint size);
     [DllImport("kernel32", CharSet = CharSet.Unicode)] public static extern nint GetModuleHandleW(string? name);
 

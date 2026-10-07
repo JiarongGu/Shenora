@@ -62,6 +62,7 @@ public class ChromiumWindowCommandsTests
         public void ShowOver(nint mainWindow, SplashOverlayLayout layout, SplashRender render) { }
         public void Invalidate() { }
         public void FollowOwner() { }
+        public void Uncover() { }
         public void Reveal(Action shown) => shown();
         public void FadeOut(TimeSpan duration, Action done) => done();
         public void Dispose() => Disposed = true;

@@ -271,6 +271,7 @@ Shenora.Windows.WebViewHostOptions
   property AutoReloadCooldown
   property BackgroundColor
   property BlockBrowserShortcutsInProduction
+  property ColorScheme
   property ConfigureSettings
   property DeferredSchemes
   property DevUrl
@@ -367,6 +368,7 @@ Shenora.Windows.WindowsHostExtensions
 Shenora.Windows.WindowsHostOptions
   method .ctor
   property Bootstrap
+  property ColorScheme
   property MainForm
   property SingleInstance
   property WindowState

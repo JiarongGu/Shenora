@@ -285,6 +285,31 @@ Run: gate          ← a launch turned away shows nothing
   double-click maximizing (no band, the bottom row kept) and a second restoring; a click on its close button ending
   the app; a framed window's splash its client window less the bottom row; the card centred where the window opens and
   gone within one 50-ms sample of the window's splash showing; 30 moves of the window drawing no frame.
+- **Until its first frame a frameless window shows Chromium's colours in its strip and band, not its own.** Measured
+  under a light Windows theme: `#F3F3F3` from about 0.15 s after the show until the page's first paint (0.44 and
+  0.88 s in two runs), never the window's `#1E1E1E`; held dark (D93), `#202020`. On Windows `WindowsSplashCover`
+  paints them as the window will meanwhile: a layered popup owned by the main window over its whole client area, under
+  the splash, click-through (`WS_EX_TRANSPARENT`), so the window's own strip still takes the drag, the double-click,
+  Snap Layouts and the buttons. It is made on CEF's UI thread before the show and shown right after it, not on the
+  splash's thread, whose first frame came 110–120 ms after the show. Not before the show: in the one run tried, the
+  window then opened under the terminal it was launched from (what was in front at launch was not recorded). It has the desktop's open and close transitions off
+  (`DWMWA_TRANSITIONS_FORCEDISABLED`): with them, its pixels came 110 ms after it showed and it faded out over the
+  window's colours. It goes at the page's first paint, which `ChromiumBrowser.WatchFirstPaint` learns from Chromium
+  over the in-process DevTools protocol (`Page.lifecycleEvent`, within ~35 ms of the pixels) and two animation frames
+  after, or at the lift. Measured: light only in the window's first ~0.1–0.15 s, during its own open animation, and
+  none after.
+
+## The app's colour scheme
+
+`IColorScheme` (D93) is the app's setting, `ColorSchemeState` in both desktop shells. The Chromium shell applies it
+with `set_chrome_color_scheme` (`ChromiumColorSchemes`): to Chromium's own context before the first window, and
+again on CEF's UI thread after each change, the latest setting winning when changes come faster; to a session's
+profile as it opens; and where CEF runs inside a WinForms app (`ChromiumEngine`), from the setting the WinForms shell
+registers. The windows' default caption-button palette and the splash's `Dark` follow it too. The WebView2 shell
+applies it to each `WebViewHost` given it, as its `CoreWebView2` initializes and after each change, marshalled
+through the host's `IUiDispatcher` and released with the control. Measured on the Chromium shell (a probe page
+reading `matchMedia`): `prefers-color-scheme` dark when started `Dark`, light when started `Light` or `System` under a
+light theme, and the page's own change event on each later change that altered it.
 
 ## The WebView2 host
 

@@ -847,3 +847,7 @@ Component
 # the title bar's drag area and caption buttons). Window-chrome words, as `Bar` already is; neither names content.
 Card
 Title
+# `Color` (2026-10-07) — the app's colour scheme (`IColorScheme`, `ColorScheme`): CSS's `color-scheme` and
+# `prefers-color-scheme`, WebView2's `PreferredColorScheme`, CEF's `set_chrome_color_scheme`. Platform vocabulary for
+# light or dark; it names no content.
+Color

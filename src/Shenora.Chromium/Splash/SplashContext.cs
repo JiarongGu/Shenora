@@ -21,10 +21,11 @@ public sealed class SplashContext
     private bool _started;
     private volatile bool _lifted;
 
-    internal SplashContext(IServiceProvider services, bool? systemDark, IEventBus? bus, ISplashSessionSink sink, ILogger? log)
+    internal SplashContext(IServiceProvider services, bool? systemDark, bool? dark, IEventBus? bus, ISplashSessionSink sink, ILogger? log)
     {
         Services = services;
         SystemDark = systemDark;
+        Dark = dark;
         _bus = bus;
         _sink = sink;
         _log = log;
@@ -36,6 +37,11 @@ public sealed class SplashContext
     /// <summary>Whether the operating system's app theme was dark as the splash started; null when it could not tell.
     /// The page learns the user's theme only once it runs, so this is how a splash matches it first.</summary>
     public bool? SystemDark { get; }
+
+    /// <summary>Whether the app is dark: its colour scheme (<see cref="ChromiumHostOptions.ColorScheme"/>, or as the app
+    /// last set it) when held at light or dark, else <see cref="SystemDark"/>. The page's <c>prefers-color-scheme</c>
+    /// answers the same, so a splash drawn by this matches the page that follows it.</summary>
+    public bool? Dark { get; }
 
     /// <summary>Which window the render function is drawing: <see cref="SplashSurface.Card"/> until the main window
     /// exists, then <see cref="SplashSurface.Window"/>. Read it in the render function to draw the two differently.</summary>

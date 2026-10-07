@@ -70,7 +70,32 @@ public sealed class WebViewHost
         // The one marshalling owner (D19/D20).
         _ui = new Shenora.Windows.WinFormsUiDispatcher(webView,
             ex => Log(() => "[Shenora.Windows] Posted UI work failed", ex));
+
+        // The app's colour scheme follows this WebView until its control goes: the setting outlives every window.
+        if (options.ColorScheme is { } scheme)
+        {
+            scheme.Changed += ColorSchemeChanged;
+            webView.Disposed += (_, _) => scheme.Changed -= ColorSchemeChanged;
+        }
     }
+
+    // Any thread: on the control's own, the latest setting, once the WebView exists (InitializeAsync applies the first).
+    private void ColorSchemeChanged(ColorScheme _) => _ui.Post(ApplyColorScheme);
+
+    // UI thread.
+    private void ApplyColorScheme()
+    {
+        if (_webView.IsDisposed || _webView.CoreWebView2 is not { } core || _options.ColorScheme is not { } setting) return;
+        core.Profile.PreferredColorScheme = Preferred(setting.Scheme);
+    }
+
+    /// <summary>The app's colour scheme as WebView2 takes it.</summary>
+    internal static CoreWebView2PreferredColorScheme Preferred(ColorScheme scheme) => scheme switch
+    {
+        ColorScheme.Light => CoreWebView2PreferredColorScheme.Light,
+        ColorScheme.Dark => CoreWebView2PreferredColorScheme.Dark,
+        _ => CoreWebView2PreferredColorScheme.Auto,
+    };
 
     /// <summary>
     /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>): these sites have no
@@ -137,6 +162,9 @@ public sealed class WebViewHost
             await _webView.EnsureCoreWebView2Async(environment).WaitAsync(budget.Token);
 
             ApplySettings();
+            // Guarded: a runtime without the profile API costs the setting (the page follows the OS), not the WebView.
+            Shenora.AppCallback.Run(ApplyColorScheme,
+                ex => Log(() => "[Shenora.Windows] The app's colour scheme could not be applied; the page follows the OS", ex));
             RegisterResourceServing();
             await InjectScriptsAsync().WaitAsync(budget.Token);
             WireEventPolicies();

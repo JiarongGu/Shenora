@@ -2,6 +2,7 @@ using System.Drawing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using Shenora;
+using Shenora.Core.Shell;
 using Shenora.Core.WebView;
 
 namespace Shenora.Windows;
@@ -215,4 +216,11 @@ public sealed class WebViewHostOptions
 
     /// <summary>Diagnostics sink. Null = <see cref="WebViewEnvironmentOptions.Log"/>.</summary>
     public ILogger? Log { get; init; }
+
+    /// <summary>
+    /// The app's colour scheme (the <see cref="IColorScheme"/> <c>UseWindows</c> registers): applied to this WebView's
+    /// profile as it initializes and after each change, so the page's <c>prefers-color-scheme</c> and the browser's own
+    /// UI follow it. Pass <c>sp.GetService&lt;IColorScheme&gt;()</c>. Null leaves the profile following the OS.
+    /// </summary>
+    public IColorScheme? ColorScheme { get; init; }
 }

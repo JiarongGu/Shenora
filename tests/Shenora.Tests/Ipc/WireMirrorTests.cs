@@ -625,6 +625,54 @@ public class WireMirrorTests
     }
 
     /// <summary>
+    /// The colour scheme MODULE, ROUTES, the payload and answer KEY, and the ENUM's wire values — the half that drifts
+    /// silently, as <see cref="Window_orientation_module_routes_key_and_ENUM_VALUES_match_the_host"/> explains.
+    /// </summary>
+    [Fact]
+    public void Color_scheme_module_routes_key_and_ENUM_VALUES_match_the_host()
+    {
+        var source = ClientSource("colorScheme.ts");
+
+        var module = Regex.Match(source, @"super\('(?<module>[A-Z_.]+)'");
+        Assert.True(module.Success, "could not find the ColorScheme `super('MODULE'` call");
+        Assert.Equal(ColorSchemeModule.Module, module.Groups["module"].Value);
+
+        var routes = Regex.Matches(source, @"\.send(?:<[^>]*>)?\('(?<route>[A-Z_]+)'")
+            .Select(m => m.Groups["route"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(
+            new HashSet<string>(StringComparer.Ordinal) { ColorSchemeModule.GetSchemeType, ColorSchemeModule.SetSchemeType },
+            routes);
+
+        // The key, in the request map and in the answer, and the host reading and writing that spelling.
+        var requests = Regex.Match(source, @"interface\s+ColorSchemeRequests\s*\{(?<body>.*?)\}\s*\n", RegexOptions.Singleline);
+        Assert.True(requests.Success, "could not find `interface ColorSchemeRequests { … }`");
+        Assert.Contains("scheme:", requests.Groups["body"].Value, StringComparison.Ordinal);
+        var wire = Regex.Match(source, @"interface\s+ColorSchemeWire\s*\{(?<body>[^}]*)\}");
+        Assert.True(wire.Success, "could not find `interface ColorSchemeWire { … }`");
+        Assert.Contains("scheme:", wire.Groups["body"].Value, StringComparison.Ordinal);
+        var hostSource = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Shenora", "Modules", "Platform", "ColorSchemeModule.cs"));
+        Assert.Contains("\"scheme\"", hostSource, StringComparison.Ordinal);
+        Assert.Contains("scheme = ", hostSource, StringComparison.Ordinal);
+
+        var union = Regex.Match(source, @"ColorSchemeKind\s*=\s*(?<union>[^;]+);");
+        Assert.True(union.Success, "could not find the client's `ColorSchemeKind = …` union");
+        var clientValues = Regex.Matches(union.Groups["union"].Value, @"'(?<value>[a-zA-Z]+)'")
+            .Select(m => m.Groups["value"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(clientValues);   // parser self-check
+        var hostValues = Enum.GetNames<Shenora.Core.Shell.ColorScheme>()
+            .Select(name => JsonNamingPolicy.CamelCase.ConvertName(name))
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(hostValues, clientValues);
+        foreach (var value in clientValues)
+        {
+            var parsed = JsonSerializer.Deserialize<Shenora.Core.Shell.ColorScheme>($"\"{value}\"", IpcJson.Options);
+            Assert.Equal(value, JsonNamingPolicy.CamelCase.ConvertName(parsed.ToString()));
+        }
+    }
+
+    /// <summary>
     /// The orientation MODULE, ROUTES, the one payload KEY, and — the part with no analogue elsewhere in
     /// this file — the ENUM's wire values.
     /// <para>

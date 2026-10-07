@@ -15,6 +15,10 @@ namespace Shenora.Tests.WinForms;
 /// </summary>
 public class CaptionButtonRendererTests
 {
+    [System.Runtime.InteropServices.DllImport("user32")] private static extern nint GetThreadDpiAwarenessContext();
+    [System.Runtime.InteropServices.DllImport("user32")] private static extern int GetAwarenessFromDpiAwarenessContext(nint c);
+    [System.Runtime.InteropServices.DllImport("user32")] private static extern uint GetDpiForSystem();
+
     /// <summary>
     /// The maximize button is the only one whose glyph depends on STATE, and it is behaviour rather
     /// than styling: a maximize glyph on an already-maximized window is simply wrong. Pinned because
@@ -224,8 +228,19 @@ public class CaptionButtonRendererTests
             return max;
         }
 
-        Assert.Equal(255, Brightest(null, active: true));
-        Assert.Equal(CaptionButtonRenderer.Over(Color.FromArgb(0x5A, Color.White), Color.Black).R, Brightest(null, active: false));
-        Assert.Equal(255, Brightest(CaptionButtonKind.Minimize, active: false));
+        // Seen failing about one full run in two inside `verify` (the hovered glyph's brightest pixel 184), never alone
+        // and never in eight plain full-suite runs; not the glyph font, not WinForms' first-thread DPI. So a failure says
+        // what it ran with.
+        string Why()
+        {
+            using var renderer = new CaptionButtonRenderer();
+            var font = renderer.GlyphFont(96);
+            var measured = TextRenderer.MeasureText(CaptionButtonRenderer.Glyph(CaptionButtonKind.Minimize, false), font);
+            return $"thread awareness {GetAwarenessFromDpiAwarenessContext(GetThreadDpiAwarenessContext())}, system DPI {GetDpiForSystem()}, "
+                + $"font {font.Name} {font.Size}{font.Unit} (height {font.Height}), glyph measured {measured}";
+        }
+        int active = Brightest(null, active: true), inactive = Brightest(null, active: false), hovered = Brightest(CaptionButtonKind.Minimize, active: false);
+        if (active != 255 || hovered != 255) Assert.Fail($"brightest {active} active, {hovered} hovered inactive (both 255 expected): {Why()}");
+        Assert.Equal(CaptionButtonRenderer.Over(Color.FromArgb(0x5A, Color.White), Color.Black).R, inactive);
     }
 }

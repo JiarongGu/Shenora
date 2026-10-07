@@ -38,6 +38,12 @@ public sealed class WindowsHostOptions
     /// <summary>Main-window geometry persistence. Null = the app manages its own (or none).</summary>
     public WindowStateHostOptions? WindowState { get; init; }
 
+    /// <summary>The app's colour scheme as it starts: whether it follows the OS's light or dark setting
+    /// (<see cref="ColorScheme.System"/>, the default) or is held at one. Registered as <see cref="IColorScheme"/>,
+    /// which a <see cref="WebViewHostOptions.ColorScheme"/> applies to its WebView. Pass the user's saved choice here;
+    /// change it later through <see cref="IColorScheme"/>, and save it on its <see cref="IColorScheme.Changed"/>.</summary>
+    public ColorScheme ColorScheme { get; init; } = ColorScheme.System;
+
     /// <summary>Test seam: replaces the blocking <c>Application.Run(form)</c> call.</summary>
     internal Action<Form>? MessageLoop { get; init; }
 
@@ -60,6 +66,10 @@ public static class WindowsHostExtensions
         ArgumentNullException.ThrowIfNull(options);
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton<IShenoraRunner, WinFormsRunner>();
+
+        // The app's colour scheme, seeded from the options (an app's own registration wins); each WebViewHost given it
+        // applies it to its WebView.
+        builder.Services.TryAddSingleton<IColorScheme>(sp => new ColorSchemeState(options.ColorScheme, sp.GetService<ILogger<ColorSchemeState>>()));
 
         // The native desktop services every WinForms app gets (TryAdd — an app registration wins).
         builder.Services.TryAddSingleton<IFormInteraction, FormInteraction>();

@@ -80,6 +80,7 @@ export {
   WindowOrientation,
   type WindowOrientationKind,
 } from './windowOrientation.js';
+export { ColorScheme, type ColorSchemeKind } from './colorScheme.js';
 export {
   useDropZone,
   DROP_ZONE_MODULE,

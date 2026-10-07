@@ -290,7 +290,8 @@ frameless chrome with real caption buttons and Snap Layouts, file drops with rea
 dialogs, the clipboard, a tray, one instance per install (a later launch's arguments reach the running app), a
 main window that opens where it was left, secondary windows, revealing files and launching processes, naming who holds
 a file open, the app's unhandled exceptions, the main window's input taken while something modal runs, the auxiliary
-browser sessions, crash reload and dev-server hot reload: a complete shell, so an app on Windows, macOS or Linux needs
+browser sessions, the app's colour scheme (D93), crash reload and dev-server hot reload: a complete shell, so an app on
+Windows, macOS or Linux needs
 no other shell package (D88). A **splash** the app composes in C# (`ChromiumHostOptions.Splash`, D92) takes the
 main window's render area while Chromium starts and the app's boot work runs, with the window's own frame live around
 it: the OS draws it, so it shows before Chromium can draw anything, and an optional card shows before the window does. **Or inside a WinForms

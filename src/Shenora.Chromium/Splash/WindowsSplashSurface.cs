@@ -55,6 +55,7 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
     private Action? _fadeDone;
     private int _renderQueued;
     private int _disposed;
+    private WindowsSplashCover? _cover;   // a frameless window's strip and band until it draws, on CEF's UI thread
 
     // The card's window is its rect and a margin round it, where it draws its own shadow: a layered window gets none
     // from the desktop compositor.
@@ -81,6 +82,8 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
         if (mainWindow == 0) throw new ArgumentException("The main window has no handle.", nameof(mainWindow));
         _owner = mainWindow;
         _layout = layout;
+        _cover = AppCallback.RunOrDefault(() => WindowsSplashCover.Make(mainWindow, layout), null,
+            ex => AppCallback.Log(log, () => "[Shenora.Chromium] The window's strip could not be covered until it draws", LogLevel.Warning, ex));
         Open(render);
     }
 
@@ -94,6 +97,8 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
             return;
         }
         _onShown = shown;
+        // The cover first, at once on this thread: the splash shows over it when its first frame is drawn.
+        if (_cover is { } cover) AppCallback.Run(cover.Show);
         // A full fence, as _ready.Set() is on the splash thread: each side then sees the other's write, so one of them
         // shows it. A plain write before the read could be reordered after it, and neither would.
         Interlocked.Exchange(ref _revealed, 1);
@@ -107,7 +112,7 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
         if (_shownOnce) return;
         _shownOnce = true;
         Snap();
-        if (IsIconic(_owner) == 0) ShowWindow(_hwnd, SW_SHOWNOACTIVATE);
+        if (IsIconic(_owner) == 0) ShowWindow(_hwnd, SW_SHOWNOACTIVATE);   // after the cover, so over it
         if (TakeShown() is { } shown) Guard(shown);
     }
 
@@ -118,16 +123,24 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
     // scaled coordinates, and the splash opened at half its size at 200 % (measured).
     private static Rectangle OverlayBounds(nint owner, SplashOverlayLayout layout)
     {
-        GetClientRect(owner, out var client);
-        var origin = new POINT();
-        ClientToScreen(owner, ref origin);
         var dpi = GetDpiForWindow(owner) / 96.0;
         var scale = dpi > 0 ? dpi : 1;
-        var area = new Rectangle(origin.X, origin.Y, client.Right - client.Left, client.Bottom - client.Top);
+        var area = ClientBounds(owner);
         // A maximized window has no resize band to keep clear.
         var edge = IsZoomed(owner) != 0 ? 0 : (int)Math.Round(SplashGeometry.ResizeBandDips * scale);
         return SplashGeometry.OverlayRect(area, layout.Frameless, (int)Math.Round(layout.StripDips * scale), edge);
     }
+
+    // The main window's client area in screen pixels. The splash thread.
+    private static Rectangle ClientBounds(nint owner)
+    {
+        GetClientRect(owner, out var client);
+        var origin = new POINT();
+        ClientToScreen(owner, ref origin);
+        return new Rectangle(origin.X, origin.Y, client.Right - client.Left, client.Bottom - client.Top);
+    }
+
+    public void Uncover() => _cover?.Remove();
 
     private void Open(SplashRender render)
     {
@@ -167,6 +180,7 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
         catch (Exception ex)
         {
             _failure = ex;
+            _cover?.Remove();
             if (_hwnd != 0) DestroyWindow(_hwnd);   // before its handle to this object is freed
             Cleanup();
             _ready.Set();
@@ -196,7 +210,11 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
             });
     }
 
-    public void FollowOwner() => Post(Snap);
+    public void FollowOwner()
+    {
+        if (_cover is { } cover) AppCallback.Run(cover.Follow);
+        Post(Snap);
+    }
 
     public void FadeOut(TimeSpan duration, Action done) => Post(() =>
     {
@@ -209,6 +227,7 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
+        _cover?.Remove();
         var hwnd = Volatile.Read(ref _hwnd);
         if (hwnd == 0) return;   // not made yet: the splash thread sees the flag and makes none
         if (Environment.CurrentManagedThreadId == _thread?.ManagedThreadId)
@@ -250,6 +269,7 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
                 Guard(FadeStep);
                 return 0;
             case WM_DESTROY:
+                _cover?.Remove();   // owned by the main window, not by this one: it goes with the splash
                 PostQuitMessage(0);
                 return 0;
             default:
@@ -375,5 +395,8 @@ internal sealed unsafe class WindowsSplashSurface(ILogger? log) : ISplashSurface
 
     /// <summary>The window, for tests.</summary>
     internal nint Window => _hwnd;
+
+    /// <summary>The cover over a frameless window's strip and band, for tests; 0 when there is none.</summary>
+    internal nint CoverWindow => _cover?.Window ?? 0;
 }
 #endif

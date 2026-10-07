@@ -17,7 +17,7 @@ public sealed class ChromiumSplashOptions
     public SplashComponent? Component { get; init; }
 
     /// <summary>The fill behind the content. Null is <see cref="ChromiumWindowOptions.BackgroundColor"/>, then a neutral
-    /// light or dark by <see cref="SplashContext.SystemDark"/> (dark when it is unknown).</summary>
+    /// light or dark by <see cref="SplashContext.Dark"/> (dark when it is unknown).</summary>
     public Color? Background { get; init; }
 
     /// <summary>

@@ -8,6 +8,7 @@ using Shenora.Core.Ipc;
 using Shenora.Core.Sessions;
 using Shenora.Core.Shell;
 using Shenora.Modules.FileDialog;
+using Shenora.Modules.Platform;
 
 namespace Shenora.Chromium;
 
@@ -69,9 +70,14 @@ public static class ChromiumHostExtensions
 #elif CEF_LINUX
         builder.Services.TryAddSingleton<IClipboardService, LinuxClipboard>();
 #endif
+        // The app's colour scheme, seeded from the options (an app's own IColorScheme wins), and what applies it to
+        // Chromium's contexts.
+        builder.Services.TryAddSingleton<IColorScheme>(sp => new ColorSchemeState(options.ColorScheme, sp.GetService<ILogger<ColorSchemeState>>()));
+        builder.Services.AddSingleton(sp => new ChromiumColorSchemes(sp.GetRequiredService<IColorScheme>(),
+            work => CefTask.Post(cef_thread_id_t.TID_UI, work)));
         builder.Services.AddSingleton(sp => new ChromiumWindows(options, sp.GetRequiredService<CefUiDispatcher>(),
             sp.GetRequiredService<IMessageDispatcher>(), sp.GetService<IEventBus>(), sp.GetService<ILogger<ChromiumWindows>>(),
-            sp.GetRequiredService<IUrlLauncher>()));
+            sp.GetRequiredService<IUrlLauncher>(), sp.GetRequiredService<ChromiumColorSchemes>()));
         if (options.Tray is { } tray)
         {
             var name = builder.ApplicationName;
@@ -86,7 +92,7 @@ public static class ChromiumHostExtensions
         // The browsers the auxiliary sessions drive (D91): windowless CEF browsers, each profile in a request context.
         var dataFolder = options.UserDataFolder ?? builder.Paths.DataArea("chromium");
         builder.Services.TryAddSingleton(sp => new ChromiumSessionHost(sp.GetRequiredService<CefUiDispatcher>(), dataFolder,
-            options.OffscreenSessions, () => sp.GetService<IUiInteraction>()));
+            options.OffscreenSessions, () => sp.GetService<IUiInteraction>(), sp.GetRequiredService<ChromiumColorSchemes>()));
         builder.Services.TryAddSingleton<ISessionHost>(sp => sp.GetRequiredService<ChromiumSessionHost>());
         // Taking the main window's input while something modal runs, as the WinForms shell disables its form.
         builder.Services.TryAddSingleton<IUiInteraction>(sp => new ChromiumUiInteraction(sp.GetRequiredService<ChromiumWindows>()));

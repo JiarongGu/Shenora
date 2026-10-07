@@ -167,6 +167,14 @@ export const ShellCapabilities = {
    * host answers.
    */
   mediaSurface: 'mediaSurface',
+  /**
+   * The page can read and change the app's colour scheme — see `ColorScheme`. The desktop shells have the
+   * setting; the app advertises this once it mounts the route.
+   *
+   * ⚠ Its EFFECT needs no capability: `prefers-color-scheme` follows the setting on the Chromium shell, and on the
+   * WebView2 shell wherever the app gave the setting to its WebView.
+   */
+  colorScheme: 'colorScheme',
 } as const;
 
 /** The response envelope the host returns for an {@link IpcRequest}. */

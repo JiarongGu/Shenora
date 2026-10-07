@@ -107,7 +107,7 @@ internal sealed unsafe class ChromiumRunner(ChromiumHostOptions options, CefUiDi
         {
             var session = new SplashSession(splashOptions, options.Window.Title ?? app.ApplicationName, options.Window.BackgroundColor,
                 app.Services, app.Services.GetService<IEventBus>(), () => SplashSurfaces.Create(log), TimeProvider.System, log,
-                SystemTheme.IsDark());
+                SystemTheme.IsDark(), app.Services.GetService<IColorScheme>()?.Scheme ?? ColorScheme.System);
             _splash = session;
             if (splash is not null) splash.Session = session;
             windows.Splash = session;

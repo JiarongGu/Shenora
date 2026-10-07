@@ -83,6 +83,9 @@ internal static class Program
             DevUrl = "http://localhost:3900",
             VirtualHost = "sample.local",
             ResourceProvider = sp.GetRequiredService<IWebViewResourceProvider>(),
+            // The app's colour scheme (UseWindows registers it, following the OS unless told otherwise): the page's
+            // prefers-color-scheme and WebView2's own UI follow it.
+            ColorScheme = sp.GetService<Shenora.Core.Shell.IColorScheme>(),
             DeferredSchemes =
             [
                 RangeSchemeProbe.CreateScheme(),

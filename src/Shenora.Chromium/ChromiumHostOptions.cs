@@ -58,6 +58,13 @@ public sealed class ChromiumHostOptions
     /// default) shows none.</summary>
     public ChromiumSplashOptions? Splash { get; init; }
 
+    /// <summary>The app's colour scheme as it starts: whether it follows the OS's light or dark setting
+    /// (<see cref="ColorScheme.System"/>, the default) or is held at one. It is the app's own Chromium, so the setting is
+    /// Chromium's: the page's <c>prefers-color-scheme</c>, Chrome's own UI, a window's frame on Windows, and the splash
+    /// all follow it. Pass the user's saved choice here; change it later through <see cref="IColorScheme"/>, and save it
+    /// on its <see cref="IColorScheme.Changed"/>.</summary>
+    public ColorScheme ColorScheme { get; init; } = ColorScheme.System;
+
     /// <summary>
     /// One running instance per install, on by default: a later launch has the running app bring its main window
     /// forward (shown, restored, or opened again if it was closed), hands it its arguments

@@ -218,6 +218,9 @@ internal sealed unsafe class MacSplashSurface(ILogger? log) : ISplashSurface
         lock (_gate) return _scale == (float)scale && _sizePx == sizePx;
     }
 
+    // It covers nothing of the window beyond the render area.
+    public void Uncover() { }
+
     public void FadeOut(TimeSpan duration, Action done)
     {
         _fadeDone = done;

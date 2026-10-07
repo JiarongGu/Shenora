@@ -112,6 +112,13 @@ public static class ShellCapability
     public const string MediaSurface = "mediaSurface";
 
     /// <summary>
+    /// The page can read and change the app's colour scheme — <see cref="IColorScheme"/>, through the route
+    /// <c>AddShenoraColorScheme</c> mounts. The desktop shells have the setting; advertise this once the route is
+    /// mounted, so a settings page offers the choice only where it works.
+    /// </summary>
+    public const string ColorScheme = "colorScheme";
+
+    /// <summary>
     /// The exception an unsupported capability throws. <paramref name="capability"/> is what the caller
     /// asked for, <paramref name="shell"/> is the host that cannot do it, and
     /// <paramref name="alternative"/> — when there is one — is what to do instead.

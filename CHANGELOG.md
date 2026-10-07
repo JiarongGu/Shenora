@@ -58,13 +58,30 @@ at the first list and missed five more breaking changes.
   sit on rather than follow the system's theme.
 - **`SplashContext.Surface` (`SplashSurface.Card`, `SplashSurface.Window`)**: which window the render function is
   drawing, so one component draws a compact card and an in-window layout from the same state.
+- **The app's colour scheme, a setting the app owns (`IColorScheme`, `ColorScheme`, D93)**: whether the app follows
+  the OS's light or dark setting (`System`, the default) or is held at `Light` or `Dark`. Both desktop shells register
+  it (`ColorSchemeState`), seeded from `ChromiumHostOptions.ColorScheme` or `WindowsHostOptions.ColorScheme`, and apply
+  it to their browser engine: the Chromium shell to its own Chromium, the WebView2 shell to each WebView whose
+  `WebViewHostOptions.ColorScheme` is given it. The page's `prefers-color-scheme` follows it, as do Chrome's own UI and
+  a window's frame; the app changes it through `IColorScheme.Set` and keeps the choice from `Changed`.
+  `AddShenoraColorScheme()` mounts the page's route (`SHENORA.COLOR_SCHEME`, read and set; advertise
+  `ShellCapability.ColorScheme`), and `@shenora/react` has its client, `ColorScheme`. Measured on the Chromium shell
+  under a light Windows theme: the page's `prefers-color-scheme` dark when started `Dark`, light when started `Light` or
+  `System`, and its own change event whenever a later change altered it.
+- **`SplashContext.Dark`**: the app's colour scheme as light or dark, else the system's; the splash's default
+  background follows it.
 
 ### Fixed
 
 - **A Chromium window showed Views' own light background until its page drew**, whatever `BackgroundColor` said:
   the browser settings' colour is the renderer's, and Views resets a view's background whenever its theme applies.
-  The window and its browser view now paint the window's background, applied again on each theme change. Chrome's
-  own theme can still show in a frameless window's first frames before the page paints.
+  The window and its browser view now paint the window's background, applied again on each theme change.
+- **A frameless Chromium window's strip and resize band showed Chrome's own light colours until its first frame**
+  (measured: `#F3F3F3` for up to 0.9 s in a dark app under a light Windows theme). On Windows a click-through cover now
+  paints them as the window will, its background and the strip's buttons, from the window's show until Chromium's
+  first frame, so the strip still drags, snaps and closes beneath it. Measured: the light now only in the window's
+  first ~0.1–0.15 s as it appears, before the cover can be, and none after; with `ColorScheme.Dark` those first frames
+  are `#202020`.
 
 ## 0.20.0 — 2026-10-07
 

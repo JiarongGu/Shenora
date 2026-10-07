@@ -170,7 +170,9 @@ Shenora.slnx
 │   │                                          references Core. What changed is the package COUNT, not
 │   │                                          the structure.
 │   │                                    Modules/Platform/ namespace Shenora.Modules.Platform — the
-│   │                                            contracts a SHELL implements and app logic calls:
+│   │                                            contracts a SHELL implements and app logic calls,
+│   │                                            and the app's colour scheme (ColorSchemeState and its
+│   │                                            route, D93), which the desktop shells register:
 │   │                                            ILiveActivities + LiveActivityState — a long-running job
 │   │                                                    on the OS-rendered strip (iOS Dynamic Island and
 │   │                                                    lock screen). Android answers with a REASON.

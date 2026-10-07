@@ -382,6 +382,9 @@ internal sealed unsafe class LinuxSplashSurface(ILogger? log) : ISplashSurface
 
     public void FollowOwner() => Post(Snap);
 
+    // It covers nothing of the window beyond the render area until its first frame (Linux draws the strip until the lift).
+    public void Uncover() { }
+
     public void FadeOut(TimeSpan duration, Action done) => Post(() =>
     {
         _fadeDone = done;

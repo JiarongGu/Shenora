@@ -62,6 +62,10 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     /// <summary>The window moved or resized. UI thread.</summary>
     public Action? Moved { get; set; }
 
+    /// <summary>Once, when the page has first painted and two frames have followed (or never, if it does not). CEF's UI
+    /// thread.</summary>
+    public Action? Painted { get; set; }
+
     /// <summary>The window was hidden (the tray's close). UI thread.</summary>
     public Action? Hidden { get; set; }
 
@@ -200,8 +204,18 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     /// <summary>The page's own colours, while it has set them.</summary>
     internal CaptionButtonPalette? Colors => _colors;
 
-    // What the painted buttons show: the page's colours, else its theme, else the system's.
-    private CaptionButtonPalette Palette => _colors ?? _theme ?? CaptionButtonPalette.SystemTheme();
+    // What the painted buttons show: the page's colours, else its theme, else the app's colour scheme or the system's.
+    private CaptionButtonPalette Palette => _colors ?? _theme ?? CaptionButtonPalette.ForTheme((SchemeDark?.Invoke() ?? SystemTheme.IsDark()) == true);
+
+    /// <summary>The app's colour scheme as light or dark (null: the system's), which the painted buttons follow until the
+    /// page sets a theme or colours of its own.</summary>
+    internal Func<bool?>? SchemeDark { get; init; }
+
+    /// <summary>The app's colour scheme changed. CEF's UI thread.</summary>
+    internal void ColorSchemeChanged()
+    {
+        if (_colors is null && _theme is null) _nativeCaptions?.SetPalette(Palette);
+    }
 
     /// <summary><c>SET_THEME</c>: the page's theme, which the painted caption buttons follow unless the page has set
     /// colours of its own. UI thread.</summary>
@@ -370,7 +384,10 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
 
     // The window's own callbacks carry its lifetime (WindowCreated, WindowDestroyed), and CEF's own close request
     // reaches it through can_close.
-    void IChromiumBrowserHost.BrowserCreated() { }
+    void IChromiumBrowserHost.BrowserCreated()
+    {
+        if (Painted is { } painted) Browser.WatchFirstPaint(painted);
+    }
     void IChromiumBrowserHost.BrowserClosed() { }
     bool IChromiumBrowserHost.CloseRequested() => false;
 

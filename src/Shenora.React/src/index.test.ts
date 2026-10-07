@@ -67,6 +67,7 @@ import type {
   UseDropZoneOptions,
   WindowResizeEdge,
   WindowOrientationKind,
+  ColorSchemeKind,
 } from './index.js';
 
 /**
@@ -86,6 +87,7 @@ const EXPECTED_EXPORTS = [
   'BackNavigationAccess',
   'BaseModuleService',
   'ClipboardAccess',
+  'ColorScheme',
   'DROP_ZONE_MODULE',
   'FileDialogs',
   'HANDSHAKE_MODULE',
@@ -194,6 +196,7 @@ type ExportedTypeSurface = [
   SegmentBinderOptions, SegmentBinding, SegmentEntry, SegmentManifest,
   MediaSourceKind, MediaSourceGlobals, FetchState, FetchPolicy,
   WindowOrientationKind,
+  ColorSchemeKind,
   UseMediaSurfaceOptions,
   MediaTransport, MediaTransportStatus, UseMediaTransportOptions,
 ];

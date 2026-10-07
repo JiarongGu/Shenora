@@ -23,10 +23,14 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
     private readonly string _root;
     private readonly bool _offscreen;
     private readonly Func<IUiInteraction?> _mainWindow;
+    private readonly ChromiumColorSchemes? _colorSchemes;
 
-    // mainWindow: the main window's input, which an interactive session's window takes while it shows.
-    internal ChromiumSessionHost(CefUiDispatcher ui, string dataFolder, bool offscreen, Func<IUiInteraction?>? mainWindow = null)
+    // mainWindow: the main window's input, which an interactive session's window takes while it shows. colorSchemes: the
+    // app's colour scheme, which each session's profile takes as it opens.
+    internal ChromiumSessionHost(CefUiDispatcher ui, string dataFolder, bool offscreen, Func<IUiInteraction?>? mainWindow = null,
+        ChromiumColorSchemes? colorSchemes = null)
     {
+        _colorSchemes = colorSchemes;
         _ui = ui;
         _root = Path.GetFullPath(dataFolder);
         _offscreen = offscreen;
@@ -218,7 +222,7 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
     private (nint Context, Task Ready) Open(string profile)
     {
         Directory.CreateDirectory(profile);
-        var ready = new ProfileReady();
+        var ready = new ProfileReady(_colorSchemes);
         var settings = new _cef_request_context_settings_t { size = (nuint)sizeof(_cef_request_context_settings_t) };
         _cef_request_context_t* context;
         fixed (char* p = profile)
@@ -238,8 +242,13 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
     private sealed class ProfileReady : CefObject<_cef_request_context_handler_t>
     {
         private readonly TaskCompletionSource _initialized = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ChromiumColorSchemes? _colorSchemes;
 
-        public ProfileReady() => Struct->on_request_context_initialized = &RequestContextInitialized;
+        public ProfileReady(ChromiumColorSchemes? colorSchemes)
+        {
+            _colorSchemes = colorSchemes;
+            Struct->on_request_context_initialized = &RequestContextInitialized;
+        }
 
         public Task Initialized => _initialized.Task;
 
@@ -252,7 +261,10 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
             // unseen page has no gestures. Null URLs set the profile's default.
             context.Ptr->set_content_setting(context.Ptr, null, null,
                 cef_content_setting_types_t.CEF_CONTENT_SETTING_TYPE_POPUPS, cef_content_setting_values_t.CEF_CONTENT_SETTING_VALUE_ALLOW);
-            From<ProfileReady>(self)._initialized.TrySetResult();
+            // The app's colour scheme as the profile opens (a later change reaches the main window's context, not this one).
+            var owner = From<ProfileReady>(self);
+            if (owner._colorSchemes is { } schemes) context.Ptr->set_chrome_color_scheme(context.Ptr, schemes.Current, 0);
+            owner._initialized.TrySetResult();
         }
     }
 

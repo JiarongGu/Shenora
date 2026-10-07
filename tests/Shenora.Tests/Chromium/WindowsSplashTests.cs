@@ -91,6 +91,25 @@ public class WindowsSplashTests
     }
 
     [Fact]
+    public void The_cover_is_the_window_s_background_with_each_glyph_centred_in_its_colour()
+    {
+        var pixels = new uint[100 * 40];
+        uint Pixel(int x, int y) => pixels[(y * 100) + x];
+        var solid = new CaptionGlyphs.Mask(3, [.. Enumerable.Repeat((byte)255, 9)]);
+        var half = new CaptionGlyphs.Mask(1, [128]);
+        WindowsSplashCover.Paint(pixels, 100, 0xFF1E1E1E,
+            [(new Rectangle(60, 0, 20, 30), solid, 0xFFFFFFFF), (new Rectangle(80, 0, 20, 30), half, 0xFFFFFFFF)]);
+
+        Assert.Equal(0xFF1E1E1Eu, Pixel(0, 0));    // the strip
+        Assert.Equal(0xFF1E1E1Eu, Pixel(50, 39));  // the band, where the splash leaves it
+        Assert.Equal(0xFFFFFFFFu, Pixel(70, 15));  // the glyph, centred in its button: (20 - 3) / 2 + 60 = 68..70
+        Assert.Equal(0xFF1E1E1Eu, Pixel(67, 15));
+        var blended = Pixel(89, 14);               // half coverage over the background, opaque: (20 - 1) / 2 + 80, (30 - 1) / 2
+        Assert.Equal(0xFFu, blended >> 24);
+        Assert.InRange(blended & 0xFF, 0x8Bu, 0x91u);
+    }
+
+    [Fact]
     public void A_missing_image_is_left_out_and_the_rest_draws()
     {
         using var painter = new WindowsSplashPainter(null);
@@ -293,6 +312,105 @@ public class WindowsSplashTests
     }
 
     [Fact]
+    public void A_frameless_owner_is_covered_click_through_under_the_splash_until_it_draws()
+    {
+        Sta.Run(() =>
+        {
+            PerMonitorDpi.Enter();
+            using var owner = new Form
+            {
+                StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(200, 150, 800, 600), ShowInTaskbar = false,
+                FormBorderStyle = FormBorderStyle.None,
+            };
+            owner.Show();
+            using var surface = new WindowsSplashSurface(null);
+            surface.ShowOver(owner.Handle, Layout(frameless: true) with { WindowBackground = Color.FromArgb(0x1E, 0x1E, 0x1E) }, Blank);
+            RevealAndWait(surface);
+
+            var cover = surface.CoverWindow;
+            Assert.NotEqual(0, cover);
+            Assert.NotEqual(0, IsWindowVisible(cover));
+            Assert.Equal(owner.RectangleToScreen(owner.ClientRectangle), Rect(cover));   // strip and band included
+            Assert.Equal(owner.Handle, GetWindow(cover, 4));                             // GW_OWNER
+            // What the pointer reaches over the strip, where the cover is and the splash is not: the window itself, so
+            // its own hit-test answers the drag, the double-click, Snap Layouts and the buttons.
+            // Asked of the whole desktop, so a point under another app's window (one in use while the suite runs, which
+            // this process's forms open behind) says nothing and is passed over: on an empty desktop, as CI's, every point
+            // is checked. The style just below is the floor either way.
+            var strip = owner.RectangleToScreen(owner.ClientRectangle);
+            for (var tenth = 1; tenth <= 9; tenth += 2)
+            {
+                var reached = GetAncestor(WindowFromPoint(new POINT { X = strip.Left + (strip.Width * tenth / 10), Y = strip.Top + 5 }), 2);
+                GetWindowThreadProcessId(reached, out var process);
+                if (process == (uint)Environment.ProcessId) Assert.Equal(owner.Handle, reached);
+            }
+            Assert.NotEqual(0L, (long)GetWindowLongPtrW(cover, -20) & 0x20);             // WS_EX_TRANSPARENT, which is why
+            var below = GetWindow(surface.Window, 2);                                     // GW_HWNDNEXT, down from the splash
+            while (below != 0 && below != cover) below = GetWindow(below, 2);
+            Assert.Equal(cover, below);                                                   // under the splash
+
+
+            surface.Uncover();
+            Wait(() => IsWindow(cover) == 0, "the cover went once the window drew");
+            Assert.NotEqual(0, IsWindowVisible(surface.Window));                          // the splash stays until the lift
+        });
+    }
+
+    [Fact]
+    public void The_cover_stays_hidden_until_the_window_shows()
+    {
+        Sta.Run(() =>
+        {
+            PerMonitorDpi.Enter();
+            using var owner = new Form
+            {
+                StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(200, 150, 800, 600), ShowInTaskbar = false,
+                FormBorderStyle = FormBorderStyle.None,
+            };
+            var handle = owner.Handle;   // made, not shown: as the window is when CEF hands it over
+            using var surface = new WindowsSplashSurface(null);
+            surface.ShowOver(handle, Layout(frameless: true) with { WindowBackground = Color.FromArgb(0x1E, 0x1E, 0x1E) }, Blank);
+            Assert.NotEqual(0, surface.CoverWindow);
+            Assert.Equal(0, IsWindowVisible(surface.CoverWindow));   // shown first, the window opened behind (one run)
+            owner.Show();
+            RevealAndWait(surface);
+            Assert.NotEqual(0, IsWindowVisible(surface.CoverWindow));
+        });
+    }
+
+    [Fact]
+    public void The_cover_cuts_its_corners_round_as_the_window_s_are()
+    {
+        var pixels = new uint[100 * 40];
+        WindowsSplashCover.Paint(pixels, 100, 0xFF1E1E1E, [], radius: 8);
+        Assert.True((pixels[0] >> 24) < 0x40, "the corner itself is cut away");
+        Assert.True((pixels[99] >> 24) < 0x40 && (pixels[39 * 100] >> 24) < 0x40 && (pixels[(39 * 100) + 99] >> 24) < 0x40, "all four");
+        Assert.Equal(0xFF1E1E1Eu, pixels[(20 * 100) + 50]);
+        Assert.Equal(0xFF1E1E1Eu, pixels[8]);   // past the curve along the top edge
+    }
+
+    [Fact]
+    public void A_framed_owner_or_one_with_no_background_is_not_covered()
+    {
+        Sta.Run(() =>
+        {
+            PerMonitorDpi.Enter();
+            using var owner = new Form { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(200, 150, 800, 600), ShowInTaskbar = false };
+            owner.Show();
+            using (var framed = new WindowsSplashSurface(null))
+            {
+                framed.ShowOver(owner.Handle, Layout(frameless: false) with { WindowBackground = Color.Black }, Blank);
+                RevealAndWait(framed);
+                Assert.Equal(0, framed.CoverWindow);
+            }
+            using var unpainted = new WindowsSplashSurface(null);
+            unpainted.ShowOver(owner.Handle, Layout(frameless: true), Blank);   // CEF paints white: nothing to match
+            RevealAndWait(unpainted);
+            Assert.Equal(0, unpainted.CoverWindow);
+        });
+    }
+
+    [Fact]
     public void The_card_opens_unowned_at_its_rect_inside_a_shadow_margin()
     {
         Sta.Run(() =>
@@ -364,5 +482,9 @@ public class WindowsSplashTests
     [DllImport("user32")] private static extern int IsWindowVisible(nint hwnd);
     [DllImport("user32")] private static extern int IsWindow(nint hwnd);
     [DllImport("user32")] private static extern nint GetWindow(nint hwnd, uint cmd);
+    [DllImport("user32")] private static extern nint WindowFromPoint(POINT point);
+    [DllImport("user32")] private static extern nint GetAncestor(nint hwnd, uint flags);
+    [DllImport("user32")] private static extern uint GetWindowThreadProcessId(nint hwnd, out uint process);
+    [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
     [DllImport("user32")] private static extern int GetWindowRect(nint hwnd, out RECT rect);
 }

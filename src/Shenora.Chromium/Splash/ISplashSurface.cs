@@ -8,9 +8,10 @@ internal delegate SplashFrame SplashRender(Size windowPx, float scale, ISplashTe
 
 /// <summary>How the splash sits on the main window: whether the window is frameless, the strip it then leaves at the
 /// top (or, where the platform has no caption buttons of the kit's, draws and forwards), and what the strip's buttons
-/// and double-click do. The callbacks run on any thread; they post to CEF's UI thread themselves.</summary>
+/// and double-click do. The callbacks run on any thread; they post to CEF's UI thread themselves.
+/// <paramref name="WindowBackground"/> is what the window paints where the splash leaves it, until its page draws.</summary>
 internal readonly record struct SplashOverlayLayout(bool Frameless, double StripDips, SplashTitleBarOptions TitleBar,
-    Action<CaptionButtonKind>? CaptionClicked, Action? ToggleMaximize);
+    Action<CaptionButtonKind>? CaptionClicked, Action? ToggleMaximize, Color? WindowBackground = null);
 
 /// <summary>
 /// One platform's splash window: borderless, never focused, drawn by the platform's own 2D and text APIs. One instance
@@ -44,4 +45,8 @@ internal interface ISplashSurface : IDisposable
     /// <summary>Fade out over <paramref name="duration"/>, then destroy the window; <paramref name="done"/> runs once
     /// after.</summary>
     void FadeOut(TimeSpan duration, Action done);
+
+    /// <summary>The main window has drawn its first frame: what the splash covered of it beyond the render area until then
+    /// (on Windows, a frameless window's strip and resize band), it now leaves to it. Any thread; once.</summary>
+    void Uncover();
 }

@@ -13,6 +13,8 @@ static class Shenora.BackNavigationServiceCollectionExtensions
   public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraBackNavigation(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Shenora.Modules.Platform.BackNavigationOptions? options = null, Microsoft.Extensions.Logging.ILogger? log = null)
 static class Shenora.ClipboardServiceCollectionExtensions
   public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraClipboard(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
+static class Shenora.ColorSchemeServiceCollectionExtensions
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraColorScheme(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
 sealed class Shenora.Core.Events.EventBus : Shenora.Core.Events.IEventBus
   public .ctor(Microsoft.Extensions.Logging.ILogger<Shenora.Core.Events.EventBus>? logger = null)
   public System.IDisposable Subscribe(string module, string type, System.Func<Shenora.Core.Events.EventMessage, System.Threading.Tasks.Task> handler)
@@ -788,6 +790,11 @@ sealed class Shenora.Core.Shell.ClipboardContent : System.IEquatable<Shenora.Cor
   public static bool op_Equality(Shenora.Core.Shell.ClipboardContent? left, Shenora.Core.Shell.ClipboardContent? right)
   public static bool op_Inequality(Shenora.Core.Shell.ClipboardContent? left, Shenora.Core.Shell.ClipboardContent? right)
   public string? Text { get; init; }
+enum Shenora.Core.Shell.ColorScheme (int)
+  public const Shenora.Core.Shell.ColorScheme Dark = 2
+  public const Shenora.Core.Shell.ColorScheme Light = 1
+  public const Shenora.Core.Shell.ColorScheme System = 0
+  public int value__
 struct Shenora.Core.Shell.FileLockHolder : System.IEquatable<Shenora.Core.Shell.FileLockHolder>
   public .ctor(int ProcessId, string ProcessName)
   public bool Equals(Shenora.Core.Shell.FileLockHolder other)
@@ -808,6 +815,10 @@ interface Shenora.Core.Shell.IClipboardService
   public abstract System.Threading.Tasks.Task SetTextAsync(string text)
   public abstract System.Threading.Tasks.Task<Shenora.Core.Shell.ClipboardContent> GetAsync()
   public abstract System.Threading.Tasks.Task<string> GetTextAsync()
+interface Shenora.Core.Shell.IColorScheme
+  public abstract Shenora.Core.Shell.ColorScheme Scheme { get; }
+  public abstract event System.Action<Shenora.Core.Shell.ColorScheme> Changed
+  public abstract void Set(Shenora.Core.Shell.ColorScheme scheme)
 interface Shenora.Core.Shell.IFileLockInspector
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.Shell.FileLockHolder> WhoHolds(string path)
 interface Shenora.Core.Shell.IShellLauncher : Shenora.Core.Shell.IUrlLauncher
@@ -846,6 +857,7 @@ sealed class Shenora.Core.Shell.ProcessLaunchOptions
 static class Shenora.Core.Shell.ShellCapability
   public const string BackNavigation = "backNavigation"
   public const string ClipboardFiles = "clipboardFiles"
+  public const string ColorScheme = "colorScheme"
   public const string DropZones = "dropZones"
   public const string FilePicker = "filePicker"
   public const string FolderPicker = "folderPicker"
@@ -2415,6 +2427,18 @@ sealed class Shenora.Modules.Platform.BackNavigationResult : System.IEquatable<S
   public static bool op_Equality(Shenora.Modules.Platform.BackNavigationResult? left, Shenora.Modules.Platform.BackNavigationResult? right)
   public static bool op_Inequality(Shenora.Modules.Platform.BackNavigationResult? left, Shenora.Modules.Platform.BackNavigationResult? right)
   public void Deconstruct(out bool Accepted)
+sealed class Shenora.Modules.Platform.ColorSchemeModule : Shenora.Core.Ipc.ModuleBase
+  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
+  public .ctor(Shenora.Core.Shell.IColorScheme scheme, Microsoft.Extensions.Logging.ILogger<Shenora.Modules.Platform.ColorSchemeModule>? logger = null)
+  public const string GetSchemeType = "GET"
+  public const string Module = "SHENORA.COLOR_SCHEME"
+  public const string SetSchemeType = "SET"
+  public override string ModuleName { get; }
+sealed class Shenora.Modules.Platform.ColorSchemeState : Shenora.Core.Shell.IColorScheme
+  public .ctor(Shenora.Core.Shell.ColorScheme scheme = 0, Microsoft.Extensions.Logging.ILogger? log = null)
+  public Shenora.Core.Shell.ColorScheme Scheme { get; }
+  public event System.Action<Shenora.Core.Shell.ColorScheme> Changed
+  public void Set(Shenora.Core.Shell.ColorScheme scheme)
 interface Shenora.Modules.Platform.ILiveActivities
   public abstract string? PushToken(string handle)
   public abstract string? Start(Shenora.Modules.Platform.LiveActivityState state, Shenora.Modules.Platform.LiveActivityAppearance? appearance = null, Shenora.Modules.Platform.Activities.Presentation? presentation = null)

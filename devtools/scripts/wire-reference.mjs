@@ -53,6 +53,7 @@ const SECTIONS = [
   // Two routes and a payload KEY, all hand-typed page-side. The enum's own wire values are mirrored by
   // WireMirrorTests rather than published here: they are the values of a payload, not constants.
   ['WindowOrientationModule', 'Window orientation routes', 'Holding the window portrait or landscape — the page\'s own screen.orientation.lock() works only in fullscreen, and not at all in WKWebView.'],
+  ['ColorSchemeModule', 'Colour scheme routes', 'Reading and changing whether the app follows the OS\'s light or dark setting; the page\'s prefers-color-scheme follows it without these.'],
   // ⚠ ADDED 2026-08-18, all long shipped and none of them published here — found by a docs audit, not
   // by this gate, which is the point of NOT_WIRE below. A page names every one of these by hand.
   ['ClipboardModule', 'Clipboard routes', 'The page\'s access to the native clipboard — the capability D53 added for what React cannot reach.'],

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Drawing;
 using Microsoft.Extensions.Logging;
 using Shenora.Core.Events;
+using Shenora.Core.Shell;
 
 namespace Shenora.Chromium.Host;
 
@@ -27,6 +28,7 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
     private readonly TimeProvider _time;
     private readonly ILogger? _log;
     private readonly bool? _systemDark;
+    private readonly bool? _dark;   // the app's colour scheme, else the system's
     private readonly CancellationTokenSource _appStopping = new();
     private readonly ConcurrentDictionary<SplashImage, Size?> _imageSizes = new(SplashImageSource.Comparer);
     private readonly Lock _gate = new();
@@ -42,11 +44,12 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
     private bool _started, _bootDone, _windowOpened, _pageReady, _released, _timedOut, _lifted, _renderFailureLogged;
 
     public SplashSession(ChromiumSplashOptions options, string? title, Color? windowBackground, IServiceProvider services, IEventBus? bus,
-        Func<ISplashSurface?> surfaces, TimeProvider time, ILogger? log, bool? systemDark)
+        Func<ISplashSurface?> surfaces, TimeProvider time, ILogger? log, bool? systemDark, ColorScheme scheme = ColorScheme.System)
     {
         _options = options;
         _title = title;
-        _background = options.Background ?? windowBackground ?? (systemDark == false ? Light : Dark);
+        _dark = ChromiumColorSchemes.Dark(scheme, systemDark);
+        _background = options.Background ?? windowBackground ?? (_dark == false ? Light : Dark);
         _services = services;
         _bus = bus;
         _surfaces = surfaces;
@@ -90,7 +93,7 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
         }
         _startedAt = _time.GetTimestamp();
         if (_options.Card is null) _drawing = SplashSurface.Window;
-        var context = new SplashContext(_services, _systemDark, _bus, this, _log);
+        var context = new SplashContext(_services, _systemDark, _dark, _bus, this, _log);
         _context = context;
         try
         {
@@ -307,6 +310,16 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
             }
         }
         timer?.Dispose();
+    }
+
+    /// <summary>The main window drew its first frame: the splash leaves it the part of the frame it covered until then.
+    /// Any thread.</summary>
+    public void WindowPainted()
+    {
+        ISplashSurface? surface;
+        lock (_gate) surface = _lifted ? null : _overlay;
+        if (surface is not null)
+            AppCallback.Run(surface.Uncover, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] The splash could not uncover the window", LogLevel.Warning, ex));
     }
 
     /// <summary>The main window moved, resized, maximized or changed DPI.</summary>

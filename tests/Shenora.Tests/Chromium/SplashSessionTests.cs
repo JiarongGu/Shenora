@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Shenora.Chromium;
 using Shenora.Chromium.Host;
+using Shenora.Core.Shell;
 
 namespace Shenora.Tests.Chromium;
 
@@ -36,6 +37,21 @@ public class SplashSessionTests
     {
         session.Start(Where, Desk);
         session.WindowOpened(1, Framed);
+    }
+
+    [Fact]
+    public void The_window_drawing_uncovers_its_frame_and_after_the_lift_nothing_is_asked()
+    {
+        using var session = Session(new ChromiumSplashOptions { FadeOut = TimeSpan.Zero });
+        Open(session);
+        session.WindowShown();
+
+        session.WindowPainted();
+        Assert.Equal(["over", "reveal", "uncover"], _surface.Calls);
+
+        session.Close();
+        session.WindowPainted();
+        Assert.Equal(1, _surface.Calls.Count(c => c == "uncover"));
     }
 
     [Fact]
@@ -604,6 +620,36 @@ public class SplashSessionTests
     }
 
     [Fact]
+    public void The_app_s_colour_scheme_decides_light_or_dark_before_the_system_s()
+    {
+        Color First(FakeSplashSurface s) => ((SplashFill)s.LastFrame!.Ops[0]).Color;
+        bool? seenDark = null, seenSystemDark = null;
+        SplashComponent component = c =>
+        {
+            seenDark = c.Dark;
+            seenSystemDark = c.SystemDark;
+            return () => new SplashStack();
+        };
+
+        // A dark system, an app held light: the splash is light, and still says what the system is.
+        var light = new FakeSplashSurface();
+        using (var s = new SplashSession(new ChromiumSplashOptions { Component = component }, "App", null,
+            new ServiceCollection().BuildServiceProvider(), null, () => light, _time, null, systemDark: true, ColorScheme.Light))
+            Open(s);
+        Assert.Equal(Color.FromArgb(0xF3, 0xF3, 0xF3), First(light));
+        Assert.Equal(false, seenDark);
+        Assert.Equal(true, seenSystemDark);
+
+        // Following the system, it is the system's.
+        var system = new FakeSplashSurface();
+        using (var s = new SplashSession(new ChromiumSplashOptions { Component = component }, "App", null,
+            new ServiceCollection().BuildServiceProvider(), null, () => system, _time, null, systemDark: false, ColorScheme.System))
+            Open(s);
+        Assert.Equal(Color.FromArgb(0xF3, 0xF3, 0xF3), First(system));
+        Assert.Equal(false, seenDark);
+    }
+
+    [Fact]
     public void Without_a_component_it_shows_the_preset_with_the_window_title()
     {
         using var session = Session(new ChromiumSplashOptions());
@@ -695,6 +741,8 @@ public class SplashSessionTests
         }
 
         public void FollowOwner() => Follows++;
+
+        public void Uncover() => Record("uncover");
 
         public void FadeOut(TimeSpan duration, Action done)
         {

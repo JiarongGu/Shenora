@@ -67,6 +67,7 @@ public sealed class ChromiumEngine
     private ShenoraApplication? _app;
     private bool _isDevelopment;
     private ChromiumPages? _pages;
+    private ChromiumColorSchemes? _colorSchemes;   // the app's colour scheme on Chromium's context, when the host shell has one
     private readonly HashSet<ChromiumChildBrowser> _browsers = [];
     private int _state;   // 0 new, 1 running, 2 stopped
 
@@ -157,6 +158,7 @@ public sealed class ChromiumEngine
         // likely the one blocked in this call.
         Task[] closing;
         lock (_lock) closing = [.. _browsers.Select(browser => browser.Closed)];
+        _colorSchemes?.Dispose();
         if (closing.Length > 0 && !Task.WaitAll(closing, CloseWait))
             AppCallback.Log(_log, () => $"[Shenora.Chromium] Shutting the Chromium engine down with {closing.Count(t => !t.IsCompleted)} browser(s) still open", LogLevel.Warning);
         else
@@ -185,6 +187,13 @@ public sealed class ChromiumEngine
             _ = Task.Run(() => AppCallback.Run(() => serving.Warm(origins.App)));
             var services = _app.Services;
             var dispatcher = services.GetRequiredService<IMessageDispatcher>();
+            // The app's colour scheme, where the shell hosting this engine has one, on Chromium's own context before its
+            // first page, and after each change.
+            if (services.GetService<IColorScheme>() is { } scheme)
+            {
+                var schemes = _colorSchemes = new ChromiumColorSchemes(scheme, work => CefTask.Post(cef_thread_id_t.TID_UI, work));
+                CefTask.Post(cef_thread_id_t.TID_UI, () => schemes.Add(ChromiumColorSchemes.ApplyToGlobalContext));
+            }
             // Mapped ONCE, acting on the page that asked, under the engine's own name: the app's WebView2 module, if it
             // maps one, keeps the page's name for the WebView2 pages.
             dispatcher.TryMapModule(new ChromiumDropZones(() => ChromiumBrowserContext.Current));

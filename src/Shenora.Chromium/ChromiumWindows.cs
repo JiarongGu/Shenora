@@ -26,6 +26,7 @@ public sealed unsafe class ChromiumWindows
     private readonly IEventBus? _events;
     private readonly ILogger? _log;
     private readonly IUrlLauncher _urls;
+    private readonly ChromiumColorSchemes? _colorSchemes;
     // A name is reserved by Open on any thread, as null, and gets its window on CEF's UI thread, where every later post
     // for it runs after that one. Read by HasWindow from any thread, so a concurrent collection, not a Dictionary.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ChromiumWindow?> _open = new(StringComparer.Ordinal);
@@ -35,8 +36,9 @@ public sealed unsafe class ChromiumWindows
     private IWindowStateStore? _windowStore;   // the main window's saved state, when the app keeps it
 
     internal ChromiumWindows(ChromiumHostOptions options, CefUiDispatcher ui, IMessageDispatcher dispatcher, IEventBus? events, ILogger? log,
-        IUrlLauncher urls)
+        IUrlLauncher urls, ChromiumColorSchemes? colorSchemes = null)
     {
+        _colorSchemes = colorSchemes;
         _options = options;
         _ui = ui;
         _dispatcher = dispatcher;
@@ -187,6 +189,10 @@ public sealed unsafe class ChromiumWindows
         // not the WebView2 module's.
         _dispatcher.TryMapModule(new ChromiumWindowCommands(() => ChromiumBrowserContext.Current?.Host as ChromiumWindow, () => Splash));
         _dispatcher.TryMapModule(new ChromiumDropZones(() => ChromiumBrowserContext.Current));
+        // The app's colour scheme on Chromium's own context before the first window, so its first frame is already in
+        // it, and on each window's default caption buttons; again after each change.
+        _colorSchemes?.Add(ChromiumColorSchemes.ApplyToGlobalContext);
+        _colorSchemes?.Add(_ => { foreach (var w in _open.Values) w?.ColorSchemeChanged(); });
     }
 
     private void OpenOnUi(string name, ChromiumWindowOptions options)
@@ -199,6 +205,7 @@ public sealed unsafe class ChromiumWindows
                 w => CloseGuard?.Invoke(w.Name) ?? true, GeometryFor(name, options))
             {
                 Background = options.BackgroundColor ?? _options.Window.BackgroundColor,
+                SchemeDark = _colorSchemes is { } schemes ? () => ChromiumColorSchemes.Dark(schemes.Scheme, SystemTheme.IsDark()) : null,
             };
             if (name == MainWindowName && Splash is { } splash)
             {
@@ -206,7 +213,8 @@ public sealed unsafe class ChromiumWindows
                 var bar = _options.Splash?.TitleBar ?? new SplashTitleBarOptions();
                 var layout = new SplashOverlayLayout(options.FramelessChrome, bar.Height, bar,
                     kind => CefTask.Post(cef_thread_id_t.TID_UI, () => main.InvokeCaptionButton(kind)),
-                    () => CefTask.Post(cef_thread_id_t.TID_UI, main.ToggleMaximize));
+                    () => CefTask.Post(cef_thread_id_t.TID_UI, main.ToggleMaximize),
+                    options.BackgroundColor ?? _options.Window.BackgroundColor);
                 // Subscribed BEFORE the check, so a lift between the two still reaches the strip; a splash already gone
                 // (lifted, or its setup failed) leaves the window its own title bar from the start, and no handler.
                 splash.Lifted += main.SplashLifted;
@@ -215,6 +223,7 @@ public sealed unsafe class ChromiumWindows
                 window.Opening = handle => splash.WindowOpened(handle, layout);
                 window.Shown = splash.WindowShown;
                 window.Moved = splash.OwnerMoved;
+                window.Painted = splash.WindowPainted;
                 window.Hidden = splash.Abort;   // the tray's close: a splash left over the desktop would cover it
             }
             _open[name] = window;

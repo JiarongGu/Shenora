@@ -109,6 +109,7 @@ What a host advertises in its handshake, and what a page branches on instead of 
 | `ShellCapability.LocalFiles` | `localFiles` | The host can serve LOCAL FILES to the page through an IWebViewInterceptor — media, images, documents, generated exports. |
 | `ShellCapability.WindowOrientation` | `windowOrientation` | The shell can HOLD the window at an orientation — IWindowOrientation. |
 | `ShellCapability.MediaSurface` | `mediaSurface` | The shell can draw the PICTURE itself, under a transparent region the page leaves — IMediaSurface. |
+| `ShellCapability.ColorScheme` | `colorScheme` | The page can read and change the app's colour scheme — IColorScheme, through the route AddShenoraColorScheme mounts. |
 
 ## Back gesture
 
@@ -140,6 +141,16 @@ Holding the window portrait or landscape — the page's own screen.orientation.l
 | `WindowOrientationModule.Module` | `SHENORA.ORIENTATION` | The module name this facade answers on. |
 | `WindowOrientationModule.LockType` | `LOCK` | Route: hold the window at an orientation. |
 | `WindowOrientationModule.UnlockType` | `UNLOCK` | Route: let the platform choose again. |
+
+## Colour scheme routes
+
+Reading and changing whether the app follows the OS's light or dark setting; the page's prefers-color-scheme follows it without these.
+
+| Constant | Value | |
+|---|---|---|
+| `ColorSchemeModule.Module` | `SHENORA.COLOR_SCHEME` | The module name this facade answers on. |
+| `ColorSchemeModule.GetSchemeType` | `GET` | Route: the setting now. |
+| `ColorSchemeModule.SetSchemeType` | `SET` | Route: change it. |
 
 ## Clipboard routes
 

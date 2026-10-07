@@ -88,6 +88,43 @@ public enum WindowOrientation
 }
 
 /// <summary>
+/// The app's colour scheme: whether it follows the OS's light or dark setting or is held at one. A setting the app
+/// owns, which the desktop shells apply to their browser engine (on the WebView2 shell, to each WebView given it), so
+/// the page's <c>prefers-color-scheme</c> and the engine's own UI (menus, scrollbars, dialogs; on the Chromium shell a
+/// window's frame too) follow it.
+/// </summary>
+/// <remarks>
+/// ⚠ <b>The app keeps the user's choice across launches, not the kit.</b> Pass the saved one at startup (the shell's
+/// host options), so the first frame is already right, and save it on <see cref="Changed"/>.
+/// </remarks>
+public interface IColorScheme
+{
+    /// <summary>The setting now.</summary>
+    ColorScheme Scheme { get; }
+
+    /// <summary>Change it. Any thread; each shell applies it on its own UI thread. Setting the value it already has
+    /// does nothing.</summary>
+    void Set(ColorScheme scheme);
+
+    /// <summary>Raised after <see cref="Set"/> changed it, on the thread that set it, with the value it was set to
+    /// (<see cref="Scheme"/> is the latest when two threads set it at once).</summary>
+    event Action<ColorScheme>? Changed;
+}
+
+/// <summary>Whether the app follows the OS's light or dark setting, or is held at one (<see cref="IColorScheme"/>).</summary>
+public enum ColorScheme
+{
+    /// <summary>Follow the OS's setting, and its changes.</summary>
+    System,
+
+    /// <summary>Light, whatever the OS says.</summary>
+    Light,
+
+    /// <summary>Dark, whatever the OS says.</summary>
+    Dark,
+}
+
+/// <summary>
 /// Clipboard access. Fully portable — every host has a clipboard. The desktop implementation runs each
 /// operation on a dedicated STA thread.
 /// </summary>

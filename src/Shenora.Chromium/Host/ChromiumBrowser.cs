@@ -249,8 +249,46 @@ internal sealed unsafe class ChromiumBrowser
         Host?.BrowserCreated();
     }
 
+    // Asked once: the page's first paint, from Chromium itself through the in-process DevTools protocol (no port), and
+    // two animation frames after it, by which time the frame is on screen (measured: the paint event lands within
+    // ~35 ms of the pixels). The channel goes after: nothing else here needs it.
+    private DevToolsChannel? _paintWatch;
+
+    /// <summary>Run <paramref name="painted"/> once the page has painted and two frames have followed. UI thread, once
+    /// the browser exists.</summary>
+    internal void WatchFirstPaint(Action painted)
+    {
+        if (_browser == null || _paintWatch is not null) return;
+        using var host = new CefRef<_cef_browser_host_t>(_browser->get_host(_browser));
+        if (host.IsNull) return;
+        var channel = _paintWatch = new DevToolsChannel(host.Ptr);
+        IDisposable? subscription = null;
+        subscription = channel.Subscribe("Page.lifecycleEvent", json =>
+        {
+            if (!json.Contains("\"name\":\"firstPaint\"", StringComparison.Ordinal) || subscription is null) return;
+            subscription.Dispose();
+            subscription = null;
+            _ = channel.CallAsync("Runtime.evaluate",
+                    "{\"expression\":\"new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))\",\"awaitPromise\":true}")
+                .ContinueWith(_ => CefTask.Post(cef_thread_id_t.TID_UI, () =>
+                {
+                    StopWatchingPaint();
+                    AppCallback.Run(painted);
+                }), TaskScheduler.Default);
+        });
+        _ = channel.CallAsync("Page.enable", "{}");
+        _ = channel.CallAsync("Page.setLifecycleEventsEnabled", "{\"enabled\":true}");
+    }
+
+    private void StopWatchingPaint()
+    {
+        _paintWatch?.Dispose();
+        _paintWatch = null;
+    }
+
     private void BrowserClosing()
     {
+        StopWatchingPaint();
         if (_browser == null) return;
         using (new CefRef<_cef_browser_t>(_browser))
         {

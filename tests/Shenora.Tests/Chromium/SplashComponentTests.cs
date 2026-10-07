@@ -21,7 +21,7 @@ public class SplashComponentTests
     }
 
     private static SplashContext Context(Sink sink, IEventBus? bus = null, IServiceProvider? services = null, bool? dark = null) =>
-        new(services ?? new ServiceCollection().BuildServiceProvider(), dark, bus, sink, log: null);
+        new(services ?? new ServiceCollection().BuildServiceProvider(), dark, dark, bus, sink, log: null);
 
     [Fact]
     public void The_context_reports_the_surface_its_session_is_drawing()

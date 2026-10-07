@@ -15,7 +15,7 @@ namespace Shenora.Chromium.Host;
 internal sealed unsafe class NativeCaptionButtons : IDisposable
 {
     // The size Windows draws caption glyphs at, in DIPs.
-    private const int GlyphDips = 10;
+    internal const int GlyphDips = 10;
 
     /// <summary>A hover fades in over this and out over <see cref="FadeOut"/>: the system's own timings, measured on a
     /// real caption (about 85 ms and 150 ms). A press is instant.</summary>

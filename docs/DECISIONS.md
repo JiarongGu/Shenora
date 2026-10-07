@@ -149,6 +149,7 @@ docs cite them — so the number is the column to scan.
 | **D90** | IN THE CHROMIUM SHELL THE PAGE'S MEDIA SESSION IS THE OS'S; THE KIT BUILDS NO NATIVE MEDIA THERE UNTIL AN APP NEEDS IT. |
 | **D91** | THE AUXILIARY BROWSERS ARE ONE IMPLEMENTATION IN CORE, OVER BROWSERS EACH SHELL MAKES. |
 | **D92** | THE CHROMIUM SHELL'S SPLASH IS DRAWN NATIVELY OVER THE MAIN WINDOW'S RENDER AREA, COMPOSED IN C#. |
+| **D93** | THE APP'S COLOUR SCHEME IS A SETTING THE APP OWNS, AND THE DESKTOP SHELLS APPLY IT TO THEIR BROWSER ENGINE. |
 
 <!-- decisions-index:end -->
 
@@ -1343,8 +1344,10 @@ docs cite them — so the number is the column to scan.
   - **A frameless window gets the kit's title strip** until its page reports a title bar of its own (caption buttons or
     drag regions) or the splash lifts: on Windows the window's own painted buttons and hit-test (Snap Layouts), on
     macOS the traffic lights and a drag region; on Linux the splash draws it until the lift and hands its input to the
-    window manager.
-    Chromium's resize band inside a frameless window's edges stays uncovered.
+    window manager. Chromium's resize band inside a frameless window's edges stays uncovered. On Windows a click-through
+    cover paints the strip and the band as the window will until Chromium's first frame, since until then they show
+    Chromium's own colours, not the window's; the owner, on those light first frames: *"we can cover it until it gets
+    rendered properly"*.
   - 🔴 **With a card, CEF does not start early (D87):** `cef_initialize` holds the thread, so the card shows first.
     With none, nothing can show before CEF makes the window, and CEF starts early as without a splash.
   - **It lifts when every `OnShown` has finished AND the page is ready** (its handshake, or `closeSplash()` when held).
@@ -1354,6 +1357,23 @@ docs cite them — so the number is the column to scan.
     process when it decides whether a window is covered (on Linux a row, or a frameless window's band, stays clear).
   - **The constraints:** one splash per process, over the main window; a closed set of elements laid out the same on
     every OS; a setup must be quick, since the main window waits on it.
+
+- **D93 — THE APP'S COLOUR SCHEME IS A SETTING THE APP OWNS, AND THE DESKTOP SHELLS APPLY IT TO THEIR BROWSER ENGINE.**
+  `IColorScheme` holds whether the app follows the OS's light or dark setting or is held at one (`ColorScheme.System`,
+  `Light`, `Dark`). Both desktop shells register it, seeded from their host options, and apply it to the engine: the
+  Chromium shell to its request contexts (`set_chrome_color_scheme`), the WebView2 shell to the profile of each
+  `WebViewHost` given it (`PreferredColorScheme`). The page reads its effect as `prefers-color-scheme`; an app's
+  settings change it from C# or through `AddShenoraColorScheme`'s route. Owner, 2026-10-07: *"we are using standalone
+  chromium that should have its dedicate setting and managed with in the app"*, *"the app theme controlled by system
+  or not should be a setting"*.
+  - 🔴 **Why the engine's own setting and not the page's:** it is the app's Chromium, so its colour mode is the app's to
+    set, and it reaches what a page cannot: Chrome's own UI, a window's frame, and the frames before the page draws
+    (measured: held dark, a frameless window's first frames were `#202020`, not the light `#F3F3F3` of a light OS). The
+    page then follows it as it follows the OS, with no call of its own.
+  - **The app keeps the choice across launches, not the kit:** it passes the saved one to the host options, so the first
+    frame is already right, and saves it on `Changed`.
+  - **The constraints:** one setting per process, which an app's own `IColorScheme` registration replaces; a session's
+    Chromium profile takes it as it opens, not on a later change.
 
 ## Anti-goals — deliberately NOT built
 
