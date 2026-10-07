@@ -50,6 +50,15 @@ at the first list and missed five more breaking changes.
   says its own state is ready. The Chromium shell releases a held splash with it; the WebView2 shell calls the new
   `WindowCommandOptions.CloseSplash`, so the app's `SplashPanel` lifts on the same call.
 
+### Fixed
+
+- **A DevTools client that closed through `ChromiumBrowserProcess`'s relayed port could read the end of the stream
+  instead of its close frame.** The relay stopped at the first of its two pumps to end and let go of both sockets,
+  and when the client closed just after a message from Chromium, that was the other pump while it was still
+  answering the client's close. It now gives that pump a moment to finish and lets go of the sockets only once
+  neither runs. Measured with a thousand clients closing right after a message: 16 to 27 lost their close in each of
+  5 runs before, none in 5 runs after.
+
 ## 0.19.1 — 2026-10-01
 
 ### Fixed

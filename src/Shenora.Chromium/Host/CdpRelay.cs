@@ -244,8 +244,16 @@ internal sealed class CdpRelay : IAsyncDisposable
         var up = PumpAsync(client, engine, text => text, ended.Token);
         var down = PumpAsync(engine, client, Rewrite, ended.Token);
         await Task.WhenAny(up, down).ConfigureAwait(false);
+        // The other pump may still be answering a close: one side's close ends the other pump at once, and the sockets
+        // went with this method, so the side that closed read EOF instead of its close frame (measured: up to 4 clients
+        // in 200). It gets a moment to finish; only a pump that will not is cut off. Neither socket goes while one runs.
+        await Task.WhenAny(Task.WhenAll(up, down), Task.Delay(CloseGrace, CancellationToken.None)).ConfigureAwait(false);
         await ended.CancelAsync().ConfigureAwait(false);
+        await Task.WhenAll(up, down).ContinueWith(static t => _ = t.Exception, CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default).ConfigureAwait(false);
     }
+
+    private static readonly TimeSpan CloseGrace = TimeSpan.FromSeconds(2);
 
     /// <summary>The server half of the WebSocket handshake (RFC 6455 §4.2.2).</summary>
     public static string Accepting(Head request)
