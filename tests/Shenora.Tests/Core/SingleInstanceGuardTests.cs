@@ -241,7 +241,7 @@ public class SingleInstanceGuardTests
     }
 
     [Fact]
-    public void Two_launches_that_meet_one_shutdown_start_one_instance_and_hand_it_the_other()
+    public async Task Two_launches_that_meet_one_shutdown_start_one_instance_and_hand_it_the_other()
     {
         var scope = UniqueScope();
         var running = new ThreadHeldGuard("Shenora.Tests", scope, activated: _ => { });
@@ -267,7 +267,7 @@ public class SingleInstanceGuardTests
 
         var handed = arrived.TryTake(out var launch, TimeSpan.FromSeconds(10));
         finished.Set();
-        SingleInstanceResult[] results = [first.Result, second.Result];
+        var results = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(30));
         Assert.True(handed);
         Assert.Single(results, r => r is SingleInstanceResult.Acquired);
         Assert.Equal(results[0] is SingleInstanceResult.Acquired ? "second" : "first", launch!.Arguments.Single());
