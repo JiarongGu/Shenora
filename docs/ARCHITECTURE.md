@@ -245,7 +245,9 @@ Shenora.slnx
 │   │                                          native splash (D92): the component model, one layout
 │   │                                          for every OS, the session that lifts it, and a
 │   │                                          surface per OS (Windows: a layered popup on its own
-│   │                                          thread). Interop/Generated/ is
+│   │                                          thread; macOS: an NSWindow whose layer a thread of
+│   │                                          its own renders into; Linux: an X11 window on a
+│   │                                          connection of its own). Interop/Generated/ is
 │   │                                          written by `dev.mjs cef-binding` (ClangSharp over CEF's C
 │   │                                          API at ONE Stable API version, pinned in cef.json):
 │   │                                          Common/ plus one folder per OS, and a build compiles

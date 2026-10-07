@@ -7,14 +7,16 @@ namespace Shenora.Chromium.Host;
 internal delegate SplashFrame SplashRender(Size windowPx, float scale, ISplashTextMeasurer measurer);
 
 /// <summary>
-/// One platform's splash window: borderless, never focused, drawn by the platform's own 2D and text APIs. Every member
-/// is safe from any thread; <see cref="IDisposable.Dispose"/> destroys the window at once and may run twice.
+/// One platform's splash window: borderless, never focused, drawn by the platform's own 2D and text APIs.
+/// <see cref="Show"/> runs on the runner's thread, <see cref="Attach"/> and <see cref="FollowOwner"/> on CEF's UI thread
+/// (both the main thread on macOS, where AppKit requires it); the rest from any thread. <see cref="IDisposable.Dispose"/>
+/// destroys the window at once and may run twice.
 /// </summary>
 internal interface ISplashSurface : IDisposable
 {
-    /// <summary>Open the window where the main window will open (CEF's device-independent screen coordinates; no place
-    /// is the primary display's centre; maximized covers that display's work area), with its first frame already
-    /// drawn.</summary>
+    /// <summary>Open the window where the main window will open (CEF's device-independent screen coordinates; with no
+    /// place, centred the way that OS's Chromium centres a new window; maximized covers that display's work area), with
+    /// its first frame already drawn.</summary>
     void Show(ChromiumWindowGeometry.Plan placement, SplashRender render);
 
     /// <summary>Draw again soon. Calls close together draw once.</summary>

@@ -33,7 +33,7 @@ at the first list and missed five more breaking changes.
 ### Added
 
 - **The Chromium shell's splash: a native window over the main window's place, shown before Chromium starts.**
-  `ChromiumHostOptions.Splash` (D92). The OS draws it (Windows today; macOS and Linux show none yet), so it does not
+  `ChromiumHostOptions.Splash` (D92). The OS draws it (Windows, macOS, and Linux with an X display), so it does not
   wait on Chromium's GPU process, which Chromium's first frame does. Its content is a component: a setup
   function that runs once and returns a render function over `SplashState` values, built from `SplashStack`,
   `SplashLayer`, `SplashText`, `SplashImage` (PNG) and `SplashProgress`, or a class (`ISplashComponent`, constructor
@@ -43,7 +43,10 @@ at the first list and missed five more breaking changes.
   handshake, or, with `HoldUntilClosed`, the page's `closeSplash()`; `Timeout` (15 s) stands in for the page only.
   `FadeOut` (150 ms) fades it, and `ChromiumSplash.Close()` lifts it from code outside the component. It takes the
   clicks over it, so none reaches the page loading unseen beneath. With a splash, CEF no longer starts inside
-  `UseChromium` (D87) on Windows: the splash shows first.
+  `UseChromium` (D87): the splash shows first. On macOS its first frame came about 0.4 s after launch and the main
+  window about 0.4 s after that, with the splash in front of it at its bounds and the page beneath at 60 frames a
+  second; on Linux (openbox on Xvfb) the same order, with the splash leaving the main window's bottom row of pixels
+  uncovered, without which X counts the window obscured and Chromium stops drawing it.
   Measured on Windows (Release, ten interleaved pairs): the splash 219 ms after `Main` against 666 ms with CEF started
   first, and the main window no later (907 against 949 ms); the page was painted under it as it lifted.
 - **`WindowCommands.closeSplash()`** (`@shenora/react`) and its route `SHENORA.WINDOW` / `CLOSE_SPLASH`: the page

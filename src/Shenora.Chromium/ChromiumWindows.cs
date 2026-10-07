@@ -100,8 +100,9 @@ public sealed unsafe class ChromiumWindows
 
     /// <summary>
     /// Where the main window will open, for a splash that shows before CEF can say: the state it restores (from the same
-    /// store the window then uses), else its own size centred on the primary work area. <paramref name="workAreas"/> are
-    /// the displays' work areas in DIP, primary first; with none there is no place, only a size.
+    /// store the window then uses, against <paramref name="workAreas"/>, the displays' work areas in DIP, primary first),
+    /// else only its size, with no place: CEF centres such a window by each OS's own rule (on macOS, above the middle),
+    /// so the splash centres itself the same way rather than guess.
     /// </summary>
     internal ChromiumWindowGeometry.Plan MainWindowPlan(IServiceProvider services, IReadOnlyList<Rectangle> workAreas)
     {
@@ -114,9 +115,7 @@ public sealed unsafe class ChromiumWindows
             catch (Exception ex) { AppCallback.Log(_log, () => "[Shenora.Chromium] The window state could not be read for the splash", LogLevel.Warning, ex); }
             return ChromiumWindowGeometry.PlanFor(saved, state.Options ?? new WindowStateOptions(), width, height, workAreas);
         }
-        if (workAreas.Count == 0) return new(width, height, null, null, false);
-        var primary = workAreas[0];
-        return new(width, height, primary.X + ((primary.Width - width) / 2), primary.Y + ((primary.Height - height) / 2), false);
+        return new(width, height, null, null, false);
     }
 
     /// <summary>Close every open window; the shell quits as the last one goes. Any thread.</summary>

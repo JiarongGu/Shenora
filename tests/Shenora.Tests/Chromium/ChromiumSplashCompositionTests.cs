@@ -43,12 +43,14 @@ public class ChromiumSplashCompositionTests
     }
 
     [Fact]
-    public void Without_saved_state_the_splash_plans_the_windows_own_size_centred_on_the_primary_work_area()
+    public void Without_saved_state_the_splash_plans_only_the_windows_size_for_the_surface_to_centre()
     {
+        // CEF centres such a window by each OS's own rule (macOS: above the middle, measured 86 points off exact), so the
+        // plan carries no place and the surface centres itself the same way.
         var (app, windows) = Compose(new ChromiumHostOptions { SingleInstance = null, Window = new ChromiumWindowOptions { Width = 1000, Height = 760 } });
         using (app)
         {
-            Assert.Equal(new ChromiumWindowGeometry.Plan(1000, 760, 460, 140, false),
+            Assert.Equal(new ChromiumWindowGeometry.Plan(1000, 760, null, null, false),
                 windows.MainWindowPlan(app.Services, [new Rectangle(0, 0, 1920, 1040), new Rectangle(1920, 0, 1280, 1000)]));
             Assert.Equal(new ChromiumWindowGeometry.Plan(1000, 760, null, null, false), windows.MainWindowPlan(app.Services, []));
         }

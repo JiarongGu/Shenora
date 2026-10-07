@@ -293,7 +293,7 @@ a file open, the app's unhandled exceptions, the main window's input taken while
 browser sessions, crash reload and dev-server hot reload: a complete shell, so an app on Windows, macOS or Linux needs
 no other shell package (D88). A **splash** the app composes in C# (`ChromiumHostOptions.Splash`, D92) covers the
 window while Chromium starts and the app's boot work runs: the OS draws it, so it shows before Chromium can draw
-anything (Windows today). **Or inside a WinForms
+anything. **Or inside a WinForms
 app**, as a `ChromiumView` control beside the WebView2 one, keeping `OptimizedForm`, the window commands
 and `SecondaryWindows`:
 
@@ -315,7 +315,7 @@ CEF beside it says which package to reference. A reference that arrives only thr
 carries the code, not CEF. Windows, macOS, where the build makes an app bundle, and Linux, where the machine
 needs `libnss3` and `libasound2`. Run from that layout, `UseChromium` starts Chromium itself, so Chromium sets up
 while the rest of the app is composed and the first frame comes sooner (D87): call it on the thread that runs the
-app. With a splash (on Windows today), Chromium starts after it instead, so the splash is not held up by Chromium's start (D92). `samples/Shenora.Sample.Chromium` is a whole `UseChromium` app for all three OSes, and
+app. With a splash, Chromium starts after it instead, so the splash is not held up by Chromium's start (D92). `samples/Shenora.Sample.Chromium` is a whole `UseChromium` app for all three OSes, and
 `docs/getting-started.md` (2b) walks through it.
 
 ### `@shenora/react` — the client half

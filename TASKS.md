@@ -41,12 +41,13 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 > stays the small-app (WebView2) choice on Windows.
 
 What `Shenora.Windows` has and the Chromium shell does not, inventoried from the source, in the order to build:
-- [ ] **The splash on macOS and Linux** (D92). Windows draws it; `SplashSurfaces.Create` answers none on the other
-  two. macOS: an `NSWindow` on the main thread, CoreGraphics + CoreText rendered off it into a layer, a child window
-  of the main one; first measure whether a window ordered front before CEF's loop runs appears at all, and whether
-  Chromium's occlusion check counts a child window over the main one. Linux: X11 with its own connection and thread,
-  cairo + pango, `_NET_WM_WINDOW_TYPE_SPLASH` and `WM_TRANSIENT_FOR`; first measure that openbox and WSLg's Weston
-  honour its position.
+- [ ] 🅿️ **The Linux splash on a real GNOME or KDE session.** Measured under openbox on Xvfb (order, bounds, the page
+  drawing beneath) and WSLg's Weston (timing, the page drawing); Weston keeps no EWMH stacking list, so its order was
+  not seen. Mutter and KWin are compositing managers, where the one-row gap the splash leaves should not be needed;
+  confirm it does no harm there, and that they keep a transient splash above its owner.
+- [ ] 🅿️ **The macOS splash's PIXELS.** Its presence, order, bounds and lift are measured through the window server's
+  list; a screen capture needs Screen Recording permission on the build Mac (without it `screencapture` shows only
+  the wallpaper), which a person grants. Then: CJK through CoreText, the corner radius against the main window's.
 - [ ] 🅿️ **The splash taking the foreground on a real launch, on Windows.** It asks for it, and a launch from a
   background process is refused (measured: it opened under the app the user was in). Whether a double-click from
   Explorer brings it to the front needs a real launch by a person.

@@ -214,8 +214,34 @@ Run: gate          ← a launch turned away shows nothing
   cut round on Windows 11 unless maximized. It asks for the foreground as it shows, because a non-foreground window
   opens under the foreground one (measured); Windows' documented foreground rules grant that only to a launch allowed
   to take the foreground, so one started in the background stays under (not yet seen on a real launch: TASKS).
-- **macOS and Linux** show no splash yet: `SplashSurfaces.Create` answers none there, and the app's `OnShown` work
-  still runs.
+- **macOS** (`MacSplashSurface`): a borderless `NSWindow` made on the main thread, after `MacPlatform.Prepare`, since
+  `NSApp` must be CEF's own class before anything makes one. A thread of its own renders through CoreGraphics,
+  CoreText and ImageIO into a layer the splash owns (no delegate, so AppKit manages none of it): committed from that
+  thread in explicit Core Animation transactions, the only kind that reaches the screen from a thread with no run
+  loop, until the main window exists, and posted to the main thread once CEF's loop runs there. It joins the main
+  window as a child. A window with no saved place is centred by AppKit's `[NSWindow center]`, as Chromium centres the
+  main one; centred exactly it jumped 86 points as it snapped, centred this way 1. Measured through the window
+  server's list (macOS 15; `screencapture` without Screen Recording permission shows only the wallpaper): the first
+  frame about 0.4 s after launch and the splash alone on screen at 0.6 s, in front of the main window at its bounds
+  once that exists, the page beneath at 60 frames a second, and gone after the lift.
+- **Linux** (`LinuxSplashSurface`): an X11 window on a connection and thread of its own, drawn by cairo and pango and
+  put up with `XPutImage`; typed `_NET_WM_WINDOW_TYPE_SPLASH`, undecorated, never given the keyboard, and transient for
+  the main window. The hint goes up again as the main window maps, because a manager reads one naming a window it
+  does not manage yet as nothing (openbox stacked the main window over the splash, measured). It leaves the main
+  window's bottom row of pixels uncovered: without a compositor X marks a window covered entirely as fully obscured,
+  and Chromium stops drawing it (0 frames a second and hidden under openbox on Xvfb; 60 and visible with the row
+  left). It sends the server only the pixels that changed (an indeterminate bar's slide is a few rows, the whole
+  window megabytes), fades through `_NET_WM_WINDOW_OPACITY` where a compositor runs (whether Weston honours it is
+  unseen; ignored, the fade ends in a cut), and has no splash without an X display.
+- **Xlib's default error handler exits the process**, and the Linux splash names a window it does not own, the main
+  one, which may be gone by the time a request reaches the server. So it calls `XInitThreads` before its first Xlib
+  call (two threads hold connections) and installs a handler that answers errors on its own connections and hands
+  every other to the one there before. It also sets `WM_DELETE_WINDOW`, which it ignores: a manager closes a window
+  without it by killing its client's connection (ICCCM), and Xlib's I/O error handler would then exit the app.
+- Measured on Linux, under openbox on Xvfb: the splash alone before the main window, above it at its bounds after,
+  the page beneath at 60 frames a second, gone after the lift, and the app ending cleanly when its main window was
+  closed during the splash. Under WSLg's Weston: the same timings and 60 frames a second; its stacking was not
+  observable (it keeps no EWMH stacking list).
 
 ## The WebView2 host
 
