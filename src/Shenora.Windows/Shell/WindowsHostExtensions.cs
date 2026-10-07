@@ -44,6 +44,15 @@ public sealed class WindowsHostOptions
     /// change it later through <see cref="IColorScheme"/>, and save it on its <see cref="IColorScheme.Changed"/>.</summary>
     public ColorScheme ColorScheme { get; init; } = ColorScheme.System;
 
+    /// <summary>Whether the main window plays the system's animations as it opens, closes, minimizes and maximizes
+    /// (<see cref="WindowAnimations.System"/>, the default), or appears and goes at once. The main window only: a
+    /// secondary window keeps the system's.</summary>
+    public WindowAnimations WindowAnimations { get; init; } = WindowAnimations.System;
+
+    /// <summary>Test seam: what turns a window's system animations off, given its handle (DWM's attribute cannot be read
+    /// back).</summary>
+    internal Action<nint>? DisableSystemAnimations { get; init; }
+
     /// <summary>Test seam: replaces the blocking <c>Application.Run(form)</c> call.</summary>
     internal Action<Form>? MessageLoop { get; init; }
 
@@ -231,6 +240,15 @@ internal sealed class WinFormsRunner : IShenoraRunner
                 {
                     // AttachTo owns the apply-before-show / save-on-closed ordering.
                     new WindowStateManager(windowState.Store(app.Services), windowState.Options).AttachTo(form);
+                }
+
+                // On each handle the form gets, which WinForms creates before it shows the window: DWM's setting is the
+                // handle's, and a recreated handle starts without it.
+                if (options.WindowAnimations is WindowAnimations.None)
+                {
+                    var disable = options.DisableSystemAnimations ?? (hwnd => DwmTransitions.Disable(hwnd));
+                    form.HandleCreated += (_, _) => disable(form.Handle);
+                    if (form.IsHandleCreated) disable(form.Handle);
                 }
 
                 // A later launch of this scope reaches the guard's channel: bring the main window to the front, then

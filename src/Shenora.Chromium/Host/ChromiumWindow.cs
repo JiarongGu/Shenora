@@ -437,6 +437,9 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
             var size = new _cef_size_t { width = _plan?.Width ?? _options.Width, height = _plan?.Height ?? _options.Height };
             window->center_window(window, &size);
         }
+        // Before it shows, since the animation plays as it appears.
+        if (_options.Animations is WindowAnimations.None && !ChromiumWindowAnimations.Disable((nint)window->get_window_handle(window)))
+            AppCallback.Log(_log, () => $"[Shenora.Chromium] Window '{Name}': its animations could not be turned off (no handle, or the system refused)", LogLevel.Debug);
         // Before it shows: a splash must be owned by the window by then, or showing the window raises it over the splash.
         if (Opening is { } opening)
         {

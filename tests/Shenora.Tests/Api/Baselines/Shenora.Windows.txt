@@ -355,6 +355,7 @@ static class Shenora.Windows.WindowsHostExtensions
 sealed class Shenora.Windows.WindowsHostOptions
   public Shenora.Core.Shell.ColorScheme ColorScheme { get; init; }
   public Shenora.Core.Shell.SingleInstanceHostOptions? SingleInstance { get; init; }
+  public Shenora.Core.Shell.WindowAnimations WindowAnimations { get; init; }
   public Shenora.Core.Shell.WindowStateHostOptions? WindowState { get; init; }
   public Shenora.Windows.WinFormsBootstrapOptions? Bootstrap { get; init; }
   public required System.Func<System.IServiceProvider, System.Windows.Forms.Form> MainForm { get; init; }

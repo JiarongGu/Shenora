@@ -125,6 +125,54 @@ public class WinFormsRunnerTests
     }
 
     [Fact]
+    public void The_main_window_loses_its_system_animations_as_its_handle_is_created_when_asked()
+    {
+        // Before it shows: WinForms raises HandleCreated inside CreateHandle, ahead of the show. DWM's attribute cannot
+        // be read back, so the call is what the test sees.
+        nint disabled = 0, handle = 0;
+        var builder = Builder(UniqueRoot());
+        builder.UseWindows(new WindowsHostOptions
+        {
+            MainForm = _ => new Form(),
+            SkipProcessInit = true,
+            SingleInstance = null,
+            WindowAnimations = WindowAnimations.None,
+            DisableSystemAnimations = hwnd => disabled = hwnd,
+            MessageLoop = form => handle = form.Handle,
+        });
+        using (var built = builder.Build()) built.Run();
+
+        Assert.NotEqual(0, handle);
+        Assert.Equal(handle, disabled);
+    }
+
+    [Fact]
+    public void The_main_window_keeps_its_system_animations_by_default()
+    {
+        var asked = false;
+        var builder = Builder(UniqueRoot());
+        builder.UseWindows(new WindowsHostOptions
+        {
+            MainForm = _ => new Form(),
+            SkipProcessInit = true,
+            SingleInstance = null,
+            DisableSystemAnimations = _ => asked = true,
+            MessageLoop = form => _ = form.Handle,
+        });
+        using (var built = builder.Build()) built.Run();
+
+        Assert.False(asked);
+    }
+
+    // Set-only (reading it back answers E_INVALIDARG): this pins the call DWM accepts, not its polarity.
+    [Fact]
+    public void The_system_animations_call_is_one_DWM_accepts()
+    {
+        using var form = new Form { ShowInTaskbar = false };
+        Assert.True(DwmTransitions.Disable(form.Handle));
+    }
+
+    [Fact]
     public void A_losing_launch_hands_the_running_instance_its_arguments_by_default()
     {
         var root = UniqueRoot();

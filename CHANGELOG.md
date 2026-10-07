@@ -82,6 +82,15 @@ at the first list and missed five more breaking changes.
 - **`SingleInstanceGuard.StopListening()` and `ActivateOrTakeOver(...)`**: the running instance's side of a shutdown
   (later launches stop reaching it; the scope stays held until `Dispose`) and a later launch's side of it (until one
   succeeds within the wait, hand itself over or take the scope and start). Both desktop shells use them.
+- **A window's system animations, a setting (`WindowAnimations`)**: `System` (the default, as before) or `None`, the
+  window appearing and going at once. `ChromiumWindowOptions.Animations` per Chromium window, and
+  `WindowsHostOptions.WindowAnimations` for the WinForms shell's main window. On Windows DWM turns the open, close,
+  minimize and maximize animations off together; on macOS the window's open and close (compiled, not run); on Linux the
+  window manager decides, and it does nothing. A window opened later takes its own options' value, and a WinForms
+  secondary window keeps the system's. Off, a splash's cover reaches a frameless Chromium window sooner: with the same
+  switch on the main window, before the setting existed, its pixels came ~40 ms after the show instead of ~130 ms (one
+  A/B, three runs each). Through the setting itself, run twice on Windows: DWM accepts the call and the window opens and
+  closes; not re-timed.
 
 ### Fixed
 

@@ -125,6 +125,21 @@ public enum ColorScheme
 }
 
 /// <summary>
+/// Whether a window plays the system's own animations: as it opens and closes, and on Windows as it minimizes and
+/// maximizes too, since Windows turns them on or off together. On Linux the window manager decides, and the setting
+/// does nothing. The system's by default, so a window opens as the desktop's others do; turn them off where a
+/// window's first frames matter, as a frameless window's under a splash.
+/// </summary>
+public enum WindowAnimations
+{
+    /// <summary>The system's, as it plays them for any window.</summary>
+    System,
+
+    /// <summary>None: the window appears and goes at once.</summary>
+    None,
+}
+
+/// <summary>
 /// Clipboard access. Fully portable — every host has a clipboard. The desktop implementation runs each
 /// operation on a dedicated STA thread.
 /// </summary>

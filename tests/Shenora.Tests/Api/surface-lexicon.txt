@@ -124,6 +124,10 @@ Window
 Windows
 
 # ── Windows desktop presentation — the frameless-chrome cluster ───────────────────────────────────
+# `Animations` (2026-10-08) — in `WindowAnimations`, the open, close, minimize and maximize animations the system
+# plays for a window: each platform's own word (DWM's "window animations" and `DWMWA_TRANSITIONS_FORCEDISABLED`,
+# AppKit's `NSWindow.animationBehavior`).
+Animations
 Button
 Caption
 Colors

@@ -130,6 +130,14 @@ public sealed class ChromiumWindowOptions
     /// <summary>What shows before the page paints, so a dark page never flashes white.</summary>
     public Color? BackgroundColor { get; init; }
 
+    /// <summary>
+    /// Whether the window plays the system's animations as it opens and closes (<see cref="WindowAnimations.System"/>,
+    /// the default), or appears and goes at once. On Windows minimize and maximize go with them; on Linux the window
+    /// manager decides. Per window: one opened with <see cref="ChromiumWindows.Open"/> takes its own options' value,
+    /// not the main window's. Off, a splash's cover reaches a frameless window sooner as it appears, on Windows.
+    /// </summary>
+    public WindowAnimations Animations { get; init; } = WindowAnimations.System;
+
     /// <summary>The page to open, relative to the app's origin. Null means its root.</summary>
     public string? Path { get; init; }
 

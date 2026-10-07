@@ -947,6 +947,10 @@ enum Shenora.Core.Shell.UnhandledExceptionSource (int)
   public const Shenora.Core.Shell.UnhandledExceptionSource UiThread = 0
   public const Shenora.Core.Shell.UnhandledExceptionSource UnobservedTask = 2
   public int value__
+enum Shenora.Core.Shell.WindowAnimations (int)
+  public const Shenora.Core.Shell.WindowAnimations None = 1
+  public const Shenora.Core.Shell.WindowAnimations System = 0
+  public int value__
 enum Shenora.Core.Shell.WindowOrientation (int)
   public const Shenora.Core.Shell.WindowOrientation Landscape = 1
   public const Shenora.Core.Shell.WindowOrientation Portrait = 0

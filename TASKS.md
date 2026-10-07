@@ -41,12 +41,6 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 > stays the small-app (WebView2) choice on Windows.
 
 What `Shenora.Windows` has and the Chromium shell does not, inventoried from the source, in the order to build:
-- [ ] **A frameless window's first ~0.1–0.15 s under a light theme, when the app follows it.** The cover (D92) shows
-  right after CEF's show, so the window's own first frames, during the desktop's open animation, still show Chromium's
-  `#F3F3F3` in a dark app whose `ColorScheme` is `System` (held `Dark`, they are `#202020`). Turning the main window's
-  own open animation off brought the cover's pixels to ~40 ms after the show from ~130 ms (one A/B, three runs each);
-  showing the cover before the show is not the way (one run: the window opened behind). Decide whether a kit window
-  may lose its open animation for this. macOS and Linux first frames are not measured.
 - [ ] 🅿️ **The splash's frameless title strip with real input, on Windows.** Measured by hit-test only: the strip
   answers `HTCAPTION` and its close button `HTCLOSE`, and that point answers the page after the lift. A real drag, a
   double-click, and Snap Layouts on a hover over its maximize button need a person's mouse.

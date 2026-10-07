@@ -305,7 +305,9 @@ Run: gate          ← a launch turned away shows nothing
   window's colours. It goes at the page's first paint, which `ChromiumBrowser.WatchFirstPaint` learns from Chromium
   over the in-process DevTools protocol (`Page.lifecycleEvent`, within ~35 ms of the pixels) and two animation frames
   after, or at the lift. Measured: light only in the window's first ~0.1–0.15 s, during its own open animation, and
-  none after.
+  none after. That animation is the app's to keep or drop (`ChromiumWindowOptions.Animations`, `WindowAnimations`,
+  the system's by default): off, the cover's pixels came ~40 ms after the show instead of ~130 ms (one A/B, three runs
+  each, before the setting existed).
 
 ## The app's colour scheme
 
