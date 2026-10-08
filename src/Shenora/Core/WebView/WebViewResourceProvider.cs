@@ -251,9 +251,9 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
 
     /// <summary>
     /// A folder as MSBuild writes it into a manifest name: each dot-separated part made an identifier — a
-    /// character no identifier holds becomes <c>_</c>, and a part that cannot start one gains a leading
-    /// <c>_</c> (<c>my-lib</c> → <c>my_lib</c>, <c>1.0</c> → <c>_1._0</c>, <c>-lead</c> → <c>_lead</c>).
-    /// File names are kept as they are.
+    /// character no identifier holds becomes <c>_</c>, a part that cannot start one gains a leading <c>_</c>,
+    /// and a part that comes out as a lone <c>_</c> is doubled (<c>my-lib</c> → <c>my_lib</c>, <c>1.0</c> →
+    /// <c>_1._0</c>, <c>-lead</c> → <c>_lead</c>, <c>_</c> → <c>__</c>; measured). File names are kept as they are.
     /// </summary>
     internal static string ManifestFolder(string folder) =>
         string.Join('.', folder.Split('.').Select(part =>
@@ -267,17 +267,16 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
                 if (IsIdentifierPart(part[0])) name.Append(part[0]);
             }
             foreach (var c in part.AsSpan(1)) name.Append(IsIdentifierPart(c) ? c : '_');
-            return name.ToString();
+            return name.Length == 1 && name[0] == '_' ? "__" : name.ToString();
         }));
 
     private static bool IsIdentifierStart(char c) =>
         char.IsLetter(c) || char.GetUnicodeCategory(c) == UnicodeCategory.ConnectorPunctuation;
 
-    private static bool IsIdentifierPart(char c) => char.GetUnicodeCategory(c) is UnicodeCategory.UppercaseLetter
-        or UnicodeCategory.LowercaseLetter or UnicodeCategory.TitlecaseLetter or UnicodeCategory.ModifierLetter
-        or UnicodeCategory.OtherLetter or UnicodeCategory.LetterNumber or UnicodeCategory.DecimalDigitNumber
-        or UnicodeCategory.ConnectorPunctuation or UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark
-        or UnicodeCategory.Format;
+    // A letter or a decimal digit, or a connector or a mark; a letter NUMBER (Ⅻ) and a format character are not.
+    private static bool IsIdentifierPart(char c) => char.IsLetterOrDigit(c) || char.GetUnicodeCategory(c)
+        is UnicodeCategory.ConnectorPunctuation or UnicodeCategory.NonSpacingMark
+        or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark;
 
     private static string Normalize(string path) => path.Replace('\\', '/').TrimStart('/');
 

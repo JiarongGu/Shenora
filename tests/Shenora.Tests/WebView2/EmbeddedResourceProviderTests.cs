@@ -56,6 +56,36 @@ public class EmbeddedResourceProviderTests
     public void Folders_resolve_as_MSBuild_names_them(string path, string marker) =>
         Assert.Contains(marker, ReadAll(Embedded().GetResourceStream(path)));
 
+    // The names MSBuild wrote for these folders, measured on a throwaway project (2026-10-08). Their file names cannot be
+    // fixtures here (doctor keeps tracked names ASCII), so an assembly holding exactly those names stands in.
+    [Theory]
+    [InlineData("_/f.js", "MyApp.wwwroot.__.f.js")]               // a lone underscore is doubled
+    [InlineData("Ⅻ/f.js", "MyApp.wwwroot.__.f.js")]           // a letter NUMBER (Ⅻ) is no identifier character
+    [InlineData("a‍b/f.js", "MyApp.wwwroot.a_b.f.js")]        // nor is a format character (a zero-width joiner)
+    [InlineData("x⃝y/f.js", "MyApp.wwwroot.x⃝y.f.js")]    // an enclosing mark is
+    [InlineData("9/f.js", "MyApp.wwwroot._9.f.js")]
+    [InlineData("_x/f.js", "MyApp.wwwroot._x.f.js")]
+    [InlineData("ab_/f.js", "MyApp.wwwroot.ab_.f.js")]
+    public void Every_folder_resolves_to_the_name_MSBuild_wrote(string path, string manifestName) =>
+        Assert.Equal(manifestName, ReadAll(new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
+        {
+            Assembly = new ManifestOnly(manifestName),
+            ResourcePrefix = "MyApp.wwwroot",
+        }).GetResourceStream(path)));
+
+    /// <summary>An assembly that is only a manifest: each resource's content is its own name.</summary>
+    private sealed class ManifestOnly(params string[] names) : Assembly
+    {
+        public override string[] GetManifestResourceNames() => names;
+
+        public override Stream? GetManifestResourceStream(string name) =>
+            names.Contains(name) ? new MemoryStream(System.Text.Encoding.UTF8.GetBytes(name)) : null;
+
+        public override AssemblyName GetName() => new("ManifestOnly");
+
+        public override AssemblyName GetName(bool copiedName) => GetName();
+    }
+
     // MSBuild reads msg.fr.json as a French resource and builds it into a satellite assembly, out of the main one —
     // unless the item says WithCulture="false", which this project's does, as an app's must (measured: without it both
     // files were missing from the manifest).
