@@ -53,14 +53,17 @@ public class ChromiumPublishFoldersTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
-    // Publish only: a build is what an IDE and `dotnet run` start.
-    [Fact]
-    public void A_build_stays_flat_with_the_option()
+    // Publish only: a build is what an IDE and `dotnet run` start. The second row hands the build the publish layout's
+    // own property as a global, which the MSBuild task passes on to the layout it enters unless the build overrides it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_build_stays_flat_with_the_option(bool strayPublishProperty)
     {
         var root = NewRoot();
         try
         {
-            var tree = Build(root, folders: true);
+            var tree = Build(root, folders: true, strayPublishProperty ? ["-p:_ShenoraWindowsPublish=true"] : []);
             Assert.Equal(["MyApp.App.deps.json", "MyApp.App.dll", "MyApp.App.pdb", "MyApp.App.runtimeconfig.json", "MyApp.dll",
                 "MyApp.exe", "chrome_elf.dll", "d3dcompiler_47.dll", "icudtl.dat", "libcef.dll", "resources.pak",
                 "v8_context_snapshot.bin", "vk_swiftshader_icd.json"], tree.Where(f => !f.Contains('/')));
@@ -149,10 +152,11 @@ public class ChromiumPublishFoldersTests
     }
 
     // A real build of the same app; the tree of its output folder.
-    private static string[] Build(string root, bool folders)
+    private static string[] Build(string root, bool folders, string[] properties)
     {
         var (project, dist) = App(root, folders);
-        Run("dotnet", ["build", project, $"-p:ShenoraCefDist={dist}", "--disable-build-servers", "-nologo", "-v:minimal"]);
+        Run("dotnet", ["build", project, "-c", "Debug", $"-p:ShenoraCefDist={dist}", "--disable-build-servers", "-nologo", "-v:minimal",
+            .. properties]);
         return Tree(Path.Combine(root, "app", "bin", "Debug", "net10.0", "win-x64"));
     }
 

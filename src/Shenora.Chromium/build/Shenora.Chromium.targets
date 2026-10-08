@@ -372,7 +372,9 @@ public sealed class ShenoraChromiumStampLauncher : Task
   </Target>
 
   <Target Name="ShenoraChromiumLayout" AfterTargets="Build" DependsOnTargets="ShenoraChromiumFetchCef" Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
-    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="_ShenoraChromiumWindowsInto" Properties="_ShenoraWindowsInto=$(OutDir)" />
+    <!-- _ShenoraWindowsPublish=false spelled out: the task passes the build's global properties on, and a build is
+         never the folders shape and never cleans. -->
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="_ShenoraChromiumWindowsInto" Properties="_ShenoraWindowsInto=$(OutDir);_ShenoraWindowsPublish=false" />
   </Target>
 
   <Target Name="ShenoraChromiumPublishLayout" AfterTargets="Publish" DependsOnTargets="ShenoraChromiumFetchCef" Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">

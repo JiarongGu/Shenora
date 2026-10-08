@@ -142,6 +142,8 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **The Chromium shell's message when .NET is missing, on Windows, advised a self-contained publish**, which the SDK
+  refuses for a Windows Chromium app (NETSDK1067). It now says only to install the .NET runtime the app targets.
 - **On the WebView2 shell with app routes, a request for a path the bundle lacks failed as a network error.** The
   routes share the bundle's virtual host (D45), and a request they declined was left to WebView2, which then resolved
   the virtual host itself: a page's `fetch()` threw "Failed to fetch" instead of reading a 404. The bundle's host now
