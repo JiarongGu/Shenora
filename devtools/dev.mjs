@@ -1083,21 +1083,26 @@ function runPosixLauncherBuild() {
   const mount = `${repo.replace(/\\/g, '/')}:/src`;
   const script = [
     'set -e',
-    'command -v cmake >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq cmake >/dev/null; }',
+    // cmake, and the X11 headers the startup screen builds against (it loads the libraries at run time).
+    'apt-get update -qq && apt-get install -y -qq cmake libx11-dev libxrandr-dev >/dev/null',
     // Build OUT of the mount: build artefacts written back through the bind mount would land in the
     // working tree, and CMake caches absolute container paths that mean nothing on the host.
-    'cmake -S src/Shenora.Launcher -B /tmp/launcher-build -DCMAKE_BUILD_TYPE=Release >/dev/null',
+    'cmake -S src/Shenora.Launcher -B /tmp/launcher-build -DCMAKE_BUILD_TYPE=Release -DSHENORA_LAUNCHER_TESTS=ON >/dev/null',
     'cmake --build /tmp/launcher-build',
     // Prove it RUNS, not just links: with no stage pending it must report nothing applied and exit 0.
     'cd /tmp && /tmp/launcher-build/shenora-launcher --apply-and-exit',
     'stat -c "%n %s" /tmp/launcher-build/shenora-launcher',
+    // The four binaries out, for the startup screen's run under Xvfb (devtools/_* is gitignored).
+    'mkdir -p /src/devtools/_launcher-posix && cp /tmp/launcher-build/shenora-launcher /tmp/launcher-build/shenora-launcher-screen '
+      + '/tmp/launcher-build/shenora-launcher-wide /tmp/launcher-build/shenora-fake-app /src/devtools/_launcher-posix/',
   ].join('\n');
 
   const ok = step('gcc:13 cross-build (POSIX half)', () => run('docker',
     ['run', '--rm', '-v', mount, '-w', '/src', 'gcc:13', 'bash', '-c', script]));
   if (!ok) { process.exitCode = 1; return; }
   console.log('\nlauncher --posix: the POSIX half compiles, links and runs under gcc.\n'
-    + 'Conformance is Windows-only locally — run `dev.mjs launcher` for that.');
+    + 'Its binaries, the startup screen\'s test launchers and fake app among them, are in devtools/_launcher-posix/ for '
+    + 'a conformance run under Xvfb; `dev.mjs launcher` runs it on Windows.');
 }
 
 function ensureTool(toolName) {

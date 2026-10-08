@@ -1,6 +1,7 @@
 // The app a screen launcher starts in the conformance harness. Records its arguments, then, per SHENORA_FAKE_APP:
 // "close" — checks the launcher's window is visible and closes it, as the kit's shells do; "exit" — exits at once (a
-// second launch that handed itself over); "stay" — runs until the harness writes stop.txt (the timeout case).
+// second launch that handed itself over); "stay" — runs until the harness writes stop.txt (the timeout case);
+// "destroy" (X11 only) — destroys the window outright, as a window manager or xdotool can, rather than asking.
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -34,7 +35,7 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 300 && !std::ifstream(dir + "stop.txt"); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
         return 0;
     }
-    if (m != "close" || window.empty()) return 0;
+    if ((m != "close" && m != "destroy") || window.empty()) return 0;
     bool visible = false;
 #ifdef _WIN32
     const HWND hwnd = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(std::stoull(window)));
@@ -47,10 +48,18 @@ int main(int argc, char** argv) {
         auto atom = reinterpret_cast<Atom (*)(Display*, const char*, Bool)>(dlsym(x, "XInternAtom"));
         auto send = reinterpret_cast<Status (*)(Display*, Window, Bool, long, XEvent*)>(dlsym(x, "XSendEvent"));
         auto flush = reinterpret_cast<int (*)(Display*)>(dlsym(x, "XFlush"));
+        auto destroy = reinterpret_cast<int (*)(Display*, Window)>(dlsym(x, "XDestroyWindow"));
         if (Display* d = open ? open(nullptr) : nullptr) {
             const Window w = static_cast<Window>(std::stoull(window));
             XWindowAttributes a{};
             visible = attrs(d, w, &a) && a.map_state == IsViewable;
+            if (m == "destroy") {
+                destroy(d, w);
+                flush(d);
+                std::ofstream(dir + "seen.txt") << "visible=" << (visible ? 1 : 0) << '\n';
+                std::this_thread::sleep_for(std::chrono::seconds(3));
+                return 0;
+            }
             XEvent ev{};
             ev.xclient.type = ClientMessage;
             ev.xclient.window = w;

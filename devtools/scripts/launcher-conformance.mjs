@@ -310,6 +310,19 @@ if (screenAt > 0) {
     }
   });
 
+  // X11 only: Windows cannot destroy another process's window, and its WM_DESTROY is handled anyway. Xlib's default
+  // error handler EXITS the process, so a launcher that kept drawing to a destroyed window died, before or after
+  // starting the app.
+  if (process.platform !== 'win32') {
+    test('screen: a window destroyed from outside ends the screen, not the launch', async () => {
+      const box = screenBox(screenLauncher);
+      const { code, ms } = await runScreen(box, 'destroy');
+      assert(code === 0, `the launcher exited ${code} after its window was destroyed`);
+      assert(ms < 2500, `the launcher ran ${ms} ms after its window was destroyed`);
+      assert(/startup screen (closed|ended)/.test(read(path.join(box.root, 'launcher.log'))), 'launcher.log says nothing of the screen');
+    });
+  }
+
   test('screen: a launcher built with no screen passes no argument', async () => {
     const box = screenBox(launcher);
     await runScreen(box, 'exit');

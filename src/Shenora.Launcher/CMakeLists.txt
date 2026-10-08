@@ -26,7 +26,9 @@ add_library(shenora_launcher STATIC
   src/platform_win32.cpp
   src/platform_posix.cpp
   src/startup_screen_compose.cpp
-  src/startup_screen_win32.cpp)
+  src/startup_screen_win32.cpp
+  src/startup_screen_x11.cpp
+  src/png_stb.cpp)
 
 # The template runs the update apply on a worker thread while a startup screen keeps moving.
 find_package(Threads REQUIRED)
@@ -69,6 +71,16 @@ if(MSVC)
 else()
   target_compile_options(shenora_launcher PRIVATE -Wall -Wextra -Werror)
   target_compile_options(shenora_launcher PRIVATE $<$<CONFIG:Release>:-Os -ffunction-sections -fdata-sections>)
+  # The startup screen loads libX11 (and libXrandr) with dlopen: their HEADERS are needed to build (libx11-dev,
+  # libxrandr-dev), and nothing at link time beyond libdl. stb_image is third-party code: its warnings are not ours.
+  target_link_libraries(shenora_launcher PUBLIC ${CMAKE_DL_LIBS})
+  find_path(SHENORA_X11_INCLUDE_DIR X11/extensions/Xrandr.h)
+  if(NOT SHENORA_X11_INCLUDE_DIR)
+    message(FATAL_ERROR "The launcher builds against the X11 headers (it loads libX11 at run time, only to show a startup "
+                        "screen): install libx11-dev and libxrandr-dev (Debian/Ubuntu), libX11-devel and libXrandr-devel "
+                        "(Fedora).")
+  endif()
+  set_source_files_properties(src/png_stb.cpp PROPERTIES COMPILE_OPTIONS "-w")
 endif()
 
 # ── The reference launcher, built from the TEMPLATE ─────────────────────────────────────────────────
