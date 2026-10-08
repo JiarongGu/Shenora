@@ -25,7 +25,6 @@ public class ChromiumBundleProviderTests
 
         var page = await ServeAsync(serving, "https://app.local/");
         var script = await ServeAsync(serving, "https://app.local/assets/app-abc123.js");
-        var cjk = await ServeAsync(serving, "https://app.local/%E6%97%A5%E6%9C%AC/%E5%AD%97.js");   // 日本/字.js
 
         Assert.Equal(200, page.Status);
         Assert.Contains("shenora-test-index", page.Body);
@@ -34,7 +33,15 @@ public class ChromiumBundleProviderTests
         Assert.Contains("shenora-test-asset", script.Body);
         Assert.Equal("application/javascript", script.Type);   // WebViewContentTypes.FromPath's
         Assert.DoesNotContain(ChromiumTransport.HostGlobal, script.Body);
-        Assert.Contains("shenora-cjk-folder", cjk.Body);
+    }
+
+    // The path is unescaped before the provider is asked, so a CJK name arrives as itself. (In memory: the repo keeps
+    // its file names ASCII, which doctor enforces.)
+    [Fact]
+    public async Task A_percent_encoded_path_reaches_the_provider_unescaped()
+    {
+        var serving = new ChromiumServing(null, Origins, new ChromiumInterceptor(), provider: new FakeResourceProvider(("日本/字.js", "cjk")));
+        Assert.Equal("cjk", (await ServeAsync(serving, "https://app.local/%E6%97%A5%E6%9C%AC/%E5%AD%97.js")).Body);
     }
 
     [Fact]

@@ -53,7 +53,6 @@ public class EmbeddedResourceProviderTests
     [InlineData("my-lib/1.0/x-1.js", "shenora-dashed-folder")]
     [InlineData("a b/c d.js", "shenora-spaced-folder")]
     [InlineData("-lead/a.js", "shenora-lead-folder")]
-    [InlineData("日本/字.js", "shenora-cjk-folder")]
     public void Folders_resolve_as_MSBuild_names_them(string path, string marker) =>
         Assert.Contains(marker, ReadAll(Embedded().GetResourceStream(path)));
 
