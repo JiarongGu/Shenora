@@ -264,6 +264,7 @@ Shenora.Windows.WebViewHostOptions
   property InjectedGlobals
   property Log
   property MaxAutoReloads
+  property NotFoundPage
   property OnDownloadStarting
   property OnPermissionRequested
   property OnProcessFailed

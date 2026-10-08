@@ -104,6 +104,8 @@ public sealed class WebViewHost
     /// </summary>
     private void Log(Func<string> message, Exception? failure = null) => Shenora.AppCallback.Log(_log, message, exception: failure);
 
+    private void Warn(Func<string> message) => Shenora.AppCallback.Log(_log, message, LogLevel.Warning);
+
     /// <summary>
     /// Invoke one of the app's event-policy hooks and report whether it HANDLED the event. A hook that
     /// throws counts as "not handled" and is logged, so the caller applies the kit's own default rather
@@ -312,10 +314,13 @@ public sealed class WebViewHost
 
             if (virtualHostPrefix is not null && uri.StartsWith(virtualHostPrefix, StringComparison.OrdinalIgnoreCase))
             {
+                // A page load that finds nothing shows the not-found page; read here, on the UI thread.
+                var pageLoad = args.ResourceContext == CoreWebView2WebResourceContext.Document;
                 if (!intercepting)
                 {
                     WebViewBundleServing.Serve(args, _webView.CoreWebView2.Environment,
-                        _options.ResourceProvider!, uri, virtualHostPrefix, message => Log(message));
+                        _options.ResourceProvider!, uri, virtualHostPrefix, message => Log(message),
+                        pageLoad, _options.NotFoundPage, Warn);
                     return;
                 }
 
@@ -326,7 +331,12 @@ public sealed class WebViewHost
                         _options.ResourceProvider!, uri, virtualHostPrefix, message => Log(message)))
                     return;
 
-                ServeInterceptor(args, uri);
+                var provider = _options.ResourceProvider!;
+                var prefix = virtualHostPrefix;
+                ServeInterceptor(args, uri, pageLoad
+                    ? () => WebViewBundleServing.Miss(true, provider, _options.NotFoundPage,
+                        WebViewBundleServing.ResolveBundlePath(uri, prefix), Warn)
+                    : null);
                 return;
             }
 
@@ -355,11 +365,15 @@ public sealed class WebViewHost
     /// Hand a request to the D45 middleware pipeline. Composed once per request, so a route registered
     /// while this one is in flight cannot half-apply; declining leaves the request to WebView2.
     /// </summary>
-    private void ServeInterceptor(CoreWebView2WebResourceRequestedEventArgs args, string uri)
+    /// <param name="args">The intercepted request.</param>
+    /// <param name="uri">Its raw URI.</param>
+    /// <param name="whenDeclined">What a request the pipeline declines gets instead of WebView2's own handling: a page
+    /// load on the bundle's host gets the not-found page. Runs on a thread-pool thread.</param>
+    private void ServeInterceptor(CoreWebView2WebResourceRequestedEventArgs args, string uri, Func<WebViewResourceResponse>? whenDeclined = null)
     {
         // Re-checked: the caller's HasRoutes read and this build are separate moments.
         if (_interceptor.Build() is not { } pipeline) return;
-        ServeAsync(args, uri, pipeline, defaultCacheControl: null, "interceptor");
+        ServeAsync(args, uri, pipeline, defaultCacheControl: null, "interceptor", whenDeclined: whenDeclined);
     }
 
     /// <summary>
@@ -410,9 +424,11 @@ public sealed class WebViewHost
     /// for the interceptor, whose origin it shares with the page's own content: declining there must
     /// complete the deferral WITHOUT a response and let WebView2 handle the request normally.
     /// </param>
+    /// <param name="whenDeclined">What a declined request gets instead, on the pool thread; null leaves it to
+    /// <paramref name="answerNotFoundWhenDeclined"/>.</param>
     private void ServeAsync(CoreWebView2WebResourceRequestedEventArgs args, string uri,
                             WebViewResourceHandler handler, string? defaultCacheControl, string what,
-                            bool answerNotFoundWhenDeclined = false)
+                            bool answerNotFoundWhenDeclined = false, Func<WebViewResourceResponse>? whenDeclined = null)
     {
         var deferral = args.GetDeferral();
         var request = SnapshotRequest(args, uri);
@@ -424,6 +440,7 @@ public sealed class WebViewHost
             {
                 response = await handler(request, CancellationToken.None).ConfigureAwait(false);
                 if (response is null && answerNotFoundWhenDeclined) response = WebViewResourceResponse.NotFound();
+                if (response is null && whenDeclined is not null) response = whenDeclined();
             }
             catch (Exception ex)
             {

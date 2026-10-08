@@ -106,6 +106,14 @@ public sealed class WebViewHostOptions
     public IWebViewResourceProvider? ResourceProvider { get; init; }
 
     /// <summary>
+    /// What a page load on <see cref="VirtualHost"/> that finds nothing shows: this path in
+    /// <see cref="ResourceProvider"/>'s bundle, answered with status 404. Null, or a bundle without it, shows the kit's
+    /// page (<see cref="WebViewResourceResponse.NotFoundDocument"/>). WebView2 counts a frame's document as a page load
+    /// too. A <c>fetch()</c>, a script or an image that finds nothing still gets the plain 404.
+    /// </summary>
+    public string? NotFoundPage { get; init; } = "404.html";
+
+    /// <summary>
     /// Explicit production start URL, overriding the <see cref="VirtualHost"/> default
     /// (<c>https://{VirtualHost}/index.html</c>) — the server-backed profile points this at its own
     /// in-process HTTP server.

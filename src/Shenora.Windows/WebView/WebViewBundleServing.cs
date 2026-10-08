@@ -56,14 +56,19 @@ internal static class WebViewBundleServing
     /// <param name="prefix">The virtual-host prefix from <see cref="Prefix"/>.</param>
     /// <param name="log">The caller's GUARDED lazy log sink — a throwing app sink must not escape into
     /// a WebView2 event handler, and building a message may itself touch a torn-down COM object.</param>
+    /// <param name="pageLoad">The request is a document load: a miss shows the not-found page (<see cref="Miss"/>).</param>
+    /// <param name="notFoundPage">The bundle's not-found page, or null for the kit's.</param>
+    /// <param name="warn">Where a page load's miss is reported; <paramref name="log"/> when null.</param>
     internal static void Serve(CoreWebView2WebResourceRequestedEventArgs args, CoreWebView2Environment environment,
                                IWebViewResourceProvider provider, string uri, string prefix,
-                               Action<Func<string>> log)
+                               Action<Func<string>> log, bool pageLoad = false, string? notFoundPage = null,
+                               Action<Func<string>>? warn = null)
     {
         if (TryServe(args, environment, provider, uri, prefix, log)) return;
 
-        log(() => $"[Shenora.Windows] 404 for bundle resource '{ResolveBundlePath(uri, prefix)}'");
-        try { args.Response = NotFound(environment); }
+        var path = ResolveBundlePath(uri, prefix);
+        log(() => $"[Shenora.Windows] 404 for bundle resource '{path}'");
+        try { args.Response = ToWebView2(environment, Miss(pageLoad, provider, notFoundPage, path, warn ?? log)); }
         catch { /* the webview may be tearing down */ }
     }
 
@@ -112,6 +117,48 @@ internal static class WebViewBundleServing
             return true;
         }
     }
+
+    /// <summary>
+    /// What a request on the bundle's host gets when neither the bundle nor the app's routes answered: a page load, the
+    /// bundle's <paramref name="notFoundPage"/> with status 404, else the kit's page; anything else, the fixed plain 404.
+    /// </summary>
+    internal static WebViewResourceResponse Miss(bool pageLoad, IWebViewResourceProvider provider, string? notFoundPage,
+                                                 string path, Action<Func<string>> warn)
+    {
+        if (!pageLoad) return WebViewResourceResponse.NotFound();
+        WebViewResourceResponse? own = null;
+        var page = notFoundPage?.Replace('\\', '/').TrimStart('/');
+        if (page is { Length: > 0 } && !page.Split('/').Contains(".."))
+        {
+            try
+            {
+                if (provider.GetResourceStream(page) is { } stream)
+                    own = new WebViewResourceResponse
+                    {
+                        Content = stream,
+                        StatusCode = 404,
+                        ReasonPhrase = "Not Found",
+                        Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["Content-Type"] = WebViewContentTypes.FromPath(page),
+                            ["Cache-Control"] = "no-store",
+                        },
+                    };
+            }
+            catch (Exception ex)
+            {
+                warn(() => $"[Shenora.Windows] Reading the bundle's '{page}' failed: {ex}");
+            }
+        }
+        warn(() => $"[Shenora.Windows] No page at '{path}' in the resource provider {provider.GetType().Name}: showing "
+                   + (own is null ? "the kit's not-found page" : $"the bundle's '{page}'"));
+        return own ?? WebViewResourceResponse.NotFoundDocument();
+    }
+
+    /// <summary>A kit response as WebView2's, minted by <paramref name="environment"/> (UI-thread affine).</summary>
+    internal static CoreWebView2WebResourceResponse ToWebView2(CoreWebView2Environment environment, WebViewResourceResponse response) =>
+        environment.CreateWebResourceResponse(response.Content, response.StatusCode, response.ReasonPhrase,
+            string.Join("\n", response.Headers.Select(h => $"{h.Key}: {h.Value}")));
 
     /// <summary>
     /// 🔴 The one 404 body served to the page, and it is CONSTANT. Every response here carries

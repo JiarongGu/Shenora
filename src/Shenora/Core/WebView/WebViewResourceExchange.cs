@@ -170,7 +170,7 @@ public sealed class WebViewResourceResponse
     private static readonly byte[] NotFoundDocumentBody = System.Text.Encoding.UTF8.GetBytes(
         "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"color-scheme\" content=\"light dark\">"
         + "<title>Not Found</title><style>html,body{height:100%;margin:0}"
-        + "html{-webkit-app-region:drag;cursor:default;user-select:none}"
+        + "html{background:Canvas;color:CanvasText;-webkit-app-region:drag;cursor:default;user-select:none}"
         + "body{display:flex;align-items:center;justify-content:center;font:15px system-ui,sans-serif;opacity:.7}"
         + "</style></head><body><p>Not Found</p></body></html>");
 

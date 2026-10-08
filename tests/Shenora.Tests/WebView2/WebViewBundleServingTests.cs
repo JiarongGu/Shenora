@@ -1,5 +1,6 @@
 using Shenora.Windows;
 using Shenora.Core.WebView;
+using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.WebView2;
 
@@ -97,4 +98,43 @@ public class WebViewBundleServingTests
         // …and a real query still goes, even when the path also carries an encoded one.
         Assert.Equal("a?b.txt", WebViewBundleServing.ResolveBundlePath("https://app.local/a%3Fb.txt?v=2", Prefix));
     }
+
+    // ── Miss: what a request the bundle and the app's routes left unanswered gets ─────────────────────────────────
+
+    private static string Body(WebViewResourceResponse r) => new StreamReader(r.Content).ReadToEnd();
+    private static readonly string Kit = Body(WebViewResourceResponse.NotFoundDocument());
+
+    [Fact]
+    public void A_page_load_gets_the_bundles_404_with_status_404()
+    {
+        var warned = new List<string>();
+        var r = WebViewBundleServing.Miss(true, new FakeResourceProvider(("404.html", "<p>own</p>")), "404.html", "settings", m => warned.Add(m()));
+
+        Assert.Equal((404, "<p>own</p>"), (r.StatusCode, Body(r)));
+        Assert.StartsWith("text/html", r.Headers["Content-Type"]);
+        Assert.Contains(warned, w => w.Contains("settings") && w.Contains("404.html"));
+    }
+
+    // The provider holds only an "escaped" file, which no case may reach: the option off, a page the bundle lacks, and a
+    // path out of the bundle all show the kit's page.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("missing.html")]
+    [InlineData("../404.html")]
+    public void Otherwise_a_page_load_gets_the_kits_page(string? page) =>
+        Assert.Equal(Kit, Body(WebViewBundleServing.Miss(true, new FakeResourceProvider(("../404.html", "escaped")), page, "x", _ => { })));
+
+    [Fact]
+    public void A_404_html_that_throws_gets_the_kits_page_and_a_warning()
+    {
+        var warned = new List<string>();
+        var r = WebViewBundleServing.Miss(true, new ThrowingResourceProvider(), "404.html", "x", m => warned.Add(m()));
+
+        Assert.Equal(Kit, Body(r));
+        Assert.Contains(warned, w => w.Contains("failed"));
+    }
+
+    [Fact]
+    public void Anything_but_a_page_load_keeps_the_plain_404() =>
+        Assert.Equal("Not Found", Body(WebViewBundleServing.Miss(false, new FakeResourceProvider(("404.html", "<p>own</p>")), "404.html", "x.js", _ => { })));
 }

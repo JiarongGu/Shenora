@@ -100,6 +100,10 @@ public class ChromiumNotFoundPageTests
         Assert.Equal(404, response.StatusCode);
         Assert.StartsWith("text/html", response.Headers["Content-Type"]);
         Assert.Contains("content=\"light dark\"", body);
+        // Its own background and text, from one scheme: a window's default background showing through left
+        // light-scheme black text on a dark window (seen live on WebView2).
+        Assert.Contains("background:Canvas", body);
+        Assert.Contains("color:CanvasText", body);
         Assert.Contains("-webkit-app-region:drag", body);
         Assert.Contains(">Not Found<", body);
     }
