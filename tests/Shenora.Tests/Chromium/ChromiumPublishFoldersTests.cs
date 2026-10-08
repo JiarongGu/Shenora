@@ -17,29 +17,45 @@ public class ChromiumPublishFoldersTests
     // CEF's launchers are real executables, as ChromiumLauncherStampTests' is: the stamp writes resources into one.
     private static readonly string[] Launchers = ["Release/bootstrap.exe", "Release/bootstrapc.exe"];
 
-    [Fact]
-    public void With_the_option_the_SDKs_items_and_its_deps_file_go_into_lib()
+    // A real `dotnet publish`, because the SDK decides what it publishes and in what order: a deps file it regenerates
+    // (PreserveStoreLayout here; a PackageReference with Publish="false" or a runtime store alike) is an item it adds
+    // after the rest of the list.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void With_the_option_everything_the_SDK_publishes_goes_into_lib(bool regeneratedDeps)
     {
-        var output = Probe(folders: true, "Items");
-        Assert.Contains(@"ITEM lib\MyApp.App.dll", output);
-        Assert.Contains(@"ITEM lib\MyApp.App.runtimeconfig.json", output);
-        Assert.Contains(@"ITEM lib\sub\content.txt", output);
-        Assert.Contains(@"DEPS PUBLISH\lib\MyApp.App.deps.json", output.Replace('/', '\\'));
+        var root = NewRoot();
+        try
+        {
+            var tree = Publish(root, folders: true, regeneratedDeps ? ["-p:PreserveStoreLayout=true"] : []);
+            Assert.Equal(["MyApp.dll", "MyApp.exe", "chrome_elf.dll"], tree.Where(f => !f.Contains('/')));
+            Assert.Equal(
+                ["lib/MyApp.App.deps.json", "lib/MyApp.App.dll", "lib/MyApp.App.pdb", "lib/MyApp.App.runtimeconfig.json"],
+                tree.Where(f => f.StartsWith("lib/", StringComparison.Ordinal)));
+        }
+        finally { Directory.Delete(root, recursive: true); }
     }
 
     [Fact]
-    public void Without_it_the_items_stay_where_the_SDK_put_them()
+    public void Without_it_the_SDK_publishes_beside_the_launcher()
     {
-        var output = Probe(folders: false, "Items");
-        Assert.Contains("ITEM MyApp.App.dll", output);
-        Assert.Contains(@"ITEM sub\content.txt", output);
-        Assert.Contains("DEPS (default)", output);
+        var root = NewRoot();
+        try
+        {
+            var tree = Publish(root, folders: false, []);
+            Assert.Contains("MyApp.App.dll", tree);
+            Assert.Contains("MyApp.App.deps.json", tree);
+            Assert.Contains("libcef.dll", tree);
+            Assert.DoesNotContain(tree, f => f.StartsWith("engine/", StringComparison.Ordinal) || f.StartsWith("lib/", StringComparison.Ordinal));
+        }
+        finally { Directory.Delete(root, recursive: true); }
     }
 
     [Fact]
     public void With_the_option_CEF_goes_into_engine_and_three_files_stay_at_the_root()
     {
-        var (root, tree) = Layout(folders: true, locales: "fr");
+        var root = NewRoot();
         try
         {
             Assert.Equal(
@@ -48,7 +64,7 @@ public class ChromiumPublishFoldersTests
                 "engine/d3dcompiler_47.dll", "engine/icudtl.dat", "engine/libcef.dll", "engine/locales/en-US.pak",
                 "engine/locales/fr.pak", "engine/resources.pak", "engine/v8_context_snapshot.bin", "engine/vk_swiftshader_icd.json",
                 "lib/MyApp.App.dll",
-            ], tree);
+            ], Layout(root, folders: true, locales: "fr"));
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -56,9 +72,10 @@ public class ChromiumPublishFoldersTests
     [Fact]
     public void Without_it_the_publish_is_flat_as_before()
     {
-        var (root, tree) = Layout(folders: false, locales: "");
+        var root = NewRoot();
         try
         {
+            var tree = Layout(root, folders: false, locales: "");
             Assert.Contains("libcef.dll", tree);
             Assert.Contains("chrome_elf.dll", tree);
             Assert.Contains("locales/fr.pak", tree);
@@ -67,61 +84,81 @@ public class ChromiumPublishFoldersTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
-    // The probe: the real targets file, the SDK's publish targets stood in for by empty ones of the same names.
-    private static string Probe(bool folders, string target)
+    // The option switched off and the app published into the same folder again. The SDK's incremental clean removes
+    // only what IT wrote, never CEF, and the shim prefers engine\ and lib\ when they are there: a leftover would run.
+    [Fact]
+    public void A_flat_publish_over_a_folders_one_leaves_no_engine_and_no_app_in_lib()
     {
-        var root = Path.Combine(Path.GetTempPath(), "shenora-publish-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
+        var root = NewRoot();
         try
         {
-            var project = Path.Combine(root, "probe.proj");
-            File.WriteAllText(project, $"""
-                <Project>
-                  <PropertyGroup>
-                    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-                    <AssemblyName>MyApp.App</AssemblyName>
-                    <ProjectDepsFileName>MyApp.App.deps.json</ProjectDepsFileName>
-                    <PublishDir>PUBLISH\</PublishDir>
-                    <ShenoraChromiumPublishFolders>{(folders ? "true" : "false")}</ShenoraChromiumPublishFolders>
-                  </PropertyGroup>
-                  <Import Project="{TargetsFile()}" />
-                  <ItemGroup>
-                    <ResolvedFileToPublish Include="a.dll" RelativePath="MyApp.App.dll" />
-                    <ResolvedFileToPublish Include="b.json" RelativePath="MyApp.App.runtimeconfig.json" />
-                    <ResolvedFileToPublish Include="c.txt" RelativePath="sub\content.txt" />
-                  </ItemGroup>
-                  <Target Name="ComputeResolvedFilesToPublishList" />
-                  <Target Name="GeneratePublishDependencyFile" />
-                  <Target Name="Items" DependsOnTargets="ComputeResolvedFilesToPublishList;GeneratePublishDependencyFile">
-                    <Message Importance="high" Text="ITEM %(ResolvedFileToPublish.RelativePath)" />
-                    <Message Importance="high" Condition="'$(PublishDepsFilePath)' != ''" Text="DEPS $(PublishDepsFilePath)" />
-                    <Message Importance="high" Condition="'$(PublishDepsFilePath)' == ''" Text="DEPS (default)" />
-                  </Target>
-                </Project>
-                """);
-            return Run("dotnet", ["msbuild", project, $"-t:{target}", "-nologo", "-noAutoResponse", "-v:minimal"]);
+            Layout(root, folders: true, locales: "");
+            File.WriteAllText(Path.Combine(root, "publish", "engine", "the-apps-own.txt"), "");
+            var tree = Layout(root, folders: false, locales: "");
+            Assert.Equal(["engine/the-apps-own.txt"], tree.Where(f => f.StartsWith("engine/", StringComparison.Ordinal)));
+            Assert.DoesNotContain("lib/MyApp.App.dll", tree);
+            Assert.Contains("libcef.dll", tree);
         }
         finally { Directory.Delete(root, recursive: true); }
     }
 
-    // The Windows layout written into a publish folder from a fake CEF distribution and a fake shim; the tree it left.
-    private static (string Root, string[] Tree) Layout(bool folders, string locales)
+    [Fact]
+    public void A_folders_publish_over_a_flat_one_leaves_no_CEF_at_the_root()
     {
-        var root = Path.Combine(Path.GetTempPath(), "shenora-publish-" + Guid.NewGuid().ToString("N"));
-        var dist = Path.Combine(root, "dist");
-        foreach (var file in CefFiles)
+        var root = NewRoot();
+        try
         {
-            var path = Path.Combine(dist, file);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, Path.GetFileNameWithoutExtension(file));
+            Layout(root, folders: false, locales: "");
+            var tree = Layout(root, folders: true, locales: "");
+            // MyApp.App.dll is this harness's flat copy; in a real publish the SDK's incremental clean removes it.
+            Assert.Equal(["MyApp.App.dll", "MyApp.dll", "MyApp.exe", "chrome_elf.dll"], tree.Where(f => !f.Contains('/')));
+            Assert.DoesNotContain(tree, f => f.StartsWith("locales/", StringComparison.Ordinal));
+            Assert.Contains("engine/libcef.dll", tree);
         }
-        foreach (var launcher in Launchers) File.Copy(Environment.ProcessPath!, Path.Combine(dist, launcher));
-        var shim = Path.Combine(root, "shim.dll");
-        File.WriteAllText(shim, "shim");
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    private static string NewRoot() => Path.Combine(Path.GetTempPath(), "shenora-publish-" + Guid.NewGuid().ToString("N"));
+
+    // A real publish of a one-file app through the real targets into root\publish; the tree it left.
+    private static string[] Publish(string root, bool folders, string[] properties)
+    {
+        var (dist, shim) = FakeCef(root);
+        var app = Path.Combine(root, "app");
+        Directory.CreateDirectory(app);
+        File.WriteAllText(Path.Combine(app, "Program.cs"), "static class Program { static void Main() { } }");
+        var project = Path.Combine(app, "MyApp.App.csproj");
+        File.WriteAllText(project, $"""
+            <Project>
+              <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+              <PropertyGroup>
+                <OutputType>WinExe</OutputType>
+                <TargetFramework>net10.0</TargetFramework>
+                <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+                <SelfContained>false</SelfContained>
+                <AssemblyName>MyApp.App</AssemblyName>
+                <ShenoraChromiumShim>{shim}</ShenoraChromiumShim>
+                <ShenoraChromiumPublishFolders>{(folders ? "true" : "false")}</ShenoraChromiumPublishFolders>
+              </PropertyGroup>
+              <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+              <Import Project="{TargetsFile()}" />
+            </Project>
+            """);
+        var publish = Path.Combine(root, "publish");
+        Run("dotnet", ["publish", project, "-o", publish, $"-p:ShenoraCefDist={dist}", "--disable-build-servers", "-nologo", "-v:minimal",
+            .. properties]);
+        return Tree(publish);
+    }
+
+    // The Windows layout written into root\publish from a fake CEF distribution and a fake shim, over whatever an earlier
+    // call left there; the tree it left.
+    private static string[] Layout(string root, bool folders, string locales)
+    {
+        var (dist, shim) = FakeCef(root);
         var publish = Path.Combine(root, "publish") + Path.DirectorySeparatorChar;
         var app = Path.Combine(publish, folders ? "lib" : "", "MyApp.App.dll");
         Directory.CreateDirectory(Path.GetDirectoryName(app)!);
-        File.Copy(typeof(ChromiumPublishFoldersTests).Assembly.Location, app);   // a real assembly, for the stamp to read
+        File.Copy(typeof(ChromiumPublishFoldersTests).Assembly.Location, app, overwrite: true);   // a real assembly, for the stamp to read
         var project = Path.Combine(root, "probe.proj");
         File.WriteAllText(project, $"""
             <Project>
@@ -140,10 +177,28 @@ public class ChromiumPublishFoldersTests
         // property outranks that.
         Run("dotnet", ["msbuild", project, "-t:_ShenoraChromiumWindowsInto", $"-p:_ShenoraWindowsInto={publish}",
             "-p:_ShenoraWindowsPublish=true", $"-p:ShenoraCefDist={dist}", "-nologo", "-noAutoResponse", "-v:minimal"]);
-        var tree = Directory.GetFiles(publish, "*", SearchOption.AllDirectories)
-            .Select(f => Path.GetRelativePath(publish, f).Replace('\\', '/')).Order(StringComparer.Ordinal).ToArray();
-        return (root, tree);
+        return Tree(publish);
     }
+
+    private static (string Dist, string Shim) FakeCef(string root)
+    {
+        var dist = Path.Combine(root, "dist");
+        var shim = Path.Combine(root, "shim.dll");
+        if (Directory.Exists(dist)) return (dist, shim);
+        foreach (var file in CefFiles)
+        {
+            var path = Path.Combine(dist, file);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, Path.GetFileNameWithoutExtension(file));
+        }
+        foreach (var launcher in Launchers) File.Copy(Environment.ProcessPath!, Path.Combine(dist, launcher));
+        File.WriteAllText(shim, "shim");
+        return (dist, shim);
+    }
+
+    private static string[] Tree(string folder) =>
+        Directory.GetFiles(folder, "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(folder, f).Replace('\\', '/')).Order(StringComparer.Ordinal).ToArray();
 
     private static string TargetsFile() => Path.Combine(RepoRoot(), "src", "Shenora.Chromium", "build", "Shenora.Chromium.targets");
 
@@ -154,8 +209,8 @@ public class ChromiumPublishFoldersTests
         using var process = Process.Start(info)!;
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
-        Assert.True(process.WaitForExit(TimeSpan.FromMinutes(2)), "msbuild did not finish in 2 minutes");
-        Assert.True(process.ExitCode == 0, $"msbuild exited {process.ExitCode}: {stdout.Result}{stderr.Result}");
+        Assert.True(process.WaitForExit(TimeSpan.FromMinutes(3)), "the build did not finish in 3 minutes");
+        Assert.True(process.ExitCode == 0, $"the build exited {process.ExitCode}: {stdout.Result}{stderr.Result}");
         return stdout.Result;
     }
 

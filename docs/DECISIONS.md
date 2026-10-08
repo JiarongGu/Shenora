@@ -1424,8 +1424,9 @@ docs cite them — so the number is the column to scan.
   - **Why `lib\`:** `ShenoraPaths` already reads an app in `lib\` as one folder below the root, so `data\` stays
     beside `MyApp.exe`.
   - **The constraints:** `chrome_elf.dll` stays at the root, because CEF's launcher imports it; the shim delay-loads
-    `libcef.dll` and reads both shapes, so a missing engine is a message naming the path; such a publish starts
-    through `MyApp.exe` only (`dotnet lib\MyApp.App.dll` does not find CEF, and supporting it would be a resolver for
+    `libcef.dll` and reads both shapes, so a missing engine is a message naming the path; a publish removes the other
+    shape's CEF files, which the SDK's clean never touches and which the shim would load from a leftover `engine\`;
+    such a publish starts through `MyApp.exe` only (`dotnet lib\MyApp.App.dll` does not find CEF, and supporting it would be a resolver for
     a start nothing makes); Windows only — macOS is already one `.app`, and Linux needs a spike of its own.
 
 ## Anti-goals — deliberately NOT built

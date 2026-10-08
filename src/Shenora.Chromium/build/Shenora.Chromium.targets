@@ -398,6 +398,26 @@ public sealed class ShenoraChromiumStampLauncher : Task
       <_ShenoraCefElf Include="@(_ShenoraCefRuntime)" Condition="'%(Filename)%(Extension)' == 'chrome_elf.dll'" />
       <_ShenoraCefEngine Include="@(_ShenoraCefRuntime)" Exclude="@(_ShenoraCefElf)" />
     </ItemGroup>
+    <!-- A publish into a folder that still holds the OTHER shape, the option switched since: the SDK's incremental clean
+         removes only what it wrote, never CEF, and the shim prefers engine\ and lib\ when they hold its files, so a
+         leftover would run. Only CEF's own file names go (every locale, filtered or not), and in a flat publish the
+         app's assembly in lib\; then the folders they leave empty. -->
+    <ItemGroup Condition="'$(_ShenoraWindowsPublish)' == 'true'">
+      <_ShenoraCefAllResources Include="$(ShenoraCefDist)\Resources\**\*" />
+      <_ShenoraLeftover Condition="'$(_ShenoraFolders)' == 'true'"
+                        Include="@(_ShenoraCefEngine->'$(_ShenoraWindowsInto)%(Filename)%(Extension)');@(_ShenoraCefAllResources->'$(_ShenoraWindowsInto)%(RecursiveDir)%(Filename)%(Extension)')" />
+      <_ShenoraLeftover Condition="'$(_ShenoraFolders)' != 'true'"
+                        Include="@(_ShenoraCefRuntime->'$(_ShenoraWindowsInto)engine\%(Filename)%(Extension)');@(_ShenoraCefAllResources->'$(_ShenoraWindowsInto)engine\%(RecursiveDir)%(Filename)%(Extension)');$(_ShenoraWindowsInto)lib\$(AssemblyName).dll" />
+    </ItemGroup>
+    <Delete Condition="'$(_ShenoraWindowsPublish)' == 'true'" Files="@(_ShenoraLeftover)" />
+    <ItemGroup Condition="'$(_ShenoraWindowsPublish)' == 'true'">
+      <_ShenoraLeftInLocales Include="$(_ShenoraWindowsInto)locales\**" />
+      <_ShenoraLeftInEngine Include="$(_ShenoraWindowsInto)engine\**" />
+      <_ShenoraLeftInLib Include="$(_ShenoraWindowsInto)lib\**" />
+    </ItemGroup>
+    <RemoveDir Condition="'$(_ShenoraWindowsPublish)' == 'true' and '$(_ShenoraFolders)' == 'true' and '@(_ShenoraLeftInLocales)' == ''" Directories="$(_ShenoraWindowsInto)locales" />
+    <RemoveDir Condition="'$(_ShenoraWindowsPublish)' == 'true' and '$(_ShenoraFolders)' != 'true' and '@(_ShenoraLeftInEngine)' == ''" Directories="$(_ShenoraWindowsInto)engine" />
+    <RemoveDir Condition="'$(_ShenoraWindowsPublish)' == 'true' and '$(_ShenoraFolders)' != 'true' and '@(_ShenoraLeftInLib)' == ''" Directories="$(_ShenoraWindowsInto)lib" />
     <Copy SourceFiles="@(_ShenoraCefEngine)" DestinationFolder="$(_ShenoraEngineInto)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_ShenoraCefElf)" DestinationFolder="$(_ShenoraWindowsInto)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(_ShenoraEngineInto)%(RecursiveDir)" SkipUnchangedFiles="true" />
@@ -406,24 +426,18 @@ public sealed class ShenoraChromiumStampLauncher : Task
     <ShenoraChromiumStampLauncher Executable="$(_ShenoraWindowsInto)$(_ShenoraAppExe).exe" From="$(_ShenoraAppInto)$(AssemblyName).dll" />
   </Target>
 
-  <!-- ShenoraChromiumPublishFolders: everything the SDK publishes goes into lib\. Its own item list, rewritten before it
-       copies, rather than files moved after: `dotnet publish -o` makes PublishDir global, so it cannot be pointed at
-       lib\ itself. -->
-  <Target Name="_ShenoraChromiumPublishIntoLib" AfterTargets="ComputeResolvedFilesToPublishList"
+  <!-- ShenoraChromiumPublishFolders: everything the SDK publishes goes into lib\. Its own item list, rewritten once the
+       list is complete and before it copies, rather than files moved after: `dotnet publish -o` makes PublishDir
+       global, so it cannot be pointed at lib\ itself. Complete means after ComputeFilesToPublish: a deps file the SDK
+       regenerates (a PackageReference with Publish="false", a runtime store) joins the list in
+       GeneratePublishDependencyFile, after ComputeResolvedFilesToPublishList. -->
+  <Target Name="_ShenoraChromiumPublishIntoLib" AfterTargets="ComputeFilesToPublish"
           Condition="'$(ShenoraChromiumLayout)' == 'true' and '$(ShenoraChromiumPublishFolders)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
     <ItemGroup>
       <ResolvedFileToPublish>
         <RelativePath>lib\%(ResolvedFileToPublish.RelativePath)</RelativePath>
       </ResolvedFileToPublish>
     </ItemGroup>
-  </Target>
-
-  <!-- The deps file is written straight to PublishDepsFilePath, which the SDK defaults inside this target. -->
-  <Target Name="_ShenoraChromiumPublishDepsIntoLib" BeforeTargets="GeneratePublishDependencyFile"
-          Condition="'$(ShenoraChromiumLayout)' == 'true' and '$(ShenoraChromiumPublishFolders)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
-    <PropertyGroup>
-      <PublishDepsFilePath Condition="'$(PublishDepsFilePath)' == '' and '$(PublishSingleFile)' != 'true'">$(PublishDir)lib\$(ProjectDepsFileName)</PublishDepsFilePath>
-    </PropertyGroup>
   </Target>
 
   <!-- Linux: flat, as Windows': CEF's runtime and resources beside the app, the .NET apphost also as <App>, and the kit's
