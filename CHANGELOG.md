@@ -126,11 +126,17 @@ at the first list and missed five more breaking changes.
 - **A page load that finds nothing shows a page** (D95): `NotFoundPage` on `ChromiumHostOptions`,
   `ChromiumEngineOptions` and `WebViewHostOptions` (default `404.html`, from the bundle, status 404), else the kit's
   page, `WebViewResourceResponse.NotFoundDocument()`: "Not Found" centred in the page's colour scheme, the whole page a
-  drag region so a frameless window can still be moved. A `fetch()`, script or image miss keeps the plain 404, and the
-  host log names the path and where it looked. On the Chromium shell it lifts a splash at once, held or not.
+  drag region, so the Chromium shell's frameless window can still be moved (WebView2 ignores the region). A `fetch()`,
+  script or image miss keeps the plain 404, and the host log names the path and where it looked, and says when an
+  embedded provider serves nothing. On the Chromium shell it lifts a splash at once, held or not.
 
 ### Fixed
 
+- **On the WebView2 shell with app routes, a request for a path the bundle lacks failed as a network error.** The
+  routes share the bundle's virtual host (D45), and a request they declined was left to WebView2, which then resolved
+  the virtual host itself: a page's `fetch()` threw "Failed to fetch" instead of reading a 404. The bundle's host now
+  answers what its routes decline — the plain 404, or the not-found page for a page load. The desktop sample's
+  interceptor self-check pins it (`missing=404`).
 - **An embedded file under a folder whose name MSBuild rewrites was not found.** MSBuild names every folder of an
   embedded file as an identifier (`my-lib` → `my_lib`, `1.0` → `_1._0`, `a b` → `a_b`), and `EmbeddedResourceProvider`
   looked the folder up as written, so `assets/my-lib/x.js` answered 404 in a packaged build only. The lookup applies

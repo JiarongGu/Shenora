@@ -150,7 +150,11 @@ internal static class WebViewBundleServing
                 warn(() => $"[Shenora.Windows] Reading the bundle's '{page}' failed: {ex}");
             }
         }
-        warn(() => $"[Shenora.Windows] No page at '{path}' in the resource provider {provider.GetType().Name}: showing "
+        var source = provider is EmbeddedResourceProvider { CanServe: false }
+            ? "the resource provider EmbeddedResourceProvider, which serves nothing: no embedded resource matches its "
+              + "ResourcePrefix (the project's RootNamespace and the folder, such as MyApp.wwwroot)"
+            : $"the resource provider {provider.GetType().Name}";
+        warn(() => $"[Shenora.Windows] No page at '{path}' in {source}: showing "
                    + (own is null ? "the kit's not-found page" : $"the bundle's '{page}'"));
         return own ?? WebViewResourceResponse.NotFoundDocument();
     }

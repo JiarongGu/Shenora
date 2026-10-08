@@ -331,12 +331,12 @@ public sealed class WebViewHost
                         _options.ResourceProvider!, uri, virtualHostPrefix, message => Log(message)))
                     return;
 
+                // What the pipeline declines is still the bundle's host's to answer: left to WebView2, it resolves
+                // the virtual host itself and the page sees a network error, not a 404.
                 var provider = _options.ResourceProvider!;
                 var prefix = virtualHostPrefix;
-                ServeInterceptor(args, uri, pageLoad
-                    ? () => WebViewBundleServing.Miss(true, provider, _options.NotFoundPage,
-                        WebViewBundleServing.ResolveBundlePath(uri, prefix), Warn)
-                    : null);
+                ServeInterceptor(args, uri, () => WebViewBundleServing.Miss(pageLoad, provider, _options.NotFoundPage,
+                    WebViewBundleServing.ResolveBundlePath(uri, prefix), Warn));
                 return;
             }
 
@@ -367,8 +367,8 @@ public sealed class WebViewHost
     /// </summary>
     /// <param name="args">The intercepted request.</param>
     /// <param name="uri">Its raw URI.</param>
-    /// <param name="whenDeclined">What a request the pipeline declines gets instead of WebView2's own handling: a page
-    /// load on the bundle's host gets the not-found page. Runs on a thread-pool thread.</param>
+    /// <param name="whenDeclined">What a request the pipeline declines gets instead of WebView2's own handling: on the
+    /// bundle's host, the not-found page for a page load and the plain 404 otherwise. Runs on a thread-pool thread.</param>
     private void ServeInterceptor(CoreWebView2WebResourceRequestedEventArgs args, string uri, Func<WebViewResourceResponse>? whenDeclined = null)
     {
         // Re-checked: the caller's HasRoutes read and this build are separate moments.

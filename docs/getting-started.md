@@ -90,13 +90,17 @@ an assembly named `<App>.App`:
   <TargetFramework>net10.0</TargetFramework>
   <!-- The build lays the app out as MyApp, which starts this assembly. -->
   <AssemblyName>MyApp.App</AssemblyName>
+  <!-- Names the embedded page's resources (MyApp.wwwroot.*): the provider's ResourcePrefix below. Without it, it is the
+       project file's name. -->
+  <RootNamespace>MyApp</RootNamespace>
   <!-- osx-arm64, osx-x64, linux-x64, linux-arm64, win-x64 or win-arm64: NuGet picks the OS's build of the engine by it. -->
   <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
 </PropertyGroup>
 <ItemGroup>
   <PackageReference Include="Shenora.Chromium" Version="0.20.0" />
-  <!-- The built page, served from beside the app. -->
-  <None Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+  <!-- The built page, embedded in the app. WithCulture="false": a name like msg.fr.json would otherwise go to a
+       satellite assembly, out of the bundle. -->
+  <EmbeddedResource Include="wwwroot\**" WithCulture="false" />
 </ItemGroup>
 ```
 

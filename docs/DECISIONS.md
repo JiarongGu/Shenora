@@ -1407,7 +1407,7 @@ docs cite them — so the number is the column to scan.
     diagnosis; a pipeline step would lose the bundle's first place in D45's order. The cost was a namespace break.
   - **The not-found page is the app's, from its own bundle:** `NotFoundPage` (default `404.html`, the static-hosting
     convention), embedded or on disk alike; the kit's fixed page otherwise (`NotFoundDocument()`: centred, light or
-    dark, a drag region, so a frameless window can still be moved).
+    dark, a drag region, so the Chromium shell's frameless window can still be moved).
   - **The constraints:** only a page load gets it — a `fetch()`, script or image miss keeps the plain 404; nothing
     about the request reaches any body (the host log names the path and where it looked); a page that is not there
     lifts a splash rather than leaving it up for its timeout.

@@ -9,7 +9,8 @@ namespace Shenora.Chromium.Serving;
 /// request is the shell's.
 /// <list type="bullet">
 /// <item>The bundle (a folder, or a provider) first, then the app's interceptor pipeline on a miss, then a fixed 404
-/// (D45's order). A provider that throws is a fixed 404, never handed to the app's pipeline.
+/// (D45's order). A provider that throws is never handed to the app's pipeline: a fixed 404, or for a page load the
+/// not-found page.
 /// An HTML document from either is MARKED (D83), so the page finds the transport, as it does on WebView2
 /// whatever served it.</item>
 /// <item>The dev server's top-level document is fetched and marked the same way.</item>
@@ -150,6 +151,9 @@ internal sealed class ChromiumServing
 
     /// <summary>Where the bundle comes from, for the host log.</summary>
     private string Source => _contentRoot is not null ? $"the folder '{_contentRoot}'"
+        : _provider is EmbeddedResourceProvider { CanServe: false }
+            ? "the resource provider EmbeddedResourceProvider, which serves nothing: no embedded resource matches its "
+              + "ResourcePrefix (the project's RootNamespace and the folder, such as MyApp.wwwroot)"
         : _provider is not null ? $"the resource provider {_provider.GetType().Name}"
         : "no ContentRoot or ResourceProvider is set";
 

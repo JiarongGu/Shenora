@@ -81,6 +81,21 @@ public class ChromiumNotFoundPageTests
         Assert.Contains("the kit's not-found page", line);
     }
 
+    // The provider names a wrong prefix only to a log the app gave it; the host log's Warning must carry the diagnosis
+    // on its own.
+    [Fact]
+    public async Task A_provider_that_serves_nothing_says_so_in_the_warning()
+    {
+        var log = new RecordingLogger();
+        var provider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
+        {
+            Assembly = typeof(ChromiumNotFoundPageTests).Assembly,
+            ResourcePrefix = "No.Such.Prefix",
+        });
+        await ServeAsync(With(provider, log: log), "https://app.local/", ChromiumRoute.BundlePage);
+        Assert.Contains(log.Lines, l => l.StartsWith("Warning") && l.Contains("serves nothing") && l.Contains("ResourcePrefix"));
+    }
+
     [Fact]
     public async Task A_folder_bundle_has_the_same_page()
     {

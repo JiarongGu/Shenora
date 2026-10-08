@@ -105,6 +105,11 @@ internal static class InterceptorProbe
                 // would be the app's own frontend disappearing, so it is worth one line.
                 const doc = await fetch('/index.html');
                 out.push(`bundle=${doc.status}`);
+
+                // A path neither the bundle nor a route has: the plain 404, which the page can read. Declined by the
+                // routes and left to WebView2, it was a network error (WebView2 resolving the virtual host itself).
+                const missing = await fetch('/no-such-file.json');
+                out.push(`missing=${missing.status}`);
               } catch (e) {
                 out.push(`fetchThrew=${e && e.message ? e.message : e}`);
               }
@@ -153,6 +158,7 @@ internal static class InterceptorProbe
             Check("unsatisfiable", "416"),
             Check("traversal", "404"),
             Check("bundle", "200"),
+            Check("missing", "404"),
         }.Where(f => f is not null).ToArray();
 
         return failures.Length == 0

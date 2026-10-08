@@ -135,6 +135,19 @@ public class WebViewBundleServingTests
     }
 
     [Fact]
+    public void A_provider_that_serves_nothing_says_so_in_the_warning()
+    {
+        var warned = new List<string>();
+        var provider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
+        {
+            Assembly = typeof(WebViewBundleServingTests).Assembly,
+            ResourcePrefix = "No.Such.Prefix",
+        });
+        WebViewBundleServing.Miss(true, provider, "404.html", "x", m => warned.Add(m()));
+        Assert.Contains(warned, w => w.Contains("serves nothing") && w.Contains("ResourcePrefix"));
+    }
+
+    [Fact]
     public void Anything_but_a_page_load_keeps_the_plain_404() =>
         Assert.Equal("Not Found", Body(WebViewBundleServing.Miss(false, new FakeResourceProvider(("404.html", "<p>own</p>")), "404.html", "x.js", _ => { })));
 }
