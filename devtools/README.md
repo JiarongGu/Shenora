@@ -266,7 +266,11 @@ Once the sample app exists (Phase 2), the desktop UI is driven natively: **`win-
 background mouse messages to the WebView2 render surface (fractions of the client rect — no cursor
 move, no focus steal, works even occluded), and **`wgc`** / **`shot`** capture the result. Both
 target the process from `project.config.mjs` (`processName`, passed via the `DEVTOOL_PROC` env
-var — no project name is baked into the C# tools). Typical loop:
+var — no project name is baked into the C# tools).
+⚠ **A CEF window (the Chromium shell) captures as its bare background** — measured on Windows: the
+page read over the DevTools protocol was fully rendered at the moment `wgc-shot` returned the window
+blank. A blank capture of a Chromium window says nothing about the page; read it over the DevTools
+protocol instead (`Page.captureScreenshot`, development with `DevToolsPort`). Typical loop:
 
 ```
 node devtools/dev.mjs build
