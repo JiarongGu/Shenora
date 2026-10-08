@@ -15,7 +15,8 @@ namespace Shenora.Core.WebView;
 public interface IWebViewResourceProvider
 {
     /// <summary>The resource at <paramref name="virtualPath"/> (e.g. <c>index.html</c>,
-    /// <c>assets/index-abc123.js</c>), or null when absent.</summary>
+    /// <c>assets/index-abc123.js</c>), or null when absent. A fresh stream on every call: the shell owns it and
+    /// disposes it once the page has read it, which on the Chromium shell can be after this returns.</summary>
     Stream? GetResourceStream(string virtualPath);
 
     /// <summary>True when <paramref name="virtualPath"/> resolves to a resource.</summary>

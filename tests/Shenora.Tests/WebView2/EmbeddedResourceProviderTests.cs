@@ -60,9 +60,9 @@ public class EmbeddedResourceProviderTests
     // fixtures here (doctor keeps tracked names ASCII), so an assembly holding exactly those names stands in.
     [Theory]
     [InlineData("_/f.js", "MyApp.wwwroot.__.f.js")]               // a lone underscore is doubled
-    [InlineData("Ⅻ/f.js", "MyApp.wwwroot.__.f.js")]           // a letter NUMBER (Ⅻ) is no identifier character
-    [InlineData("a‍b/f.js", "MyApp.wwwroot.a_b.f.js")]        // nor is a format character (a zero-width joiner)
-    [InlineData("x⃝y/f.js", "MyApp.wwwroot.x⃝y.f.js")]    // an enclosing mark is
+    [InlineData("\u216B/f.js", "MyApp.wwwroot.__.f.js")]           // a letter NUMBER (Ⅻ) is no identifier character
+    [InlineData("a\u200Db/f.js", "MyApp.wwwroot.a_b.f.js")]        // nor is a format character (a zero-width joiner)
+    [InlineData("x\u20DDy/f.js", "MyApp.wwwroot.x\u20DDy.f.js")]    // an enclosing mark is
     [InlineData("9/f.js", "MyApp.wwwroot._9.f.js")]
     [InlineData("_x/f.js", "MyApp.wwwroot._x.f.js")]
     [InlineData("ab_/f.js", "MyApp.wwwroot.ab_.f.js")]
