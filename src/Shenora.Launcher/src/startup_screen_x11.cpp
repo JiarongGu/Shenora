@@ -1,7 +1,8 @@
 // The startup screen off Windows: an X11 window, libX11 loaded with dlopen so the launcher has no link-time X11
 // dependency — started with no display (a terminal, SSH) or on a box without X11, it runs, with no screen. The headers
-// are needed to BUILD only (types and macros). Wayland desktops are reached through XWayland.
-#ifndef _WIN32
+// are needed to BUILD only (types and macros), and without them (SHENORA_HAVE_X11 unset) the screen reports it cannot
+// show and the launch goes on. Wayland desktops are reached through XWayland.
+#if !defined(_WIN32) && defined(SHENORA_HAVE_X11)
 #include "shenora/startup_screen.hpp"
 
 #include <X11/Xatom.h>
@@ -316,4 +317,16 @@ std::unique_ptr<StartupScreen> StartupScreen::show(const StartupScreenDescriptio
 }
 
 }  // namespace shenora
-#endif  // !_WIN32
+
+#elif !defined(_WIN32)
+#include "shenora/startup_screen.hpp"
+
+namespace shenora {
+
+std::unique_ptr<StartupScreen> StartupScreen::show(const StartupScreenDescription&, std::string& error) {
+    error = "this launcher was built without the X11 headers";
+    return nullptr;
+}
+
+}  // namespace shenora
+#endif
