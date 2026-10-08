@@ -7,6 +7,7 @@ using Shenora.Chromium.Host;
 using Shenora.Chromium.Serving;
 using Shenora.Core.Ipc;
 using Shenora.Core.Shell;
+using Shenora.Core.WebView;
 using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.Chromium;
@@ -95,6 +96,44 @@ public class ChromiumSplashCompositionTests
             await Handshake(windows, ChromiumWindows.MainWindowName);
             Assert.True(surface.Disposed);
         }
+    }
+
+    // A page that is not there never sends the ready handshake, nor calls closeSplash() for a splash held until it does:
+    // the main window's page-load miss lifts the splash itself, rather than leaving it up for its whole timeout over the
+    // not-found page.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_page_load_the_main_window_finds_nothing_lifts_the_splash_and_another_windows_does_not(bool held)
+    {
+        var options = new ChromiumHostOptions { SingleInstance = null };
+        var (app, windows) = Compose(options);
+        using (app)
+        {
+            windows.Initialize(app, isDevelopment: false);
+            var surface = new RecordingSurface();
+            using var session = new SplashSession(new ChromiumSplashOptions { FadeOut = TimeSpan.Zero, HoldUntilClosed = held }, "App", null,
+                app.Services, null, () => surface, new FakeTimeProvider(), null, null);
+            windows.Splash = session;
+            session.Start(new ChromiumWindowGeometry.Plan(400, 300, 0, 0, false), []);
+            session.WindowOpened(1, new SplashOverlayLayout(false, 32, new SplashTitleBarOptions(), null, null));
+
+            await Miss(windows, "other");
+            Assert.False(surface.Disposed);
+            await Miss(windows, ChromiumWindows.MainWindowName);
+            Assert.True(surface.Disposed);
+        }
+    }
+
+    // A page load in the named window that neither the bundle nor the app's routes can answer.
+    private static async Task Miss(ChromiumWindows windows, string name)
+    {
+        var origins = ChromiumOrigins.For("app.local", null, isDevelopment: false);
+        var window = new ChromiumWindow(name, new ChromiumWindowOptions(), new ChromiumServing(null, origins, new ChromiumInterceptor()), origins,
+            windows.NewBridge, _ => { }, null);
+        var request = new WebViewResourceRequest { Uri = new Uri("https://app.local/missing"), Method = "GET", Headers = new Dictionary<string, string>() };
+        var response = await window.Browser.ServeAsync(ChromiumRoute.BundlePage, request, CancellationToken.None);
+        Assert.Equal(404, response.StatusCode);
     }
 
     // A page of the named window completes its ready handshake through the bridge the shell gives that window.

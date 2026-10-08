@@ -353,7 +353,9 @@ The host serves **HTML no-cache and hashed assets immutable**. Two things follow
 Embed the built output and point the provider at it:
 
 ```xml
-<EmbeddedResource Include="wwwroot\**" />
+<!-- WithCulture="false": otherwise MSBuild reads a name like msg.fr.json as a translation and moves it out of the
+     app's assembly into a satellite one, and the bundle loses it. -->
+<EmbeddedResource Include="wwwroot\**" WithCulture="false" />
 ```
 ```csharp
 ResourceProvider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions

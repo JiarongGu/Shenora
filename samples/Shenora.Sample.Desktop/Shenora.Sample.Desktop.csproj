@@ -25,8 +25,9 @@
   <ItemGroup>
     <!-- The packaged frontend: `npm run build` in samples/Shenora.Sample.Web emits here
          (gitignored build artifact). Empty in a fresh clone — the app then runs in dev mode
-         against Vite, or file-serves nothing and shows the provider's 404. -->
-    <EmbeddedResource Include="wwwroot\**" />
+         against Vite, or file-serves nothing and shows the provider's 404.
+         WithCulture="false": a name like msg.fr.json would otherwise go to a satellite assembly, out of the bundle. -->
+    <EmbeddedResource Include="wwwroot\**" WithCulture="false" />
   </ItemGroup>
 
 </Project>

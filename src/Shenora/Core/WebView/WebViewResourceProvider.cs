@@ -36,7 +36,7 @@ public sealed class EmbeddedResourceProviderOptions
 
     /// <summary>
     /// Manifest-name prefix of the bundle root, INCLUDING the folder segment (e.g.
-    /// <c>MyApp.wwwroot</c> for <c>&lt;EmbeddedResource Include="wwwroot\**"/&gt;</c> in project
+    /// <c>MyApp.wwwroot</c> for <c>&lt;EmbeddedResource Include="wwwroot\**" WithCulture="false"/&gt;</c> in project
     /// <c>MyApp</c>). Virtual paths are relative to it: <c>assets/x.js</c> ⇒
     /// <c>MyApp.wwwroot.assets.x.js</c>.
     /// </summary>

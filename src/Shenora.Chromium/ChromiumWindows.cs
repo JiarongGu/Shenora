@@ -269,14 +269,19 @@ public sealed unsafe class ChromiumWindows
         return options.Path is { } path ? new Uri(root, path) : root;
     }
 
-    internal ChromiumIpcBridge NewBridge(ChromiumBrowser browser) =>
-        new(new ChromiumIpcBridgeOptions
+    /// <summary>A page's bridge, built as its browser is; the main window's page also reaches the splash from here, by its
+    /// ready handshake or, for a page that is not there, by its missing.</summary>
+    internal ChromiumIpcBridge NewBridge(ChromiumBrowser browser)
+    {
+        if (browser.Name == MainWindowName) browser.PageMissed = () => Splash?.PageMissing();
+        return new(new ChromiumIpcBridgeOptions
             {
                 Dispatcher = _dispatcher, EventBus = _events, Shell = _options.Shell, Log = _log,
                 EnterWindow = () => ChromiumBrowserContext.Enter(browser),
                 OnClientReady = browser.Name == MainWindowName ? () => Splash?.PageReady() : null,
             },
             _ui, browser.Push, (delay, work) => CefTask.PostDelayed(cef_thread_id_t.TID_UI, delay, work));
+    }
 
     private void Closed(ChromiumWindow window)
     {

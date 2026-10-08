@@ -41,7 +41,7 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
     private volatile SplashSurface _drawing = SplashSurface.Card;
     private ITimer? _timeout;
     private long _startedAt;
-    private bool _started, _bootDone, _windowOpened, _pageReady, _released, _timedOut, _lifted, _renderFailureLogged;
+    private bool _started, _bootDone, _windowOpened, _pageReady, _released, _pageMissing, _timedOut, _lifted, _renderFailureLogged;
 
     public SplashSession(ChromiumSplashOptions options, string? title, Color? windowBackground, IServiceProvider services, IEventBus? bus,
         Func<ISplashSurface?> surfaces, TimeProvider time, ILogger? log, bool? systemDark, ColorScheme scheme = ColorScheme.System)
@@ -352,6 +352,14 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
         Evaluate();
     }
 
+    /// <summary>The main window's page load found nothing: no page will send the ready handshake or call
+    /// <c>closeSplash()</c>, so it lifts held or not, over the not-found page.</summary>
+    public void PageMissing()
+    {
+        lock (_gate) _pageMissing = true;
+        Evaluate();
+    }
+
     /// <summary>Lift it now, fading.</summary>
     public void Close() => Lift("it was closed", fade: true);
 
@@ -403,6 +411,7 @@ internal sealed class SplashSession : ISplashSessionSink, IDisposable
         {
             if (_lifted || !_started || !_bootDone) return;
             if (_released) why = "the page closed it";
+            else if (_pageMissing) why = "the page is not there";
             else if (_pageReady && !_options.HoldUntilClosed) why = "the page is ready";
             else if (_timedOut) why = "the page did not say it was ready in time";
         }

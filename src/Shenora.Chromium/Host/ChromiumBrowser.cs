@@ -82,6 +82,15 @@ internal sealed unsafe class ChromiumBrowser
 
     public string Name { get; }
     public ChromiumServing Serving { get; }
+
+    /// <summary>Told when one of this page's loads found nothing and the not-found page was answered. The main window's
+    /// lifts its splash, held or not: that page never sends the ready handshake, nor calls <c>closeSplash()</c>. Set
+    /// before the browser exists; read on CEF's IO thread.</summary>
+    public Action? PageMissed { get; set; }
+
+    /// <summary>Serve one of this page's requests on <paramref name="route"/>.</summary>
+    internal Task<WebViewResourceResponse> ServeAsync(ChromiumRoute route, WebViewResourceRequest request, CancellationToken cancellationToken) =>
+        Serving.ServeAsync(route, request, cancellationToken, PageMissed);
     public ChromiumOrigins Origins { get; }
     public ChromiumIpcBridge Bridge { get; }
     public ILogger? Log => _log;
@@ -563,9 +572,9 @@ internal sealed unsafe class ChromiumBrowser
                 else
                 {
                     var snapshot = Snapshot(request);
-                    var serving = me._owner.Serving;
+                    var owner = me._owner;
                     var route = me._route;
-                    handler = new ChromiumResourceHandler(cancel => serving.ServeAsync(route, snapshot, cancel), me._owner.Log);
+                    handler = new ChromiumResourceHandler(cancel => owner.ServeAsync(route, snapshot, cancel), owner.Log);
                 }
             }
             catch (Exception ex)

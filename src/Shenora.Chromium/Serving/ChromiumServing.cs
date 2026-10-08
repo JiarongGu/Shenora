@@ -45,7 +45,13 @@ internal sealed class ChromiumServing
 
     public static WebViewResourceResponse Forbidden() => Constant(403, "Forbidden", "forbidden");
 
-    public async Task<WebViewResourceResponse> ServeAsync(ChromiumRoute route, WebViewResourceRequest request, CancellationToken cancellationToken)
+    /// <param name="route">What the request was classified as.</param>
+    /// <param name="request">The request.</param>
+    /// <param name="cancellationToken">Cancels the request.</param>
+    /// <param name="pageMissing">Told when a page load found nothing and the not-found page is answered: a page that is
+    /// not there never sends the ready handshake a splash waits on.</param>
+    public async Task<WebViewResourceResponse> ServeAsync(ChromiumRoute route, WebViewResourceRequest request, CancellationToken cancellationToken,
+        Action? pageMissing = null)
     {
         switch (route)
         {
@@ -54,7 +60,11 @@ internal sealed class ChromiumServing
                 if (TryBundle(request, out var faulted) is { } file) return file;
                 if (!faulted && await _interceptor.Handle(request, cancellationToken).ConfigureAwait(false) is { } routed)
                     return await MarkedAsync(routed, cancellationToken).ConfigureAwait(false);
-                return route == ChromiumRoute.BundlePage ? NotFoundPage(request) : WebViewResourceResponse.NotFound();
+                if (route != ChromiumRoute.BundlePage) return WebViewResourceResponse.NotFound();
+                if (pageMissing is not null)
+                    AppCallback.Run(pageMissing,
+                        ex => AppCallback.Log(_log, () => "[Shenora.Chromium] Reporting a missing page failed", LogLevel.Warning, ex));
+                return NotFoundPage(request);
             case ChromiumRoute.DevDocument:
                 return await DevDocumentAsync(request, cancellationToken).ConfigureAwait(false);
             default:

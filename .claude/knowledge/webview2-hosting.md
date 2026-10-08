@@ -276,7 +276,9 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
   path→name (deterministic), never name→path (the source's direction mis-served any dotted
   filename). MSBuild also rewrites every FOLDER name into an identifier (`my-lib` → `my_lib`,
   `1.0` → `_1._0`); the lookup applies the same rule (`ManifestFolder`, pinned by a test against
-  real embedded folders), so a bundle needs no `LogicalName` for them.
+  real embedded folders), so a bundle needs no `LogicalName` for them. ⚠ It does need
+  `WithCulture="false"` on the item: MSBuild reads `msg.fr.json` or `chunk.en.js` as a translation
+  and builds it into a satellite assembly, so the bundle loses it in a packaged build only.
 - No default dev port ships (`WebViewHostOptions.DevUrl` is required in dev): every family app
   picks a unique Vite port so parallel dev sessions of siblings can't collide. Don't "helpfully"
   default it.

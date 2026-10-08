@@ -36,8 +36,10 @@
          Shenora.Tests.TestAssets.wwwroot). vendor.min.js exists to prove dotted FILE names
          resolve — the mis-map fixed relative to the source app.
          ⚠ media\ is EXCLUDED: those fixtures are handed to a demuxer that opens FILES, so they must
-         reach the output directory rather than the manifest. -->
-    <EmbeddedResource Include="TestAssets\**" Exclude="TestAssets\media\**" />
+         reach the output directory rather than the manifest.
+         WithCulture="false": without it MSBuild reads msg.fr.json or chunk.en.js as a translation and builds it into a
+         satellite assembly, so the bundle loses it — as an app's would. -->
+    <EmbeddedResource Include="TestAssets\**" Exclude="TestAssets\media\**" WithCulture="false" />
   </ItemGroup>
 
   <ItemGroup>

@@ -57,6 +57,15 @@ public class EmbeddedResourceProviderTests
     public void Folders_resolve_as_MSBuild_names_them(string path, string marker) =>
         Assert.Contains(marker, ReadAll(Embedded().GetResourceStream(path)));
 
+    // MSBuild reads msg.fr.json as a French resource and builds it into a satellite assembly, out of the main one —
+    // unless the item says WithCulture="false", which this project's does, as an app's must (measured: without it both
+    // files were missing from the manifest).
+    [Theory]
+    [InlineData("i18n/msg.fr.json", "shenora-culture-name")]
+    [InlineData("chunk.en.js", "shenora-culture-script")]
+    public void A_file_named_like_a_culture_is_embedded_too(string path, string marker) =>
+        Assert.Contains(marker, ReadAll(Embedded().GetResourceStream(path)));
+
     [Fact]
     public void Lookups_normalize_case_slashes_and_leading_separators()
     {
