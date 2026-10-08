@@ -151,6 +151,7 @@ docs cite them — so the number is the column to scan.
 | **D92** | THE CHROMIUM SHELL'S SPLASH IS DRAWN NATIVELY OVER THE MAIN WINDOW'S RENDER AREA, COMPOSED IN C#. |
 | **D93** | THE APP'S COLOUR SCHEME IS A SETTING THE APP OWNS, AND THE DESKTOP SHELLS APPLY IT TO THEIR BROWSER ENGINE. |
 | **D94** | THE NATIVE LAUNCHER OWNS THE FIRST FRAMES: A STARTUP SCREEN, COMPILED INTO IT, UNTIL THE APP'S FIRST WINDOW. |
+| **D95** | ONE BUNDLE PROVIDER FOR BOTH DESKTOP SHELLS, AND A PAGE FOR A PAGE THAT IS NOT THERE. |
 
 <!-- decisions-index:end -->
 
@@ -1394,6 +1395,22 @@ docs cite them — so the number is the column to scan.
   - **The constraints:** opt-in end to end (no description, no argument, nothing changes); the launcher never fails a
     launch over the screen; it holds no single-instance lock, so it may stay alive while the app starts; Windows and
     Linux, the launcher's platforms.
+
+- **D95 — ONE BUNDLE PROVIDER FOR BOTH DESKTOP SHELLS, AND A PAGE FOR A PAGE THAT IS NOT THERE.**
+  `IWebViewResourceProvider` and `EmbeddedResourceProvider` live in Core (`Shenora.Core.WebView`), and the Chromium
+  shell and engine take one (`ResourceProvider`) beside `ContentRoot`, so a Chromium app ships its frontend inside its
+  assembly as a WebView2 app already could. A page load that finds nothing shows a page. Owner, 2026-10-08, on a bare
+  "Not Found" in a frameless window's corner: *"is this styling configurable?"*, *"this should be configurable"*, *"we
+  should support embedded resources too … embedded bundle for web resource too"*.
+  - 🔴 **The proven provider moved, rather than a second bundle concept (a `ContentSource` type) or a pipeline step
+    (`UseEmbeddedResources`):** one contract for both desktop shells, with its cache, warm-up and "serves nothing"
+    diagnosis; a pipeline step would lose the bundle's first place in D45's order. The cost was a namespace break.
+  - **The not-found page is the app's, from its own bundle:** `NotFoundPage` (default `404.html`, the static-hosting
+    convention), embedded or on disk alike; the kit's fixed page otherwise (`NotFoundDocument()`: centred, light or
+    dark, a drag region, so a frameless window can still be moved).
+  - **The constraints:** only a page load gets it — a `fetch()`, script or image miss keeps the plain 404; nothing
+    about the request reaches any body (the host log names the path and where it looked); a page that is not there
+    lifts a splash rather than leaving it up for its timeout.
 
 ## Anti-goals — deliberately NOT built
 

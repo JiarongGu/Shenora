@@ -241,8 +241,10 @@ Shenora.slnx
 │   │                                          (Host/ChromiumSessionWindow), each profile a request
 │   │                                          context directly under the data folder, driven through
 │   │                                          the in-process DevTools channel (Host/DevToolsChannel).
-│   │                                          Serving/ answers the app's origin (the bundle, marked,
-│   │                                          then the app's interceptor pipeline; the IPC route only
+│   │                                          Serving/ answers the app's origin (the bundle — a folder,
+│   │                                          or Core's IWebViewResourceProvider, embedded resources
+│   │                                          above all — marked, then the app's interceptor pipeline,
+│   │                                          then for a page load the not-found page; the IPC route only
 │   │                                          for the app's own browser and origin). Splash/ is the
 │   │                                          native splash (D92): the component model, one layout
 │   │                                          for every OS, the session that shows it over the main

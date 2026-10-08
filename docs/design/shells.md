@@ -345,7 +345,13 @@ often zero.
 - **The app pipeline travels with the options** (D64), so `app.UseFiles(…)` reaches a SECONDARY window
   too rather than being re-wired per window. A throwing pipeline step fails the window loudly.
 - Serving is two mechanisms, both proven: a virtual host over an `IWebViewResourceProvider` (embedded
-  bundle) and disk-folder mappings.
+  bundle) and disk-folder mappings. The provider contract is Core's (D95), so the Chromium shell serves the
+  same embedded bundle through `ChromiumHostOptions.ResourceProvider`.
+- **A page load that finds nothing shows a page, not a bare body** (D95): on the provider's host, a document
+  request that neither the bundle nor the app's routes answer gets the bundle's `NotFoundPage` (default
+  `404.html`) with status 404, else the kit's fixed page (`WebViewResourceResponse.NotFoundDocument()`). A
+  `fetch()`, script or image miss keeps the plain 404. WebView2's `Document` context includes a frame's
+  document, so a frame's miss gets the page too.
 
 ## Native services, and the STA rule
 

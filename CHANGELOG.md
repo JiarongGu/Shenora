@@ -117,6 +117,17 @@ at the first list and missed five more breaking changes.
   Measured on Windows, from the launcher process's start: the screen at ~70–80 ms (warm, a 100×100 PNG), the app's card
   at ~390–550 ms, the screen gone 5–7 ms after it; on Linux under Xvfb, the conformance cases and the kit's real close.
   The stock launcher shows no screen.
+- **The Chromium shell serves an embedded bundle** (`ChromiumHostOptions.ResourceProvider`,
+  `ChromiumEngineOptions.ResourceProvider`, D95): the `EmbeddedResourceProvider` the WebView2 host takes, so a Chromium
+  app ships its frontend inside its assembly; one or the other with `ContentRoot`. Embed with
+  `<EmbeddedResource Include="wwwroot\**" WithCulture="false" />`: without it MSBuild moves a file named like
+  `msg.fr.json` into a satellite assembly. The Chromium sample ships its page this way (proven on Windows over the
+  DevTools protocol, and on Linux under Xvfb).
+- **A page load that finds nothing shows a page** (D95): `NotFoundPage` on `ChromiumHostOptions`,
+  `ChromiumEngineOptions` and `WebViewHostOptions` (default `404.html`, from the bundle, status 404), else the kit's
+  page, `WebViewResourceResponse.NotFoundDocument()`: "Not Found" centred in the page's colour scheme, the whole page a
+  drag region so a frameless window can still be moved. A `fetch()`, script or image miss keeps the plain 404, and the
+  host log names the path and where it looked. On the Chromium shell it lifts a splash at once, held or not.
 
 ### Fixed
 

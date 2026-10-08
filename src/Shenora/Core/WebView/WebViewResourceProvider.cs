@@ -9,7 +9,8 @@ namespace Shenora.Core.WebView;
 /// <summary>
 /// Serves the packaged frontend bundle to a shell, at its app origin. 🔴 Implementations must be fast and
 /// non-blocking: the WebView2 shell serves the MAIN DOCUMENT from it synchronously on its UI thread, so a
-/// stream here comes from memory or an already-warm cache, never a slow device.
+/// stream here comes from memory or an already-warm cache, never a slow device. And thread-safe: the
+/// Chromium shell calls it on CEF's IO thread, alongside its own warm-up on a pool thread.
 /// </summary>
 public interface IWebViewResourceProvider
 {

@@ -19,7 +19,7 @@ public sealed class ChromiumEngineOptions
 {
     /// <summary>
     /// The folder the app's bundle is served from, at <c>https://{VirtualHost}/</c>. Nothing outside it is reachable.
-    /// Required unless every page comes from <see cref="DevUrl"/>.
+    /// This or <see cref="ResourceProvider"/>, unless every page comes from <see cref="DevUrl"/>.
     /// </summary>
     public string? ContentRoot { get; init; }
 
