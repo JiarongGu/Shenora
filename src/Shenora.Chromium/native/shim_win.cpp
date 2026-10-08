@@ -52,8 +52,9 @@ void Report(const wchar_t* text) {
 
 int Fail(const wchar_t* what, int code) {
   wchar_t text[512];
-  swprintf_s(text, L"The app could not start .NET: %s (0x%08X). Install the .NET runtime it targets, or publish it self-contained.",
-             what, static_cast<unsigned>(code));
+  // No "or publish it self-contained": the SDK refuses that for a Windows Chromium app (NETSDK1067, UseAppHost=false).
+  swprintf_s(text, L"The app could not start .NET: %s (0x%08X). Install the .NET runtime it targets.", what,
+             static_cast<unsigned>(code));
   Report(text);
   return code == 0 ? 1 : code;
 }
