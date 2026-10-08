@@ -53,6 +53,22 @@ public class ChromiumPublishFoldersTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    // Publish only: a build is what an IDE and `dotnet run` start.
+    [Fact]
+    public void A_build_stays_flat_with_the_option()
+    {
+        var root = NewRoot();
+        try
+        {
+            var tree = Build(root, folders: true);
+            Assert.Equal(["MyApp.App.deps.json", "MyApp.App.dll", "MyApp.App.pdb", "MyApp.App.runtimeconfig.json", "MyApp.dll",
+                "MyApp.exe", "chrome_elf.dll", "d3dcompiler_47.dll", "icudtl.dat", "libcef.dll", "resources.pak",
+                "v8_context_snapshot.bin", "vk_swiftshader_icd.json"], tree.Where(f => !f.Contains('/')));
+            Assert.Equal(["locales/de.pak", "locales/en-US.pak", "locales/fr.pak"], tree.Where(f => f.Contains('/')));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Fact]
     public void With_the_option_CEF_goes_into_engine_and_three_files_stay_at_the_root()
     {
@@ -125,6 +141,24 @@ public class ChromiumPublishFoldersTests
     // A real publish of a one-file app through the real targets into root\publish; the tree it left.
     private static string[] Publish(string root, bool folders, string[] properties)
     {
+        var (project, dist) = App(root, folders);
+        var publish = Path.Combine(root, "publish");
+        Run("dotnet", ["publish", project, "-o", publish, $"-p:ShenoraCefDist={dist}", "--disable-build-servers", "-nologo", "-v:minimal",
+            .. properties]);
+        return Tree(publish);
+    }
+
+    // A real build of the same app; the tree of its output folder.
+    private static string[] Build(string root, bool folders)
+    {
+        var (project, dist) = App(root, folders);
+        Run("dotnet", ["build", project, $"-p:ShenoraCefDist={dist}", "--disable-build-servers", "-nologo", "-v:minimal"]);
+        return Tree(Path.Combine(root, "app", "bin", "Debug", "net10.0", "win-x64"));
+    }
+
+    // A one-file app whose project imports the real targets, from a fake CEF distribution and a fake shim.
+    private static (string Project, string Dist) App(string root, bool folders)
+    {
         var (dist, shim) = FakeCef(root);
         var app = Path.Combine(root, "app");
         Directory.CreateDirectory(app);
@@ -146,10 +180,7 @@ public class ChromiumPublishFoldersTests
               <Import Project="{TargetsFile()}" />
             </Project>
             """);
-        var publish = Path.Combine(root, "publish");
-        Run("dotnet", ["publish", project, "-o", publish, $"-p:ShenoraCefDist={dist}", "--disable-build-servers", "-nologo", "-v:minimal",
-            .. properties]);
-        return Tree(publish);
+        return (project, dist);
     }
 
     // The Windows layout written into root\publish from a fake CEF distribution and a fake shim, over whatever an earlier
