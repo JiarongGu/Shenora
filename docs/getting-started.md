@@ -150,6 +150,10 @@ builder.UseChromium(new ChromiumHostOptions
 - **The app is dark whatever the OS says** with `ColorScheme = ColorScheme.Dark`, since the sample's page is dark only:
   Chromium's own UI, the page's `prefers-color-scheme` and the window's first frames follow it. An app offering the
   choice passes the user's saved one there and changes it through `IColorScheme`.
+- **A window can appear and go at once** with `Animations = WindowAnimations.None` in its `ChromiumWindowOptions`,
+  rather than playing the system's open and close animations (`System`, the default); on Windows minimize and
+  maximize go with them, and a splash's cover reaches a frameless window sooner. The WinForms shell's main form
+  takes the same setting as `WindowsHostOptions.WindowAnimations`.
 - **The window opens where it was left** with `WindowState = new WindowStateHostOptions { Store = sp => new
   JsonFileWindowStateStore(...) }`: its size, place and maximized state, per the sample.
 - **One instance per install, by default** (`SingleInstance`): a later launch has the running app bring its window
