@@ -32,3 +32,7 @@ target_compile_options(shenora_chromium_shim PRIVATE /utf-8 /W4 /WX /permissive-
 target_link_options(shenora_chromium_shim PRIVATE $<$<CONFIG:Release>:/LTCG>)
 # libnethost.lib is built against the STATIC CRT, so the shim links the same one.
 set_property(TARGET shenora_chromium_shim PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# libcef.dll is delay-loaded: the shim loads it itself, from engine\ when a publish laid it out there
+# (ShenoraChromiumPublishFolders), so a missing engine is a message rather than a launcher that exits saying nothing.
+target_link_options(shenora_chromium_shim PRIVATE /DELAYLOAD:libcef.dll)
+target_link_libraries(shenora_chromium_shim PRIVATE delayimp)

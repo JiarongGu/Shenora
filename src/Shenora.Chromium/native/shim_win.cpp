@@ -8,6 +8,10 @@
 //   <app>.dll       this shim
 //   <app>.App.dll   the .NET app (its own name, because <app>.dll is taken)
 //
+// A publish with ShenoraChromiumPublishFolders keeps those three (and chrome_elf.dll, which CEF's launcher imports) at
+// the root and moves CEF's runtime into engine\ and the .NET app into lib\. This shim reads either shape: libcef.dll is
+// delay-loaded, and loaded here from engine\ when it is there.
+//
 // A subprocess (an argument starting --type=) runs CEF's own code and nothing else, so no renderer ever
 // starts .NET. The browser process starts .NET through hostfxr and hands the app the sandbox and the
 // instance as RUNTIME PROPERTIES (AppContext.GetData), which, unlike environment variables, no child
@@ -39,15 +43,51 @@ bool IsSubprocess() {
   return found;
 }
 
-// A GUI app has no console to print to, so a failure to start .NET would otherwise be a silent exit.
+// A GUI app has no console to print to, so a failure to start would otherwise be a silent exit.
+void Report(const wchar_t* text) {
+  OutputDebugStringW(text);
+  if (console_host) fwprintf(stderr, L"%s\n", text);
+  else MessageBoxW(nullptr, text, L"Shenora.Chromium", MB_ICONERROR | MB_OK);
+}
+
 int Fail(const wchar_t* what, int code) {
   wchar_t text[512];
   swprintf_s(text, L"The app could not start .NET: %s (0x%08X). Install the .NET runtime it targets, or publish it self-contained.",
              what, static_cast<unsigned>(code));
-  OutputDebugStringW(text);
-  if (console_host) fwprintf(stderr, L"%s\n", text);
-  else MessageBoxW(nullptr, text, L"Shenora.Chromium", MB_ICONERROR | MB_OK);
+  Report(text);
   return code == 0 ? 1 : code;
+}
+
+// The exe's folder, without a trailing separator.
+std::wstring ExeFolder() {
+  wchar_t exe[MAX_PATH];
+  const DWORD length = GetModuleFileNameW(nullptr, exe, MAX_PATH);
+  const std::wstring path(exe, length);
+  return path.substr(0, path.rfind(L'\\'));
+}
+
+bool Exists(const std::wstring& path) { return GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES; }
+
+// CEF's runtime: engine\ beside the exe in a publish laid out in folders, else the exe's own folder. Loaded here, before
+// any CEF call, in every process (each subprocess re-enters this DLL), so a missing one is a message rather than a crash
+// at the first delay-loaded call. engine\ also goes on the DLL search, for what Chromium loads after.
+bool LoadEngine() {
+  const std::wstring folder = ExeFolder();
+  const std::wstring engine = folder + L"\\engine";
+  // engine\ when its libcef.dll is there, or when none is beside the exe either: a folders publish missing its engine
+  // names engine\ in the message, and a flat app that owns a folder called engine\ still loads from beside the exe.
+  const bool folders = Exists(engine + L"\\libcef.dll") || (Exists(engine) && !Exists(folder + L"\\libcef.dll"));
+  if (folders) SetDllDirectoryW(engine.c_str());
+  const std::wstring libcef = (folders ? engine : folder) + L"\\libcef.dll";
+  if (LoadLibraryW(libcef.c_str())) return true;
+  const DWORD error = GetLastError();
+  if (!IsSubprocess()) {
+    wchar_t text[800];
+    swprintf_s(text, L"The app could not load its Chromium engine from %s (error %lu). Reinstall the app.", libcef.c_str(),
+               static_cast<unsigned long>(error));
+    Report(text);
+  }
+  return false;
 }
 
 int RunSubprocess(HINSTANCE instance, void* sandbox_info) {
@@ -66,9 +106,13 @@ int RunBrowser(HINSTANCE instance, void* sandbox_info) {
   wchar_t exe[MAX_PATH];
   const DWORD length = GetModuleFileNameW(nullptr, exe, MAX_PATH);
   if (length == 0 || length >= MAX_PATH) return Fail(L"the executable's path is too long", static_cast<int>(GetLastError()));
-  std::wstring app(exe, length);
-  const size_t dot = app.rfind(L'.');
-  app = app.substr(0, dot) + L".App.dll";
+  // The .NET app: lib\<app>.App.dll in a publish laid out in folders, else beside the exe.
+  const std::wstring path(exe, length);
+  const size_t slash = path.rfind(L'\\');
+  const std::wstring name = path.substr(slash + 1, path.rfind(L'.') - slash - 1);
+  const std::wstring folder = path.substr(0, slash);
+  std::wstring app = folder + L"\\lib\\" + name + L".App.dll";
+  if (!Exists(app)) app = folder + L"\\" + name + L".App.dll";
 
   get_hostfxr_parameters params{sizeof(params), app.c_str(), nullptr};
   wchar_t fxr_path[MAX_PATH];
@@ -106,6 +150,7 @@ int RunBrowser(HINSTANCE instance, void* sandbox_info) {
 }
 
 int Run(HINSTANCE instance, void* sandbox_info) {
+  if (!LoadEngine()) return 1;
   return IsSubprocess() ? RunSubprocess(instance, sandbox_info) : RunBrowser(instance, sandbox_info);
 }
 
