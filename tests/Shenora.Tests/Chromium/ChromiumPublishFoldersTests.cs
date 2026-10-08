@@ -12,7 +12,8 @@ public class ChromiumPublishFoldersTests
     [
         "Release/libcef.dll", "Release/chrome_elf.dll", "Release/d3dcompiler_47.dll", "Release/v8_context_snapshot.bin",
         "Release/vk_swiftshader_icd.json",
-        "Resources/resources.pak", "Resources/icudtl.dat", "Resources/locales/en-US.pak", "Resources/locales/fr.pak",
+        "Resources/resources.pak", "Resources/icudtl.dat", "Resources/locales/de.pak", "Resources/locales/en-US.pak",
+        "Resources/locales/fr.pak",
     ];
     // CEF's launchers are real executables, as ChromiumLauncherStampTests' is: the stamp writes resources into one.
     private static readonly string[] Launchers = ["Release/bootstrap.exe", "Release/bootstrapc.exe"];
@@ -109,7 +110,8 @@ public class ChromiumPublishFoldersTests
         try
         {
             Layout(root, folders: false, locales: "");
-            var tree = Layout(root, folders: true, locales: "");
+            // Filtered now: the flat publish's de.pak, a locale this one does not lay out, goes too.
+            var tree = Layout(root, folders: true, locales: "fr");
             // MyApp.App.dll is this harness's flat copy; in a real publish the SDK's incremental clean removes it.
             Assert.Equal(["MyApp.App.dll", "MyApp.dll", "MyApp.exe", "chrome_elf.dll"], tree.Where(f => !f.Contains('/')));
             Assert.DoesNotContain(tree, f => f.StartsWith("locales/", StringComparison.Ordinal));
