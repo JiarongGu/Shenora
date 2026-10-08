@@ -98,6 +98,19 @@ at the first list and missed five more breaking changes.
   hidden), or leave it to the app (`ChromiumHostOptions.StartupScreen` / `WindowsHostOptions.StartupScreen` = `Manual`).
   The close is `WM_CLOSE` on Windows and the window manager's `WM_DELETE_WINDOW`, through xcb and only to a window whose
   `WM_CLASS` is the launcher's, on Linux. Without the argument nothing happens.
+- **The launcher's startup screen (`Shenora.Launcher`, D94)**: `shenora_launcher_startup_screen(<target> IMAGE <png> …)`
+  compiles a screen into an adopter's launcher (it stays one file) — a PNG fitted to a box, a background, an optional
+  moving bar, corners, the monitor, a timeout — shown from the launcher's first moments, through an update apply (on a
+  worker thread, so the bar keeps moving) and the app's start, until the app's first window closes it, the app exits,
+  or the timeout. Windows (a layered window at per-monitor DPI, WIC) and Linux (X11 through `dlopen`, stb_image; the
+  X11 headers are needed to build the screen, and without them the launcher builds as before and shows none); no
+  display, no screen, and the app still starts; a screen that fails, or a window destroyed from outside, ends the
+  screen and never the launch. The template is now a GUI-subsystem executable when declared through the library's
+  `CMakeLists.txt` (a console one opened a console window on a double-click): what a person must read goes to a message
+  box, the rest to `launcher.log`. The library's C++17 requirement now reaches a project that `add_subdirectory`s it.
+  Measured on Windows, from the launcher process's start: the screen at ~70–80 ms (warm, a 100×100 PNG), the app's card
+  at ~390–550 ms, the screen gone 5–7 ms after it; on Linux under Xvfb, the conformance cases and the kit's real close.
+  The stock launcher shows no screen.
 
 ### Fixed
 

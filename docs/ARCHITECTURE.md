@@ -275,6 +275,8 @@ Shenora.slnx
 │   │                                          under runtimes/{rid}/native/, alongside the C++ library
 │   │                                          sources and template under launcher-src/, which an
 │   │                                          adopter builds; the stock binary starts app/MyApp.exe.
+│   │                                          An adopter's launcher may compile in a startup screen
+│   │                                          (cmake/, D94), shown until the app's first window closes it.
 │   │                                          It consumes DOWNLOADED artifacts because the binaries
 │   │                                          come from two different toolchains on two different
 │   │                                          runners — no single `dotnet pack` can produce both — so

@@ -62,10 +62,11 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   background process is refused (measured: it opened under the app the user was in). Whether a double-click from
   Explorer brings it to the front needs a real launch by a person. The splash over the window needs none of this: its
   owner takes the foreground.
-- [ ] **A splash drawn by the native launcher, from the previous run's first frame.** .NET's own start (~100 ms) and
-  the app's composition still come before any splash. The shim could show the first frame the C# splash saved, before
-  .NET starts, and the C# splash adopt that window (on Windows the HWND, through a runtime property as `SandboxInfo`
-  travels). Owner, 2026-10-07: a follow-up, decided on v1's numbers.
+- [ ] **The startup screen for an app without the update launcher.** D94's configured screen runs in
+  `Shenora.Launcher`, so an app that does not use the update launcher still shows nothing until .NET has started. The
+  Chromium layout's own native exe (CEF's launcher, which boots .NET) could show the same description, compiled in by
+  the build, and pass `--startup-screen` as the update launcher does. Not built; a configured picture, never a snapshot
+  of the app (D94).
 - [ ] 🅿️ **Whether a later launch's window takes the foreground on Linux and macOS.** Not observed: WSL's desktop and
   Xvfb enforce no focus-stealing prevention, so they cannot show it. On Linux a later launch could hand over its
   activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands over the foreground; it needs a

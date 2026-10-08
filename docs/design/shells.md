@@ -199,11 +199,13 @@ minimizes and closes from the moment CEF shows it.
 ```
 UseChromium        ← with a Card, CEF is NOT started early (D87's exception); with none it is
 Run: gate          ← a launch turned away shows nothing
-     SplashSession.Start  ← setup; the card, if any; OnShown work starts on the pool
+     SplashSession.Start  ← setup; the card, if any (once it is on screen, a launcher's startup screen goes, D94);
+                            OnShown work starts on the pool
      cef_initialize       ← holds this thread 360–540 ms; the card draws on its own
      context ready → app.Start (OnStarting) → main window: Opening → Attach
      WindowOpened         ← the splash made over the window's render area, owned by it, not shown
-     CEF's show → WindowShown ← the splash shows, never waited on; then the card goes
+     CEF's show → WindowShown ← the splash shows, never waited on; then the card goes (with no card, a launcher's
+                                startup screen goes here)
      main page handshake / closeSplash() → lift once every OnShown has finished
 ```
 

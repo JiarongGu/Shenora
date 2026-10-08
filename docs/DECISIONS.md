@@ -150,6 +150,7 @@ docs cite them — so the number is the column to scan.
 | **D91** | THE AUXILIARY BROWSERS ARE ONE IMPLEMENTATION IN CORE, OVER BROWSERS EACH SHELL MAKES. |
 | **D92** | THE CHROMIUM SHELL'S SPLASH IS DRAWN NATIVELY OVER THE MAIN WINDOW'S RENDER AREA, COMPOSED IN C#. |
 | **D93** | THE APP'S COLOUR SCHEME IS A SETTING THE APP OWNS, AND THE DESKTOP SHELLS APPLY IT TO THEIR BROWSER ENGINE. |
+| **D94** | THE NATIVE LAUNCHER OWNS THE FIRST FRAMES: A STARTUP SCREEN, COMPILED INTO IT, UNTIL THE APP'S FIRST WINDOW. |
 
 <!-- decisions-index:end -->
 
@@ -1374,6 +1375,25 @@ docs cite them — so the number is the column to scan.
     frame is already right, and saves it on `Changed`.
   - **The constraints:** one setting per process, which an app's own `IColorScheme` registration replaces; a session's
     Chromium profile takes it as it opens, not on a later change.
+
+- **D94 — THE NATIVE LAUNCHER OWNS THE FIRST FRAMES: A STARTUP SCREEN, COMPILED INTO IT, UNTIL THE APP'S FIRST WINDOW.**
+  `Shenora.Launcher` can show a configured screen (a PNG fitted to a box, a background, an optional moving bar) from
+  its first moments, through an update apply and the .NET start, and the app closes it once its own first window is
+  on screen (`IStartupScreen`, passed `--startup-screen <window id>`). Owner, 2026-10-08: *"make the application
+  starting looks smooth by ui/ux design since we hitting the startup delay wall"*, *"the launcher also does the update
+  for app so this is good to use launcher to do animation or startup screen before the app starts"*, *"the .net
+  splash still will exist and the launcher handles the 0.2s before .net window ever starts"*.
+  - 🔴 **Why the launcher and not the app:** it is native and runs first, so it is the only code on screen before .NET
+    has started (measured on Windows: the screen ~70–80 ms after the launcher starts, the app's card ~390–550 ms).
+  - **A configured picture, not a snapshot of the app:** owner, *"screen shot of the app feels wrong because what about
+    resolution changes"*. It is drawn at the monitor's DPI from its description each time.
+  - **Compiled into the launcher** (`shenora_launcher_startup_screen()`): owner, *"pack all the description into its exe
+    so we dont have multiple files for launcher"*.
+  - **The launcher's screen and the app's splash are separate:** no position is passed, so the app's windows keep their
+    own places (owner, *"they dont need to be 100% at same spot since app might have different starting spot"*).
+  - **The constraints:** opt-in end to end (no description, no argument, nothing changes); the launcher never fails a
+    launch over the screen; it holds no single-instance lock, so it may stay alive while the app starts; Windows and
+    Linux, the launcher's platforms.
 
 ## Anti-goals — deliberately NOT built
 

@@ -201,6 +201,63 @@ versioned set of files an app needs on disk — a native binary for the current 
   loaded when the new one is staged, so the safe moment to collect is the next start, which only the app
   knows it has reached.
 
+## The launcher's startup screen (D94)
+
+Opt-in: a launcher built with `shenora_launcher_startup_screen(<target> IMAGE <png> …)` (`launcher-src/cmake/`) shows
+a screen from its first moments until the app's first window is on screen. Without the call it shows none and passes
+nothing, and the stock prebuilt binary is built without it. The release workflow's launcher matrix builds two test
+launchers with a screen and runs the conformance's screen cases on both platforms (under `xvfb-run` on Linux).
+
+```cmake
+shenora_launcher_startup_screen(my-launcher
+  IMAGE "${CMAKE_SOURCE_DIR}/splash.png"   # fitted inside the box, aspect kept; give it at ~2× the box
+  WIDTH 480 HEIGHT 300                     # DIPs
+  BACKGROUND "#202020"                     # #RRGGBB or #AARRGGBB
+  PROGRESS_BAR ON PROGRESS_COLOR "#3B82F6" # an indeterminate bar along the bottom
+  CORNERS ROUNDED                          # or SQUARE
+  MONITOR CURSOR                           # or PRIMARY
+  TIMEOUT_SECONDS 20)                      # the longest it waits for the app
+```
+
+Only `IMAGE` is required; the values shown are the defaults, but for `PROGRESS_BAR`, which is off. The description
+and the PNG are compiled into the executable, which stays one file; a changed PNG re-runs CMake by itself, and a bad
+value fails at configure, naming the option. Values are not case-sensitive. The template becomes a GUI-subsystem
+executable through the library's own target definition (`shenora_launcher_executable` in its `CMakeLists.txt`): an
+adopter who declares the executable themselves sets `WIN32_EXECUTABLE` and `/ENTRY:mainCRTStartup` as it does, or a
+double-click opens a console window.
+
+The template's run with a screen: the screen first; the update apply on a worker thread while the screen keeps
+moving; the runtime check; the app started with `--startup-screen <window id>` (an HWND, or an X11 window id) and
+watched; then the launcher waits until the app closes the screen, the app exits (a second launch it handed to the
+running instance), or the timeout. Both desktop shells close it at the app's first window (`IStartupScreen`,
+`StartupScreenMode.FirstWindow`): the Chromium shell's splash card, else its main window; the WinForms shell's main
+form, or the first idle of an app that starts hidden. An app with a loading step of its own before its first window
+sets `Manual` and calls `Close()` itself.
+
+- **Windows:** a layered tool window that never takes activation, at the cursor's (or the primary) monitor's DPI,
+  centred on its work area, with DWM's transitions off. The corners are drawn by the compositor's coverage, so they
+  need no DWM corner support and are exact at any DPI. The PNG is decoded by WIC. As a GUI-subsystem executable the
+  launcher opens no console; what a person must read goes to a message box, the rest to `launcher.log`.
+- **Linux:** libX11 (and libXrandr) loaded with `dlopen`, so a launcher with no display — a terminal, SSH — or no
+  X11 runs and starts the app with no screen. A splash-type window with `WM_CLASS` `ShenoraStartupScreen`, which the
+  app's close checks before it sends `WM_DELETE_WINDOW` through xcb. It never takes the keyboard (`WM_HINTS` input
+  False), waits up to 500 ms for the window manager to map it before the launch goes on, and installs an X error
+  handler, so a window destroyed from outside ends the screen and never the launch (Xlib's default handler exits the
+  process — on the app's side too, which is why its close goes through xcb). Centred on the monitor, not its work
+  area; rounded corners only under a compositor; DPI from `Xft.dpi`. The PNG is decoded by stb_image
+  (`launcher-src/third_party/`, public domain / MIT). The X11 headers (`libx11-dev`, `libxrandr-dev`) are needed to
+  build the screen, not to run it: without them the library builds as before, and a launcher given a screen warns at
+  configure and shows none.
+- **Measured on Windows** (a launcher starting a Chromium app with a splash card, 4 runs, from the launcher process's
+  creation): warm, the screen visible at ~70–80 ms (the launcher's `main` at ~25, `show()` ~50 with a 100×100 PNG),
+  the app's card at ~390–550 ms, and the screen gone 5–7 ms after the card. A freshly copied executable's first run
+  reached `main` only after ~320 ms, before any launcher code. A larger PNG costs its decode on the first frame: a
+  1920×1200 one (2.8 MB) put the screen at ~220–280 ms warm.
+- **Linux, under Xvfb and openbox** (4 runs of 4): the conformance cases, a window destroyed from outside, the kit's
+  real close against the launcher's window, and the no-display path; not timed.
+- **Accepted:** a second launch shows the screen briefly, until the new process hands itself over and exits. On
+  Linux a killed X connection still ends the launcher: Xlib's I/O error handler must not return.
+
 ## What is deliberately absent
 
 - **No downloader and no release host.** Baking one in ships a consumer's decision and drags an HTTP
