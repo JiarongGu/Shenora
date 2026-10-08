@@ -264,7 +264,9 @@ Shenora.slnx
 │   │                                          it fetches the pinned CEF build once per machine
 │   │                                          (SHA-1 against cef.json), then lays out CEF's
 │   │                                          bootstrap.exe as <App>.exe + the shim as <App>.dll
-│   │                                          beside the app's <App>.App.dll; the package
+│   │                                          beside the app's <App>.App.dll (a Windows publish
+│   │                                          with ShenoraChromiumPublishFolders: CEF in engine\,
+│   │                                          the app in lib\); the package
 │   │                                          carries the shim in tools/<rid>/native/.
 │   │                                          native/ is the Windows shim
 │   │                                          (`dev.mjs cef-native`): CEF's bootstrap.exe, renamed to

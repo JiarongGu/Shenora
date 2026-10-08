@@ -129,6 +129,15 @@ at the first list and missed five more breaking changes.
   drag region, so the Chromium shell's frameless window can still be moved (WebView2 ignores the region). A `fetch()`,
   script or image miss keeps the plain 404, and the host log names the path and where it looked, and says when an
   embedded provider serves nothing. On the Chromium shell it lifts a splash at once, held or not.
+- **A Windows Chromium app can publish into folders** (`<ShenoraChromiumPublishFolders>true</ShenoraChromiumPublishFolders>`,
+  D96): `dotnet publish` leaves `MyApp.exe`, `MyApp.dll` and `chrome_elf.dll` at the root, CEF's runtime in `engine\`
+  and the .NET app in `lib\`; the app's `data\` stays beside `MyApp.exe`. Publish only (a build stays flat) and Windows
+  only; without the property the publish is flat, as before. The shim now delay-loads `libcef.dll` and reads either
+  shape, and a missing engine is a message box naming the path it tried, where the launcher used to exit without a
+  word. Such a publish starts through `MyApp.exe` only: `dotnet lib\MyApp.App.dll` does not find CEF. Proven on
+  Windows with a framework-dependent publish, both shapes and a flat build: the page, IPC, the app's 404 page, WebGL
+  on the GPU and the same sandbox levels per process; a self-contained Windows Chromium publish is refused by the SDK
+  with or without it (NETSDK1067), so that combination is unexercised.
 
 ### Fixed
 

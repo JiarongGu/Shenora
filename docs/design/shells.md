@@ -62,6 +62,14 @@ before any form because a `ChromiumView` opens its browser as its handle is crea
 down while a browser is open: a `SecondaryWindows` window outlives the main loop on its own thread, so the
 runner closes them, and `Stop` waits a few seconds at most for the browsers still closing.
 
+A Windows publish with `ShenoraChromiumPublishFolders` (D96) keeps `<App>.exe`, the shim as `<App>.dll` and
+`chrome_elf.dll` (which the launcher imports) at the root, and moves CEF's runtime into `engine\` and the app into
+`lib\`. The shim delay-loads `libcef.dll` and loads it itself before any CEF call, in every process: from `engine\`
+when that holds it, with `engine\` added to the DLL search for what Chromium loads after. The browser process starts
+`lib\<App>.App.dll` when it is there. A missing engine is a message box naming the path (stderr for the console
+launcher), and a subprocess stays silent. Such a publish starts through `<App>.exe` only: run as
+`dotnet lib\<App>.App.dll`, it does not find CEF.
+
 ## Process init: STA or fail
 
 `WinFormsBootstrap.Initialize` is **idempotent** (first call wins) and **throws when the thread is not

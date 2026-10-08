@@ -67,6 +67,11 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   Chromium layout's own native exe (CEF's launcher, which boots .NET) could show the same description, compiled in by
   the build, and pass `--startup-screen` as the update launcher does. Not built; a configured picture, never a snapshot
   of the app (D94).
+- [ ] **The Chromium shell's folders publish on Linux (D96):** the same `engine/` and `lib/` shape, through the
+  helper's and `libcef.so`'s library search paths (rpath). A spike first.
+- [ ] **A self-contained Windows Chromium publish.** The SDK refuses it with or without folders (NETSDK1067: the kit
+  sets `UseAppHost=false`, because CEF's launcher is the exe), so only macOS and Linux publish self-contained. With it
+  enabled, the shim would find `hostfxr.dll` beside the app (`lib\` in a folders publish), a path never run.
 - [ ] 🅿️ **Whether a later launch's window takes the foreground on Linux and macOS.** Not observed: WSL's desktop and
   Xvfb enforce no focus-stealing prevention, so they cannot show it. On Linux a later launch could hand over its
   activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands over the foreground; it needs a

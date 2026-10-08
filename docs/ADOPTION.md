@@ -322,7 +322,9 @@ in the app's project lays out only those locales and en-US (2 MB on Windows); a 
 en-US, and a name CEF has no locale for is a build warning. Its pages play no H.264, AAC or HEVC, where
 WebView2's do (the media guide). And the app now redistributes Chromium: CEF's `LICENSE.txt` and Chromium's
 third-party notices (`CREDITS.html`, in the same CEF build) are the app's to ship, and the layout does not copy
-them.
+them. `<ShenoraChromiumPublishFolders>true</ShenoraChromiumPublishFolders>` makes `dotnet publish` tidier (D96):
+`MyApp.exe`, `MyApp.dll` and `chrome_elf.dll` at the root, CEF in `engine\`, the app in `lib\`, and `data\` still
+beside `MyApp.exe`. That publish starts through `MyApp.exe` only; a build stays flat either way.
 
 **Verify:** the app starts from `MyApp.exe`, the page loads from the dev server and from the bundle, and
 the caption buttons, a window drag and a file drop behave as they did on WebView2.

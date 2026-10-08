@@ -168,7 +168,9 @@ builder.UseChromium(new ChromiumHostOptions
 
 A .NET installed under your home folder, rather than by Microsoft's installer, is found only through `DOTNET_ROOT`,
 which Finder and `open` do not pass: `open --env DOTNET_ROOT=$HOME/.dotnet MyApp.app`. On macOS and Linux,
-`dotnet publish --self-contained` makes a bundle or folder that needs no .NET at all.
+`dotnet publish --self-contained` makes a bundle or folder that needs no .NET at all. On Windows,
+`<ShenoraChromiumPublishFolders>true</ShenoraChromiumPublishFolders>` makes `dotnet publish` three files and two
+folders: `MyApp.exe`, `MyApp.dll` and `chrome_elf.dll`, with Chromium in `engine\` and the app in `lib\` (D96).
 
 **Development.** With `DOTNET_ENVIRONMENT=Development` in the app's environment, or a `.dev` file beside its
 assemblies, the page comes from `DevUrl`, your dev server, and Chromium takes command-line switches such as

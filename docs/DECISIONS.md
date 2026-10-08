@@ -152,6 +152,7 @@ docs cite them — so the number is the column to scan.
 | **D93** | THE APP'S COLOUR SCHEME IS A SETTING THE APP OWNS, AND THE DESKTOP SHELLS APPLY IT TO THEIR BROWSER ENGINE. |
 | **D94** | THE NATIVE LAUNCHER OWNS THE FIRST FRAMES: A STARTUP SCREEN, COMPILED INTO IT, UNTIL THE APP'S FIRST WINDOW. |
 | **D95** | ONE BUNDLE PROVIDER FOR BOTH DESKTOP SHELLS, AND A PAGE FOR A PAGE THAT IS NOT THERE. |
+| **D96** | A WINDOWS CHROMIUM APP CAN PUBLISH AS THREE FILES AND TWO FOLDERS, AS AN OPTION. |
 
 <!-- decisions-index:end -->
 
@@ -1411,6 +1412,21 @@ docs cite them — so the number is the column to scan.
   - **The constraints:** only a page load gets it — a `fetch()`, script or image miss keeps the plain 404; nothing
     about the request reaches any body (the host log names the path and where it looked); a page that is not there
     lifts a splash rather than leaving it up for its timeout.
+
+- **D96 — A WINDOWS CHROMIUM APP CAN PUBLISH AS THREE FILES AND TWO FOLDERS, AS AN OPTION.**
+  `ShenoraChromiumPublishFolders` makes a Windows `dotnet publish` of a Chromium app `MyApp.exe`, `MyApp.dll` and
+  `chrome_elf.dll` at the root, CEF's runtime in `engine\` and the .NET app in `lib\`. Without it the publish stays
+  flat. Owner, 2026-10-08: *"a tidy install folder"*, *"this just one of the option can be configured and this is not
+  the default option"*.
+  - 🔴 **Why folders and not one file:** the engine stays files, as Electron's does — Windows maps `libcef.dll` only
+    from a file, CEF reads its resources and locales by path, and every Chromium subprocess is the exe relaunched.
+  - **Publish only:** a build is what an IDE and `dotnet run` start, so the dev loop keeps its flat output.
+  - **Why `lib\`:** `ShenoraPaths` already reads an app in `lib\` as one folder below the root, so `data\` stays
+    beside `MyApp.exe`.
+  - **The constraints:** `chrome_elf.dll` stays at the root, because CEF's launcher imports it; the shim delay-loads
+    `libcef.dll` and reads both shapes, so a missing engine is a message naming the path; such a publish starts
+    through `MyApp.exe` only (`dotnet lib\MyApp.App.dll` does not find CEF, and supporting it would be a resolver for
+    a start nothing makes); Windows only — macOS is already one `.app`, and Linux needs a spike of its own.
 
 ## Anti-goals — deliberately NOT built
 
