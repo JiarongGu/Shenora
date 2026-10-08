@@ -150,6 +150,31 @@ public sealed class WebViewResourceResponse
     private static readonly byte[] NotFoundBody = System.Text.Encoding.UTF8.GetBytes("Not Found");
 
     /// <summary>
+    /// The kit's page for a page load that found nothing: a 404 with a fixed HTML document — "Not Found" centred, light
+    /// or dark by <c>prefers-color-scheme</c>, and the whole page a drag region, so a frameless window can still be
+    /// moved where the shell honours <c>-webkit-app-region</c>. Like <see cref="NotFound"/>, it says nothing about the
+    /// request.
+    /// </summary>
+    public static WebViewResourceResponse NotFoundDocument() => new()
+    {
+        Content = new MemoryStream(NotFoundDocumentBody, writable: false),
+        StatusCode = 404,
+        ReasonPhrase = "Not Found",
+        Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Content-Type"] = "text/html; charset=utf-8",
+            ["Cache-Control"] = "no-store",
+        },
+    };
+
+    private static readonly byte[] NotFoundDocumentBody = System.Text.Encoding.UTF8.GetBytes(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"color-scheme\" content=\"light dark\">"
+        + "<title>Not Found</title><style>html,body{height:100%;margin:0}"
+        + "html{-webkit-app-region:drag;cursor:default;user-select:none}"
+        + "body{display:flex;align-items:center;justify-content:center;font:15px system-ui,sans-serif;opacity:.7}"
+        + "</style></head><body><p>Not Found</p></body></html>");
+
+    /// <summary>
     /// A <c>416</c> for a range outside the resource. Its <c>Content-Range</c> tells the client the real
     /// size; without it a player retries the same bad range forever.
     /// </summary>

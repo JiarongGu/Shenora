@@ -30,6 +30,13 @@ public sealed class ChromiumEngineOptions
     /// </summary>
     public IWebViewResourceProvider? ResourceProvider { get; init; }
 
+    /// <summary>
+    /// What a page load that finds nothing shows: this path in the bundle, answered with status 404. Null, or a bundle
+    /// without it, shows the kit's page (<see cref="WebViewResourceResponse.NotFoundDocument"/>). A <c>fetch()</c>, a
+    /// script or an image that finds nothing still gets the plain 404.
+    /// </summary>
+    public string? NotFoundPage { get; init; } = "404.html";
+
     /// <summary>The pages in development (a dev server such as Vite). Ignored outside development.</summary>
     public string? DevUrl { get; init; }
 
@@ -193,7 +200,7 @@ public sealed class ChromiumEngine
             var interceptor = new ChromiumInterceptor();
             _app.Pipeline.ApplyTo(interceptor);
             var serving = new ChromiumServing(_options.ContentRoot, origins, interceptor,
-                _isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log, _options.ResourceProvider);
+                _isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log, _options.ResourceProvider, _options.NotFoundPage);
             // As the shell does: the first document's first calls run while Chromium routes its request.
             _ = Task.Run(() => AppCallback.Run(() => serving.Warm(origins.App)));
             var services = _app.Services;

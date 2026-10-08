@@ -29,6 +29,13 @@ public sealed class ChromiumHostOptions
     /// </summary>
     public IWebViewResourceProvider? ResourceProvider { get; init; }
 
+    /// <summary>
+    /// What a page load that finds nothing shows: this path in the bundle, answered with status 404. Null, or a bundle
+    /// without it, shows the kit's page (<see cref="WebViewResourceResponse.NotFoundDocument"/>). A <c>fetch()</c>, a
+    /// script or an image that finds nothing still gets the plain 404.
+    /// </summary>
+    public string? NotFoundPage { get; init; } = "404.html";
+
     /// <summary>The page in development (a dev server such as Vite). Ignored outside development.</summary>
     public string? DevUrl { get; init; }
 

@@ -9,6 +9,10 @@ internal enum ChromiumRoute
     /// <summary>The app's origin: the bundle, then the app's interceptor pipeline on a miss (D45's order).</summary>
     Bundle,
 
+    /// <summary>The app's origin, a main-frame <c>GET</c> navigation: as <see cref="Bundle"/>, but a miss is the
+    /// not-found page rather than the plain 404.</summary>
+    BundlePage,
+
     /// <summary>The page's IPC post, from the app's own page.</summary>
     Ipc,
 
@@ -49,7 +53,10 @@ internal static class ChromiumRouting
                               && fromAppBrowser && isMainFrame && InitiatedBy(initiator, origin);
                 return trusted ? ChromiumRoute.Ipc : ChromiumRoute.Refused;
             }
-            if (origin == origins.App) return ChromiumRoute.Bundle;
+            if (origin == origins.App)
+                return isNavigation && isMainFrame && string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase)
+                    ? ChromiumRoute.BundlePage
+                    : ChromiumRoute.Bundle;
             return isNavigation && isMainFrame && string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase)
                 ? ChromiumRoute.DevDocument
                 : ChromiumRoute.Network;

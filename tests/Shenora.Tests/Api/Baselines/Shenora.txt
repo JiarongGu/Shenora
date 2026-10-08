@@ -1092,6 +1092,7 @@ sealed class Shenora.Core.WebView.WebViewResourceResponse
   public required System.IO.Stream Content { get; init; }
   public static Shenora.Core.WebView.WebViewResourceResponse Bytes(byte[] content, string contentType, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
   public static Shenora.Core.WebView.WebViewResourceResponse NotFound()
+  public static Shenora.Core.WebView.WebViewResourceResponse NotFoundDocument()
   public static Shenora.Core.WebView.WebViewResourceResponse Ok(System.IO.Stream content, string contentType, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
   public static Shenora.Core.WebView.WebViewResourceResponse PartialContent(System.IO.Stream content, string contentType, Shenora.Core.WebView.WebViewByteRange range, long totalLength, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
   public static Shenora.Core.WebView.WebViewResourceResponse RangeNotSatisfiable(long totalLength)

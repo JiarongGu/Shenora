@@ -78,6 +78,16 @@ public class ChromiumRoutingTests
             ChromiumRouting.Classify(new Uri("http://localhost:5173/__shenora/ipc"), "POST", true, true, false, "http://localhost:5173", production));
     }
 
+    // A page load on the app's origin is told apart, so a miss can show a page; everything else stays Bundle.
+    [Fact]
+    public void A_main_frame_GET_navigation_on_the_apps_origin_is_a_page_load()
+    {
+        Assert.Equal(ChromiumRoute.BundlePage, Classify("https://app.local/settings", navigation: true));
+        Assert.Equal(ChromiumRoute.Bundle, Classify("https://app.local/settings", navigation: true, main: false));   // a sub-frame
+        Assert.Equal(ChromiumRoute.Bundle, Classify("https://app.local/settings", "POST", navigation: true));      // a form post
+        Assert.Equal(ChromiumRoute.Bundle, Classify("https://app.local/app.js"));
+    }
+
     [Fact]
     public async Task The_bundle_serves_its_files_and_marks_its_documents()
     {

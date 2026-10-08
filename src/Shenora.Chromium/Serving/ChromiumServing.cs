@@ -50,10 +50,11 @@ internal sealed class ChromiumServing
         switch (route)
         {
             case ChromiumRoute.Bundle:
+            case ChromiumRoute.BundlePage:
                 if (TryBundle(request, out var faulted) is { } file) return file;
                 if (!faulted && await _interceptor.Handle(request, cancellationToken).ConfigureAwait(false) is { } routed)
                     return await MarkedAsync(routed, cancellationToken).ConfigureAwait(false);
-                return WebViewResourceResponse.NotFound();
+                return route == ChromiumRoute.BundlePage ? NotFoundPage(request) : WebViewResourceResponse.NotFound();
             case ChromiumRoute.DevDocument:
                 return await DevDocumentAsync(request, cancellationToken).ConfigureAwait(false);
             default:
@@ -119,10 +120,28 @@ internal sealed class ChromiumServing
             : Whole(copy.ToArray(), relative, status);
     }
 
+    /// <summary>A page load that found nothing: the bundle's own not-found page, else the kit's; a Warning either way.</summary>
+    private WebViewResourceResponse NotFoundPage(WebViewResourceRequest request)
+    {
+        WebViewResourceResponse? own = null;
+        var page = _notFoundPage?.Replace('\\', '/').TrimStart('/');
+        if (page is { Length: > 0 } && (_contentRoot is not null || _provider is not null))
+        {
+            try { own = Read(page, request, 404); }
+            catch (Exception ex)
+            {
+                AppCallback.Log(_log, () => $"[Shenora.Chromium] Reading the bundle's '{page}' from {Source} failed", LogLevel.Warning, ex);
+            }
+        }
+        AppCallback.Log(_log, () => $"[Shenora.Chromium] No page at '{request.Uri.AbsolutePath}' ({Source}): showing "
+            + (own is null ? "the kit's not-found page" : $"the bundle's '{page}'"), LogLevel.Warning);
+        return own ?? WebViewResourceResponse.NotFoundDocument();
+    }
+
     /// <summary>Where the bundle comes from, for the host log.</summary>
-    private string Source => _contentRoot is not null
-        ? $"the folder '{_contentRoot}'"
-        : $"the resource provider {_provider?.GetType().Name ?? "(none)"}";
+    private string Source => _contentRoot is not null ? $"the folder '{_contentRoot}'"
+        : _provider is not null ? $"the resource provider {_provider.GetType().Name}"
+        : "no ContentRoot or ResourceProvider is set";
 
     private WebViewResourceResponse Html(string html, string path, int status) =>
         Whole(Encoding.UTF8.GetBytes(ChromiumTransport.MarkHtml(html, _origins.IpcPath)), path, status, "text/html; charset=utf-8");
