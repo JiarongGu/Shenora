@@ -20,7 +20,7 @@ public class ChildDragAreaTests
     [Fact]
     public void A_later_area_wins_where_two_overlap()
     {
-        var areas = new DragAreas();
+        var areas = new ChildDragAreas();
         areas.Set((0, 0, 400, 32, true), (100, 5, 50, 20, false));
 
         Assert.True(areas.Contains(10, 10));     // the bar
@@ -37,7 +37,7 @@ public class ChildDragAreaTests
             new _cef_draggable_region_t { bounds = new _cef_rect_t { x = 0, y = 0, width = 400, height = 32 }, draggable = 1 },
             new _cef_draggable_region_t { bounds = new _cef_rect_t { x = 100, y = 5, width = 50, height = 20 }, draggable = 0 },
         };
-        var areas = new DragAreas();
+        var areas = new ChildDragAreas();
         fixed (_cef_draggable_region_t* p = regions) areas.Set((nuint)regions.Length, p);
 
         Assert.True(areas.Contains(10, 10));
@@ -52,7 +52,7 @@ public class ChildDragAreaTests
     [Fact]
     public void A_message_point_is_read_at_the_windows_scale()
     {
-        var areas = new DragAreas();
+        var areas = new ChildDragAreas();
         areas.Set((0, 0, 100, 30, true));
 
         Assert.True(areas.ContainsMessagePoint(At(150, 50), 2.0));    // (75, 25) in DIPs

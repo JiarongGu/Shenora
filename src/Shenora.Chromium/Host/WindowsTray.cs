@@ -50,11 +50,11 @@ internal sealed unsafe class WindowsTray : NativeTray
     }
 
     /// <summary>What an icon event asks for; the event is the low word of the callback's lParam (version 4).</summary>
-    internal static TrayEvent Decode(nint lParam) => (uint)(lParam & 0xFFFF) switch
+    internal static WindowsTrayEvent Decode(nint lParam) => (uint)(lParam & 0xFFFF) switch
     {
-        WM_LBUTTONDBLCLK or NIN_KEYSELECT => TrayEvent.ShowWindow,
-        WM_CONTEXTMENU => TrayEvent.Menu,
-        _ => TrayEvent.None,
+        WM_LBUTTONDBLCLK or NIN_KEYSELECT => WindowsTrayEvent.ShowWindow,
+        WM_CONTEXTMENU => WindowsTrayEvent.Menu,
+        _ => WindowsTrayEvent.None,
     };
 
     /// <summary>The menu for <paramref name="entries"/>: command i+1 for entry i, the default item bold.</summary>
@@ -105,10 +105,10 @@ internal sealed unsafe class WindowsTray : NativeTray
     {
         switch (Decode(lParam))
         {
-            case TrayEvent.ShowWindow:
+            case WindowsTrayEvent.ShowWindow:
                 _tray.ShowWindow();
                 break;
-            case TrayEvent.Menu:
+            case WindowsTrayEvent.Menu:
                 // Version 4 gives the menu's anchor, in screen coordinates, in wParam.
                 ShowMenu((short)(wParam & 0xFFFF), (short)((wParam >> 16) & 0xFFFF));
                 break;
@@ -257,5 +257,5 @@ internal sealed unsafe class WindowsTray : NativeTray
 }
 
 /// <summary>What an event on the icon asks for.</summary>
-internal enum TrayEvent { None, ShowWindow, Menu }
+internal enum WindowsTrayEvent { None, ShowWindow, Menu }
 #endif

@@ -23,7 +23,8 @@ const roots = ['src', 'samples', 'tests'];
 
 // ⚠ `record struct` / `record class` FIRST, or `record` matches and the KIND is captured as the NAME —
 // which reported half the record-structs in the tree as a type literally called "struct".
-const DECL = /^\s*(?:\[[^\]]*\]\s*)*(?:public|internal|protected|private)?\s*(?:sealed\s+|static\s+|abstract\s+|partial\s+|readonly\s+|ref\s+|file\s+)*(?:record\s+struct|record\s+class|class|record|struct|interface|enum)\s+([A-Za-z_]\w*)/;
+// `unsafe` among the modifiers: without it every `sealed unsafe class` was invisible, and its file read as a phantom.
+const DECL = /^\s*(?:\[[^\]]*\]\s*)*(?:public|internal|protected|private)?\s*(?:sealed\s+|static\s+|abstract\s+|partial\s+|readonly\s+|ref\s+|file\s+|unsafe\s+)*(?:record\s+struct|record\s+class|class|record|struct|interface|enum)\s+([A-Za-z_]\w*)/;
 
 /** The trailing word of a PascalCase name — `StreamingSession` → `Session`. Null when there is none. */
 const areaOf = (name) => /[a-z]([A-Z][a-z]+)$/.exec(name)?.[1] ?? null;
@@ -70,7 +71,7 @@ for (const file of files) {
 const phantom = [];
 const kindFiles = [];
 for (const { file, base, types } of perFile) {
-  const stem = base.replace(/\.(Unsupported|xaml)$/, '');          // TFM variants + XAML partials
+  const stem = base.replace(/\.(Unsupported|xaml|g)$/, '');        // TFM variants, XAML partials, generated files
   const singular = stem.replace(/(ie)?s$/, (m) => (m === 'ies' ? 'y' : ''));
   const claims = (t) =>
     t === stem || t === `I${stem}` || t === singular || t === `I${singular}`

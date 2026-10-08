@@ -13,7 +13,7 @@ namespace Shenora.Chromium.Host;
 /// overlap, so a <c>no-drag</c> control inside a drag bar is not drag. In the page's DIPs: CSS px at the page's zoom.
 /// Written and read on CEF's UI thread.
 /// </summary>
-internal sealed class DragAreas
+internal sealed class ChildDragAreas
 {
     private (int X, int Y, int Width, int Height, bool Drag)[] _areas = [];
 
@@ -82,7 +82,7 @@ internal sealed unsafe class ChildDragArea : IDisposable
         _log = log;
     }
 
-    public DragAreas Areas { get; } = new();
+    public ChildDragAreas Areas { get; } = new();
 
     /// <summary>The page's areas changed. The widgets are looked for too.</summary>
     public void Update(nint browserWindow, nuint count, _cef_draggable_region_t* regions)
@@ -222,7 +222,7 @@ internal sealed unsafe class ChildDragArea : IDisposable
 internal sealed unsafe class ChildDragArea : IDisposable
 {
     public ChildDragArea(Action<ChromiumDragAreaPress> _, ILogger? __) { }
-    public DragAreas Areas { get; } = new();
+    public ChildDragAreas Areas { get; } = new();
     public void DocumentStarted(nint browserWindow) { }
     public void Update(nint browserWindow, nuint count, _cef_draggable_region_t* regions) { }
     public void Dispose() { }
