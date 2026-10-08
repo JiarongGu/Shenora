@@ -49,8 +49,8 @@ const claudeMd = path.join(repo, 'CLAUDE.md');
 // game rather than a saving. The row routes a whole new platform line (two mobile shells, both proven
 // on device), which is the kind of growth the cap is supposed to permit rather than the kind it is
 // supposed to catch.
-// 🔴 Raised 18 -> 32 KB on 2026-08-07, and the SIZE of the jump is the point. Owner: *"lets do not care
-// too much of the core size"* — said after a session where this cap consumed real time three separate
+// 🔴 Raised 18 -> 32 KB on 2026-08-07, and the SIZE of the jump is the point: core size stopped being
+// something to care much about, after a session where this cap consumed real time three separate
 // ways: a trim of the index's `Enforces` column (which did land, 205 bytes, and was still not enough),
 // then a raise, then a correction to the raise-count claim in the index. That is a lot of ceremony to
 // admit one rule.

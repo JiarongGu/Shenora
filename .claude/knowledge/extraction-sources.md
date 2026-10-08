@@ -70,10 +70,9 @@ read BOTH before porting anything). Foundation: 2026-07-30 survey of all five fa
 reference for a PORT, not a backlog item: read it before lifting anything from that sibling.
 
 
-> DIRECTION (user, 2026-08-06): *"sonora actually got proper solution for media play and you can get its
-> binary you can create resource pack to store them"* and, on where the bytes live, *"because this is a
-> library so we need to ship this for adoption"*. So the kit SHIPS an engine for adopters — the open
-> question was only which package carries it, not whether.
+> The starting direction: Sonora has a proper media-playback solution, its binary could travel in a
+> resource pack, and because this is a library the capability has to ship for adoption. So the kit was to
+> SHIP an engine for adopters — the open question was only which package carries it, not whether.
 
 Sonora built on-device conversion + an HLS segment stream, proved both on a device, and wrote a hand-off
 spec naming exactly what should and should not move — `2026-08-06-shenora-media-handoff.md`, in THAT repo
@@ -111,8 +110,8 @@ device) and an API 36 AOSP emulator:
   `kAudioFormatProperty_DecodeFormatIDs` is **macOS-only** (`'prop'` on iOS), and
   a failed query was reporting as a NEGATIVE. The AAC control is what caught it.
 
-**Slice 4 — MOSTLY DONE (2026-08-07).** Owner: *"we still support for consumer use their own
-decoder/encoder just if they needed, and we built something that can work by default"*. Shipped:
+**Slice 4 — MOSTLY DONE (2026-08-07).** The scope: something that works by default, plus the seam for a
+consumer's own decoder or encoder when they need one. Shipped:
 
 - **`IMediaCapability`** — asks the DEVICE what it decodes and encodes, implemented on both mobile shells.
   Every adopter used to hand-write `MediaPlaybackPolicy`'s codec sets as a guess; the kit now ships the

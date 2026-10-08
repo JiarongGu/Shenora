@@ -14,10 +14,10 @@ clause per row, and trim here before raising the cap.
 incident that earned it belongs to the commit, exactly as it does for a decision entry (D77) — and the
 cost of getting this wrong is not merely length:
 
-- 🔴 **A rule that cannot say when it does NOT apply gets applied everywhere.** That is the failure the
-  owner named: *"some of them heavily influence the development (sometimes in a bad way)"*. Every rule
-  here should be readable as *"in situation X, do Y, because Z breaks"* — if X is missing, X is
-  "always", and a law earned from one incident starts taxing every task.
+- 🔴 **A rule that cannot say when it does NOT apply gets applied everywhere.** That is how a rule comes
+  to steer development heavily, and sometimes in the wrong direction. Every rule here should be readable
+  as *"in situation X, do Y, because Z breaks"* — if X is missing, X is "always", and a law earned from
+  one incident starts taxing every task.
 - 🔴 **THE RULE BASE MODELS A PROSE STYLE, AND THE CODE COPIES IT.** Measured 2026-08-14: **45 % of
   `src/` was comment**, carrying the same 🔴 banners, ALL-CAPS and incident narration these files use —
   in `///` docs that ship to an adopter's IDE. `doc-claims.md` holds the bar for those; this note is
@@ -26,8 +26,8 @@ cost of getting this wrong is not merely length:
 - **Prefer a GATE or a TEST, and delete the rule when one lands.** A rule is read once per session and
   competes with every other; a mechanism runs every time and names the file.
 
-⚠ **The 32 KB core budget is deliberately SLACK** (owner: *"lets do not care too much of the core
-size"*) — it exists to notice a rule base that DOUBLES, not to make you argue for a paragraph. Keep
+⚠ **The 32 KB core budget is deliberately SLACK, because core size is not worth much care** — it exists
+to notice a rule base that DOUBLES, not to make you argue for a paragraph. Keep
 rows to one clause because it reads better, not to save bytes. **It WARNS, never fails**: a style
 budget must not block a release. 🔴 **Prefer a GATE or a TEST to a rule** — `phase-workflow.md` carries
 the scoring that earned it: every failure caught was caught by a mechanism, every failure that landed

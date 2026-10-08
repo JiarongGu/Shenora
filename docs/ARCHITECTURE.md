@@ -407,9 +407,9 @@ Shenora.slnx
 
 ## The subsystems, and what KIND each one is
 
-Written 2026-08-07 after the owner asked for the list — *"IPC, Queue/Mission, Media, FileSystem (include
-dropzone?)"*. Naming them exposed that they are not four peers, and that the answer to the DropZone
-question is "no, it is a different category". **Four kinds, not one list:**
+Listing the subsystems — IPC, missions, media, the file system, and whether drop zones belong beside
+them — exposed that they are not four peers, and that the answer to the DropZone question is "no, it is
+a different category". **Four kinds, not one list:**
 
 | Kind | What it is | Members | How an adopter reaches it |
 |---|---|---|---|

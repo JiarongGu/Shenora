@@ -17,8 +17,8 @@ place that matters most: you could not reach a device at all without owning an X
 
 ⚠ **The wrong fix, tried and rejected (2026-08-06):** borrowing a sibling app's Capacitor/Xcode project to
 mint the profile. It works, and it is wrong three ways — it is slow, it drags that app's SPM checkouts into
-an unrelated build, and it makes this kit depend on a consumer having Capacitor installed. The owner's
-verdict was direct: *"why you rely on capacitor instead create your own one"*. This is that.
+an unrelated build, and it makes this kit depend on a consumer having Capacitor installed. The right fix
+is a project the kit owns. This is that.
 
 ## What is deliberately NOT in it
 

@@ -1199,7 +1199,7 @@ function awake(cfg, mode = 'on') {
 //
 // ⚠ The wrong fix, tried and rejected (2026-08-06): borrow a sibling app's Capacitor project. It works and
 // it is wrong three ways — slow, drags that app's SPM checkouts into an unrelated build, and makes the kit
-// depend on a consumer having Capacitor. Owner: *"why you rely on capacitor instead create your own one"*.
+// depend on a consumer having Capacitor. The right fix is a project the kit owns.
 //
 // ⚠ It does NOT call `push`, deliberately. A provisioning profile is state of the MACHINE, not of the
 // repo, and `push` refuses a dirty tree — so tying the two would make "I cannot sign" depend on whether

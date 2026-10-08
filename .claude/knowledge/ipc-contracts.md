@@ -299,8 +299,7 @@ not thread-pool tasks**.
   terminal transitions are never throttled, because a terminal state arriving late is a different class
   of bug from a missed progress tick.
 - **Progress is the app's own unit, never a kit-assumed percent — and the kit does not clamp, validate
-  or interpret it** (owner direction: *"even its progress it might be different than 0-100%"*).
-  `IpcProgress` is `{ Value, Total?, Unit? }` (TS mirror `{ value, total?, unit? }`), not an `int?`
+  or interpret it.** `IpcProgress` is `{ Value, Total?, Unit? }` (TS mirror `{ value, total?, unit? }`), not an `int?`
   percent: `Total = null` means an absolute count with no known denominator (bytes off a chunked
   stream), never zero, and `Unit` is app-defined and uninterpreted. Silently rewriting an app's own
   reported number is worse than passing it through, so a `Value` above its own `Total` is the app's bug

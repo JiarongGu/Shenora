@@ -1,7 +1,7 @@
 // decisions-index — DECISIONS.md opens with the LIST of what was decided, generated from the entries.
 //
-// 🔴 WHY THIS EXISTS (owner, 2026-08-14: *"I dont think currently its been proerly list all the
-// decisions"*). The file held 75 decisions and no way to see them: answering "what has been decided
+// 🔴 WHY THIS EXISTS: the decisions were not properly listed anywhere. The file held 75 decisions and no
+// way to see them: answering "what has been decided
 // about packaging?" meant scrolling 1,400 lines, and a decision nobody can find is one that gets taken
 // again. A numbered rationale needs a table of contents more than most documents, because its entries
 // are addressed by NUMBER from code and XML docs — you arrive knowing `D48` and needing to know what

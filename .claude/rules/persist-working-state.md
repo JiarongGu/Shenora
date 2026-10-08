@@ -30,11 +30,11 @@ lost the thread of a multi-step rebuild because progress lived only in the chat)
 - **NEVER use the system temp / scratchpad for cross-turn state or progress** — it's
   session-isolated and ephemeral (the exact thing that gets lost). Throwaway probes go under
   `devtools/` (`_*` gitignored); durable state goes to the homes above.
-- ⚠ **A repo-wide SCRIPT must exclude `local/` — it is an informal ARCHIVE, not just private.** Owner:
-  *"not for tracking but for historical reason … an informal archive for local purpose (things we don't
-  want to publish but still good as referencing for development)"*. Its value is that it records what
-  was true THEN, so a sweep that "helpfully" renames through it destroys the reference rather than
-  updating it — a July session log now says `UseMessageDispatcher`, a name that did not exist in July.
+- ⚠ **A repo-wide SCRIPT must exclude `local/` — it is an informal ARCHIVE, not just private.** It is
+  kept out of tracking for history's sake: things not for publishing that are still worth referencing
+  during development. Its value is that it records what was true THEN, so a sweep that "helpfully"
+  renames through it destroys the reference rather than updating it — a July session log now says
+  `UseMessageDispatcher`, a name that did not exist in July.
   **Skip `local/` the way `doc-drift` already skips `CHANGELOG.md`: both are history by definition.**
   ⚠ **The accounting assertion that let it through checked the COUNT, not the SCOPE** — a 28-file rename
   whose own self-check passed. When a sweep asserts it did the right thing, assert on WHICH files.

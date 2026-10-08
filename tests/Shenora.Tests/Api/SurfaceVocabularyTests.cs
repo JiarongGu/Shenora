@@ -7,9 +7,9 @@ namespace Shenora.Tests.Api;
 /// <summary>
 /// The GENERICITY gate — the companion to <see cref="ApiSurfaceTests"/>, which is a SemVer gate and
 /// nothing more. That one proves the public surface did not change by accident; this one asks whether
-/// a change should have been made at all, against the owner's standing criterion for the repo: *"make
-/// sure this is a library — we are not solving specific business logic; everything here has to be
-/// generic enough that any of our applications can adopt it."*
+/// a change should have been made at all, against the repo's standing criterion: this is a library, not
+/// a solution to any one app's business logic, so everything here has to be generic enough for any of
+/// the author's applications to adopt.
 /// <para>
 /// Until this existed that criterion had no tripwire, which made it the only load-bearing invariant in
 /// the repo enforced solely by a reviewer remembering to look — and `ApiSurfaceTests`' own documented

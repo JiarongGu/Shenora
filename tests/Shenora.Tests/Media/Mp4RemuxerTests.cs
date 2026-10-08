@@ -1223,9 +1223,8 @@ public class Mp4RemuxerTests
 
     /// <summary>
     /// 🔴 <b>The value the kit claims, pinned: an adopter's decoder reaches the DEFAULT converter.</b>
-    /// Owner, 2026-08-07: *"the default convertor is actually bridging the gap between the device hardware
-    /// to its webview, and if a better encoder/decoder comes in by adopter app, they can hook that into the
-    /// same pipeline without additional code."*
+    /// The default converter bridges the gap between the device's hardware and its webview, and an adopter
+    /// app that brings a better encoder or decoder hooks it into the same pipeline with no further code.
     /// <para>
     /// ⚠ This was FALSE until the day it was written. <c>ConvertAsync</c> — the overload every adoption
     /// example wires — passed <c>conversion: null</c>, so a shell that had registered a working

@@ -208,7 +208,7 @@ docs cite them — so the number is the column to scan.
   library-repo docs (`DECISIONS.md`, `CHANGELOG.md`).
   🔴 **There is NO archive tier.** One was added and deleted within two days, by which time
   `docs/archive/tasks.md` was the largest doc in the repo at 290 KB — 62 % of all doc weight was
-  finished work. Owner: *"we dont keep historial since we have git for that"*.
+  finished work, and git already keeps the history.
   **The tell that a doc is really an archive: nobody reads it, and it grows fastest.** Ask what QUESTION
   a reader arrives with — "why is it done this way?" → here · "what is the shape today?" →
   `ARCHITECTURE.md` · "what is left?" → `TASKS.md` · "what happened?" → `git log`. A warning written for
@@ -299,8 +299,8 @@ docs cite them — so the number is the column to scan.
   guard and window state moved on the second, when the Chromium shell needed them too (D88).
 
 - **D21 — For a whole application FEATURE, the kit ships primitives + lifecycle hooks; the app owns the
-  product.** Owner: *"co-browse itself is a whole feature — you just need to provide enough interface for
-  other systems to plug/hook onto its cycle."*
+  product.** Co-browse, for one, is a whole feature: the kit provides enough interface for other systems to
+  hook onto its cycle, and no more.
   **The test: could a consumer build its own version of this product on our primitives, without adopting
   our product decisions?** If not, we shipped too much — or we shipped too few hooks.
   **The kit ships NO drivers.** A reference driver is SAMPLE material, not library surface: it becomes
@@ -309,8 +309,8 @@ docs cite them — so the number is the column to scan.
   seam members — which is this test passing in the other direction.
 
 - **D22 — Name every public type for its MECHANISM, never for a scenario, product or business need.**
-  Owner: *"we should build a generic library, so for co-browser it should be focus on browser hook, life
-  cycle, events instead a single business need."* The naming half of D21, stated separately because the
+  A generic library: for co-browse that means browser hooks, lifecycle and events, not a single business
+  need. The naming half of D21, stated separately because the
   kit passed D21 on SHAPE while failing it on NAME twice.
   **The test: could a consumer whose use case is nothing like the one in the name still recognise this type
   as the thing they need?** `LoginWindow` became `InteractiveSession` (it held no login logic);
@@ -338,8 +338,8 @@ docs cite them — so the number is the column to scan.
   guard's diff. 🔴 **Progress is not percent and nothing is clamped**: `Total = null` means no known
   denominator, never zero.
 
-- **D24 — Frameless chrome is a FIXED WinForms type, not an attachable behaviour.** Owner: *"Frameless
-  chrome should be part of winform (as a style of our winform design)"*. A review proposed extracting it
+- **D24 — Frameless chrome is a FIXED WinForms type, not an attachable behaviour.** It is a style of the
+  kit's own WinForms design. A review proposed extracting it
   into a `FramelessChrome.AttachTo(form)` behaviour; **rejected**, because the window style is naturally
   set in `CreateParams` at handle creation and attaching after the fact needs `SetWindowLong` +
   `SWP_FRAMECHANGED` — a SECOND mechanism for the same property, doubling the verification surface in
@@ -353,11 +353,11 @@ docs cite them — so the number is the column to scan.
   that answers a window message where the OS can see it.**
 
 - **D25 — Frameless chrome and native drop zones are the kit's FLAGSHIP pair: settled, and not to be
-  redesigned without adopter evidence.** Owner, after testing both by hand: *"those 2 features kind important"* ·
-  *"the frameless winform was developed properly so don't really change that"* · *"I have been there
-  before so do not change this"*. Both are fully generic AND deliver something the adopting app would
-  not have got by hand — the chrome raises the UI bar with Snap Layouts (`HTMAXBUTTON`), Win11 rounded
-  corners squared while maximized, immersive dark mode, DWM border colour and runtime theme resync.
+  redesigned without adopter evidence.** Both were tested by hand, and both were built against problems
+  already met once in the family, so neither is to be reworked. Both are fully generic AND deliver
+  something the adopting app would not have got by hand — the chrome raises the UI bar with Snap Layouts
+  (`HTMAXBUTTON`), Win11 rounded corners squared while maximized, immersive dark mode, DWM border colour and
+  runtime theme resync.
   🔴 **Drop zones deliver a capability the page cannot have at all:** a page-side drop yields a `File`
   whose only accessor is its CONTENT, forcing an eager byte copy of every dropped file across IPC
   *before the app knows whether it wants any of them*. Native overlays yield `string[]` paths.
@@ -381,7 +381,7 @@ docs cite them — so the number is the column to scan.
     value safe to hold in a diagnostics view.
   - 🔴 **Why now rather than when a consumer asked.** The two-consumer bar governs adding CAPABILITY; the
     shape rule governs SHAPE: **pay now only where the later change would be BREAKING rather than
-    additive.** Owner: *"bigger change does not mean a bad thing … this is still pre-1.0."*
+    additive.** A bigger change is not a bad thing while the kit is pre-1.0.
   - Declined and still declined: a handler registry by type (app composition, and it would make the kit
     own serialization of app types — the iOS AOT problem), a separate queue and runner, an `IMission`
     interface (pushes toward class-per-mission).
@@ -407,14 +407,14 @@ docs cite them — so the number is the column to scan.
   IN-MEMORY only — a durable chain carries state in `Payload`, because the kit cannot serialize an app's
   object graph and a resume that silently lost the context is worse than one that never had it.
 
-- **D30 — filesystem MUTATIONS are a separate component from mission scheduling.** Owner: *"it's more a
-  different design rather than put them all into mission management"*. `IFileUpdateQueue` decides how
+- **D30 — filesystem MUTATIONS are a separate component from mission scheduling.** It is a different
+  design, not more of mission management. `IFileUpdateQueue` decides how
   changes LAND; the scheduler decides which missions RUN.
   - **Why, and it is not tidiness:** a path claim excludes two missions for their whole duration though the
     expensive phase usually touches only a temp file. **Compute in parallel, serialize only the landing.**
     The failure modes do not overlap either — a scheduler's are starvation and deadlock, an applier's are
     partial writes and locked targets.
-  - **Atomicity is the app's choice per update** (owner: *"it depends what the application need"*):
+  - **Atomicity is the app's choice per update**, since it depends on what the application needs:
     `PerChange`, or `AllOrNothing` via compensating rollback — which forces STAGED deletes, a delete being
     the one change that cannot be undone from nothing.
   - 🔴 **Crash-atomicity is opt-in via a write-ahead journal, and the ORDERING is the property:** the undo
@@ -437,9 +437,9 @@ docs cite them — so the number is the column to scan.
     share* — a lock in one machine's local storage is invisible to the other, and that is the setting
     that fails silently. A lease released by a crash returns when the SMB session times out.
 
-- **D32 — a second shell is a PEER, and the kit's job is the substrate under both.** Owner: *"abstract
-  the logic out as much as possible … so it supports both MAUI and WinForm (some capability can
-  implement differently like dropzone and frameless)"*. `Shenora.Mobile` references no Windows assembly.
+- **D32 — a second shell is a PEER, and the kit's job is the substrate under both.** The logic is
+  abstracted out as far as it goes, so both MAUI and WinForms are served, with a capability such as drop
+  zones or frameless chrome implemented differently by each. `Shenora.Mobile` references no Windows assembly.
   **A thin shell is the evidence the split is in the right place**, because the substrate moved first — a
   fat shell would have meant something portable was still trapped in the Windows one.
   - **The bar stays D20's, not "it looks platform-neutral":** *can app logic compile off Windows, or does a
@@ -481,8 +481,8 @@ docs cite them — so the number is the column to scan.
   which is why the pack list must agree with it.
 
 - **D35 — "open a folder" is a DESKTOP concept, and the portable answer is to decompose it into the
-  intents behind it.** Owner: *"open folder in mobile will be different cases than open folder in
-  desktop … for desktop it's more free"*. A desktop folder browser hands back ambient, permanent access to
+  intents behind it.** Opening a folder on a phone is a different case from opening one on a desktop, where
+  it is far freer. A desktop folder browser hands back ambient, permanent access to
   an arbitrary path; Android hands back a revocable, scoped grant to a tree URI. **Same word, different
   guarantee — papering over that is how a portable-looking API becomes a lie at the one moment an app
   relies on it.** Ask what the app actually wanted; all three are expressible on both shells:
@@ -561,12 +561,12 @@ docs cite them — so the number is the column to scan.
   **The one rule that outlived both:** app logic names the media types and compiles on `net10.0` with no
   platform reference, enforced by `samples/Shenora.Sample.Logic` turning RED if a platform type reaches it.
   ⚠ **Deleted rather than amended, and the test is reusable: does this entry describe something that
-  SHIPPED?** If not, delete it and say what replaced it. Owner: *"we should do a cleanup, remove
-  everything thats irrelevant anymore which is clearer than keep adding."*
+  SHIPPED?** If not, delete it and say what replaced it: removing what no longer applies is clearer than
+  adding to it.
 
 - **D42 — for an APP that needs total format coverage, an ENGINE is the primary playback path on every
-  platform, including mobile — and the kit ships none.** Owner: *"mobile library is not stable to support
-  different type of media but if we use engine we have the control"*. The argument is CONSISTENCY — one
+  platform, including mobile — and the kit ships none.** The phones' own media libraries are not stable
+  across types of media, and an engine gives the app that control. The argument is CONSISTENCY — one
   behaviour matrix across three platforms — and it beats the byte count.
   - ⚠ **The APP's choice, not a statement about the kit's own path.** The kit's default is the TRANSLATION
     LAYER — platform codecs, container repair, segments (D59/D70/D71) — rendered by the page's element on
@@ -607,10 +607,10 @@ docs cite them — so the number is the column to scan.
     choice looks correct** on a faststart file, which only ever asks for `bytes=0-`.
     (Measurements: `docs/design/mobile-shells.md`; how to observe it: `.claude/knowledge/mobile-shells.md`.)
 
-- **D45 — resource interception is a MIDDLEWARE PIPELINE in `Shenora`, implemented by each SHELL.** Owner,
-  and the order of the steps is the argument: *"the interceptor interface should live in the core"* →
-  *"desktop will also have issue with access local folder/files"* (not a mobile workaround) → *"even file
-  access too"* (media is ONE CASE) → *"it's more like a middleware design if you think this way"*.
+- **D45 — resource interception is a MIDDLEWARE PIPELINE in `Shenora`, implemented by each SHELL.** The
+  order of the steps is the argument: the interceptor interface belongs in Core → the desktop has the same
+  trouble reaching local folders and files (not a mobile workaround) → file access in general needs it
+  (media is ONE CASE) → so it is a middleware design.
   - **Interception is a SHELL capability, but the CONTRACT is Core's** — every shell needs it, so one
     `IWebViewInterceptor` means **path containment is written once instead of three times**.
   - 🔴 **MIDDLEWARE, not a list of handlers, because the cross-cutting concerns are the point.**
@@ -623,8 +623,7 @@ docs cite them — so the number is the column to scan.
     scheme NOR the range delivery** — a page told "you are on iOS, use `app://`" branches on platform.
 
 - **D46 — a capability that needs a newer PLATFORM TARGET is opt-in, never imposed. The consumer picks the
-  target; the kit makes the consequence explicit.** Owner: *"so we let the consumer decide their target
-  platform instead of force it?"*
+  target; the kit makes the consequence explicit.**
   - **The case:** `IPlaybackSession` on the desktop needs `SystemMediaTransportControls`, which is WinRT,
     and the projections exist only when the TFM names a Windows SDK version — so raising `Shenora.Windows`
     to a versioned TFM would make every Windows consumer retarget for a capability most never call.
@@ -638,9 +637,8 @@ docs cite them — so the number is the column to scan.
     it to the former**, which is how bumping a TFM for one API quietly raises everyone's minimum OS.
 
 - **D47 — while ONE repo fully adopts the surface, prefer the CORRECT shape over the compatible one. Ship no
-  compatibility aliases; rename when the name is the defect.** Owner: *"sonora actually is the first one
-  fully adopting all features so you can fix anything into the best here which only cause 1 repo to
-  update"*.
+  compatibility aliases; rename when the name is the defect.** Sonora is the first repo adopting every
+  feature, so fixing a shape costs one repo an update.
   **What changed is the PRICE of a break, not the rules about it.** A break against a known, single,
   same-author adopter is one repo's compile errors — a bounded, visible cost, not the unbounded one
   "published" usually implies.
@@ -651,8 +649,8 @@ docs cite them — so the number is the column to scan.
     One repo → this stands. Two or more → superseded, a deprecation path is owed, and D49's pre-1.0 id
     retirement stops being deferrable. ⚠ **A deferral nobody wrote down gets rediscovered as a defect.**
 
-- **D48 — the file-operation engine is its own LAYER hanging off Core, not part of it.** Owner: *"because
-  this include file operation so we should have a sperated library/package for this"*.
+- **D48 — the file-operation engine is its own LAYER hanging off Core, not part of it.** It holds file
+  operations, which earned it a library of its own.
   ⚠ **Its PACKAGING conclusion is reversed — D55 removed the package, D65 made it the
   `Shenora.Engine.Files` namespace. Read the layering; ignore the package ids.**
   - **Why:** Core is what *every other package references*, so a phone app that hosts a page and plays a
@@ -667,8 +665,7 @@ docs cite them — so the number is the column to scan.
     refuses the other**, not a call graph with two components.
 
 - **D49 — retired package ids stay LISTED until 1.0; pre-1.0 ids are retired in ONE deliberate pass.**
-  Owner: *"its okay let them be there we will retire all pre-1.0 packages once we got a fully working app
-  framework working"*.
+  They stay until the kit is a fully working app framework, and then every pre-1.0 id is retired at once.
   - **What this settles:** the ids D37 merged away are still listed and undeprecated on nuget.org. That is
     a CHOICE with a trigger, not an overdue chore — which matters because **a deferral nobody wrote down
     gets rediscovered as a defect.**
@@ -681,8 +678,7 @@ docs cite them — so the number is the column to scan.
     nuget.org that does not exist is not.**
 
 - **D50 — the native launcher is a LIBRARY plus a template, written in C++, one binary per platform.**
-  Owner: *"so it probably need to be template + c++ library"* · *"the only requirement is (compatibale
-  linux+ windows for future needs, and small)"*.
+  The only requirements: it works on Linux and Windows, for future needs, and it is small.
   - **Library + template is not a judgement call — the seam was MEASURED twice.** Two siblings, no contact,
     wrote the same three files: the generic two are the LIBRARY, `main.cpp` is the TEMPLATE. What stays
     per-app (exe name, icon, version resources, signature) is **a build step, not a source fork**.
@@ -696,8 +692,8 @@ docs cite them — so the number is the column to scan.
     harness drives a PREBUILT launcher and an adopter's CI runs THE KIT'S suite against THEIR binary.
 
 - **D51 — anything the kit SHIPS AS BYTES must be MIT-compatible; an app that wants a copyleft binary
-  supplies it through a `ResourcePack`.** Owner: *"we are on MIT so we should build one compatible with
-  MIT"*. A closed-source app is NOT at risk from LGPL — that is the whole LGPL/GPL difference — but
+  supplies it through a `ResourcePack`.** The kit is MIT, so what it ships must be compatible with MIT. A
+  closed-source app is NOT at risk from LGPL — that is the whole LGPL/GPL difference — but
   shipping the same binary from HERE makes the kit the **redistributor** and hands attribution and
   relinking duties to every consumer. `MIT` over an LGPL payload is what a compliance review finds late.
   - **The constraint:** shipped bytes are MIT / BSD / Apache-2.0 / ISC / public-domain. **GPL never** —
@@ -711,8 +707,8 @@ docs cite them — so the number is the column to scan.
     a fixture vendoring a binary or a release asset all leak it from a clean repo. D81 narrows it for an ENGINE.
 
 - **D52 — the media layer is a TRANSLATION LAYER FOR THE WEB, not a media toolkit: the MINIMUM
-  transformation that makes a file playable in a webview, and never more.** (Owner: *"we're not remaking
-  ffmpeg … if H.265 is not supported on the web we translate it."*)
+  transformation that makes a file playable in a webview, and never more.** Not a remake of ffmpeg: when
+  the web does not support H.265, the kit translates it.
   - **The scope test, narrow on purpose:** *would a normal file the user already has fail to play, and is
     this the least we can do about it?* D59 states it as a measurable DELTA — what the DEVICE decodes minus
     what its WEBVIEW accepts — because "make more formats play" has no end.
@@ -727,8 +723,8 @@ docs cite them — so the number is the column to scan.
     the web already has (D54).
 
 - **D53 — the media package is folded back into `Shenora`. Media repair is SHELL WORK, not an optional
-  feature, and the package's own justification had become false.** (Owner: *"we are not making a video
-  convertor library we are making a hybrid app development framework."*)
+  feature, and the package's own justification had become false.** The kit is a hybrid app development
+  framework, not a video converter library.
   - 🔴 **The reason is IDENTITY, not layering.** A separate media package **advertised the wrong thing**,
     making the kit look like a media library with a hybrid shell attached. **Package boundaries are a
     public statement about what a thing IS; when a boundary has to be justified by an argument, check
@@ -741,8 +737,7 @@ docs cite them — so the number is the column to scan.
     replaced it** with "the framework is one whole". **What is NOT claimed:** that fewer packages is better.
 
 - **D54 — THE THESIS: the differentiator against Capacitor and Electron is NATIVE .NET CAPABILITY, and the
-  kit's job is the translation layer between what .NET can do and React cannot.** (Owner: *"its something
-  that .net can do but react d[oes]nt. We build that translation layer."*)
+  kit's job is the translation layer between what .NET can do and React cannot.**
   **The lens:** *.NET does the platform work · React does the interface · the kit owns the seam.*
   - 🔴 **So the question for a proposed feature is not "is this useful?" but "can React already do this?"**
     If it can, the kit is competing with the web platform and loses. Capacitor and Electron give you a
@@ -756,8 +751,8 @@ docs cite them — so the number is the column to scan.
     native player survives backgrounding"* — an iOS `<audio>` plays on. **It stands on the other legs.**
 
 - **D55 — there is no "optional features" tier: the framework ships as ONE whole, so the file engine folds
-  into `Shenora` too.** (Owner: *"the final framework is a whole, what we should support is bridge the
-  both, react and .net."*)
+  into `Shenora` too.** The framework is one whole, and what it offers is the bridge between React and
+  .NET.
   - **This is D53's identity argument applied where D53 declined to apply it.** A nuget.org listing of a
     media package plus a file package plus a compression package reads as a collection of single-domain
     libraries; the product is a hybrid app framework. **D53's "the next feature is judged on the same
@@ -770,8 +765,8 @@ docs cite them — so the number is the column to scan.
   - **What the owner asked for survives as FOLDERS** under `src/Shenora/Engine/` (D65), so the D47 break
     is two `PackageReference` deletions AND a `using` sweep. ⚠ Re-check that claim after any restructure.
 
-- **D56 — the deploy/update TOOLING is product, not devtools.** (Owner: *"the launcher, platform
-  testing/deployment tools kind become more needed"*.)
+- **D56 — the deploy/update TOOLING is product, not devtools.** The launcher and the platform test and
+  deployment tools are needed more as adoption grows.
   - **The competitive read that makes it obvious.** D54's differentiator is true about the RUNTIME, but
     Capacitor's moat is `npx cap sync` / `cap run ios` and Electron's is `electron-builder` plus the
     auto-updater. **An adopter meets the tooling before they meet the runtime**, and a framework whose
@@ -799,8 +794,8 @@ docs cite them — so the number is the column to scan.
       arrived at the same contract independently — **D15's bar met on evidence, not direction.**
 
 - **D58 — the interceptor's media route is the PLAYER's output pipe, not a parallel feature. There is one
-  media-play layer in .NET and the webview is one of its surfaces.** (Owner: *"the .net one is a proper
-  player but using web as its display and sound"*.)
+  media-play layer in .NET and the webview is one of its surfaces.** The .NET side is a proper player that
+  uses the web for its picture and sound.
   - **What was wrong before it.** Serving handed bytes to an element the PAGE drove while the player was
     native, so every adopter wired probe → plan → URL by hand. **The join is `MediaPlayer`**: a media
     request at the interceptor is a question **.NET** answers, and the page renders what it is handed.
@@ -814,8 +809,8 @@ docs cite them — so the number is the column to scan.
     `MediaPlayer.Report`, the element being what advances.
 
 - **D59 — the converter's job, stated exactly: it bridges what the PIPELINE can decode — the device's
-  hardware, plus whatever an adopter hooks in — to what that device's WEBVIEW will accept.** (Owner: *"if
-  a better encoder/decoder comes in by adopter app, they can hook that into the same pipeline."*)
+  hardware, plus whatever an adopter hooks in — to what that device's WEBVIEW will accept.** An adopter app
+  that brings a better encoder or decoder hooks it into the same pipeline.
   - **This is sharper than D52's framing and supersedes how it was read.** "Make a file the webview cannot
     play, play" invites a treadmill of formats; the real target is a DELTA between two measurable things —
     `IMediaCapability` asks what can be decoded, `MediaPlaybackPolicy` says what the element accepts.
@@ -844,8 +839,7 @@ docs cite them — so the number is the column to scan.
     cannot express what it needs over the existing IPC pipe — wanting ready-made twenty lines is not that.
 
 - **D61 — ONE `Use…` call defaults everything the kit may choose on the app's behalf, and refuses anything
-  that changes what the app is EXPOSED to.** (Owner: *"its okay as long as the adopter when using get
-  similar treatment as UseMediaPlayer"*.)
+  that changes what the app is EXPOSED to.** Every capability gets the treatment `UseMediaPlayer` gives.
   - ⚠ **This entry said a capability is "adopted through" that call, and D64 replaced that model:** the
     framework is ON BY DEFAULT and `Use…` CONFIGURES rather than enables. The DEFAULTING rule survives.
   - **The test for what may be defaulted is "does this change what the app is EXPOSED to?"** Journal and
@@ -859,8 +853,8 @@ docs cite them — so the number is the column to scan.
     `System.IO.File`. ⚠ **`IO` collided with nothing precisely BECAUSE it is not a common type name.**
 
 - **D62 — the IPC pipe carries INTENT; BYTES go through the resource interceptor. So a binary IPC pipeline
-  would not speed up media.** (Owner: *"why there is a bus send so we cannot really wire into the native
-  web player?"*)
+  would not speed up media.** The question was whether the bus keeps the kit from wiring into the
+  webview's native player.
   - **What the bus costs in the player, counted rather than guessed:** SIX messages for an entire playback
     session, plus one report per element TRANSITION — not per frame, not per second.
   - 🔴 **The page's `<video>` IS the platform's native player.** WKWebView decodes through AVFoundation and
@@ -875,7 +869,7 @@ docs cite them — so the number is the column to scan.
 
 - **D63 — "declared but never consulted" is this repo's recurring defect, and it is INVISIBLE by
   construction. Every extension point must have a socket, and something must ASK.** (2026-08-07, after the
-  third instance in two days. Owner: *"lets make this library properly"*.)
+  third instance in two days.)
   - **The three, and what they had in common:** a remuxer overload that passed `conversion: null`, so AC-3
     films played SILENTLY (D59); `RestartManagerLockInspector` registered by nothing, so "who holds this
     file?" said *cannot tell* on the one platform that can tell; `IMediaContainerWriter` implemented and
@@ -889,8 +883,7 @@ docs cite them — so the number is the column to scan.
     `.claude/knowledge/standing-habits.md`.
 
 - **D64 — the framework is ON BY DEFAULT: `Use…` CONFIGURES rather than enables, and the only per-platform
-  call is the shell's, which exists to inject implementations.** (Owner: *"those `use` function basiclly
-  just a way to override or configure"*.)
+  call is the shell's, which exists to inject implementations.**
   🔴 **The core is THREE FIXED MESSAGE PIPELINES and everything else is an interceptor on one of them** —
   resources (BYTES), IPC (an ACTION) and events (the host telling the page). **That is what makes
   on-by-default safe: an interceptor nothing routes to is inert BY CONSTRUCTION.** The boundary that
@@ -904,8 +897,8 @@ docs cite them — so the number is the column to scan.
     🔴 **`Use` touches a PIPELINE, `Add` only the container**; a CORE module is CONFIGURED, never added.
 
 - **D65 — THREE LAYERS, the package is called `Shenora`, and "Core" means the WIRE between .NET and
-  the web — nothing else.** (Owner: *"the Core is the main wire between .net and web …, on top of that is
-  pure logic layer … and then what we call 'features'"*.) **Core is the CONTRACT · the engine is the BRAIN
+  the web — nothing else.** On top of it sits a pure logic layer, and on top of that the features. **Core
+  is the CONTRACT · the engine is the BRAIN
   · modules BRIDGE .NET and the web.** 🔴 **The layer names ARE the namespace segments, so the layout
   cannot lie about the architecture.**
   - 🔴 **The membership test:** *must both sides AGREE on it?* → core. *Pure computation the page never
@@ -919,7 +912,7 @@ docs cite them — so the number is the column to scan.
     first, rename second, each with its own green gate** — a sweep on a fold makes failures unattributable.
 
 - **D66 — a long-running request IS A REQUEST, so the "operation" — a second identity for one thing —
-  collapsed into the IPC contract.** (Owner: *"the long run request still a request?"*.)
+  collapsed into the IPC contract.**
   - 🔴 **The defect the naming argument uncovered.** The former registry minted a `Guid` with NO
     relationship to the `IpcRequest.Id` that caused it, so **the page had to correlate the two itself.**
     One `XMLHttpRequest` carries `readyState`, `progress` and `abort()` instead.
@@ -934,7 +927,7 @@ docs cite them — so the number is the column to scan.
     seen. Safe by construction: `NotificationPump` has ZERO references to `IpcResponse`.
 
 - **D67 — the DEVICE LOOP is part of the framework, so the kit ships a CLI: `@shenora/cli`, second npm
-  package, binary `shenora`.** (Owner: *"the deploy to sim/iphone should be able to finish with cli"*.)
+  package, binary `shenora`.** A deploy to a simulator or an iPhone finishes from the command line.
   - 🔴 **It does not contradict D53/D55, and the distinction is the whole entry.** "A capability gets a
     FOLDER, never a package id" is a rule about what ships **INSIDE the app**. A CLI ships inside nothing —
     a `devDependency` absent from every artifact the user installs. ⚠ **So the test for any future package
@@ -949,8 +942,7 @@ docs cite them — so the number is the column to scan.
     ⚠ And **THIS repo's harness is not the CLI's constraints**: signing needs a GUI login session.
 
 - **D68 — the WebView2 RUNTIME choice belongs to the ADOPTING APP. The kit stays Evergreen by default and
-  ships no browser bytes.** (Owner: *"ship a fixed version for webview2 should be decided by the adopted
-  app not us"*.)
+  ships no browser bytes.**
   - **The question arrived as one and was two.** The **user-data folder** is already app-local everywhere,
     so that half was a non-issue; only the **browser binaries** were ever in question. **Half of a reported
     problem not existing is worth recording, because the other half is then a NEW position rather than a
@@ -964,8 +956,8 @@ docs cite them — so the number is the column to scan.
     one consumer's requirement.
 
 - **D69 — the Live Activity is DATA the app builds in C# and a GENERIC kit widget READS at runtime. Raw
-  Swift stays a first-class path, the normal Apple way.** (Owner: *"c# builds a config like code and swift
-  part reads it … activity is not for a complex component"*.)
+  Swift stays a first-class path, the normal Apple way.** An activity is not a complex component, so C#
+  builds its configuration like code and Swift reads it.
   - 🔴 **It is a RUNTIME CONFIG, not code generation, and that distinction is the decision.** Nothing is
     generated and the same compiled widget serves every app; SwiftUI still compiles at build time, so **the
     PRIMITIVES are fixed and their COMPOSITION is data**.
@@ -979,8 +971,8 @@ docs cite them — so the number is the column to scan.
     and a server: the adopter's infrastructure.
 
 - **D70 — the kit SHIPS A DEFAULT CONVERSION ENGINE, and it is the platform's own codecs. `Convert` is the
-  OVERRIDE, for work past the platform's reach.** (Owner: *"we can ship default conversion engine for each
-  platform mainly focus on hardware support"*.)
+  OVERRIDE, for work past the platform's reach.** One default per platform, focused on what its hardware
+  supports.
   - **What it is.** `Convert` defaults to the kit's remuxer joined to the shell's `IMediaStreamConversion`.
     **No shipped codec bytes**, so D51 is untouched: wiring decoders the OS already has is D51's FIRST
     preference, not an engine.
@@ -994,8 +986,8 @@ docs cite them — so the number is the column to scan.
     so the log names which:** WITH a codec seam means unsupported here; with NONE nothing was ever asked.
 
 - **D71 — STREAMING IS THE MEDIA TIER'S PRIMARY PATH, and the whole file is what streaming LEAVES
-  BEHIND rather than the thing it produces.** (Owner: *"full transcode should be after if we got the full
-  segment, its more like a cache/persist logic"*; *"1 planner no platform difference"*.)
+  BEHIND rather than the thing it produces.** The full transcode comes after, once every segment exists, as
+  cache and persistence logic; and one planner serves every platform.
   - **The inversion.** Materialising an ENTIRE output first makes the opening play wait for the whole
     transcode and a seek inexpressible, so it becomes the TAIL: **"all the segments" and "the finished
     file" are one state.**
@@ -1009,8 +1001,7 @@ docs cite them — so the number is the column to scan.
     film someone waited for, so the route REFUSES a destination inside it (`docs/design/media.md`).
 
 - **D72 — THE COMPUTED-REMUX ROUTE GETS NO PAGE-SIDE READINESS CONTRACT: the APP warms the plan in
-  .NET and the page stays one plain `<video src>`.** (Owner, on being offered a readiness event: *"this
-  sounds more like HLS now"*.)
+  .NET and the page stays one plain `<video src>`.**
   - **The question it closes.** A source nobody has planned answers `503 Retry-After: 1`, and **a `<video>`
     cannot ride that out** — it errors within ~70 ms and retries no sooner than 12 s.
   - 🔴 **THE REJECTED ANSWER IS THE INTERESTING ONE: a readiness event plus a page-side consumer.** It
@@ -1024,8 +1015,7 @@ docs cite them — so the number is the column to scan.
   - 🔴 **THIS DECISION IS FALSIFIABLE:** it assumes an app knows what it will play. **If not, go segments.**
 
 - **D73 — MEDIA COMPOSITION FOLLOWS THE KIT'S OWN `Add`/`Use` SPLIT, because .NET already has this shape and
-  a second idiom would be a thing to learn twice.** (Owner: *"lets do this properly a more .net fasion of
-  styling of app build"*.)
+  a second idiom would be a thing to learn twice.**
   - **The rule is not invented here — it SHIPPED with D64's test:** ***`Use` means a wider configuration
     INCLUDING its pipeline; `Add` is the service-collection level only.*** So the media tier gets
     `services.AddShenoraMedia(...)` and the routes stay `Use…`.
@@ -1038,10 +1028,9 @@ docs cite them — so the number is the column to scan.
     exposed is that **the ordering hazard cannot be fixed by prose** — the doc has to SAY "nothing enforces
     this", the shape of a defect waiting for a gate. **Prefer a test or an analyser over a hiding helper.**
 
-- **D74 — ONE PATH FOR BOTH STREAM KINDS: the only difference is the encode/decode logic.** (Owner,
-  2026-08-12, against a recommendation to close the video tier as good enough: *"we need a proper media
-  pipeline not just something half working"*, then *"both audio and video should [take] the same path, [the
-  only] difference is encoding and decoding logic"*.)
+- **D74 — ONE PATH FOR BOTH STREAM KINDS: the only difference is the encode/decode logic.** Chosen
+  2026-08-12 over a recommendation to close the video tier as good enough: a proper media pipeline, not
+  something half working.
   - **The steer raised the BAR rather than the scope**, and it is why the tier has no per-kind types: one
     `IMediaStreamConversion` keyed by `MediaStreamKind`, one `MediaFrame` for a soundtrack and a picture, one
     chain where declining is how a converter opts out. **A kind is a VALUE, never a different shape** —
@@ -1082,8 +1071,7 @@ docs cite them — so the number is the column to scan.
   - **`IsAvailable` requires a conversion, so the engine is mobile-only** (D75); `docs/design/media.md`.
 
 - **D77 — THREE HOMES, and this file holds only the first: a DECISION here, a subsystem's DESIGN under
-  `docs/design/`, an invariant in `.claude/knowledge/`.** (Owner: *"decision has a lot rules in there which
-  does not fit 100% all the cases but will be taken for each session which cause decision drift"*.)
+  `docs/design/`, an invariant in `.claude/knowledge/`.**
   - 🔴 **A RULE HERE IS APPLIED TO EVERY CASE, because every session takes the whole file at once.** An
     invariant earned in one context reads as universal. **A knowledge rule is loaded only when the task
     matches its area**, so scope is enforced by the loader, not by the reader remembering.
@@ -1142,9 +1130,7 @@ docs cite them — so the number is the column to scan.
 - **D81 — AN ENGINE IS A PACKAGE BOUNDARY, AND ITS BYTES ARRIVE THROUGH THE APP'S OWN RESTORE, NEVER
   INSIDE A KIT NUPKG.** A Chromium shell gets its own package id because an app that chose WebView2 must
   not carry ~350 MB it never runs (CEF 152's Windows x64 runtime). D55's test, *does the adopter's app
-  carry this at RUN TIME?*, answers no, which is the one case D55 leaves a package for. Owner: *"the
-  chromium engine will be downloaded from its package reference or source so we dont have to ship the
-  binary into nuget"*.
+  carry this at RUN TIME?*, answers no, which is the one case D55 leaves a package for.
   - 🔴 **This NARROWS D51 for an engine, deliberately.** D51 counts a build-time fetch as distribution.
     Here the app opts in by referencing the package, and the bytes come from the engine's own published
     builds, so the kit never conveys them. Everything else D51 governs is unchanged.
@@ -1152,16 +1138,15 @@ docs cite them — so the number is the column to scan.
     runtime, and only apps that reference this package pay.
   - ⚠ **The engine's security updates become the app's.** The failure mode is a binding that cannot
     follow CEF's release cadence, not the size.
-  - **Building CEF from source is allowed once a gap needs a Chromium patch** (owner: *"its okay to build CEF
-    too"*); until then, published builds. ⚠ A CEF the kit builds is bytes it conveys, which reopens D51.
+  - **Building CEF from source is allowed once a gap needs a Chromium patch**; until then, published builds.
+    ⚠ A CEF the kit builds is bytes it conveys, which reopens D51.
 
 - **D82 — THE DESKTOP REACHES MACOS AND LINUX THROUGH ONE CHROMIUM SHELL OF THE KIT'S OWN, ON CEF'S VIEWS
-  FRAMEWORK, BUILT AHEAD OF A CONSUMER.** Owner: *"its not really about we have consumer rn or not, we need
-  to prepare"*. So it sets D15 aside for this shell and replaces D26's Windows-only desktop. WebView2 stays
+  FRAMEWORK, BUILT AHEAD OF A CONSUMER.** Being prepared matters more here than whether a consumer exists
+  today, so it sets D15 aside for this shell and replaces D26's Windows-only desktop. WebView2 stays
   the small-app engine on Windows.
   - 🔴 **No UI toolkit.** The page draws everything and Chromium supplies the window (`CefWindow` +
-    `CefBrowserView`), so the shell would use nothing WinForms or Avalonia draws. Owner: *"we mostly not
-    using any winform feature if we going self managed chrome"*. The kit owns the CEF binding and the
+    `CefBrowserView`), so the shell would use nothing WinForms or Avalonia draws. The kit owns the CEF binding and the
     per-OS native services, behind the contracts it already has.
   - **Rejected:** MAUI, which has no supported way to host CEF on a Mac (Mac Catalyst is UIKit, and CEF
     embeds in AppKit) and whose Linux support is Avalonia's backend. Avalonia, whose drawing goes unused.
@@ -1173,8 +1158,7 @@ docs cite them — so the number is the column to scan.
   Chromium-FIRST: a shell on CEF's Views framework for all three desktops, designed around CEF's own ideas
   rather than the WinForms shell's shape. `Shenora.Windows` offers Chromium as an ENGINE OPTION beside
   WebView2, a WinForms control in `WebViewHost`'s shape, so an app changes engines without leaving
-  `OptimizedForm` or `SecondaryWindows`. Owner: *"a new package as chromium first also make shenora.windows
-  supports chromium"*.
+  `OptimizedForm` or `SecondaryWindows`.
   - 🔴 **`Shenora.Windows` → `Shenora.Chromium`, and CEF's bytes arrive only on opt-in.** Every Windows app
     carries the engine's assembly (270 KB at CEF 154, measured) and none carries CEF unless it references
     the package itself: the dependency excludes its build assets (measured from a local feed). That is
@@ -1197,7 +1181,7 @@ docs cite them — so the number is the column to scan.
     `InternalsVisibleTo`, and an adopter can embed Chromium in a window type of its own the same way.
 - **D84 — THE CHROMIUM SHELL'S PAGE IS AN ALLOY-STYLE BROWSER.** CEF offers two runtime styles, and the shell's
   browser views are Alloy: Chromium's content layer, without Chrome's own UI. The window stays Chrome style,
-  which may host an Alloy view. Owner: *"Alloy browser views"*.
+  which may host an Alloy view.
   - 🔴 **Why: the client callbacks the kit's translation layer needs exist only there** (D54). Measured: in
     Chrome style CEF never called `on_drag_enter`, so a dropped file's real path was unreachable, which is the
     capability the drop-zone stack exists for.
@@ -1213,7 +1197,7 @@ docs cite them — so the number is the column to scan.
     behaviour measured under Chrome style is re-measured before it is relied on.
 
 - **D85 — ON MACOS THE CHROMIUM SHELL USES CHROMIUM'S MOCK KEYCHAIN.** The shell passes `--use-mock-keychain` to
-  its browser process on macOS. Owner, 2026-09-30, choosing it over the real keychain and over an opt-in.
+  its browser process on macOS. Chosen over the real keychain and over an opt-in.
   - 🔴 **Why: with the real keychain, a second kit app on a Mac stalls behind a password prompt.** Chromium keeps
     its cookie-encryption key in a login-keychain item every CEF app shares ("Chromium Safe Storage"), so the
     first app to run owns it, and every other app's page load waits on SecurityAgent for the login password.
@@ -1227,8 +1211,8 @@ docs cite them — so the number is the column to scan.
 - **D86 — CHROMIUM ALSO RUNS AS A BROWSER, IN A PROCESS THAT HOLDS NONE OF THE APP.** `ChromiumBrowserProcess`
   starts CEF with no app page, no bridge and no content root: Chromium's own windows, and a debugging port that is
   open in production. The app runs it as a second process of its OWN executable, so an install carries one CEF and
-  CEF's launcher sandboxes it as it does the app. Owner, 2026-09-30, on an adopter's request: its in-app browser,
-  where an agent's tabs open beside the person's, otherwise ships a second CEF build.
+  CEF's launcher sandboxes it as it does the app. An adopter asked for it: its in-app browser, where an agent's tabs
+  open beside the person's, otherwise ships a second CEF build.
   - 🔴 **Why a process of its own: a debugging port reaches every page in its process** (an adopter measured the
     page's bridge callable over it). So the port opens only where no app page can be, and a process that holds one
     keeps D83's rule: no port, and no command-line switch read, in production.
@@ -1246,7 +1230,8 @@ docs cite them — so the number is the column to scan.
 - **D87 — THE CHROMIUM SHELL STARTS CEF WHILE THE APP IS COMPOSED.** Run from its layout (on Windows through CEF's
   launcher and the kit's shim, on macOS from its bundle), the app has `UseChromium` start CEF on the calling thread,
   and the runner takes it over; run from anywhere else (a test host, `dotnet` running the app's dll) the runner starts
-  it, as before, and so it does after an app's splash card (D92). Owner, 2026-09-30, comparing cold starts with Electron's.
+  it, as before, and so it does after an app's splash card (D92). Decided 2026-09-30, comparing cold starts with
+  Electron's.
   - 🔴 **Why: the first frame waits on Chromium's GPU process, which starts only once CEF does.** Setting up the GPU
     took about half a second on the reference machine, in CEF and Electron alike, and the window, the page and
     the app's own start all finish inside that wait. So the app's composition, which ran before CEF, was the kit's
@@ -1260,9 +1245,8 @@ docs cite them — so the number is the column to scan.
 
 - **D88 — `SHENORA.CHROMIUM` ALONE IS A COMPLETE DESKTOP SHELL, ON EVERY OS, WINDOWS INCLUDED.** An app on any
   desktop references `Shenora.Chromium` and nothing of WinForms, and gets what `Shenora.Windows` gives a WebView2
-  app; `Shenora.Windows` stays Windows' small-app choice (D82). Owner, 2026-10-01: *"yes lets complete this
-  entirely so use Shenora.Chromium along will be complete"*. `TASKS.md` holds what is left.
-  - 🔴 **What both shells use lives in Core** (owner, over parallel types in the Chromium package): D20's rule, now
+  app; `Shenora.Windows` stays Windows' small-app choice (D82). `TASKS.md` holds what is left.
+  - 🔴 **What both shells use lives in Core** (chosen over parallel types in the Chromium package): D20's rule, now
     that a second shell uses it. A moved type changes its namespace, so a Windows app's source gains a `using`
     and a binary built against the old names does not bind.
   - **The single-instance guard is portable:** a named mutex scoped to the user, and on Windows to the logon session
@@ -1283,8 +1267,8 @@ docs cite them — so the number is the column to scan.
 - **D89 — A MACOS APP'S DATA DEFAULTS TO ITS APPLICATION SUPPORT FOLDER; EVERY OTHER APP KEEPS ITS DATA BESIDE IT.**
   Run from its bundle (`X.app/Contents/MacOS`, and no root the app or its launcher chose), an app's `ShenoraPaths`
   data folder is `~/Library/Application Support/<its CFBundleIdentifier>`; everywhere else it stays `<root>/data`,
-  the portable layout. And every app may name its own (`ShenoraPathsOptions.DataDirectory`). Owner, 2026-10-01,
-  choosing it over each OS's own folder everywhere (which would move every existing Windows app's data) and over the
+  the portable layout. And every app may name its own (`ShenoraPathsOptions.DataDirectory`). Chosen over each OS's
+  own folder everywhere (which would move every existing Windows app's data) and over the
   option alone (which leaves a macOS app that forgets it writing into its own bundle).
   - 🔴 **Why: beside the executable is inside the bundle.** A signed bundle must not change, and an app in
     `/Applications` may not be able to write there; the Chromium sample wrote its profile, its journal, its locks and
@@ -1300,8 +1284,8 @@ docs cite them — so the number is the column to scan.
     the first, as macOS itself treats one identifier as one app.
 
 - **D90 — IN THE CHROMIUM SHELL THE PAGE'S MEDIA SESSION IS THE OS'S; THE KIT BUILDS NO NATIVE MEDIA THERE UNTIL AN APP
-  NEEDS IT.** `UseChromium` registers no `IPlaybackSession`, `IMediaPlayer` of its own or `IMediaCapability`. Owner,
-  2026-10-01, choosing it over building native playback per OS now.
+  NEEDS IT.** `UseChromium` registers no `IPlaybackSession`, `IMediaPlayer` of its own or `IMediaCapability`. Chosen
+  over building native playback per OS now.
   - 🔴 **Why: the web platform already does it here (D54).** Chromium's content layer publishes a page's
     `navigator.mediaSession` to Windows' media controls and to Linux's MPRIS, metadata out and the controls' commands
     back to the page's action handlers (measured in the sample; macOS not observed). A kit session beside it would be
@@ -1316,8 +1300,8 @@ docs cite them — so the number is the column to scan.
 - **D91 — THE AUXILIARY BROWSERS ARE ONE IMPLEMENTATION IN CORE, OVER BROWSERS EACH SHELL MAKES.**
   `RenderSessionPool`, `StreamingSession`, `InteractiveSession` and their types live in `Shenora.Core.Sessions`; a
   shell registers `ISessionHost`, which makes the browser a session drives (WebView2 in `Shenora.Windows`, CEF in
-  `Shenora.Chromium`). Owner, 2026-10-01: *"Port them now"*, under D88's rule that what both shells use lives in
-  Core, over parallel types in each shell.
+  `Shenora.Chromium`). Ported now, under D88's rule that what both shells use lives in Core, rather than as parallel
+  types in each shell.
   - 🔴 **Why one implementation:** the sessions' hard-won rules (a lease's permit freed on every path, a wedged
     operation poisoning its instance, a guard-approved URL's redirect to another authority cancelled, the busy gate
     owned by whoever owns the window, a start cancelled mid-init leaving nothing behind) are the value, and two
@@ -1334,10 +1318,9 @@ docs cite them — so the number is the column to scan.
   `ChromiumHostOptions.Splash` covers the main window's render area until the app's boot work and the page are ready,
   and the window's own frame stays live around it; with a `Card`, a small card shows from the app's first moments until
   the window exists. Its content is a component (a setup that runs once and returns a render function over state),
-  drawn by each OS's own 2D and text APIs. Owner, 2026-10-07: *"in c# to pervent loading delay on chrome"*, *"more like
-  react or MAUI"*, then *"what the main screen can do the splash screen should also can do so instead of a cover it
-  should be taking the same location as the browser render area"*, and the card *"configurable so with without the
-  0.2s screen"*.
+  drawn by each OS's own 2D and text APIs. It is C#, so Chromium's loading delay cannot hold it back, and composed
+  the way React or MAUI compose a view; it can do what the main window can, so it takes the render area rather than
+  covering the window; and the card is optional.
   - 🔴 **Why native and not a page:** Chromium's first frame waits on its GPU process (D87), so an HTML splash would
     wait for the start it is meant to cover.
   - 🔴 **Why the render area and not a cover:** a window must be movable, closable and resizable while it loads, as
@@ -1349,8 +1332,7 @@ docs cite them — so the number is the column to scan.
     macOS the traffic lights and a drag region; on Linux the splash draws it until the lift and hands its input to the
     window manager. Chromium's resize band inside a frameless window's edges stays uncovered. On Windows a click-through
     cover paints the strip and the band as the window will until Chromium's first frame, since until then they show
-    Chromium's own colours, not the window's; the owner, on those light first frames: *"we can cover it until it gets
-    rendered properly"*.
+    Chromium's own colours, not the window's.
   - 🔴 **With a card, CEF does not start early (D87):** `cef_initialize` holds the thread, so the card shows first.
     With none, nothing can show before CEF makes the window, and CEF starts early as without a splash.
   - **It lifts when every `OnShown` has finished AND the page is ready** (its handshake, or `closeSplash()` when held).
@@ -1366,9 +1348,8 @@ docs cite them — so the number is the column to scan.
   `Light`, `Dark`). Both desktop shells register it, seeded from their host options, and apply it to the engine: the
   Chromium shell to its request contexts (`set_chrome_color_scheme`), the WebView2 shell to the profile of each
   `WebViewHost` given it (`PreferredColorScheme`). The page reads its effect as `prefers-color-scheme`; an app's
-  settings change it from C# or through `AddShenoraColorScheme`'s route. Owner, 2026-10-07: *"we are using standalone
-  chromium that should have its dedicate setting and managed with in the app"*, *"the app theme controlled by system
-  or not should be a setting"*.
+  settings change it from C# or through `AddShenoraColorScheme`'s route. Whether the OS controls the app's theme is a
+  setting, and the app manages it.
   - 🔴 **Why the engine's own setting and not the page's:** it is the app's Chromium, so its colour mode is the app's to
     set, and it reaches what a page cannot: Chrome's own UI, a window's frame, and the frames before the page draws
     (measured: held dark, a frameless window's first frames were `#202020`, not the light `#F3F3F3` of a light OS). The
@@ -1381,18 +1362,17 @@ docs cite them — so the number is the column to scan.
 - **D94 — THE NATIVE LAUNCHER OWNS THE FIRST FRAMES: A STARTUP SCREEN, COMPILED INTO IT, UNTIL THE APP'S FIRST WINDOW.**
   `Shenora.Launcher` can show a configured screen (a PNG fitted to a box, a background, an optional moving bar) from
   its first moments, through an update apply and the .NET start, and the app closes it once its own first window is
-  on screen (`IStartupScreen`, passed `--startup-screen <window id>`). Owner, 2026-10-08: *"make the application
-  starting looks smooth by ui/ux design since we hitting the startup delay wall"*, *"the launcher also does the update
-  for app so this is good to use launcher to do animation or startup screen before the app starts"*, *"the .net
-  splash still will exist and the launcher handles the 0.2s before .net window ever starts"*.
+  on screen (`IStartupScreen`, passed `--startup-screen <window id>`). The aim is a start that looks smooth past the
+  startup delay: the launcher already runs first for updates, so it covers the fraction of a second before .NET shows
+  a window, and the .NET splash stays.
   - 🔴 **Why the launcher and not the app:** it is native and runs first, so it is the only code on screen before .NET
     has started (measured on Windows: the screen ~70–80 ms after the launcher starts, the app's card ~390–550 ms).
-  - **A configured picture, not a snapshot of the app:** owner, *"screen shot of the app feels wrong because what about
-    resolution changes"*. It is drawn at the monitor's DPI from its description each time.
-  - **Compiled into the launcher** (`shenora_launcher_startup_screen()`): owner, *"pack all the description into its exe
-    so we dont have multiple files for launcher"*.
+  - **A configured picture, not a snapshot of the app:** a snapshot goes wrong when the resolution changes. It is drawn
+    at the monitor's DPI from its description each time.
+  - **Compiled into the launcher** (`shenora_launcher_startup_screen()`), so the launcher stays one file, with no
+    description beside it.
   - **The launcher's screen and the app's splash are separate:** no position is passed, so the app's windows keep their
-    own places (owner, *"they dont need to be 100% at same spot since app might have different starting spot"*).
+    own places; the two need not line up, since an app may start its windows anywhere.
   - **The constraints:** opt-in end to end (no description, no argument, nothing changes); the launcher never fails a
     launch over the screen; it holds no single-instance lock, so it may stay alive while the app starts; Windows and
     Linux, the launcher's platforms.
@@ -1400,9 +1380,8 @@ docs cite them — so the number is the column to scan.
 - **D95 — ONE BUNDLE PROVIDER FOR BOTH DESKTOP SHELLS, AND A PAGE FOR A PAGE THAT IS NOT THERE.**
   `IWebViewResourceProvider` and `EmbeddedResourceProvider` live in Core (`Shenora.Core.WebView`), and the Chromium
   shell and engine take one (`ResourceProvider`) beside `ContentRoot`, so a Chromium app ships its frontend inside its
-  assembly as a WebView2 app already could. A page load that finds nothing shows a page. Owner, 2026-10-08, on a bare
-  "Not Found" in a frameless window's corner: *"is this styling configurable?"*, *"this should be configurable"*, *"we
-  should support embedded resources too … embedded bundle for web resource too"*.
+  assembly as a WebView2 app already could. A page load that finds nothing shows a page, which the app may supply,
+  never a bare "Not Found" in a frameless window's corner.
   - 🔴 **The proven provider moved, rather than a second bundle concept (a `ContentSource` type) or a pipeline step
     (`UseEmbeddedResources`):** one contract for both desktop shells, with its cache, warm-up and "serves nothing"
     diagnosis; a pipeline step would lose the bundle's first place in D45's order. The cost was a namespace break.
@@ -1415,9 +1394,8 @@ docs cite them — so the number is the column to scan.
 
 - **D96 — A WINDOWS CHROMIUM APP CAN PUBLISH AS THREE FILES AND TWO FOLDERS, AS AN OPTION.**
   `ShenoraChromiumPublishFolders` makes a Windows `dotnet publish` of a Chromium app `MyApp.exe`, `MyApp.dll` and
-  `chrome_elf.dll` at the root, CEF's runtime in `engine\` and the .NET app in `lib\`. Without it the publish stays
-  flat. Owner, 2026-10-08: *"a tidy install folder"*, *"this just one of the option can be configured and this is not
-  the default option"*.
+  `chrome_elf.dll` at the root, CEF's runtime in `engine\` and the .NET app in `lib\`: a tidy install folder, as an
+  option and never the default. Without it the publish stays flat.
   - 🔴 **Why folders and not one file:** the engine stays files, as Electron's does — Windows maps `libcef.dll` only
     from a file, CEF reads its resources and locales by path, and every Chromium subprocess is the exe relaunched.
   - **Publish only:** a build is what an IDE and `dotnet run` start, so the dev loop keeps its flat output.
@@ -1426,15 +1404,16 @@ docs cite them — so the number is the column to scan.
   - **The constraints:** `chrome_elf.dll` stays at the root, because CEF's launcher imports it; the shim delay-loads
     `libcef.dll` and reads both shapes, so a missing engine is a message naming the path; a publish removes the other
     shape's CEF files, which the SDK's clean never touches and which the shim would load from a leftover `engine\`;
-    such a publish starts through `MyApp.exe` only (`dotnet lib\MyApp.App.dll` does not find CEF, and supporting it would be a resolver for
-    a start nothing makes); Windows only — macOS is already one `.app`, and Linux needs a spike of its own.
+    such a publish starts through `MyApp.exe` only (`dotnet lib\MyApp.App.dll` does not find CEF, and supporting it
+    would be a resolver for a start nothing makes); Windows only — macOS is already one `.app`, and Linux needs a
+    spike of its own.
 
 ## Anti-goals — deliberately NOT built
 
 Each was decided, not skipped. **Every public type earns its keep** (`generic-library.md`); package symmetry
 is not a reason. Read this section before proposing any of it.
 
-- **`Shenora.Media.Windows`** — owner: *"no need … for now"*, and D45 makes it less likely still. The desktop
+- **`Shenora.Media.Windows`** — not needed for now, and D45 makes it less likely still. The desktop
   shell already serves ranges correctly two ways (`WebViewDeferredScheme`, and `WebViewHost.Interceptor` +
   `UseFiles` — the portable one). The package would hold a WebView2 args adapter and one constant, both of
   which `Shenora.Windows` owns outright. Add it only when a desktop consumer shows something it genuinely
@@ -1453,8 +1432,8 @@ is not a reason. Read this section before proposing any of it.
 - **Folder picking as a portable capability** — CLOSED, D35. Same word, different guarantee on each platform;
   documented as a DESKTOP capability, with the mobile refusal pointing at the three intents that ARE
   portable.
-- **An FFmpeg bundle as a separate LGPL package** — asked 2026-08-09 (*"can we ship a bundle (seperate from
-  this) and it will be a private repo … so that one can stay LGPL"*), **answered NOT YET by measurement.**
+- **An FFmpeg bundle as a separate LGPL package** — a bundle from a separate private repo, so that it alone
+  carries the LGPL; asked 2026-08-09, **answered NOT YET by measurement.**
   Shenora is unaffected either way: it ships no engine, no binaries, no path option and no downloader, and
   **no adopter is blocked** — below D59's line the platform's own decoders do the work with no adopter code
   at all (D70), and above it they supply a converter, which is the seam D51 designed.

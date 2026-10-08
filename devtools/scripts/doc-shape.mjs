@@ -11,6 +11,7 @@
 // old habit coming back, because the repo's own scoring says a rule loses and a mechanism wins.
 //
 // Report-only by default (the `stale-scan` standing). `--check` makes it fail, for `verify`.
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,8 +63,8 @@ const SELF_NARRATION = [
   [/\bthis (was|is) (wrong|false|stale|obsolete)\b/i, 'narrates a past wrong claim'],
 ];
 
-// 🔴 SESSION-LOG NARRATION IN A DECISIONS FILE — the one this cleanup exists for (owner, 2026-08-14:
-// *"this is DECISIONS not really should be used as session log"*). `SELF_NARRATION` above catches prose
+// 🔴 SESSION-LOG NARRATION IN A DECISIONS FILE — the one this cleanup exists for: a decisions file is not
+// a session log. `SELF_NARRATION` above catches prose
 // about the DOCUMENT; this catches prose about the WORK — how many attempts it took, who caught it, what
 // a review found, which day it was measured. An entry is *the decision, its why, and the constraint it
 // imposes*; how we arrived belongs to the commit that landed it.
@@ -399,6 +400,45 @@ if (fs.existsSync(clPath)) {
     }
     seen.get(version).add(text);
   });
+}
+
+// ── No quotation of the owner, in any tracked file ────────────────────────────────────────────────────────
+// A decision, a rule, a changelog entry or a comment says what was decided and why, in its own words: the owner's
+// chat is not documentation, and the repo is public. A quotation belongs in local/, which this skips. Every
+// tracked text file is in scope, CHANGELOG.md and code comments included (the history exemption above is for
+// self-narration, not for this). Matched over joined blocks, since a quotation wraps like any other prose.
+// The three attributions seen: the word for the repo's owner shortly before an italic quotation; a dated
+// attribution in parentheses (to the owner or the user) before one; and "asked <date>" opening one. Spelled in
+// pieces, so this file, which is scanned like any other, does not match its own patterns.
+const WHO = 'own' + 'er';
+const QUOTE = '\\*' + '"';
+const OWNER_QUOTE = [
+  new RegExp(`\\b${WHO}(?:'s)?\\b[\\s\\S]{0,120}?${QUOTE}`, 'gi'),
+  new RegExp(`\\((?:${WHO}|user),\\s*\\d{4}-\\d{2}-\\d{2}[^)]*\\)[\\s\\S]{0,40}?${QUOTE}`, 'gi'),
+  new RegExp(`\\basked \\d{4}-\\d{2}-\\d{2} \\(${QUOTE}`, 'gi'),
+];
+const QUOTE_SCOPE = /\.(md|cs|mjs|js|ts|tsx|cpp|c|h|hpp|props|targets|csproj|yml|yaml|txt|cmake|ps1|sh)$/;
+const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: repo, encoding: 'utf8' }).split('\0')
+  .filter((f) => f && QUOTE_SCOPE.test(f) && !f.startsWith('local/') && !/\/Generated\//.test(f) && !outOfScope(f));
+for (const rel of tracked) {
+  const lines = fs.readFileSync(path.join(repo, rel), 'utf8').split(/\r?\n/);
+  for (const block of blocks(lines)) {
+    // Every quotation in the block, not the first: a DECISIONS.md entry is one block holding several.
+    const seen = new Set();
+    for (const re of OWNER_QUOTE) {
+      for (const m of block.text.matchAll(re)) {
+        const before = block.text.slice(0, m.index);
+        const offset = before.length === 0 ? 0
+          : lines.slice(block.start).findIndex((l, k) =>
+            lines.slice(block.start, block.start + k + 1).map((x) => x.trim()).join(' ').length > before.length);
+        const line = block.start + Math.max(0, offset) + 1;
+        if (seen.has(line)) continue;
+        seen.add(line);
+        flag(rel, line, m[0].slice(0, 100),
+          "quotes the owner — state what was decided and why in the doc's own words; a quotation belongs in local/");
+      }
+    }
+  }
 }
 
 const byFile = new Map();

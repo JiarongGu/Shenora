@@ -137,10 +137,10 @@ keeps the library reusable (adopted from the family's other library, where it's 
   CONSUMER experiences? "WinForms without WebView2" did not. "I am building an Android app" does — and
   **that is now the only boundary the package set draws**, since D55 removed the feature tier. A platform
   is the one thing you genuinely pick.
-- **Ask which future changes would be BREAKING rather than additive, and pay for those NOW.** Owner,
-  2026-08-02: *"you have to always think bigger than we currently have… a new application with a new
-  requirement should also fit."* Audit a new surface for the changes that could not be made later without
-  breaking every caller — those are the only ones worth pre-building. Two were found and fixed before the
+- **Ask which future changes would be BREAKING rather than additive, and pay for those NOW.** Think
+  past the apps that exist today: a new application with a new requirement has to fit too. Audit a new
+  surface for the changes that could not be made later without breaking every caller — those are the
+  only ones worth pre-building. Two were found and fixed before the
   mission scheduler shipped, at a cost of one defaulted parameter each:
   - `MissionDefinition.Lanes` was `IReadOnlyList<string>`, one permit apiece. A lane is often a BUDGET
     (memory, VRAM, bandwidth) where items cost different amounts, and adding a cost later changes the

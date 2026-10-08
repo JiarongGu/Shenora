@@ -11,12 +11,12 @@ The standing rule: every phase gets an adversarial review before its commit.
 
 1. **Scope the diff**: `git diff <last-phase-commit>..HEAD --stat` (or working tree if
    uncommitted). Identify the phase's themes (new packages, public-surface changes, ported code).
-2. **Ask the DESIGN question before the correctness one** (owner direction, 2026-08-01 — a review that
-   found real defects still missed the point): *"you should be getting the purpose of the project,
-   rethinking if this is a good design, instead of just checking if the code itself works."* For each
-   load-bearing piece of the diff ask **does this earn its place for the kit's PURPOSE** (`REVIEW-GUIDE.md`
-   §1), not merely "is it consistent with the design doc that introduced it" — a doc asserting a design
-   is the claim most worth attacking, not context. Cheap tells that something is wrong at the design
+2. **Ask the DESIGN question before the correctness one.** A review that only checks whether the code
+   works has missed the point even when it finds real defects: it has to take in the project's purpose
+   and rethink whether the design is a good one. For each load-bearing piece of the diff ask **does this
+   earn its place for the kit's PURPOSE** (`REVIEW-GUIDE.md` §1), not merely "is it consistent with the
+   design doc that introduced it" — a doc asserting a design is the claim most worth attacking, not
+   context. Cheap tells that something is wrong at the design
    level: a shape reworked several times inside ONE unpublished release, a feature whose own doc admits
    it comes from one consumer against the two-consumer bar, and a cluster that produced the release's
    worst defect. "The complaint is fair but the fix is worse" is an equally valid verdict — it just

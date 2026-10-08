@@ -2,8 +2,8 @@
 
 **This file holds OPEN tasks only.** A finished task is **DELETED**, not ticked in place — the length of
 this file is the size of the remaining work, which is the whole point of looking at it. Git is the
-archive; `CHANGELOG.md` is the release-facing log. `> DIRECTION (owner):` blockquotes capture steering
-verbatim and stay as long as they still steer.
+archive; `CHANGELOG.md` is the release-facing log. Standing direction is stated in this file's own words
+and stays as long as it still steers.
 
 🔴 **A `✅` is the same defect as `DONE`: an entry that failed to leave**, and this has recurred six times.
 `doc-shape` now fails on a done MARKER and warns past 120 lines — but the recurrences it could not see had
@@ -23,10 +23,10 @@ partial registry read afterwards is lag rather than a half-landed release.
 > **What is deliberately NOT built, and why, is `docs/DECISIONS.md`'s "Anti-goals".** Read it before
 > proposing any of it.
 
-> **DIRECTION (owner, 2026-09-29):** *"for the env we dont have lets just park them (still provide code and
-> make sure it runs for testing) until the day we need them then we do a real device verification"*. An
-> entry that is only a device run stays parked; one whose CODE is missing gets built and run in the nearest
-> environment we have — the simulator, the emulator, the build Mac, WSL, the tests.
+> **An environment we do not have is PARKED, not skipped:** the code is written and proven to run in a test
+> environment, and the real-device verification waits for the day it is needed. An entry that is only a
+> device run stays parked; one whose CODE is missing gets built and run in the nearest environment we
+> have — the simulator, the emulator, the build Mac, WSL, the tests.
 
 **Prefer measuring to filing, and prefer the SIMULATOR to the phone.** A device round trip needs a human
 to look at the glass (there is no `devicectl` screenshot); the simulator answers most questions in
@@ -36,9 +36,9 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ### 🧭 `Shenora.Chromium` ALONE IS A COMPLETE DESKTOP SHELL — Windows included (D88)
 
-> **DIRECTION (owner, 2026-10-01):** *"yes lets complete this entirely so use Shenora.Chromium along will be
-> complete"*. An app on any desktop references `Shenora.Chromium` and nothing of WinForms; `Shenora.Windows`
-> stays the small-app (WebView2) choice on Windows.
+> **`Shenora.Chromium` is completed as a whole shell, usable on its own.** An app on any desktop references
+> `Shenora.Chromium` and nothing of WinForms; `Shenora.Windows` stays the small-app (WebView2) choice on
+> Windows.
 
 What `Shenora.Windows` has and the Chromium shell does not, inventoried from the source, in the order to build:
 - [ ] 🅿️ **The splash's frameless title strip with real input, on Windows.** Measured by hit-test only: the strip
@@ -99,15 +99,15 @@ unexpired profile for that bundle id.
 
 ### 🌐 A CHROMIUM SHELL OF THE KIT'S OWN — Windows, macOS and Linux, on CEF's own windows
 
-**Owner, 2026-09-28**, over six answers:
+**Settled before the build (2026-09-28):**
 - **A new package id.** The engine's bytes come from the app's restore of an upstream package reference,
   and never sit inside a kit nupkg.
 - **The kit builds it now.** The first adopter takes it instead of writing a host of its own.
-- **All three desktops, ahead of a consumer**: *"its not really about we have consumer rn or not, we need to
-  prepare … the window one without chromium is mostly about small size of the final app"*. So WebView2 stays
-  the small-app engine, and Chromium's value is REACH.
+- **All three desktops, ahead of a consumer.** The shell is built to be ready before an app asks for it,
+  not because one has; the point of the Windows shell without Chromium is the small size of the final app.
+  So WebView2 stays the small-app engine, and Chromium's value is REACH.
 - **The shape is a shell the kit owns, on CEF's Views framework** (`CefWindow` + `CefBrowserView`), with
-  no Avalonia: *"we mostly not using any winform feature if we going self managed chrome"*. The page draws
+  no Avalonia: a self-managed chrome uses almost nothing of a UI toolkit's features. The page draws
   everything and Chromium supplies the window, so the kit owns the CEF binding plus the per-OS native
   services behind the contracts it already has.
 - **And `Shenora.Windows` gets Chromium as an engine option** (D83), a WinForms control beside

@@ -294,9 +294,9 @@ the alternative was believed and turned out wrong.
   loop over ssh first, which often produces the diagnosis with nobody touching anything; download-then-run
   rather than `curl | sh` for anything using sudo; and guard on the ACCOUNT, naming the one required, so a
   refusal is visible on the driving side instead of silent.
-- 🔴 **Over ssh, an Apple Event to any app but System Events puts a CONSENT DIALOG on the owner's screen.**
+- 🔴 **Over ssh, an Apple Event to any app but System Events puts a CONSENT DIALOG on the Mac's own screen.**
   `osascript -e 'tell application "Finder" …'` hung, and the Mac showed *"sshd-keygen-wrapper wants access to
-  control Finder"*, which only a person can answer (2026-09-30). System Events' window and process queries
+  control Finder"*, which only a person at the Mac can answer (2026-09-30). System Events' window and process queries
   answered without one. Read window state through System Events, and never answer a consent dialog for the owner.
 - **A Mac GUI app that waits on nothing is waiting on a DIALOG.** A CEF app's page load hung with every thread
   idle; the cause was a keychain password prompt from SecurityAgent, readable with

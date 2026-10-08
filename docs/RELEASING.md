@@ -278,37 +278,34 @@ So (owner, 2026-08-02):
   packages still read 0.9.1 and the three new IDs 404'd — that is the validation pipeline, not a failed
   push. All nine indexed within ~2 minutes. Re-check the feed before concluding anything is broken.
 
-> **This library is the intended foundation for the author's apps** (owner, 2026-08-03), so the bar on the
-> published surface is an adopter's, not a maintainer's: docs that match the artifact, breaks documented
-> with their migration, and readiness claims verified against a restored package rather than the tree.
+> **This library is the intended foundation for the author's apps**, so the bar on the published surface
+> is an adopter's, not a maintainer's: docs that match the artifact, breaks documented with their
+> migration, and readiness claims verified against a restored package rather than the tree.
 
-> DIRECTION (user, 2026-07-30): Shenora is the shared infrastructure library for ALL sibling
-> projects — a "UI kit for non-web applications" in the headless sense: it holds the desktop
-> shell that different applications boot their own logic on, and it must NOT depend on any UI
-> component library. Purpose is to stop re-solving the same problems per project. In-scope
-> common work explicitly includes: multi-form/multi-window, co-browsing (auxiliary browser
-> sessions), drag-drop zones, the IPC package design, the event hub, frontend display
-> optimizations, and the React hooks layer.
+> Shenora is the shared infrastructure library for ALL sibling projects — a "UI kit for non-web
+> applications" in the headless sense: it holds the desktop shell that different applications boot
+> their own logic on, and it must NOT depend on any UI component library. Purpose is to stop
+> re-solving the same problems per project. In-scope common work explicitly includes:
+> multi-form/multi-window, co-browsing (auxiliary browser sessions), drag-drop zones, the IPC
+> package design, the event hub, frontend display optimizations, and the React hooks layer.
 >
-> DIRECTION (user, 2026-07-30, later): growth is harvest-driven — when something nice emerges
-> while developing another application, it gets generalized and promoted into Shenora (common
-> design/library/tool sharing). And the kit must be able to adopt MOBILE application logic too:
-> Capacitor (and similar) shells speaking the same IPC envelope through a pluggable transport.
+> Growth is harvest-driven — when something nice emerges while developing another application, it
+> gets generalized and promoted into Shenora (common design/library/tool sharing). And the kit must
+> be able to adopt MOBILE application logic too: Capacitor (and similar) shells speaking the same
+> IPC envelope through a pluggable transport.
 >
-> DIRECTION (user, 2026-08-04): *"one thing you need to keep in mind, we are doing a library, for
-> multiple platform, so if the library can provide powerful devtooling that will be even better so
-> for example rely on less swift code for ios (dynamic island) and support platform logic like now
-> playing"* — so **PLATFORM LOGIC is in scope, not just the shell**, and the measure of a platform
-> capability is *how little native code an adopting app has to write*.
+> **PLATFORM LOGIC is in scope, not just the shell.** This is a library for several platforms, so the
+> more powerful its devtooling the better: less Swift for an iOS app to write (the Dynamic Island, say),
+> and platform logic such as Now Playing carried by the kit. The measure of a platform capability is
+> *how little native code an adopting app has to write*.
 >
-> DIRECTION (user, 2026-08-05): *"sonora actually is the first one fully adopting all features so you can
-> fix anything into the best here which only cause 1 repo to update"* — so **the API is optimised for
-> correctness, not for compatibility**, while adoption is one repo. Full reasoning and its limits: **D47**.
+> **The API is optimised for correctness, not for compatibility, while adoption is one repo.** Sonora is
+> the first app adopting every feature, so a fix can land in its best shape here at the cost of one
+> repo's update. Full reasoning and its limits: **D47**.
 
-> 🔴 **DIRECTION (owner, 2026-08-10) — WHAT THE MEDIA TIER IS, in the owner's own words:** *"for ffmpeg we
-> supply for conversion interface but not the binary … so what we doing here is a proper segmenting engine,
-> a media interface to frontend, a well designed conversion interface"*.
-> **Three things, and an engine is not one of them.** That is the scope test to apply to any media
+> 🔴 **WHAT THE MEDIA TIER IS: a proper segmenting engine, a media interface to the frontend, and a
+> well-designed conversion interface — for ffmpeg the kit supplies the conversion interface, never the
+> binary. Three things, and an engine is not one of them.** That is the scope test to apply to any media
 > proposal, and it settles the ffmpeg question by IDENTITY rather than by expedience — the kit is the
 > SEAM, so "should we ship a codec" is not a cost/benefit question that a big enough benefit could flip.
 > It also names what the tier must be GOOD at, which is the more useful half: the segmenting engine, the
@@ -316,11 +313,11 @@ So (owner, 2026-08-02):
 > bytes), D52/D59 (what the translation layer is FOR) and D42 (the kit ships the QUESTION, never a codec
 > list) are the same position argued from different directions; this is the one-line form.
 
-> 🔴 **WHY the mobile media tier exists at all: OFFLINE.** (Owner, 2026-08-09: *"the reason why we have
-> this properly designed mobile media logic is for its offline capability"*.) The obvious objection — *"the
-> server-backed profile already transcodes and streams, so why does a phone need any of this?"* — has
-> exactly one answer, and it is decisive: **offline is the case where the server is not there.** A phone
-> with no connection must serve, decode and if necessary repair what it already holds, locally.
+> 🔴 **WHY the mobile media tier exists at all: OFFLINE.** The properly designed mobile media logic is
+> there for its offline capability. The obvious objection — *"the server-backed profile already
+> transcodes and streams, so why does a phone need any of this?"* — has exactly one answer, and it is
+> decisive: **offline is the case where the server is not there.** A phone with no connection must
+> serve, decode and if necessary repair what it already holds, locally.
 > - So **the on-device converter is not a nicety, it is the offline path.**
 > - It is also the scope test D52 asks for, answered properly: *does a React+C# app fail without it?*
 >   Offline, yes — completely.

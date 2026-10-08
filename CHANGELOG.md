@@ -5273,8 +5273,8 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   that gate, so it carried no information the method's existing non-empty-`ResumePayload` requirement
   didn't already express. **Migration:** drop the property from any `OperationOptions` initializer; a
   client testing "is this resumable" already used (and should keep using) `status === OperationStatuses.Waiting`.
-- **The status collapse (owner direction, before publish — "structured like XHR"; see finding 7 under
-  `### Added` for the full rationale).** `OperationStatus.Paused`/`.Interrupted` → one value,
+- **The status collapse (settled before publish, so the status model is structured like XHR's; see
+  finding 7 under `### Added` for the full rationale).** `OperationStatus.Paused`/`.Interrupted` → one value,
   `OperationStatus.Waiting`; `OperationInfo.PauseReason` → `WaitReason`; `IOperation.Pause` →
   `Wait(reason?, detail?)`; `IOperationRegistry.RegisterInterrupted` → `RegisterWaiting`;
   `RequestPause` → `RequestWait`; `OperationEvents.PauseRequested`/`OPERATION_PAUSE_REQUESTED` →
@@ -5431,8 +5431,8 @@ event hub … async from the UI, progress synced") while the HOST contract did n
      paused deploy" now say "a waiting operation" (D22 permits domain words as examples, but the cost is
      the kit LOOKING like it ships that product); and a limit is recorded rather than solved —
      `MaxHistory` is one global cap with no per-module/scope bounding seam.
-  6. **Progress is not percent (owner direction, before publish — "even its progress it might be
-     different than 0-100%"), correcting finding 5's OWN fix above.** Stating "0–100 PERCENT" on the
+  6. **Progress is not percent (settled before publish: an app's progress need not run 0–100 %),
+     correcting finding 5's OWN fix above.** Stating "0–100 PERCENT" on the
      write side was the wrong fix to the right observation: percent is not the mechanism, it is one way
      an app happens to measure. `OperationOptions.Progress`/`OperationInfo.Progress` (C#) and
      `OperationInfo.progress` (TS) are now a new record, `OperationProgress(double Value, double? Total
@@ -5453,8 +5453,8 @@ event hub … async from the UI, progress synced") while the HOST contract did n
      desktop sample and its web counterpart were updated to demonstrate the general shape
      (`new OperationProgress(step, steps, "steps")`, rendered as a ratio because `total` is set) instead
      of the percent special case. Caught before 0.2.0 was pushed or published, so free.
-  7. **The status collapse (owner direction, before publish — "I don't even think we need any specific
-     status than regular — think about this is going to be structured like XHR").** `Paused` and
+  7. **The status collapse (settled before publish: no special statuses beyond the regular ones,
+     because the model is structured like XHR's).** `Paused` and
      `Interrupted` — introduced above as two states — collapse into ONE, `OperationStatus.Waiting`:
      every transition already treated them as one band (`Dismiss`/`RequestResume` both accepted either,
      neither was ever pruned, the client's `waiting` getter already unioned them), and the one place
@@ -5638,10 +5638,10 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   native overlays read the OS drag data and yield the real path, including drags from another app
   while the window is backgrounded. A callout under the Stage-1 table carries the dedup case (four
   independent ports of this one component across the family). Docs only.
-- **The genericity rule finally has a tripwire — `SurfaceVocabularyTests`.** The owner's standing
-  review criterion is *"make sure this is a library — we're not solving specific business logic;
-  everything here has to be generic enough that any of our applications can adopt it"*, and it was
-  the only load-bearing invariant in the repo with nothing watching it: `ApiSurfaceTests` is a SemVer
+- **The genericity rule finally has a tripwire — `SurfaceVocabularyTests`.** The standing review
+  criterion — this is a library, not a solution to any one app's business logic, so everything in it
+  has to be generic enough for any of the author's applications to adopt — was the only load-bearing
+  invariant in the repo with nothing watching it: `ApiSurfaceTests` is a SemVer
   gate that proves the surface CHANGED, and its documented workflow (copy `.actual` over the
   baseline) waves domain vocabulary straight through. Every public TYPE name is now checked against
   an allow-list of shell/platform words (`tests/Shenora.Tests/Api/surface-lexicon.txt`); an unknown

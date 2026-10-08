@@ -396,8 +396,9 @@ public class MediaPlayerTests
     // ── UseMediaPlayer: the zero-config call is the one that has to be right ─────────────────────
 
     /// <summary>
-    /// 🔴 The owner's shape: *"a single {app}.useMediaPlayer then the system should work."* With no
-    /// configuration the player must pass a source straight through — no probe, no plan, no rewriting.
+    /// 🔴 The shape the kit promises: a single <c>UseMediaPlayer</c> call on the builder, and the system
+    /// works. With no configuration the player must pass a source straight through — no probe, no plan,
+    /// no rewriting.
     /// </summary>
     [Fact]
     public async Task With_no_configuration_a_source_is_passed_straight_through()
