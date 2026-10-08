@@ -178,7 +178,7 @@ re-raised the whole thing as a defect. **A deferral nobody records gets rediscov
 
 The packages are public on nuget.org, so this is for consuming a build that has NOT been released yet —
 co-development against an unpublished change, or a pre-release smoke test. The recipe, smoke-proven
-2026-07-30 (P1.1; the rerunnable scratch consumer lives untracked in `devtools/_p11-consumer/`):
+2026-07-30 (P1.1, against a throwaway consumer project under gitignored `devtools/_*`, so a clone has none):
 
 - NuGet: `node devtools/dev.mjs pack`, then in the consumer's `nuget.config` add
   `publish/packages` (this repo) as a source alongside nuget.org (transitive deps like the

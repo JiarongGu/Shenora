@@ -75,8 +75,8 @@ The standing rule: every phase gets an adversarial review before its commit.
    - **Absence is not a defect until you know which environment you are in.** `local/` is gitignored and
      CANNOT exist in a worktree, a fresh clone or CI. A subagent read "MISSING", concluded the repo was
      broken, and copied private context across checkouts. Never copy `local/` anywhere.
-   - **A tool's silence is evidence about your QUERY, not about the world.** `grep "record SessionFrame"`
-     returned nothing and the type exists. Ask a second way before concluding "gone".
+   - **A tool's silence is evidence about your QUERY, not about the world.** `grep "record StreamingSessionFrame"`
+     returns nothing and the type exists — it is a `record struct`. Ask a second way before concluding "gone".
    - **"I fixed all of them" needs a definition of ALL.** A sweep fixed `process.cwd()` in three scanners
      and missed the fourth, because the population was "the files I happened to open".
    - **A measurement attributes to your variable only if nothing else moved.** `staleDate` became a 🔴

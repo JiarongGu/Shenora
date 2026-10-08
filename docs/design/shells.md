@@ -70,6 +70,22 @@ when that holds it, with `engine\` added to the DLL search for what Chromium loa
 launcher), and a subprocess stays silent. Such a publish starts through `<App>.exe` only: run as
 `dotnet lib\<App>.App.dll`, it does not find CEF.
 
+## The Chromium hosts
+
+`Shenora.Chromium` is a shell of its own on CEF's Views framework and the engine the WinForms shell hosts (D83), and
+both start CEF through `CefStartup` with one difference: the Views shell runs CEF's loop on the main thread, which
+`UseChromium` and the runner share; the WinForms host runs CEF's multi-threaded loop, because WinForms owns that
+thread, and each page's IPC is dispatched on the host's thread (`ChromiumEngine`).
+
+**The page finds its transport because the shell marks the HTML it serves** (D36): a document from the bundle or from
+the app's own pipeline goes out marked (`ChromiumTransport.MarkHtml`), and in development the shell fetches the dev
+server's top-level document itself so that it is marked the same way; the dev server serves everything else.
+
+**On macOS the data folder is named by the bundle identifier** (D89). The build writes `ShenoraChromiumBundleId` into
+`Info.plist`, `com.shenora.app.<App>` unless the app sets it; `ShenoraPaths` reads it from the plist, takes the
+bundle's own name when the plist names none, and does not use an identifier that is not a plain name (one that could
+walk out of `Application Support`) as a folder.
+
 ## Process init: STA or fail
 
 `WinFormsBootstrap.Initialize` is **idempotent** (first call wins) and **throws when the thread is not

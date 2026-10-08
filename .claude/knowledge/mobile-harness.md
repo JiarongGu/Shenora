@@ -288,8 +288,8 @@ the alternative was believed and turned out wrong.
 - **⚠ Some Mac operations cannot go over ssh AT ALL, and that is a tooling requirement, not a nuisance.**
   `sudo` needs a TTY and code signing needs a real login AUDIT SESSION, so the human must run those — and
   then has to get pages of output back. Serve the script over the LAN and have it POST its own transcript
-  back (this repo's throwaway is `devtools/_relay.mjs`; the machine-specific findings live in
-  `local/MAC-DIAGNOSTICS.md`). Four things that pattern earned: prove reachability with a `ping` route
+  back (a throwaway relay script under gitignored `devtools/_*` did this here; the machine-specific findings
+  live in `local/MAC-DIAGNOSTICS.md`). Four things that pattern earned: prove reachability with a `ping` route
   BEFORE handing a human a URL, or a firewall block looks like them doing it wrong; round-trip the whole
   loop over ssh first, which often produces the diagnosis with nobody touching anything; download-then-run
   rather than `curl | sh` for anything using sudo; and guard on the ACCOUNT, naming the one required, so a

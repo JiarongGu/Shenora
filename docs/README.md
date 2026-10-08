@@ -9,7 +9,7 @@ with no way in — hence the guides, and `ADOPTION.md` for the whole adoption.
 | You want | Read |
 |---|---|
 | To start a NEW app | **[getting-started.md](getting-started.md)** — packages, a window (on macOS or Linux, the Chromium shell: 2b), a typed IPC round trip, onto a device |
-| One capability, on its own | **[guides/](guides/)** — [missions](guides/missions.md) · [file updates](guides/file-updates.md) · [media](guides/media.md) · [mobile](guides/mobile.md) |
+| One capability, on its own | **[guides/](guides/)** — [missions](guides/missions.md) · [file updates](guides/file-updates.md) · [media](guides/media.md) · [mobile](guides/mobile.md) · [sessions](guides/sessions.md) |
 | To move an EXISTING desktop app across | **[ADOPTION.md](ADOPTION.md)** — staged, so your app ships at every step |
 | To run a page on Chromium instead of WebView2 | [ADOPTION.md](ADOPTION.md)'s *Stage 2 on Chromium* (`ChromiumView` in a WinForms app), [getting-started.md](getting-started.md)'s 2b (the `UseChromium` shell, on every OS; `samples/Shenora.Sample.Chromium` is the whole app) and [the root README](../README.md)'s `Shenora.Chromium` section |
 | The package table and per-package basics | [the root README](../README.md) |
@@ -30,25 +30,9 @@ The router: match your task below, read that doc (and the matched rules — scan
 `.claude/rules/RULES_INDEX.md`'s *Applies when* column). When a doc is added or a system changes,
 update the relevant entry HERE — this file is the durable index.
 
-> **Retired in the 0.2.0 cleanup** (git history has them): `BRIEF.md` (the originating brief — its
-> API sketches were superseded, see D11), `2026-07-30-shenora-relayering-design.md` (→ D19/D20 +
-> `ARCHITECTURE.md`), `2026-07-31-shenora-oneway-ipc-design.md` (→ D23). A pre-implementation design
-> doc earns its keep until the thing is built; after that it competes with `ARCHITECTURE.md` for
-> "what is true now" and loses. **`DECISIONS.md` is the permanent home for a WHY** — cite a `D<n>`
-> from code, not a dated doc's `§`, or the doc can never be retired (that coupling is what kept these
-> three alive).
->
-> **Retired 2026-08-02, same rule, same day they were built:**
-> `2026-08-02-shenora-mission-queue-and-chains-design.md` (→ **D28**, **D29**) and
-> `2026-08-02-shenora-file-updates-design.md` (→ **D30**, **D31**). Both were plans, both were built
-> within hours, and code/tests now cite the `D<n>` rather than the path — which is what made retiring
-> them free.
->
-> ⚠ **This ended "the mission-scheduling design was KEPT, deliberately" — and it is GONE.** D57 retired
-> all five design docs on 2026-08-07 and `docs/archive/` went with them, so the one exception this note
-> carved out no longer exists. Its harvest evidence and amendment history are in `git log`; the reasoning
-> it held is D27–D31. **An exception outlives the rule that granted it** — the sweep that retired the
-> others had no reason to look at the sentence protecting this one.
+**`DECISIONS.md` is the permanent home for a WHY**: code cites a `D<n>`, never a dated doc's `§`, so no doc
+becomes impossible to retire. A pre-implementation plan earns its keep until the thing is built, and then
+competes with `ARCHITECTURE.md` for "what is true now" and loses (D57); plans live outside `docs/`.
 
 ## Read this when…
 
@@ -59,20 +43,20 @@ update the relevant entry HERE — this file is the durable index.
 | Package layering / where a contract belongs / mobile-shareable logic | `docs/DECISIONS.md` D19+D20 (one Windows shell layer, portable contracts in Core) + `docs/ARCHITECTURE.md` for the as-built graph |
 | Sending IPC without awaiting / long-running work / correlating streamed results | `docs/DECISIONS.md` D23 (why the event pipe is the default, not request/response) |
 | Changing the module contract / tracking a long operation / hosting on a non-WinForms base | `docs/DECISIONS.md` **D23** + **D66** (`IModuleContext`, request tracking, `NotificationPump`; D66 merged the old operations cluster into `IpcRequest`) + `.claude/knowledge/ipc-contracts.md` |
-| "Why is it done this way?" | `docs/DECISIONS.md` (numbered rationale — don't relitigate, amend) |
-| **About to CHANGE a subsystem — how does it work as built?** | **`docs/design/<feature>.md`** (D77) — the stages, the seams, what each promises. Maintainer-facing, written FROM the code. ⚠ It states the design and LINKS a `D<n>` for anything that needs defending; the moment it argues instead of describes it becomes the stale third copy D57 deleted five of. Today: [ipc](design/ipc.md) · [media](design/media.md) · [missions-and-files](design/missions-and-files.md) · [mobile-shells](design/mobile-shells.md) · [shells](design/shells.md) · [update](design/update.md) |
+| "Why is it done this way?" | `docs/DECISIONS.md` (numbered rationale — don't relitigate; correct a wrong entry in place) |
+| **About to CHANGE a subsystem — how does it work as built?** | **`docs/design/<feature>.md`** (D77) — the stages, the seams, what each promises. Maintainer-facing, written FROM the code. ⚠ It states the design and LINKS a `D<n>` for anything that needs defending; the moment it argues instead of describes it becomes the stale third copy D57 deleted five of. Today: [cli-remote](design/cli-remote.md) · [ipc](design/ipc.md) · [media](design/media.md) · [missions-and-files](design/missions-and-files.md) · [mobile-shells](design/mobile-shells.md) · [shells](design/shells.md) · [update](design/update.md) |
 | What did a DEVICE actually do — a codec table, a range pattern, a background window? | [`docs/design/mobile-shells.md`](design/mobile-shells.md) — every figure cost a device run. ⚠ True of the device and DATE in its heading, never a promise the platform makes |
 | Picking the next piece of work | `TASKS.md` (root — OPEN only, in the owner's work order) |
-| **About to propose something the kit deliberately does NOT do** | `docs/DECISIONS.md` → "Anti-goals" (moved out of `TASKS.md` 2026-08-13 — a list of what is NOT being built read as a backlog while it lived there) |
+| **About to propose something the kit deliberately does NOT do** | `docs/DECISIONS.md` → "Anti-goals" (not in `TASKS.md`, where a list of what is NOT being built reads as a backlog) |
 | Looking for maintenance work, or filing a RECURRING pass | `.claude/knowledge/standing-habits.md` — habits to re-run, never backlog entries, because an entry that can never be deleted stops the length tracking the work |
-| Why a FINISHED decision was made that way | `docs/DECISIONS.md` — and if it is not there, `git log`. There is no closed-backlog file (deleted 2026-08-07) |
+| Why a FINISHED decision was made that way | `docs/DECISIONS.md` — and if it is not there, `git log`. There is no closed-backlog file |
 | What shipped already / verifying history | `CHANGELOG.md`, then `git log` |
 | Reviewing the codebase (full/whole-tree review) | `docs/REVIEW-GUIDE.md` (orientation: invariants by area, risk hotspots, settled decisions, coverage map) |
 | Extracting code from a sibling app | `.claude/knowledge/extraction-sources.md` (tracked, de-identified) + `local/EXTRACTION-MAP.md` (private, named) |
 | Keeping the library generic | `.claude/knowledge/generic-library.md` |
 | When did this break? | `git log -S "<distinctive token>" -- <path>` — there is no fix log; commit messages carry root causes |
 | Adopting Shenora into an existing desktop app | `docs/ADOPTION.md` (stage order, what replaces what, what stays the app's own) |
-| Changing the DESKTOP shell — the run sequence, the window, native services, WebView2 hosting | [`docs/design/shells.md`](design/shells.md) — the order the runner depends on, the STA rule, the DPI rule, and what is deliberately absent. INVARIANTS: `.claude/knowledge/winforms-shell.md` + `.claude/knowledge/webview2-hosting.md`. WHY: `docs/DECISIONS.md` **D19**+**D20** (the layer and its direction) + **D37** (one shell package per platform) |
+| Changing a DESKTOP shell — the WinForms shell and WebView2 hosting, or the Chromium shell: the run sequence, the window, the splash, native services | [`docs/design/shells.md`](design/shells.md) — the order the runner depends on, the STA rule, the DPI rule, and what is deliberately absent. INVARIANTS: `.claude/knowledge/winforms-shell.md` + `.claude/knowledge/webview2-hosting.md`. WHY: `docs/DECISIONS.md` **D19**+**D20** (the layer and its direction) + **D37** (one shell package per platform) + **D81**–**D96** (the Chromium engine and its shell) |
 | Running the same app logic on MOBILE (a MAUI shell) | `docs/guides/mobile.md` (what transfers, what does not, and the traps already paid for) + `docs/DECISIONS.md` **D32**–**D34** (a second shell is a PEER; absent vs differently-satisfied capabilities; why its API baseline is weaker) + **D36** (the host advertises capabilities in the handshake, so ONE web bundle serves both shells) + **D39** (why the auxiliary-session stack does NOT port, even though both shells host a webview) |
 | Replacing a hand-rolled file-operation planner, job queue or resource gate | `docs/DECISIONS.md` **D27**–**D31** (the one-scheduler-two-key-kinds claim) + **D57** (why a policy is safe to expose: it chooses among LEGAL moves) + `docs/guides/missions.md` (adopter-facing mapping) |
 | Serializing filesystem MUTATIONS, atomic replace, crash-atomicity, cross-process file locks | `docs/DECISIONS.md` **D30**+**D31** (why the file queue is separate from scheduling; why locking is two mechanisms) + **D48**+**D55**+**D65** (the layering, and why it is the `Shenora.Engine.Files` namespace inside `Shenora` rather than a package) + `docs/guides/file-updates.md` |
@@ -83,7 +67,7 @@ update the relevant entry HERE — this file is the durable index.
 | Cutting or consuming a release | `docs/RELEASING.md` |
 | Touching an invariant / gotcha | `.claude/rules/RULES_INDEX.md` — read the matched rule |
 | Dev loop commands | `devtools/README.md` |
-| Anything FINISHED — closed tasks, shipped phases, past fixes | **`git log`.** There is no archive tier (D9's 2026-08-07 amendment): finished work is deleted, not filed. A doc nobody reads and that grows fastest is an archive wearing another name |
+| Anything FINISHED — closed tasks, shipped phases, past fixes | **`git log`.** There is no archive tier (D9): finished work is deleted, not filed. A doc nobody reads and that grows fastest is an archive wearing another name |
 
 ## Where things live (fast map)
 
@@ -105,10 +89,11 @@ update the relevant entry HERE — this file is the durable index.
 
 | Doc | Holds | Nature |
 |---|---|---|
-| `DECISIONS.md` | Numbered load-bearing choices + why | Living, append/amend |
+| `DECISIONS.md` | Numbered load-bearing choices + why | Living; a wrong entry is corrected in place |
 | `ARCHITECTURE.md` | The as-built map: projects, subsystem kinds, dependency rules. **Not the public surface** — that is the API baselines and the XML docs | Keep in sync with reality |
 | `getting-started.md` | The GREENFIELD path: packages, a window, a typed IPC round trip, onto a device. Every snippet is lifted from a sample the gate compiles | Keep in sync with the samples |
 | `reference/wire.md` | GENERATED from the source constants (`dev.mjs verify` fails when it drifts): the module names, route types, event types, error codes and capability names a PAGE types by hand | Never edit — regenerate |
+| `reference/namespace-moves.md` | GENERATED (`dev.mjs namespace-moves`): the 0.11.0 namespace moves, type by type, for an app upgrading across them; the rename tools read it | Never edit — regenerate |
 | `guides/` | One page per capability, moved VERBATIM out of `ADOPTION.md` (they said "not a stage" while living inside a staged migration). Says HOW; links `DECISIONS.md` for WHY | Keep in sync with the public surface |
 | `ADOPTION.md` | The staged adoption guide for an existing app: order, primitive-by-primitive mapping, migration traps, and the permanent "stays yours" list | Keep in sync with the public surface |
 | `RELEASING.md` | How releases are cut and consumed pre-release | Keep in sync with reality |

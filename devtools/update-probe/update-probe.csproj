@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Drives Shenora.IO's staged updater over a REAL directory tree, end to end.
+  <!-- Drives the Shenora.Engine.Update staged updater over a REAL directory tree, end to end.
 
        WHY THIS EXISTS. `UpdateStage` had good unit tests and all of them used FIXTURES the test author
        wrote — which is precisely the shape that cannot catch the failure this probe is for. The stage's

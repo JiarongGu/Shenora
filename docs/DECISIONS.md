@@ -438,20 +438,19 @@ docs cite them — so the number is the column to scan.
     that fails silently. A lease released by a crash returns when the SMB session times out.
 
 - **D32 — a second shell is a PEER, and the kit's job is the substrate under both.** The logic is
-  abstracted out as far as it goes, so both MAUI and WinForms are served, with a capability such as drop
-  zones or frameless chrome implemented differently by each. `Shenora.Mobile` references no Windows assembly.
-  **A thin shell is the evidence the split is in the right place**, because the substrate moved first — a
-  fat shell would have meant something portable was still trapped in the Windows one.
+  abstracted out as far as it goes, so MAUI and WinForms are both served, each implementing a capability
+  such as drop zones or frameless chrome its own way; `Shenora.Mobile` references no Windows assembly.
+  **A thin shell is the evidence the split is in the right place**: a fat one would mean something portable
+  was still trapped in the Windows shell.
   - **The bar stays D20's, not "it looks platform-neutral":** *can app logic compile off Windows, or does a
     second shell use it?* Tray, secondary windows and native drop zones stay in the desktop shells because they
-    are desktop CONCEPTS — on mobile they are absent, not different. Window state is one too, and its types are
-    Core's only because both desktop shells restore it (D88); a phone shell registers nothing for it.
+    are desktop CONCEPTS — on mobile they are absent, not different. Window state's types are Core's only
+    because both desktop shells restore it (D88); a phone shell registers nothing for it.
   - 🔴 **A platform limit recorded as permanent outlives the platform.** Lifting the resource-serving layer
     once died because `HybridWebView` had no seam; `WebResourceRequested` now exists and D45 uses it.
     **What survives is the METHOD — check the platform before designing — not the verdict.**
-  - **The platform-owned loop is why `Start`/`Stop` exist.** `IShenoraRunner.Run` is contractually
-    "blocks until shutdown", which a MAUI activity cannot honour, so the mobile host registers no runner
-    and the app drives the pair from its own lifecycle.
+  - **The platform-owned loop is why `Start`/`Stop` exist.** `IShenoraRunner.Run` blocks until shutdown,
+    which a MAUI activity cannot honour, so the mobile host registers no runner and the app drives the pair.
 
 - **D33 — an ABSENT capability throws and names the platform; a SATISFIED one is an honest no-op.**
   `ShellCapability.NotSupported` is the one message. A silent no-op is the "mistyped resource prefix
@@ -713,10 +712,9 @@ docs cite them — so the number is the column to scan.
     this the least we can do about it?* D59 states it as a measurable DELTA — what the DEVICE decodes minus
     what its WEBVIEW accepts — because "make more formats play" has no end.
   - 🔴 **What actually breaks for ordinary video is not the picture** but the **container** (`.mkv` holding
-    playable H.264, refused on iOS by WKWebView and AVPlayer alike, where Android's WebView and WebView2 play
-    it) and the **soundtrack** (`AC-3`, `E-AC-3`, `DTS`). **That is why a remuxer is worth
-    writing in managed code and a codec library is not** — H.265 needs no software codec anywhere, since
-    hardware decodes HEVC and encodes H.264. Reach is D70; the licence bound is D51.
+    playable H.264, which iOS refuses where Android and WebView2 play it) and the **soundtrack** (`AC-3`,
+    `E-AC-3`, `DTS`). **That is why a remuxer is worth writing in managed code and a codec library is not**:
+    hardware decodes HEVC and encodes H.264, so H.265 needs no software codec. Reach is D70; licence, D51.
   - 🔴 **The delta is bounded by what .NET CAN REACH — the platform's own codecs AND anything an app
     supplies through the seams.** ⚠ Reading it as "only what the device already does" is drift and would
     refuse the case the seams exist for. Out of scope: the kit SHIPPING that library (D51), or capability
@@ -871,7 +869,7 @@ docs cite them — so the number is the column to scan.
   construction. Every extension point must have a socket, and something must ASK.** (2026-08-07, after the
   third instance in two days.)
   - **The three, and what they had in common:** a remuxer overload that passed `conversion: null`, so AC-3
-    films played SILENTLY (D59); `RestartManagerLockInspector` registered by nothing, so "who holds this
+    films played SILENTLY (D59); the Restart Manager lock inspector registered by nothing, so "who holds this
     file?" said *cannot tell* on the one platform that can tell; `IMediaContainerWriter` implemented and
     consumed by nothing, so a consumer's native muxer had nowhere to plug in.
     🔴 **None of them threw, logged, or failed a test.** A capability that is ABSENT rather than broken
@@ -1157,43 +1155,31 @@ docs cite them — so the number is the column to scan.
 - **D83 — THE CHROMIUM ENGINE HAS TWO HOSTS, AND THE WINDOWS SHELL DEPENDS ON IT.** `Shenora.Chromium` is
   Chromium-FIRST: a shell on CEF's Views framework for all three desktops, designed around CEF's own ideas
   rather than the WinForms shell's shape. `Shenora.Windows` offers Chromium as an ENGINE OPTION beside
-  WebView2, a WinForms control in `WebViewHost`'s shape, so an app changes engines without leaving
-  `OptimizedForm` or `SecondaryWindows`.
+  WebView2, so an app changes engines without leaving `OptimizedForm` or `SecondaryWindows`.
   - 🔴 **`Shenora.Windows` → `Shenora.Chromium`, and CEF's bytes arrive only on opt-in.** Every Windows app
-    carries the engine's assembly (270 KB at CEF 154, measured) and none carries CEF unless it references
-    the package itself: the dependency excludes its build assets (measured from a local feed). That is
-    D81's boundary: the BYTES, not the assembly.
-  - **Two threading models, one engine.** The Views shell runs CEF's loop on the main thread; the WinForms
-    host needs CEF's multi-threaded loop, because WinForms owns that thread.
-  - **The page finds the transport because the shell MARKS THE HTML it serves** (D36: the host advertises).
-    In development the shell proxies the dev server's document to mark it too.
-  - 🔴 **Chromium's local-network checks are OFF in both hosts, for every page.** The pages are the app's own, and
-    the checks refused what the WebView2 shell allows, with no prompt the permission handler could answer
-    (measured, CEF 154): a page's fetch to a loopback server of the app's own (the server-backed profile) failed
-    where WebView2 answered it, and a proxied dev-server document's WebSocket back to its dev server, the
-    hot-reload socket, was refused.
-  - ⚠ On Windows both hosts start through CEF's `bootstrap.exe` and the kit's shim, or there is no sandbox.
-  - **The WinForms engine option is a `ChromiumView` control, beside the WebView2 control and not inside
-    `WebViewHost`** (owner), whose options are full of WebView2 types that would mean nothing under Chromium.
-    An app adds a `ChromiumView` to its form and calls `UseChromiumEngine(options)`.
-  - **`Shenora.Windows` reaches the engine through a small PUBLIC embedding API in `Shenora.Chromium`**
-    (owner): host a browser in any parent window. It is honest SemVer surface rather than a second
-    `InternalsVisibleTo`, and an adopter can embed Chromium in a window type of its own the same way.
+    carries the engine's assembly and none carries CEF unless it references the package itself: the
+    dependency excludes its build assets. That is D81's boundary: the BYTES, not the assembly.
+  - 🔴 **Chromium's local-network checks are OFF in both hosts, for every page.** The pages are the app's own,
+    and the checks refuse what the WebView2 shell allows (a loopback server of the app's own, the dev server's
+    hot-reload socket) with no prompt the permission handler could answer. D86's browser keeps them on.
+  - **The WinForms engine option is a `ChromiumView` control beside the WebView2 control, not inside
+    `WebViewHost`**, whose options are full of WebView2 types that mean nothing under Chromium.
+  - **`Shenora.Windows` reaches the engine through a small PUBLIC embedding API** — host a browser in any
+    parent window — rather than a second `InternalsVisibleTo`; an adopter can embed Chromium the same way.
+
 - **D84 — THE CHROMIUM SHELL'S PAGE IS AN ALLOY-STYLE BROWSER.** CEF offers two runtime styles, and the shell's
   browser views are Alloy: Chromium's content layer, without Chrome's own UI. The window stays Chrome style,
   which may host an Alloy view.
-  - 🔴 **Why: the client callbacks the kit's translation layer needs exist only there** (D54). Measured: in
-    Chrome style CEF never called `on_drag_enter`, so a dropped file's real path was unreachable, which is the
-    capability the drop-zone stack exists for.
-  - **Chrome's own UI goes with it** (CEF's headers): downloads are cancelled without a download handler,
-    permission requests are denied or ignored instead of prompting, fullscreen stays inside the page unless
-    the host triggers it, and an unresponsive renderer gets no dialog. Downloads then match the WebView2
-    shell's policy, which cancels them. ⚠ **A permission prompt left to CEF is IGNORED, and the page's promise
-    never settles** (measured: a clipboard read and a notification request both hung), so the shell answers
-    every prompt with the WebView2 shell's own default: a clipboard read from the app's page is allowed, and
-    everything else is denied.
-  - ⚠ **Alloy changed the frame's hit-test**: Chromium's render widget answers HTCLIENT over the page's drag
-    area, so the shell's child subclass defers every non-client answer to CEF's top-level window. Any other
+  - 🔴 **Why: the client callbacks the kit's translation layer needs exist only there** (D54). In Chrome style
+    CEF never calls `on_drag_enter`, so a dropped file's real path is unreachable, which is the capability the
+    drop-zone stack exists for.
+  - **Chrome's own UI goes with it, so the shell answers what Chrome's UI would**: downloads are cancelled, as
+    the WebView2 shell's policy does, and every permission prompt gets the WebView2 shell's default (a clipboard
+    read from the app's page allowed, everything else denied), because a prompt left to CEF is IGNORED and
+    the page's promise never settles. Fullscreen stays inside the page unless the host triggers it, and an
+    unresponsive renderer gets no dialog.
+  - ⚠ **Alloy changes the frame's hit-test** (the render widget answers HTCLIENT over the page's drag area, so
+    the window's child subclass defers every non-client answer to CEF's top-level window), and any other
     behaviour measured under Chrome style is re-measured before it is relied on.
 
 - **D85 — ON MACOS THE CHROMIUM SHELL USES CHROMIUM'S MOCK KEYCHAIN.** The shell passes `--use-mock-keychain` to
@@ -1209,39 +1195,32 @@ docs cite them — so the number is the column to scan.
     and accepts the prompt (D15).
 
 - **D86 — CHROMIUM ALSO RUNS AS A BROWSER, IN A PROCESS THAT HOLDS NONE OF THE APP.** `ChromiumBrowserProcess`
-  starts CEF with no app page, no bridge and no content root: Chromium's own windows, and a debugging port that is
-  open in production. The app runs it as a second process of its OWN executable, so an install carries one CEF and
-  CEF's launcher sandboxes it as it does the app. An adopter asked for it: its in-app browser, where an agent's tabs
-  open beside the person's, otherwise ships a second CEF build.
-  - 🔴 **Why a process of its own: a debugging port reaches every page in its process** (an adopter measured the
-    page's bridge callable over it). So the port opens only where no app page can be, and a process that holds one
-    keeps D83's rule: no port, and no command-line switch read, in production.
-  - **Its windows are Chrome style, with Chrome's own UI** (tabs, address bar, history, find, downloads, devtools),
-    not D84's Alloy: none of the kit's translation layer runs there, and Chrome's UI answers the downloads and
-    permission prompts that D84's page has the shell answer.
-  - **Chromium's local-network checks stay ON there**: its pages are the open web, where D83 turns them off because
-    the pages are the app's own. On macOS, D85's mock keychain applies to its sign-ins too.
-  - 🔴 **The app starts it with `ChromiumBrowserProcess.Start`, which passes no handle on.** On Windows, `Process.Start`
-    could hand it a pipe end of the app's Chromium, and the browser outlives the app, whose shutdown then never ended.
-  - ⚠ **It needs CEF 154.0.32 or later.** On 154.0.28 a debugging client that opened a TAB in an existing window
-    crashed the browser process, in the kit and in CEF's own sample client alike, which is exactly what an agent's
-    "new tab" does.
+  starts CEF with no app page, bridge or content root: Chromium's own windows, and a debugging port open in
+  production. It is a second process of the app's OWN executable, so an install carries one CEF and CEF's launcher
+  sandboxes it as it does the app; an adopter's in-app browser otherwise ships a second CEF build.
+  - 🔴 **Why a process of its own: a debugging port reaches every page in its process**, the app page's bridge
+    included. So the port opens only where no app page can be, and a process that holds one keeps the rule both
+    D83 hosts start under: no port, and no command-line switch read, in production.
+  - **Its windows are Chrome style, with Chrome's own UI**, not D84's Alloy: none of the kit's translation layer
+    runs there, and Chrome's UI answers the downloads and permission prompts D84 has the shell answer. Chromium's
+    local-network checks stay ON there, since its pages are the open web; D85's mock keychain applies on macOS.
+  - 🔴 **The app starts it with `ChromiumBrowserProcess.Start`, never `Process.Start`**, which on Windows hands
+    the browser a pipe end of the app's Chromium; the browser outlives the app, whose shutdown then never ends.
+  - ⚠ **It needs CEF 154.0.32 or later**: on 154.0.28 a debugging client opening a tab in an existing window,
+    which is what an agent's "new tab" does, crashed the browser process.
 
 - **D87 — THE CHROMIUM SHELL STARTS CEF WHILE THE APP IS COMPOSED.** Run from its layout (on Windows through CEF's
   launcher and the kit's shim, on macOS from its bundle), the app has `UseChromium` start CEF on the calling thread,
-  and the runner takes it over; run from anywhere else (a test host, `dotnet` running the app's dll) the runner starts
-  it, as before, and so it does after an app's splash card (D92). Decided 2026-09-30, comparing cold starts with
-  Electron's.
-  - 🔴 **Why: the first frame waits on Chromium's GPU process, which starts only once CEF does.** Setting up the GPU
-    took about half a second on the reference machine, in CEF and Electron alike, and the window, the page and
-    the app's own start all finish inside that wait. So the app's composition, which ran before CEF, was the kit's
-    one cost on the first frame's path, which is why a warm-up that served the first document 20× faster did not
-    move the first paint. Electron wins the same race by running app code inside Chromium's startup.
+  and the runner takes it over; run from anywhere else (a test host, `dotnet` running the app's dll) the runner
+  starts it, and so it does after an app's splash card (D92).
+  - 🔴 **Why: the first frame waits on Chromium's GPU process, which starts only once CEF does.** Setting up the
+    GPU takes about half a second, in CEF and Electron alike, and the window, the page and the app's own start all
+    finish inside that wait; so the app's composition, run before CEF, was the kit's one cost on the first frame's
+    path. Electron wins the same race by running app code inside Chromium's startup.
   - **The constraints:** `UseChromium` and `Run` on one thread, because CEF's loop runs where CEF started;
     `ChromiumBrowserProcess.Run`, and any mode that never shows a window, decided before `UseChromium`, which
-    otherwise pays CEF's start; a Chromium that will not start is still reported by `Run`. An app that composes
-    and then fails, or returns without running, exits with CEF started, measured clean on Windows: its exit code,
-    no child process left, no error report.
+    otherwise pays CEF's start; a Chromium that will not start is still reported by `Run`; an app that composes
+    and then fails, or returns without running, exits cleanly with CEF started.
 
 - **D88 — `SHENORA.CHROMIUM` ALONE IS A COMPLETE DESKTOP SHELL, ON EVERY OS, WINDOWS INCLUDED.** An app on any
   desktop references `Shenora.Chromium` and nothing of WinForms, and gets what `Shenora.Windows` gives a WebView2
@@ -1249,39 +1228,29 @@ docs cite them — so the number is the column to scan.
   - 🔴 **What both shells use lives in Core** (chosen over parallel types in the Chromium package): D20's rule, now
     that a second shell uses it. A moved type changes its namespace, so a Windows app's source gains a `using`
     and a binary built against the old names does not bind.
-  - **The single-instance guard is portable:** a named mutex scoped to the user, and on Windows to the logon session
-    as before, but not to the session on Linux and macOS, where a session is one terminal (the session scope let a
-    second instance start from another session on Linux); and a named pipe per user that only that user can open,
-    which carries a later launch's arguments to the running app. It replaced the Windows window-message broadcast,
-    which carried nothing.
-  - 🔴 **A Chromium process that holds the app's pages answers CEF's relaunch itself.** CEF lets one process own a
-    data folder and hands a later launch to it; unanswered, CEF opens a Chrome-style window there, on the app's
-    profile, beside the page that holds the bridge. So the shell treats it as a launch with no arguments (Chromium
-    does not pass the app's on), and the launch CEF turned away exits cleanly. A browser process (D86) keeps
-    Chrome's answer, a window of its own.
+  - **The single-instance guard is one of them, made portable:** a mutex scoped to the user (on Windows to the logon
+    session too) plus a named pipe per user carrying a later launch's arguments; `docs/design/shells.md` has it.
+  - 🔴 **A Chromium process that holds the app's pages answers CEF's relaunch itself**, as a launch with no
+    arguments (Chromium does not pass the app's on), because unanswered CEF opens a Chrome-style window on the
+    app's profile beside the page that holds the bridge. A browser process (D86) keeps Chrome's answer.
   - **The kit's gate stays in front of CEF's rule, which would also keep one instance:** it turns a launch away
-    before CEF starts at all (no GPU process, no data-folder lock), it carries the launch's arguments where CEF's
-    hand-over carries none, its scope is the install rather than wherever the data folder is, it waits out a
-    `--restarted` predecessor, and it is the same gate the WinForms shell runs.
+    before CEF starts (no GPU process, no data-folder lock), carries the arguments CEF's hand-over drops, is scoped
+    to the install rather than the data folder, waits out a `--restarted` predecessor, and is the WinForms shell's.
 
 - **D89 — A MACOS APP'S DATA DEFAULTS TO ITS APPLICATION SUPPORT FOLDER; EVERY OTHER APP KEEPS ITS DATA BESIDE IT.**
   Run from its bundle (`X.app/Contents/MacOS`, and no root the app or its launcher chose), an app's `ShenoraPaths`
   data folder is `~/Library/Application Support/<its CFBundleIdentifier>`; everywhere else it stays `<root>/data`,
-  the portable layout. And every app may name its own (`ShenoraPathsOptions.DataDirectory`). Chosen over each OS's
-  own folder everywhere (which would move every existing Windows app's data) and over the
-  option alone (which leaves a macOS app that forgets it writing into its own bundle).
+  the portable layout, and every app may name its own (`ShenoraPathsOptions.DataDirectory`). Chosen over each OS's
+  own folder everywhere (which would move every existing Windows app's data) and over the option alone (which
+  leaves a macOS app that forgets it writing into its own bundle).
   - 🔴 **Why: beside the executable is inside the bundle.** A signed bundle must not change, and an app in
-    `/Applications` may not be able to write there; the Chromium sample wrote its profile, its journal, its locks and
-    its window state into `Contents/MacOS/data` before (measured).
-  - **The bundle identifier names it,** as macOS apps' Application Support folders conventionally are: the kit's
-    layout writes `com.shenora.app.<App>` unless the app sets `ShenoraChromiumBundleId`, and the bundle's own name
-    stands in when the plist names none. An identifier that is not a plain name is not used as a folder.
-  - **What stays in the bundle:** the root and `res/`, the install's read-only side, and so the single-instance scope
-    (the install root), which is unchanged.
+    `/Applications` may not be able to write there. The bundle identifier names the folder, as macOS apps' are
+    named; the root and `res/`, the install's read-only side, stay in the bundle, and so does the single-instance
+    scope (the install root).
   - **The constraints it imposes:** a macOS app upgrading past it finds its data in a new place, with nothing moved;
     one that must keep the old place sets `DataDirectory` to it. And two installs of one app (one bundle identifier)
-    share its data, and so Chromium's one-process-per-data-folder rule (D88): the second install's launch is handed to
-    the first, as macOS itself treats one identifier as one app.
+    share its data, and so Chromium's one-process-per-data-folder rule (D88): the second install's launch is handed
+    to the first, as macOS itself treats one identifier as one app.
 
 - **D90 — IN THE CHROMIUM SHELL THE PAGE'S MEDIA SESSION IS THE OS'S; THE KIT BUILDS NO NATIVE MEDIA THERE UNTIL AN APP
   NEEDS IT.** `UseChromium` registers no `IPlaybackSession`, `IMediaPlayer` of its own or `IMediaCapability`. Chosen
@@ -1300,79 +1269,57 @@ docs cite them — so the number is the column to scan.
 - **D91 — THE AUXILIARY BROWSERS ARE ONE IMPLEMENTATION IN CORE, OVER BROWSERS EACH SHELL MAKES.**
   `RenderSessionPool`, `StreamingSession`, `InteractiveSession` and their types live in `Shenora.Core.Sessions`; a
   shell registers `ISessionHost`, which makes the browser a session drives (WebView2 in `Shenora.Windows`, CEF in
-  `Shenora.Chromium`). Ported now, under D88's rule that what both shells use lives in Core, rather than as parallel
-  types in each shell.
+  `Shenora.Chromium`), under D88's rule that what both shells use lives in Core, rather than parallel types in each.
   - 🔴 **Why one implementation:** the sessions' hard-won rules (a lease's permit freed on every path, a wedged
     operation poisoning its instance, a guard-approved URL's redirect to another authority cancelled, the busy gate
     owned by whoever owns the window, a start cancelled mid-init leaving nothing behind) are the value, and two
-    copies would diverge. What a shell adds is narrow: make a browser on its UI thread, drive it, report what it does.
-  - **Most of the driving is the DevTools protocol, which both engines speak:** script, screencast frames and
-    synthetic input already went through it on WebView2.
+    copies would diverge. What a shell adds is narrow — make a browser on its UI thread, drive it, report what it
+    does — and most of the driving is the DevTools protocol, which both engines speak.
   - **The constraints it imposes:** a session names the shell's browsers (`Anchor`, a WinForms control, is gone);
     options that only one engine can honour say so and are refused by the other (WebView2's per-session browser
     arguments; in CEF switches are the process's); and in the Chromium shell a session's profile must be a folder
-    directly inside the shell's data folder, since CEF opens a profile nowhere else and opens any other path off the
-    record.
+    directly inside the shell's data folder, since CEF opens a profile nowhere else and any other path off the record.
 
 - **D92 — THE CHROMIUM SHELL'S SPLASH IS DRAWN NATIVELY OVER THE MAIN WINDOW'S RENDER AREA, COMPOSED IN C#.**
   `ChromiumHostOptions.Splash` covers the main window's render area until the app's boot work and the page are ready,
-  and the window's own frame stays live around it; with a `Card`, a small card shows from the app's first moments until
+  with the window's own frame live around it; with a `Card`, a small card shows from the app's first moments until
   the window exists. Its content is a component (a setup that runs once and returns a render function over state),
-  drawn by each OS's own 2D and text APIs. It is C#, so Chromium's loading delay cannot hold it back, and composed
-  the way React or MAUI compose a view; it can do what the main window can, so it takes the render area rather than
-  covering the window; and the card is optional.
+  drawn by each OS's own 2D and text APIs; `docs/design/shells.md` has the as-built splash.
   - 🔴 **Why native and not a page:** Chromium's first frame waits on its GPU process (D87), so an HTML splash would
-    wait for the start it is meant to cover.
+    wait for the start it is meant to cover; C# cannot be held back by it, and composes the way React or MAUI
+    compose a view.
   - 🔴 **Why the render area and not a cover:** a window must be movable, closable and resizable while it loads, as
-    WinForms' `SplashPanel` window is. Apps that load in a second or two draw in their own window (VS Code's parts
-    splash, the Windows and Android app splashes, Apple's "nearly identical to the first screen"); a borderless card
-    before the window is what heavy apps show (Office, Visual Studio), so it is the option, not the default.
-  - **A frameless window gets the kit's title strip** until its page reports a title bar of its own (caption buttons or
-    drag regions) or the splash lifts: on Windows the window's own painted buttons and hit-test (Snap Layouts), on
-    macOS the traffic lights and a drag region; on Linux the splash draws it until the lift and hands its input to the
-    window manager. Chromium's resize band inside a frameless window's edges stays uncovered. On Windows a click-through
-    cover paints the strip and the band as the window will until Chromium's first frame, since until then they show
-    Chromium's own colours, not the window's.
-  - 🔴 **With a card, CEF does not start early (D87):** `cef_initialize` holds the thread, so the card shows first.
-    With none, nothing can show before CEF makes the window, and CEF starts early as without a splash.
-  - **It lifts when every `OnShown` has finished AND the page is ready** (its handshake, or `closeSplash()` when held).
-    The timeout stands in for the page only and never cuts the app's boot work short.
-  - **It is owned by the main window, made hidden as CEF creates it and shown once CEF shows it,** so it neither floats
-    alone nor holds CEF's thread, and the page keeps painting under it: Chromium ignores an owned popup of its own
-    process when it decides whether a window is covered (on Linux a row, or a frameless window's band, stays clear).
-  - **The constraints:** one splash per process, over the main window; a closed set of elements laid out the same on
-    every OS; a setup must be quick, since the main window waits on it.
+    WinForms' `SplashPanel` window is. An app that loads in a second or two draws in its own window; a borderless
+    card before the window is what heavy apps show, so the card is the option, not the default.
+  - **The constraints:** one splash per process; a closed set of elements laid out the same on every OS; a quick
+    setup, since the main window waits on it; a lift only when every `OnShown` has finished AND the page is ready
+    (its handshake, or `closeSplash()` when held), the timeout standing in for the page alone, never the boot work.
 
 - **D93 — THE APP'S COLOUR SCHEME IS A SETTING THE APP OWNS, AND THE DESKTOP SHELLS APPLY IT TO THEIR BROWSER ENGINE.**
   `IColorScheme` holds whether the app follows the OS's light or dark setting or is held at one (`ColorScheme.System`,
-  `Light`, `Dark`). Both desktop shells register it, seeded from their host options, and apply it to the engine: the
-  Chromium shell to its request contexts (`set_chrome_color_scheme`), the WebView2 shell to the profile of each
-  `WebViewHost` given it (`PreferredColorScheme`). The page reads its effect as `prefers-color-scheme`; an app's
-  settings change it from C# or through `AddShenoraColorScheme`'s route. Whether the OS controls the app's theme is a
-  setting, and the app manages it.
-  - 🔴 **Why the engine's own setting and not the page's:** it is the app's Chromium, so its colour mode is the app's to
-    set, and it reaches what a page cannot: Chrome's own UI, a window's frame, and the frames before the page draws
-    (measured: held dark, a frameless window's first frames were `#202020`, not the light `#F3F3F3` of a light OS). The
-    page then follows it as it follows the OS, with no call of its own.
-  - **The app keeps the choice across launches, not the kit:** it passes the saved one to the host options, so the first
-    frame is already right, and saves it on `Changed`.
+  `Light`, `Dark`). Both desktop shells register it, seeded from their host options, and apply it to the engine (the
+  Chromium shell to its request contexts, the WebView2 shell to each `WebViewHost`'s profile); the page reads its
+  effect as `prefers-color-scheme`, and an app's settings change it from C# or through `AddShenoraColorScheme`'s
+  route. Whether the OS controls the app's theme is a setting, and the app manages it.
+  - 🔴 **Why the engine's own setting and not the page's:** it is the app's Chromium, so its colour mode is the app's
+    to set, and it reaches what a page cannot: Chrome's own UI, a window's frame, and the frames before the page
+    draws. The page then follows it as it follows the OS, with no call of its own.
+  - **The app keeps the choice across launches, not the kit:** it passes the saved one to the host options, so the
+    first frame is already right, and saves it on `Changed`.
   - **The constraints:** one setting per process, which an app's own `IColorScheme` registration replaces; a session's
     Chromium profile takes it as it opens, not on a later change.
 
 - **D94 — THE NATIVE LAUNCHER OWNS THE FIRST FRAMES: A STARTUP SCREEN, COMPILED INTO IT, UNTIL THE APP'S FIRST WINDOW.**
   `Shenora.Launcher` can show a configured screen (a PNG fitted to a box, a background, an optional moving bar) from
-  its first moments, through an update apply and the .NET start, and the app closes it once its own first window is
-  on screen (`IStartupScreen`, passed `--startup-screen <window id>`). The aim is a start that looks smooth past the
-  startup delay: the launcher already runs first for updates, so it covers the fraction of a second before .NET shows
-  a window, and the .NET splash stays.
-  - 🔴 **Why the launcher and not the app:** it is native and runs first, so it is the only code on screen before .NET
-    has started (measured on Windows: the screen ~70–80 ms after the launcher starts, the app's card ~390–550 ms).
-  - **A configured picture, not a snapshot of the app:** a snapshot goes wrong when the resolution changes. It is drawn
-    at the monitor's DPI from its description each time.
-  - **Compiled into the launcher** (`shenora_launcher_startup_screen()`), so the launcher stays one file, with no
-    description beside it.
-  - **The launcher's screen and the app's splash are separate:** no position is passed, so the app's windows keep their
-    own places; the two need not line up, since an app may start its windows anywhere.
+  its first moments, through an update apply and the .NET start, until the app closes it at its own first window
+  (`IStartupScreen`, passed `--startup-screen <window id>`); the .NET splash stays.
+  - 🔴 **Why the launcher and not the app:** it already runs first, for updates, and it is native, so it is the only
+    code on screen in the fraction of a second before .NET has started.
+  - **A configured picture drawn at the monitor's DPI each time, not a snapshot of the app**, which goes wrong when
+    the resolution changes; **compiled into the launcher** (`shenora_launcher_startup_screen()`), so the launcher
+    stays one file with no description beside it.
+  - **The launcher's screen and the app's splash are separate:** no position is passed, so the app's windows keep
+    their own places; the two need not line up, since an app may start its windows anywhere.
   - **The constraints:** opt-in end to end (no description, no argument, nothing changes); the launcher never fails a
     launch over the screen; it holds no single-instance lock, so it may stay alive while the app starts; Windows and
     Linux, the launcher's platforms.
@@ -1398,15 +1345,14 @@ docs cite them — so the number is the column to scan.
   option and never the default. Without it the publish stays flat.
   - 🔴 **Why folders and not one file:** the engine stays files, as Electron's does — Windows maps `libcef.dll` only
     from a file, CEF reads its resources and locales by path, and every Chromium subprocess is the exe relaunched.
-  - **Publish only:** a build is what an IDE and `dotnet run` start, so the dev loop keeps its flat output.
-  - **Why `lib\`:** `ShenoraPaths` already reads an app in `lib\` as one folder below the root, so `data\` stays
-    beside `MyApp.exe`.
-  - **The constraints:** `chrome_elf.dll` stays at the root, because CEF's launcher imports it; the shim delay-loads
-    `libcef.dll` and reads both shapes, so a missing engine is a message naming the path; a publish removes the other
-    shape's CEF files, which the SDK's clean never touches and which the shim would load from a leftover `engine\`;
-    such a publish starts through `MyApp.exe` only (`dotnet lib\MyApp.App.dll` does not find CEF, and supporting it
-    would be a resolver for a start nothing makes); Windows only — macOS is already one `.app`, and Linux needs a
-    spike of its own.
+  - **Publish only:** a build is what an IDE and `dotnet run` start, so the dev loop keeps its flat output. **And
+    `lib\`** because `ShenoraPaths` already reads an app there as one folder below the root, so `data\` stays beside
+    `MyApp.exe`.
+  - **The constraints:** `chrome_elf.dll` stays at the root, because CEF's launcher imports it; the shim reads both
+    shapes, so a missing engine is a message naming the path; a publish removes the other shape's CEF files, which
+    the SDK's clean never touches and the shim would otherwise load; such a publish starts through `MyApp.exe` only
+    (`dotnet lib\MyApp.App.dll` does not find CEF, and a resolver would serve a start nothing makes); Windows only —
+    macOS is already one `.app`, and Linux needs a spike of its own.
 
 ## Anti-goals — deliberately NOT built
 

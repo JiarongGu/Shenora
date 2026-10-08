@@ -1,8 +1,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
-// ⚠ `Shenora.Engine.Update`, not `Shenora.IO` — D65 relayered the namespaces and this probe has not
-// compiled since, because `verify` does not build it and `dev.mjs update-probe` is run by hand. Found
-// 2026-08-09 by the doc gate, of all things: the RETIRED-NAME scan flagged the prose beside this line.
+// ⚠ `verify` does not build this probe (`dev.mjs update-probe` is run by hand), so a namespace move breaks it
+// with nothing failing: build it after one.
 using Shenora;
 using Shenora.Engine.Update;
 

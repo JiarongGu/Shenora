@@ -293,7 +293,7 @@ public class WireMirrorTests
 
     /// <summary>
     /// <b><see cref="IpcRequestStatus"/> is the biggest shape on this wire and had NO mirror at all until
-    /// the 0.2.0 design pass</b> — it is both the entire <c>OPERATION_UPDATED</c> payload and the
+    /// the 0.2.0 design pass</b> — it is both the entire <c>REQUEST_UPDATED</c> payload and the
     /// element type of the <c>LIST</c> response, so a field present on one side and not the other is a
     /// silent hole in every operation-driven UI.
     /// <para>

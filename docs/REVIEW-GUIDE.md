@@ -129,11 +129,10 @@ Layout: `src/` (the packable projects — the authoritative set is the table at 
 portable `net10.0` project that turns red if a Windows type reaches app logic, the D20 tripwire — plus
 desktop, Chromium, web and MAUI; the e2e subject), `devtools/` (one-entry dev loop).
 
-⚠ **Those directories were removed: a review looking for `src/Shenora.Media/`, `src/Shenora.IO/` or
-`src/Shenora.Ipc/` finds nothing,
-and that is not the code being gone.** D53/D55 folded the capability tier into `Shenora`, and **D65 then
-moved it again into three layers** — so the folders are `Core/`, `Engine/` and `Modules/`, and the
-namespaces are the layer names:
+⚠ **The former `Shenora.Media`, `Shenora.IO` and `Shenora.Ipc` projects were removed, so a review looking
+for them under `src/` finds nothing, and that is not the code being gone.** D53/D55 folded the capability tier into `Shenora`, and
+**D65 then moved it again into three layers** — so the folders are `Core/`, `Engine/` and `Modules/`,
+and the namespaces are the layer names:
 
 | Looking for | It is at | Namespace |
 |---|---|---|
