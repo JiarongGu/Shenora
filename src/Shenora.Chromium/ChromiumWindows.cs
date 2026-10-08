@@ -203,41 +203,7 @@ public sealed unsafe class ChromiumWindows
         ChromiumWindow? window = null;
         try
         {
-            if (_serving is null || _origins is null) throw new InvalidOperationException("The Chromium shell has not started.");
-            window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls,
-                w => CloseGuard?.Invoke(w.Name) ?? true, GeometryFor(name, options))
-            {
-                Background = options.BackgroundColor ?? _options.Window.BackgroundColor,
-                SchemeDark = _colorSchemes is { } schemes ? () => ChromiumColorSchemes.Dark(schemes.Scheme, SystemTheme.IsDark()) : null,
-            };
-            if (name == MainWindowName && Splash is { } splash)
-            {
-                var main = window;
-                var bar = _options.Splash?.TitleBar ?? new SplashTitleBarOptions();
-                var layout = new SplashOverlayLayout(options.FramelessChrome, bar.Height, bar,
-                    kind => CefTask.Post(cef_thread_id_t.TID_UI, () => main.InvokeCaptionButton(kind)),
-                    () => CefTask.Post(cef_thread_id_t.TID_UI, main.ToggleMaximize),
-                    options.BackgroundColor ?? _options.Window.BackgroundColor);
-                // Subscribed BEFORE the check, so a lift between the two still reaches the strip; a splash already gone
-                // (lifted, or its setup failed) leaves the window its own title bar from the start, and no handler.
-                splash.Lifted += main.SplashLifted;
-                if (splash.HasLifted) splash.Lifted -= main.SplashLifted;
-                else if (options.FramelessChrome) main.SplashStrip = bar;
-                window.Opening = handle => splash.WindowOpened(handle, layout);
-                window.Shown = splash.WindowShown;
-                window.Moved = splash.OwnerMoved;
-                window.Painted = splash.WindowPainted;
-                window.Hidden = splash.Abort;   // the tray's close: a splash left over the desktop would cover it
-            }
-            if (name == MainWindowName && MainShown is { } mainShown)
-            {
-                var splashShown = window.Shown;
-                window.Shown = () =>
-                {
-                    splashShown?.Invoke();
-                    AppCallback.Run(mainShown, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] A main-window-shown hook failed", LogLevel.Warning, ex));
-                };
-            }
+            window = NewWindow(name, options);
             _open[name] = window;
 
             var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
@@ -256,6 +222,51 @@ public sealed unsafe class ChromiumWindows
         }
     }
 
+    /// <summary>The window, built and wired as the shell opens it — the main window to its splash and its shown hook —
+    /// but neither registered nor opened.</summary>
+    internal ChromiumWindow NewWindow(string name, ChromiumWindowOptions options)
+    {
+        if (_serving is null || _origins is null) throw new InvalidOperationException("The Chromium shell has not started.");
+        var window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls,
+            w => CloseGuard?.Invoke(w.Name) ?? true, GeometryFor(name, options))
+        {
+            Background = options.BackgroundColor ?? _options.Window.BackgroundColor,
+            SchemeDark = _colorSchemes is { } schemes ? () => ChromiumColorSchemes.Dark(schemes.Scheme, SystemTheme.IsDark()) : null,
+        };
+        if (name == MainWindowName && Splash is { } splash)
+        {
+            var main = window;
+            var bar = _options.Splash?.TitleBar ?? new SplashTitleBarOptions();
+            var layout = new SplashOverlayLayout(options.FramelessChrome, bar.Height, bar,
+                kind => CefTask.Post(cef_thread_id_t.TID_UI, () => main.InvokeCaptionButton(kind)),
+                () => CefTask.Post(cef_thread_id_t.TID_UI, main.ToggleMaximize),
+                options.BackgroundColor ?? _options.Window.BackgroundColor);
+            // Subscribed BEFORE the check, so a lift between the two still reaches the strip; a splash already gone
+            // (lifted, or its setup failed) leaves the window its own title bar from the start, and no handler.
+            splash.Lifted += main.SplashLifted;
+            if (splash.HasLifted) splash.Lifted -= main.SplashLifted;
+            else if (options.FramelessChrome) main.SplashStrip = bar;
+            window.Opening = handle => splash.WindowOpened(handle, layout);
+            window.Shown = splash.WindowShown;
+            window.Moved = splash.OwnerMoved;
+            window.Painted = splash.WindowPainted;
+            window.Hidden = splash.Abort;   // the tray's close: a splash left over the desktop would cover it
+            // A page that is not there lifts it, held or not. Raised on CEF's IO thread, and the lift can wait on the
+            // card's window: posted to the UI thread.
+            window.Browser.PageMissed = () => _ui.Post(splash.PageMissing);
+        }
+        if (name == MainWindowName && MainShown is { } mainShown)
+        {
+            var splashShown = window.Shown;
+            window.Shown = () =>
+            {
+                splashShown?.Invoke();
+                AppCallback.Run(mainShown, ex => AppCallback.Log(_log, () => "[Shenora.Chromium] A main-window-shown hook failed", LogLevel.Warning, ex));
+            };
+        }
+        return window;
+    }
+
     /// <summary>A window keeps its size and place across launches when the app has a store for it: the main window's
     /// from the host's options, any other's from its own. Null when it has none.</summary>
     internal ChromiumWindowGeometry? GeometryFor(string name, ChromiumWindowOptions options) =>
@@ -269,19 +280,14 @@ public sealed unsafe class ChromiumWindows
         return options.Path is { } path ? new Uri(root, path) : root;
     }
 
-    /// <summary>A page's bridge, built as its browser is; the main window's page also reaches the splash from here, by its
-    /// ready handshake or, for a page that is not there, by its missing.</summary>
-    internal ChromiumIpcBridge NewBridge(ChromiumBrowser browser)
-    {
-        if (browser.Name == MainWindowName) browser.PageMissed = () => Splash?.PageMissing();
-        return new(new ChromiumIpcBridgeOptions
+    internal ChromiumIpcBridge NewBridge(ChromiumBrowser browser) =>
+        new(new ChromiumIpcBridgeOptions
             {
                 Dispatcher = _dispatcher, EventBus = _events, Shell = _options.Shell, Log = _log,
                 EnterWindow = () => ChromiumBrowserContext.Enter(browser),
                 OnClientReady = browser.Name == MainWindowName ? () => Splash?.PageReady() : null,
             },
             _ui, browser.Push, (delay, work) => CefTask.PostDelayed(cef_thread_id_t.TID_UI, delay, work));
-    }
 
     private void Closed(ChromiumWindow window)
     {

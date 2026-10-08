@@ -18,12 +18,12 @@ namespace Shenora.Tests.Chromium;
 /// </summary>
 public class ChromiumSplashCompositionTests
 {
-    private static (ShenoraApplication App, ChromiumWindows Windows) Compose(ChromiumHostOptions options)
+    private static (ShenoraApplication App, ChromiumWindows Windows) Compose(ChromiumHostOptions options, CefUiDispatcher? ui = null)
     {
         var builder = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions { ApplicationName = "Splash test" });
         builder.UseChromium(options);
         var app = builder.Build();
-        var ui = new CefUiDispatcher(_ => true, () => true);
+        ui ??= new CefUiDispatcher(_ => true, () => true);
         ui.MarkReady();
         return (app, new ChromiumWindows(options, ui, app.Services.GetRequiredService<IMessageDispatcher>(), null, null, new ShellLauncher()));
     }
@@ -125,12 +125,36 @@ public class ChromiumSplashCompositionTests
         }
     }
 
-    // A page load in the named window that neither the bundle nor the app's routes can answer.
+    // The miss reaches the splash on CEF's IO thread, where its lift could block on the card's window: it is posted to
+    // the UI thread, and nothing lifts until that runs.
+    [Fact]
+    public async Task A_missing_page_lifts_the_splash_from_the_UI_thread_not_the_IO_thread()
+    {
+        var queued = new Queue<Action>();
+        var ui = new CefUiDispatcher(work => { queued.Enqueue(work); return true; }, () => false);
+        var (app, windows) = Compose(new ChromiumHostOptions { SingleInstance = null }, ui);
+        using (app)
+        {
+            windows.Initialize(app, isDevelopment: false);
+            var surface = new RecordingSurface();
+            using var session = new SplashSession(new ChromiumSplashOptions { FadeOut = TimeSpan.Zero }, "App", null, app.Services, null,
+                () => surface, new FakeTimeProvider(), null, null);
+            windows.Splash = session;
+            session.Start(new ChromiumWindowGeometry.Plan(400, 300, 0, 0, false), []);
+            session.WindowOpened(1, new SplashOverlayLayout(false, 32, new SplashTitleBarOptions(), null, null));
+
+            await Miss(windows, ChromiumWindows.MainWindowName);
+            Assert.False(surface.Disposed);
+            while (queued.TryDequeue(out var work)) work();
+            Assert.True(surface.Disposed);
+        }
+    }
+
+    // A page load in the named window, built as the shell builds it, that neither the bundle nor the app's routes can
+    // answer.
     private static async Task Miss(ChromiumWindows windows, string name)
     {
-        var origins = ChromiumOrigins.For("app.local", null, isDevelopment: false);
-        var window = new ChromiumWindow(name, new ChromiumWindowOptions(), new ChromiumServing(null, origins, new ChromiumInterceptor()), origins,
-            windows.NewBridge, _ => { }, null);
+        var window = windows.NewWindow(name, new ChromiumWindowOptions());
         var request = new WebViewResourceRequest { Uri = new Uri("https://app.local/missing"), Method = "GET", Headers = new Dictionary<string, string>() };
         var response = await window.Browser.ServeAsync(ChromiumRoute.BundlePage, request, CancellationToken.None);
         Assert.Equal(404, response.StatusCode);
