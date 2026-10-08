@@ -1000,9 +1000,26 @@ sealed class Shenora.Core.Shell.WindowStateOptions
   public int MinVisibleHeight { get; init; }
   public int MinVisibleWidth { get; init; }
   public int MinWidth { get; init; }
+sealed class Shenora.Core.WebView.EmbeddedResourceProvider : Shenora.Core.WebView.IWebViewResourceProvider
+  public .ctor(Shenora.Core.WebView.EmbeddedResourceProviderOptions options)
+  public System.IO.Stream? GetResourceStream(string virtualPath)
+  public bool CanServe { get; }
+  public bool Exists(string virtualPath)
+  public bool IsEmbedded { get; }
+  public void BeginWarmup()
+sealed class Shenora.Core.WebView.EmbeddedResourceProviderOptions
+  public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
+  public bool PreferFiles { get; init; }
+  public required System.Reflection.Assembly Assembly { get; init; }
+  public required string ResourcePrefix { get; init; }
+  public string? FileFallbackDirectory { get; init; }
 interface Shenora.Core.WebView.IWebViewInterceptor
   public abstract Shenora.Core.WebView.WebViewRangeDelivery RangeDelivery { get; }
   public abstract System.IDisposable Use(Shenora.Core.WebView.WebViewResourceMiddleware middleware)
+interface Shenora.Core.WebView.IWebViewResourceProvider
+  public abstract System.IO.Stream? GetResourceStream(string virtualPath)
+  public abstract bool Exists(string virtualPath)
+  public virtual void BeginWarmup()
 struct Shenora.Core.WebView.WebViewByteRange : System.IEquatable<Shenora.Core.WebView.WebViewByteRange>
   public .ctor(long From, long To)
   public bool Equals(Shenora.Core.WebView.WebViewByteRange other)

@@ -1,6 +1,7 @@
 using System.Reflection;
 using Shenora.Tests.TestSupport;
 using Shenora.Windows;
+using Shenora.Core.WebView;
 
 using Shenora;
 namespace Shenora.Tests.WebView2;
@@ -45,6 +46,16 @@ public class EmbeddedResourceProviderTests
         var provider = Embedded();
         Assert.Contains("shenora-dotted-filename", ReadAll(provider.GetResourceStream("vendor.min.js")));
     }
+
+    // MSBuild makes every FOLDER of an embedded file an identifier (measured: my-lib → my_lib, 1.0 → _1._0, "a b" →
+    // a_b, -lead → _lead, 日本 kept) and keeps the file name as it is. Turning slashes into dots alone missed them all.
+    [Theory]
+    [InlineData("my-lib/1.0/x-1.js", "shenora-dashed-folder")]
+    [InlineData("a b/c d.js", "shenora-spaced-folder")]
+    [InlineData("-lead/a.js", "shenora-lead-folder")]
+    [InlineData("日本/字.js", "shenora-cjk-folder")]
+    public void Folders_resolve_as_MSBuild_names_them(string path, string marker) =>
+        Assert.Contains(marker, ReadAll(Embedded().GetResourceStream(path)));
 
     [Fact]
     public void Lookups_normalize_case_slashes_and_leading_separators()

@@ -1,13 +1,15 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Reflection;
+using System.Text;
 using Microsoft.Extensions.Logging;
 
-namespace Shenora.Windows;
+namespace Shenora.Core.WebView;
 
 /// <summary>
-/// Serves the packaged frontend bundle to <see cref="WebViewHost"/>'s virtual host. 🔴 Implementations
-/// must be fast and non-blocking: the virtual-host path serves the MAIN DOCUMENT synchronously on the
-/// UI thread, so a stream here comes from memory or an already-warm cache, never a slow device.
+/// Serves the packaged frontend bundle to a shell, at its app origin. 🔴 Implementations must be fast and
+/// non-blocking: the WebView2 shell serves the MAIN DOCUMENT from it synchronously on its UI thread, so a
+/// stream here comes from memory or an already-warm cache, never a slow device.
 /// </summary>
 public interface IWebViewResourceProvider
 {
@@ -88,7 +90,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         // A provider that can serve NOTHING is reported here but NOT rejected: dev mode navigates to
         // the Vite DevUrl, so the provider is legitimately never consulted and a fresh clone has an
         // empty wwwroot. The loud failure belongs where the host COMMITS to serving the bundle —
-        // WebViewHost.AssertBundleServable.
+        // the WebView2 shell's start-up check of its start document.
         CanServe = IsEmbedded || fileMode;
         if (!CanServe)
         {
@@ -99,7 +101,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
                     ? "that assembly embeds NO resources at all — check the <EmbeddedResource> item group"
                     : "available manifest prefixes: " + string.Join(", ",
                         available.Select(TopTwoSegments).Distinct(StringComparer.OrdinalIgnoreCase).Order().Take(10));
-                return $"[Shenora.Windows] Resource provider: SERVES NOTHING — no embedded resources match " +
+                return $"[Shenora.Core.WebView] Resource provider: SERVES NOTHING — no embedded resources match " +
                        $"'{options.ResourcePrefix}' in '{options.Assembly.GetName().Name}', and no usable " +
                        $"{nameof(EmbeddedResourceProviderOptions.FileFallbackDirectory)} is configured " +
                        $"(PreferFiles={options.PreferFiles}, directory='{options.FileFallbackDirectory ?? "<null>"}'). " +
@@ -109,8 +111,8 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         }
 
         Log(() => IsEmbedded
-            ? $"[Shenora.Windows] Resource provider: EMBEDDED ({_manifest.Count} resources under {options.ResourcePrefix})"
-            : $"[Shenora.Windows] Resource provider: FILE-BASED ({options.FileFallbackDirectory ?? "no directory configured"})");
+            ? $"[Shenora.Core.WebView] Resource provider: EMBEDDED ({_manifest.Count} resources under {options.ResourcePrefix})"
+            : $"[Shenora.Core.WebView] Resource provider: FILE-BASED ({options.FileFallbackDirectory ?? "no directory configured"})");
     }
 
     /// <summary>
@@ -129,7 +131,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
     /// <see cref="EmbeddedResourceProviderOptions.ResourcePrefix"/> and no usable
     /// <see cref="EmbeddedResourceProviderOptions.FileFallbackDirectory"/> exists — so every request
     /// would 404. Legitimate when the page loads from a dev URL, fatal when the bundle IS the document
-    /// (<see cref="WebViewHost.AssertBundleServable"/>).
+    /// (the WebView2 shell refuses to start over it).
     /// </summary>
     public bool CanServe { get; }
 
@@ -151,10 +153,10 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
                 }
                 catch (Exception ex)
                 {
-                    Log(() => $"[Shenora.Windows] Warmup failed for {name}", ex);
+                    Log(() => $"[Shenora.Core.WebView] Warmup failed for {name}", ex);
                 }
             }
-            Log(() => $"[Shenora.Windows] Resource warmup complete ({_cache.Count} cached)");
+            Log(() => $"[Shenora.Core.WebView] Resource warmup complete ({_cache.Count} cached)");
         });
     }
 
@@ -169,7 +171,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
             if (_options.FileFallbackDirectory is not { Length: > 0 } root) return null;
             if (ResolveContained(root, virtualPath) is not { } filePath)
             {
-                Log(() => $"[Shenora.Windows] Rejected out-of-root resource path: {virtualPath}");
+                Log(() => $"[Shenora.Core.WebView] Rejected out-of-root resource path: {virtualPath}");
                 return null;
             }
             if (!File.Exists(filePath)) return null;
@@ -181,7 +183,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
             }
             catch (Exception ex)
             {
-                Log(() => $"[Shenora.Windows] File read failed for {virtualPath}", ex);
+                Log(() => $"[Shenora.Core.WebView] File read failed for {virtualPath}", ex);
                 return null;
             }
         }
@@ -195,7 +197,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.Windows] Resource load failed for {virtualPath}", ex);
+            Log(() => $"[Shenora.Core.WebView] Resource load failed for {virtualPath}", ex);
             return null;
         }
     }
@@ -236,9 +238,45 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         return second < 0 ? manifestName : manifestName[..second];
     }
 
-    /// <summary>Deterministic virtual-path → manifest-name mapping (slashes become dots).</summary>
-    internal string ResourceName(string normalizedVirtualPath) =>
-        _options.ResourcePrefix + "." + normalizedVirtualPath.Replace('/', '.');
+    /// <summary>The manifest name for a path: <c>/</c> between folders becomes <c>.</c>, and each folder is named as
+    /// MSBuild names it (<see cref="ManifestFolder"/>).</summary>
+    internal string ResourceName(string normalizedVirtualPath)
+    {
+        var slash = normalizedVirtualPath.LastIndexOf('/');
+        if (slash < 0) return _options.ResourcePrefix + "." + normalizedVirtualPath;
+        var folders = normalizedVirtualPath[..slash].Split('/').Select(ManifestFolder);
+        return _options.ResourcePrefix + "." + string.Join('.', folders) + "." + normalizedVirtualPath[(slash + 1)..];
+    }
+
+    /// <summary>
+    /// A folder as MSBuild writes it into a manifest name: each dot-separated part made an identifier — a
+    /// character no identifier holds becomes <c>_</c>, and a part that cannot start one gains a leading
+    /// <c>_</c> (<c>my-lib</c> → <c>my_lib</c>, <c>1.0</c> → <c>_1._0</c>, <c>-lead</c> → <c>_lead</c>).
+    /// File names are kept as they are.
+    /// </summary>
+    internal static string ManifestFolder(string folder) =>
+        string.Join('.', folder.Split('.').Select(part =>
+        {
+            if (part.Length == 0) return part;
+            var name = new StringBuilder(part.Length + 1);
+            if (IsIdentifierStart(part[0])) name.Append(part[0]);
+            else
+            {
+                name.Append('_');
+                if (IsIdentifierPart(part[0])) name.Append(part[0]);
+            }
+            foreach (var c in part.AsSpan(1)) name.Append(IsIdentifierPart(c) ? c : '_');
+            return name.ToString();
+        }));
+
+    private static bool IsIdentifierStart(char c) =>
+        char.IsLetter(c) || char.GetUnicodeCategory(c) == UnicodeCategory.ConnectorPunctuation;
+
+    private static bool IsIdentifierPart(char c) => char.GetUnicodeCategory(c) is UnicodeCategory.UppercaseLetter
+        or UnicodeCategory.LowercaseLetter or UnicodeCategory.TitlecaseLetter or UnicodeCategory.ModifierLetter
+        or UnicodeCategory.OtherLetter or UnicodeCategory.LetterNumber or UnicodeCategory.DecimalDigitNumber
+        or UnicodeCategory.ConnectorPunctuation or UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark
+        or UnicodeCategory.Format;
 
     private static string Normalize(string path) => path.Replace('\\', '/').TrimStart('/');
 

@@ -6,6 +6,7 @@ using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
+using Shenora.Core.WebView;
 
 namespace Shenora.Sample.Desktop;
 

@@ -81,19 +81,6 @@ sealed class Shenora.Windows.DropZoneModule : Shenora.Core.Ipc.ModuleBase
   public const string UnregisterType = "UNREGISTER"
   public const string UpdateType = "UPDATE"
   public override string ModuleName { get; }
-sealed class Shenora.Windows.EmbeddedResourceProvider : Shenora.Windows.IWebViewResourceProvider
-  public .ctor(Shenora.Windows.EmbeddedResourceProviderOptions options)
-  public System.IO.Stream? GetResourceStream(string virtualPath)
-  public bool CanServe { get; }
-  public bool Exists(string virtualPath)
-  public bool IsEmbedded { get; }
-  public void BeginWarmup()
-sealed class Shenora.Windows.EmbeddedResourceProviderOptions
-  public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
-  public bool PreferFiles { get; init; }
-  public required System.Reflection.Assembly Assembly { get; init; }
-  public required string ResourcePrefix { get; init; }
-  public string? FileFallbackDirectory { get; init; }
 sealed class Shenora.Windows.FileDialogs : Shenora.Modules.FileDialog.IFileDialogs
   public .ctor(Shenora.Windows.FileDialogsOptions? options = null, Microsoft.Extensions.Logging.ILogger<Shenora.Windows.FileDialogs>? logger = null)
   public System.Threading.Tasks.Task<Shenora.Modules.FileDialog.FileDialogResult> OpenFileAsync(Shenora.Modules.FileDialog.OpenFileOptions? options = null)
@@ -117,10 +104,6 @@ interface Shenora.Windows.IFormInteraction : Shenora.Core.Shell.IUiInteraction
   public abstract System.IntPtr GetMainFormHandle()
   public abstract System.Windows.Forms.Form? GetMainForm()
   public abstract void SetMainForm(System.Windows.Forms.Form form)
-interface Shenora.Windows.IWebViewResourceProvider
-  public abstract System.IO.Stream? GetResourceStream(string virtualPath)
-  public abstract bool Exists(string virtualPath)
-  public virtual void BeginWarmup()
 class Shenora.Windows.OptimizedForm : System.Windows.Forms.Form, Shenora.Windows.IAppMaximizable
   [Browsable(false)] [DesignerSerializationVisibility(0)] public Shenora.Windows.CaptionButtonColors? CaptionButtonColors { get; set; }
   [Browsable(false)] [DesignerSerializationVisibility(0)] public System.Action<Shenora.Windows.CaptionButtonState>? CaptionButtonStateChanged { get; set; }
@@ -203,7 +186,7 @@ static class Shenora.Windows.WebView2BuilderExtensions
 sealed class Shenora.Windows.WebView2SessionBrowserOptions : Shenora.Core.Sessions.SessionBrowserOptions, System.IEquatable<Shenora.Windows.WebView2SessionBrowserOptions>
   protected override System.Type EqualityContract { get; }
   protected override bool PrintMembers(System.Text.StringBuilder builder)
-  public Shenora.Windows.IWebViewResourceProvider? ResourceProvider { get; init; }
+  public Shenora.Core.WebView.IWebViewResourceProvider? ResourceProvider { get; init; }
   public System.Collections.Generic.IReadOnlyList<Shenora.Windows.WebViewFolderMapping> FolderMappings { get; init; }
   public bool Equals(Shenora.Windows.WebView2SessionBrowserOptions? other)
   public bool IsDevelopment { get; init; }
@@ -258,8 +241,8 @@ sealed class Shenora.Windows.WebViewHost
 sealed class Shenora.Windows.WebViewHostOptions
   public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
   public Shenora.Core.Shell.IColorScheme? ColorScheme { get; init; }
+  public Shenora.Core.WebView.IWebViewResourceProvider? ResourceProvider { get; init; }
   public Shenora.Core.WebView.WebViewPipeline? Pipeline { get; init; }
-  public Shenora.Windows.IWebViewResourceProvider? ResourceProvider { get; init; }
   public System.Action<Microsoft.Web.WebView2.Core.CoreWebView2Settings>? ConfigureSettings { get; init; }
   public System.Collections.Generic.IReadOnlyDictionary<string, object> InjectedGlobals { get; init; }
   public System.Collections.Generic.IReadOnlyList<Microsoft.Web.WebView2.Core.CoreWebView2PermissionKind> PermittedPermissions { get; init; }

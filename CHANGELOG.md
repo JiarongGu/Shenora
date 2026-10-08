@@ -38,6 +38,10 @@ at the first list and missed five more breaking changes.
   kit's clients send names; a page that hand-wrote numbers must send the names. And a value with no name (an app's enum
   left at a default no member has) no longer crosses as a number on the way out: a notification carrying it is dropped
   as unserializable (logged by module and type), and a response carrying it answers `UNKNOWN_ERROR`.
+- **`IWebViewResourceProvider`, `EmbeddedResourceProvider` and `EmbeddedResourceProviderOptions` moved from
+  `Shenora.Windows` to `Shenora.Core.WebView`** (package `Shenora`), unchanged in shape, so a shell other than WebView2
+  can serve a bundle through them. Change `using Shenora.Windows;` to `using Shenora.Core.WebView;` where they are
+  named. The provider's log lines now begin `[Shenora.Core.WebView]`.
 
 ### Changed
 
@@ -116,6 +120,10 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **An embedded file under a folder whose name MSBuild rewrites was not found.** MSBuild names every folder of an
+  embedded file as an identifier (`my-lib` → `my_lib`, `1.0` → `_1._0`, `a b` → `a_b`), and `EmbeddedResourceProvider`
+  looked the folder up as written, so `assets/my-lib/x.js` answered 404 in a packaged build only. The lookup applies
+  MSBuild's rule; file names were never rewritten, which is why a plain Vite build (`assets/index-abc.js`) was fine.
 - **A later launch that arrived while the app shut down was lost.** The single-instance channel stayed open until the
   guard was released, last in shutdown, so the launch connected, handed over its arguments, reported success and exited,
   and nothing came forward; no instance started either. Both desktop shells now stop listening as their loop ends, and

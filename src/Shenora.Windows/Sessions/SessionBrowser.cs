@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using Shenora.Core.Events;
 using Shenora.Core.Sessions;
+using Shenora.Core.WebView;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
 namespace Shenora.Windows;
