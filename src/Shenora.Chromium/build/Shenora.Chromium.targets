@@ -15,6 +15,8 @@
     cannot start. Set ShenoraChromiumLayout=false to build without the engine (a compile-only CI step), and
     ShenoraChromiumLocales (such as "zh-CN;fr") to lay out only those of CEF's locales, and en-US. The app's own
     icon: ApplicationIcon (.ico) on Windows, ShenoraChromiumBundleIcon (.icns) for the macOS bundle.
+    ShenoraChromiumPublishFolders=true (Windows, publish only; off by default) publishes MyApp.exe, MyApp.dll and
+    chrome_elf.dll at the root, CEF in engine\ and everything the SDK publishes in lib\, instead of all side by side.
 
       ShenoraChromiumMacLayout  after Build (and Publish) on macOS: bundle/<App>.app beside the output, whose
                                 Contents/MacOS holds the app with the .NET apphost as <App>, and whose
@@ -343,7 +345,11 @@ public sealed class ShenoraChromiumStampLauncher : Task
     <ShenoraCefPublish Condition="'$(_ShenoraCefNeeded)' == 'true'" Source="$(ShenoraCefRoot)\$(_ShenoraCefStaging)" Destination="$(ShenoraCefDist)" />
   </Target>
 
-  <Target Name="_ShenoraChromiumLayoutInputs" DependsOnTargets="ShenoraChromiumFetchCef">
+  <Target Name="_ShenoraChromiumLayoutInputs" DependsOnTargets="ShenoraChromiumFetchCef;_ShenoraChromiumLayoutItems" />
+
+  <!-- What a layout copies, from $(ShenoraCefDist): no fetch here, so a layout entered through the MSBuild task (after
+       the fetch ran) or a test over a fake distribution can compute it. -->
+  <Target Name="_ShenoraChromiumLayoutItems">
     <PropertyGroup>
       <_ShenoraAppExe>$(AssemblyName.Substring(0, $([MSBuild]::Subtract($(AssemblyName.Length), 4))))</_ShenoraAppExe>
       <!-- A GUI app gets the GUI launcher, a console app the console one; the shim answers both. -->
@@ -374,11 +380,50 @@ public sealed class ShenoraChromiumStampLauncher : Task
   </Target>
 
   <Target Name="ShenoraChromiumPublishLayout" AfterTargets="Publish" DependsOnTargets="_ShenoraChromiumLayoutInputs" Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
-    <Copy SourceFiles="@(_ShenoraCefRuntime)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(PublishDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(ShenoraCefDist)\Release\$(_ShenoraBootstrap)" DestinationFiles="$(PublishDir)$(_ShenoraAppExe).exe" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(PublishDir)$(_ShenoraAppExe).dll" SkipUnchangedFiles="true" />
-    <ShenoraChromiumStampLauncher Executable="$(PublishDir)$(_ShenoraAppExe).exe" From="$(PublishDir)$(AssemblyName).dll" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="_ShenoraChromiumWindowsInto" Properties="_ShenoraWindowsInto=$(PublishDir);_ShenoraWindowsPublish=true" />
+  </Target>
+
+  <!-- The Windows layout into $(_ShenoraWindowsInto). A publish with ShenoraChromiumPublishFolders puts CEF in engine\
+       (chrome_elf.dll stays at the root: CEF's launcher imports it) and reads the app from lib\; otherwise all of it
+       sits beside the app. -->
+  <Target Name="_ShenoraChromiumWindowsInto" DependsOnTargets="_ShenoraChromiumLayoutItems">
+    <PropertyGroup>
+      <_ShenoraFolders Condition="'$(_ShenoraWindowsPublish)' == 'true' and '$(ShenoraChromiumPublishFolders)' == 'true'">true</_ShenoraFolders>
+      <_ShenoraEngineInto Condition="'$(_ShenoraFolders)' == 'true'">$(_ShenoraWindowsInto)engine\</_ShenoraEngineInto>
+      <_ShenoraEngineInto Condition="'$(_ShenoraFolders)' != 'true'">$(_ShenoraWindowsInto)</_ShenoraEngineInto>
+      <_ShenoraAppInto Condition="'$(_ShenoraFolders)' == 'true'">$(_ShenoraWindowsInto)lib\</_ShenoraAppInto>
+      <_ShenoraAppInto Condition="'$(_ShenoraFolders)' != 'true'">$(_ShenoraWindowsInto)</_ShenoraAppInto>
+    </PropertyGroup>
+    <ItemGroup>
+      <_ShenoraCefElf Include="@(_ShenoraCefRuntime)" Condition="'%(Filename)%(Extension)' == 'chrome_elf.dll'" />
+      <_ShenoraCefEngine Include="@(_ShenoraCefRuntime)" Exclude="@(_ShenoraCefElf)" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ShenoraCefEngine)" DestinationFolder="$(_ShenoraEngineInto)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ShenoraCefElf)" DestinationFolder="$(_ShenoraWindowsInto)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(_ShenoraEngineInto)%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ShenoraCefDist)\Release\$(_ShenoraBootstrap)" DestinationFiles="$(_ShenoraWindowsInto)$(_ShenoraAppExe).exe" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(_ShenoraWindowsInto)$(_ShenoraAppExe).dll" SkipUnchangedFiles="true" />
+    <ShenoraChromiumStampLauncher Executable="$(_ShenoraWindowsInto)$(_ShenoraAppExe).exe" From="$(_ShenoraAppInto)$(AssemblyName).dll" />
+  </Target>
+
+  <!-- ShenoraChromiumPublishFolders: everything the SDK publishes goes into lib\. Its own item list, rewritten before it
+       copies, rather than files moved after: `dotnet publish -o` makes PublishDir global, so it cannot be pointed at
+       lib\ itself. -->
+  <Target Name="_ShenoraChromiumPublishIntoLib" AfterTargets="ComputeResolvedFilesToPublishList"
+          Condition="'$(ShenoraChromiumLayout)' == 'true' and '$(ShenoraChromiumPublishFolders)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
+    <ItemGroup>
+      <ResolvedFileToPublish>
+        <RelativePath>lib\%(ResolvedFileToPublish.RelativePath)</RelativePath>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+  <!-- The deps file is written straight to PublishDepsFilePath, which the SDK defaults inside this target. -->
+  <Target Name="_ShenoraChromiumPublishDepsIntoLib" BeforeTargets="GeneratePublishDependencyFile"
+          Condition="'$(ShenoraChromiumLayout)' == 'true' and '$(ShenoraChromiumPublishFolders)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
+    <PropertyGroup>
+      <PublishDepsFilePath Condition="'$(PublishDepsFilePath)' == '' and '$(PublishSingleFile)' != 'true'">$(PublishDir)lib\$(ProjectDepsFileName)</PublishDepsFilePath>
+    </PropertyGroup>
   </Target>
 
   <!-- Linux: flat, as Windows': CEF's runtime and resources beside the app, the .NET apphost also as <App>, and the kit's
