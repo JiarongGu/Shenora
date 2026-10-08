@@ -109,7 +109,12 @@ identifiers are built and packaged but have not yet run on that hardware.
 ```csharp
 builder.UseChromium(new ChromiumHostOptions
 {
-    ContentRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot"),   // packaged
+    // packaged: the page embedded in the app's assembly (<EmbeddedResource Include="wwwroot\**" WithCulture="false" />)
+    ResourceProvider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
+    {
+        Assembly = typeof(Program).Assembly,
+        ResourcePrefix = "MyApp.wwwroot",
+    }),
     DevUrl = "http://localhost:3901",                                    // development
     Window = new ChromiumWindowOptions { Title = "My App", Width = 1000, Height = 760, Path = "index.html" },
     Shell = new ShellInfo
@@ -120,6 +125,9 @@ builder.UseChromium(new ChromiumHostOptions
 });
 ```
 
+- **The page is embedded in the app**, so the app stays one assembly plus the engine. `ContentRoot` serves a folder
+  beside the app instead; set one or the other. A page load that finds nothing shows the bundle's `404.html`, or the
+  kit's page (`NotFoundPage`).
 - **`UseChromium` in place of `UseWindows`, on the thread that then calls `Run`.** Run from its layout, it starts
   Chromium at once, while the rest of the app is composed (D87).
 - **The window is frameless** (`FramelessChrome`), so the page draws its title bar: an element with

@@ -3,6 +3,7 @@ using Shenora.Chromium;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
 using Shenora.Core.Shell;
+using Shenora.Core.WebView;
 using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
 using Shenora.Sample.Logic;
@@ -31,9 +32,14 @@ internal static class Program
         IEventBus? events = null;
         builder.UseChromium(new ChromiumHostOptions
         {
-            // Packaged: the page built into wwwroot beside the app. In development (DOTNET_ENVIRONMENT=Development,
-            // or a .dev file beside the app) the page comes from the dev server instead, with hot reload.
-            ContentRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot"),
+            // Packaged: the page built into the app's assembly (wwwroot, embedded by the csproj). In development
+            // (DOTNET_ENVIRONMENT=Development, or a .dev file beside the app) the page comes from the dev server
+            // instead, with hot reload.
+            ResourceProvider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
+            {
+                Assembly = typeof(Program).Assembly,
+                ResourcePrefix = "Shenora.Sample.Chromium.wwwroot",
+            }),
             DevUrl = "http://localhost:3901",   // samples/Shenora.Sample.Web: npm run dev:chromium
             Window = new ChromiumWindowOptions
             {

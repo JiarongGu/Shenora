@@ -47,9 +47,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The page: `npm run build:chromium` in samples/Shenora.Sample.Web emits here (a gitignored build artifact).
-         Empty in a fresh clone: run the dev server instead, or build the page first. -->
-    <None Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The page: `npm run build:chromium` in samples/Shenora.Sample.Web emits here (a gitignored build artifact), and
+         the build embeds it in the app's assembly. Empty in a fresh clone: run the dev server instead, or build the page
+         first. WithCulture="false": a name like msg.fr.json would otherwise go to a satellite assembly, out of the
+         bundle. -->
+    <EmbeddedResource Include="wwwroot\**" WithCulture="false" />
   </ItemGroup>
 
   <Import Project="..\..\src\Shenora.Chromium\build\Shenora.Chromium.targets" />
