@@ -118,6 +118,11 @@ internal static class WebViewBundleServing
         }
     }
 
+    /// <summary>A page load, as the Chromium shell counts one: a document requested with <c>GET</c> (a form's
+    /// <c>POST</c> is not). WebView2's document context includes a frame's document.</summary>
+    internal static bool IsPageLoad(CoreWebView2WebResourceContext context, string? method) =>
+        context == CoreWebView2WebResourceContext.Document && string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// What a request on the bundle's host gets when neither the bundle nor the app's routes answered: a page load, the
     /// bundle's <paramref name="notFoundPage"/> with status 404, else the kit's page; anything else, the fixed plain 404.

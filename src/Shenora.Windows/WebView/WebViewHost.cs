@@ -315,7 +315,9 @@ public sealed class WebViewHost
             if (virtualHostPrefix is not null && uri.StartsWith(virtualHostPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 // A page load that finds nothing shows the not-found page; read here, on the UI thread.
-                var pageLoad = args.ResourceContext == CoreWebView2WebResourceContext.Document;
+                string? method = null;
+                try { method = args.Request.Method; } catch { /* a torn-down request: no page load */ }
+                var pageLoad = WebViewBundleServing.IsPageLoad(args.ResourceContext, method);
                 if (!intercepting)
                 {
                     WebViewBundleServing.Serve(args, _webView.CoreWebView2.Environment,
@@ -335,8 +337,17 @@ public sealed class WebViewHost
                 // the virtual host itself and the page sees a network error, not a 404.
                 var provider = _options.ResourceProvider!;
                 var prefix = virtualHostPrefix;
-                ServeInterceptor(args, uri, () => WebViewBundleServing.Miss(pageLoad, provider, _options.NotFoundPage,
-                    WebViewBundleServing.ResolveBundlePath(uri, prefix), Warn));
+                WebViewResourceResponse Declined() => WebViewBundleServing.Miss(pageLoad, provider, _options.NotFoundPage,
+                    WebViewBundleServing.ResolveBundlePath(uri, prefix), Warn);
+                // Built here, not where HasRoutes was read: the last route can go between the two, and the host still
+                // answers then — synchronously, as Serve does when there are no routes.
+                if (_interceptor.Build() is not { } pipeline)
+                {
+                    try { args.Response = WebViewBundleServing.ToWebView2(_webView.CoreWebView2.Environment, Declined()); }
+                    catch { /* the webview may be tearing down */ }
+                    return;
+                }
+                ServeAsync(args, uri, pipeline, defaultCacheControl: null, "interceptor", whenDeclined: Declined);
                 return;
             }
 
@@ -365,15 +376,11 @@ public sealed class WebViewHost
     /// Hand a request to the D45 middleware pipeline. Composed once per request, so a route registered
     /// while this one is in flight cannot half-apply; declining leaves the request to WebView2.
     /// </summary>
-    /// <param name="args">The intercepted request.</param>
-    /// <param name="uri">Its raw URI.</param>
-    /// <param name="whenDeclined">What a request the pipeline declines gets instead of WebView2's own handling: on the
-    /// bundle's host, the not-found page for a page load and the plain 404 otherwise. Runs on a thread-pool thread.</param>
-    private void ServeInterceptor(CoreWebView2WebResourceRequestedEventArgs args, string uri, Func<WebViewResourceResponse>? whenDeclined = null)
+    private void ServeInterceptor(CoreWebView2WebResourceRequestedEventArgs args, string uri)
     {
         // Re-checked: the caller's HasRoutes read and this build are separate moments.
         if (_interceptor.Build() is not { } pipeline) return;
-        ServeAsync(args, uri, pipeline, defaultCacheControl: null, "interceptor", whenDeclined: whenDeclined);
+        ServeAsync(args, uri, pipeline, defaultCacheControl: null, "interceptor");
     }
 
     /// <summary>

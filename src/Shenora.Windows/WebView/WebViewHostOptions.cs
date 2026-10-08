@@ -108,8 +108,9 @@ public sealed class WebViewHostOptions
     /// <summary>
     /// What a page load on <see cref="VirtualHost"/> that finds nothing shows: this path in
     /// <see cref="ResourceProvider"/>'s bundle, answered with status 404. Null, or a bundle without it, shows the kit's
-    /// page (<see cref="WebViewResourceResponse.NotFoundDocument"/>). WebView2 counts a frame's document as a page load
-    /// too. A <c>fetch()</c>, a script or an image that finds nothing still gets the plain 404.
+    /// page (<see cref="WebViewResourceResponse.NotFoundDocument"/>). A page load is a document requested with
+    /// <c>GET</c>, a frame's included. A <c>fetch()</c>, a script, an image or a form's <c>POST</c> that finds nothing
+    /// still gets the plain 404.
     /// </summary>
     public string? NotFoundPage { get; init; } = "404.html";
 

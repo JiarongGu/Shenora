@@ -99,6 +99,17 @@ public class WebViewBundleServingTests
         Assert.Equal("a?b.txt", WebViewBundleServing.ResolveBundlePath("https://app.local/a%3Fb.txt?v=2", Prefix));
     }
 
+    // ── IsPageLoad: a document GET, as on the Chromium shell ──────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(Microsoft.Web.WebView2.Core.CoreWebView2WebResourceContext.Document, "GET", true)]
+    [InlineData(Microsoft.Web.WebView2.Core.CoreWebView2WebResourceContext.Document, "get", true)]
+    [InlineData(Microsoft.Web.WebView2.Core.CoreWebView2WebResourceContext.Document, "POST", false)]   // a form post
+    [InlineData(Microsoft.Web.WebView2.Core.CoreWebView2WebResourceContext.Script, "GET", false)]
+    [InlineData(Microsoft.Web.WebView2.Core.CoreWebView2WebResourceContext.Fetch, "GET", false)]
+    public void A_page_load_is_a_document_GET(Microsoft.Web.WebView2.Core.CoreWebView2WebResourceContext context, string method, bool pageLoad) =>
+        Assert.Equal(pageLoad, WebViewBundleServing.IsPageLoad(context, method));
+
     // ── Miss: what a request the bundle and the app's routes left unanswered gets ─────────────────────────────────
 
     private static string Body(WebViewResourceResponse r) => new StreamReader(r.Content).ReadToEnd();
