@@ -77,6 +77,12 @@ both start CEF through `CefStartup` with one difference: the Views shell runs CE
 `UseChromium` and the runner share; the WinForms host runs CEF's multi-threaded loop, because WinForms owns that
 thread, and each page's IPC is dispatched on the host's thread (`ChromiumEngine`).
 
+**On Windows the sandbox comes from CEF's launcher**, so both hosts start through `bootstrap.exe` (the app's exe)
+and the kit's shim; started any other way (`dotnet <App>.App.dll`) the engine runs unsandboxed and logs a warning.
+Sandboxed, the renderers and the storage service run untrusted and the GPU process low; the network service runs at
+the parent's level, because CEF starts it with `--service-sandbox-type=none` on Windows, and Chromium's
+`NetworkServiceSandbox` feature, switched on, did not change that (measured).
+
 **The page finds its transport because the shell marks the HTML it serves** (D36): a document from the bundle or from
 the app's own pipeline goes out marked (`ChromiumTransport.MarkHtml`), and in development the shell fetches the dev
 server's top-level document itself so that it is marked the same way; the dev server serves everything else.
@@ -276,7 +282,8 @@ Run: gate          ← a launch turned away shows nothing
   the splash the two at its bottom; a maximized window is square. The card draws its own shadow in a margin (a layered
   window gets none from the compositor) and asks for the foreground as it shows, because a non-foreground window opens
   under the foreground one (measured); Windows' documented rules grant that only to a launch allowed to take the
-  foreground, so one started in the background stays under (not yet seen on a real launch: TASKS). The splash over the
+  foreground, so one started in the background stays under, and one a person double-clicks in Explorer comes to the
+  front (measured through the update launcher, 2026-10-08). The splash over the
   window needs none of it: its owner takes the foreground. Measured on Windows 11 at 200 %: the splash at the client
   area exactly (framed) or below the strip and inside the band (frameless); the title bar, the strip and the close
   button answering the main window's hit-test; 0 of 60 samples behind a resize storm 16 ms apart; maximize, restore and

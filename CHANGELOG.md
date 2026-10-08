@@ -53,13 +53,14 @@ at the first list and missed five more breaking changes.
   window gets a title strip until its page reports a title bar of its own (on Linux, until the lift): on Windows the
   window's own caption buttons and hit-test (Snap Layouts included), on macOS the traffic lights and a drag area, on
   Linux a strip the splash draws and hands to the window manager; and Chromium's resize band inside its edges stays
-  clear. With no `Card` nothing shows before the window exists, and CEF
-  starts as the app is composed again (D87). Measured on Windows 11 at 200 %: the splash at the client area exactly
+  clear. With no `Card` nothing shows before the window exists, and CEF starts as the app is composed again (D87).
+  Measured on Windows 11 at 200 %: the splash at the client area exactly
   (framed) or below the strip and inside the band (frameless), the title bar and close button answering the window's
   own hit-test, 0 of 60 samples behind a resize storm, the page beneath at 122 frames a second; on macOS 15, below the
   28-point title bar or the 32-point strip, through a move and into fullscreen, the page at 64 frames a second; on
   Linux (openbox on Xvfb), a drag from the strip moving the window by exactly the drag, a double-click maximizing and
   restoring it, a click on its close button ending the app.
+
 ### Added
 
 - **`ChromiumSplashOptions.Card` (`SplashCardOptions`)**: a small borderless card centred where the main window will
@@ -135,10 +136,11 @@ at the first list and missed five more breaking changes.
   only; without the property the publish is flat, as before. A publish into a folder that holds the other shape
   removes that shape's CEF files (and a flat one, the app left in `lib\`), so a leftover never runs. The shim now
   delay-loads `libcef.dll` and reads either shape, and a missing engine is a message box naming the path it tried,
-  where the launcher used to exit without a word. Such a publish starts through `MyApp.exe` only: `dotnet lib\MyApp.App.dll` does not find CEF. Proven on
-  Windows with a framework-dependent publish, both shapes and a flat build: the page, IPC, the app's 404 page, WebGL
-  on the GPU and the same sandbox levels per process; a self-contained Windows Chromium publish is refused by the SDK
-  with or without it (NETSDK1067), so that combination is unexercised.
+  where the launcher used to exit without a word. Such a publish starts through `MyApp.exe` only:
+  `dotnet lib\MyApp.App.dll` does not find CEF. Proven on Windows with a framework-dependent publish, both shapes
+  and a flat build: the page, IPC, the app's 404 page, WebGL on the GPU and the same sandbox levels per process; a
+  self-contained Windows Chromium publish is refused by the SDK with or without it (NETSDK1067), so that combination
+  is unexercised.
 
 ### Fixed
 

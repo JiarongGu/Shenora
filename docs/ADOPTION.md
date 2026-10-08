@@ -276,7 +276,10 @@ Replace hand-rolled `EnsureCoreWebView2Async` + settings + event wiring with `We
   pages) are `guides/sessions.md` and D38 — one owner rather than a second copy that drifts.
 - **Policies you may not have.** `NewWindowRequested`, `PermissionRequested`, `ProcessFailed` and
   download handling are wired with safe defaults; app hooks fall back to the built-in policy if they
-  throw, because leaving one of those events unanswered is its own bug.
+  throw, because leaving one of those events unanswered is its own bug. A `window.open` or `target=_blank`
+  goes to the user's browser (http and https only), on the Chromium shell too, and so does one to the app's
+  own origin, which that browser cannot load: open an app page in a window of the app's own
+  (`SecondaryWindows`, `ChromiumWindows.Open`).
 - **Init is idempotent and bounded** (`InitTimeout` covers the whole sequence, not each step).
 - HTML is served no-cache while hashed assets are cacheable; keep your bundle's asset hashing.
 

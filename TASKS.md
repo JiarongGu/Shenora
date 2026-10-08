@@ -95,8 +95,9 @@ unexpired profile for that bundle id.
 
 ### 🌐 THE CHROMIUM SHELL — what each OS still lacks (D81–D96)
 
-The shell runs on Windows, macOS and Linux from the published package; how it works is `docs/design/shells.md`,
-and why is D81–D96. What is left is mostly measurement that needs hardware or a person.
+The shell runs on Windows and macOS from the published package, and on Linux from a local feed (the published
+package's Linux helper has not run: see below); how it works is `docs/design/shells.md`, and why is D81–D96. What
+is left is mostly measurement that needs hardware or a person.
 
 **Windows**
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out

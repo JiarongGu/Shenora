@@ -1154,16 +1154,16 @@ docs cite them — so the number is the column to scan.
 
 - **D83 — THE CHROMIUM ENGINE HAS TWO HOSTS, AND THE WINDOWS SHELL DEPENDS ON IT.** `Shenora.Chromium` is
   Chromium-FIRST: a shell on CEF's Views framework for all three desktops, designed around CEF's own ideas
-  rather than the WinForms shell's shape. `Shenora.Windows` offers Chromium as an ENGINE OPTION beside
-  WebView2, so an app changes engines without leaving `OptimizedForm` or `SecondaryWindows`.
+  rather than the WinForms shell's shape. `Shenora.Windows` offers Chromium as an ENGINE OPTION, a `ChromiumView`
+  control beside the WebView2 one (not inside `WebViewHost`, whose options are WebView2 types), so an app changes
+  engines without leaving `OptimizedForm` or `SecondaryWindows`.
   - 🔴 **`Shenora.Windows` → `Shenora.Chromium`, and CEF's bytes arrive only on opt-in.** Every Windows app
     carries the engine's assembly and none carries CEF unless it references the package itself: the
     dependency excludes its build assets. That is D81's boundary: the BYTES, not the assembly.
   - 🔴 **Chromium's local-network checks are OFF in both hosts, for every page.** The pages are the app's own,
     and the checks refuse what the WebView2 shell allows (a loopback server of the app's own, the dev server's
     hot-reload socket) with no prompt the permission handler could answer. D86's browser keeps them on.
-  - **The WinForms engine option is a `ChromiumView` control beside the WebView2 control, not inside
-    `WebViewHost`**, whose options are full of WebView2 types that mean nothing under Chromium.
+  - ⚠ **On Windows both hosts start through CEF's `bootstrap.exe` and the kit's shim, or there is no sandbox.**
   - **`Shenora.Windows` reaches the engine through a small PUBLIC embedding API** — host a browser in any
     parent window — rather than a second `InternalsVisibleTo`; an adopter can embed Chromium the same way.
 
@@ -1173,11 +1173,11 @@ docs cite them — so the number is the column to scan.
   - 🔴 **Why: the client callbacks the kit's translation layer needs exist only there** (D54). In Chrome style
     CEF never calls `on_drag_enter`, so a dropped file's real path is unreachable, which is the capability the
     drop-zone stack exists for.
-  - **Chrome's own UI goes with it, so the shell answers what Chrome's UI would**: downloads are cancelled, as
-    the WebView2 shell's policy does, and every permission prompt gets the WebView2 shell's default (a clipboard
-    read from the app's page allowed, everything else denied), because a prompt left to CEF is IGNORED and
-    the page's promise never settles. Fullscreen stays inside the page unless the host triggers it, and an
-    unresponsive renderer gets no dialog.
+  - **Chrome's own UI goes with it, so the shell answers what Chrome's UI would**: downloads are cancelled (CEF
+    cancels one no handler takes), as the WebView2 shell's policy does, and every permission prompt gets the
+    WebView2 shell's default (a clipboard read from the app's page allowed, everything else denied), because a
+    prompt left to CEF is IGNORED and the page's promise never settles. Fullscreen stays inside the page unless
+    the host triggers it, and an unresponsive renderer gets no dialog.
   - ⚠ **Alloy changes the frame's hit-test** (the render widget answers HTCLIENT over the page's drag area, so
     the window's child subclass defers every non-client answer to CEF's top-level window), and any other
     behaviour measured under Chrome style is re-measured before it is relied on.
@@ -1199,8 +1199,8 @@ docs cite them — so the number is the column to scan.
   production. It is a second process of the app's OWN executable, so an install carries one CEF and CEF's launcher
   sandboxes it as it does the app; an adopter's in-app browser otherwise ships a second CEF build.
   - 🔴 **Why a process of its own: a debugging port reaches every page in its process**, the app page's bridge
-    included. So the port opens only where no app page can be, and a process that holds one keeps the rule both
-    D83 hosts start under: no port, and no command-line switch read, in production.
+    included. So the port opens only where no app page can be, and a process that holds one keeps the rule every
+    app-page process starts under (`CefStartup`): no port, and no command-line switch read, in production.
   - **Its windows are Chrome style, with Chrome's own UI**, not D84's Alloy: none of the kit's translation layer
     runs there, and Chrome's UI answers the downloads and permission prompts D84 has the shell answer. Chromium's
     local-network checks stay ON there, since its pages are the open web; D85's mock keychain applies on macOS.
@@ -1216,7 +1216,8 @@ docs cite them — so the number is the column to scan.
   - 🔴 **Why: the first frame waits on Chromium's GPU process, which starts only once CEF does.** Setting up the
     GPU takes about half a second, in CEF and Electron alike, and the window, the page and the app's own start all
     finish inside that wait; so the app's composition, run before CEF, was the kit's one cost on the first frame's
-    path. Electron wins the same race by running app code inside Chromium's startup.
+    path, and serving the first document faster does not move the first paint. Electron wins the same race by
+    running app code inside Chromium's startup.
   - **The constraints:** `UseChromium` and `Run` on one thread, because CEF's loop runs where CEF started;
     `ChromiumBrowserProcess.Run`, and any mode that never shows a window, decided before `UseChromium`, which
     otherwise pays CEF's start; a Chromium that will not start is still reported by `Run`; an app that composes
