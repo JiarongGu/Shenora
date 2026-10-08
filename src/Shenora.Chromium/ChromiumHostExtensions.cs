@@ -47,6 +47,9 @@ public static class ChromiumHostExtensions
         if (options.Window.StateStore is not null)
             throw new ArgumentException($"The main window keeps its state through {nameof(ChromiumHostOptions)}.{nameof(ChromiumHostOptions.WindowState)}, "
                 + $"not {nameof(ChromiumWindowOptions)}.{nameof(ChromiumWindowOptions.StateStore)}.", nameof(options));
+        if (options.ContentRoot is not null && options.ResourceProvider is not null)
+            throw new ArgumentException($"{nameof(ChromiumHostOptions.ContentRoot)} and {nameof(ChromiumHostOptions.ResourceProvider)} "
+                + "are two sources for one bundle: set one.", nameof(options));
 
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton(sp => new CefUiDispatcher(

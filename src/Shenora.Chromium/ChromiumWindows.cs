@@ -179,7 +179,7 @@ public sealed unsafe class ChromiumWindows
         var interceptor = new ChromiumInterceptor();
         app.Pipeline.ApplyTo(interceptor);   // the app's UseFiles and routes reach every window (D64)
         _serving = new ChromiumServing(_options.ContentRoot, _origins, interceptor,
-            isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log);
+            isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log, _options.ResourceProvider);
         // Chromium takes ~140 ms after navigation starts to route the first request here, and .NET then spends ~50 ms on
         // first calls serving it (measured). Serving the root document once now, off the UI thread, spends them while
         // Chromium is busy; the answer is discarded.

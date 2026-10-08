@@ -8,7 +8,8 @@ namespace Shenora.Chromium.Serving;
 /// What a Chromium window answers for its own origins, once <see cref="ChromiumRouting"/> has decided a
 /// request is the shell's.
 /// <list type="bullet">
-/// <item>The bundle first, then the app's interceptor pipeline on a miss, then a fixed 404 (D45's order).
+/// <item>The bundle (a folder, or a provider) first, then the app's interceptor pipeline on a miss, then a fixed 404
+/// (D45's order). A provider that throws is a fixed 404, never handed to the app's pipeline.
 /// An HTML document from either is MARKED (D83), so the page finds the transport, as it does on WebView2
 /// whatever served it.</item>
 /// <item>The dev server's top-level document is fetched and marked the same way.</item>
@@ -22,14 +23,22 @@ internal sealed class ChromiumServing
     private readonly ChromiumInterceptor _interceptor;
     private readonly HttpClient? _dev;
     private readonly ILogger? _log;
+    private readonly IWebViewResourceProvider? _provider;
+    private readonly string? _notFoundPage;
 
-    public ChromiumServing(string? contentRoot, ChromiumOrigins origins, ChromiumInterceptor interceptor, HttpClient? dev = null, ILogger? log = null)
+    public ChromiumServing(string? contentRoot, ChromiumOrigins origins, ChromiumInterceptor interceptor, HttpClient? dev = null,
+        ILogger? log = null, IWebViewResourceProvider? provider = null, string? notFoundPage = null)
     {
         _contentRoot = contentRoot;
         _origins = origins;
         _interceptor = interceptor;
         _dev = dev;
         _log = log;
+        _provider = provider;
+        _notFoundPage = notFoundPage;
+        if (provider is not null)
+            AppCallback.Run(provider.BeginWarmup,
+                ex => AppCallback.Log(log, () => "[Shenora.Chromium] Warming the resource provider failed", LogLevel.Warning, ex));
     }
 
     public static WebViewResourceResponse Accepted() => Constant(204, "No Content", "");
@@ -41,10 +50,10 @@ internal sealed class ChromiumServing
         switch (route)
         {
             case ChromiumRoute.Bundle:
-                if (TryBundle(request) is { } file) return file;
-                return await _interceptor.Handle(request, cancellationToken).ConfigureAwait(false) is { } routed
-                    ? await MarkedAsync(routed, cancellationToken).ConfigureAwait(false)
-                    : WebViewResourceResponse.NotFound();
+                if (TryBundle(request, out var faulted) is { } file) return file;
+                if (!faulted && await _interceptor.Handle(request, cancellationToken).ConfigureAwait(false) is { } routed)
+                    return await MarkedAsync(routed, cancellationToken).ConfigureAwait(false);
+                return WebViewResourceResponse.NotFound();
             case ChromiumRoute.DevDocument:
                 return await DevDocumentAsync(request, cancellationToken).ConfigureAwait(false);
             default:
@@ -57,27 +66,79 @@ internal sealed class ChromiumServing
     /// run before the first real request needs them. Nothing when there is no bundle.
     /// </summary>
     public void Warm(Uri root) =>
-        TryBundle(new WebViewResourceRequest { Uri = root, Method = "GET", Headers = new Dictionary<string, string>() })?.Content?.Dispose();
+        TryBundle(new WebViewResourceRequest { Uri = root, Method = "GET", Headers = new Dictionary<string, string>() }, out _)?.Content?.Dispose();
 
-    /// <summary>The bundle's file for this request, or null to fall through to the pipeline.</summary>
-    private WebViewResourceResponse? TryBundle(WebViewResourceRequest request)
+    /// <summary>
+    /// The bundle's file for this request, or null to fall through to the pipeline. <paramref name="faulted"/>: the
+    /// provider threw, which the shell answers itself — never handed on to the app's routes.
+    /// </summary>
+    private WebViewResourceResponse? TryBundle(WebViewResourceRequest request, out bool faulted)
     {
-        if (_contentRoot is null || !string.Equals(request.Method, "GET", StringComparison.OrdinalIgnoreCase)) return null;
+        faulted = false;
+        if (!string.Equals(request.Method, "GET", StringComparison.OrdinalIgnoreCase)) return null;
 
         // Unescaped FIRST, so `%2e%2e%2f` arrives as `../` and meets the containment check as what it is.
         var relative = Uri.UnescapeDataString(request.Uri.AbsolutePath).TrimStart('/');
         if (relative.Length == 0) relative = "index.html";
-        var full = WebViewFiles.ResolveContained(Path.Combine(_contentRoot, relative), [_contentRoot]);
-        if (full is null || !File.Exists(full)) return null;
-
-        var contentType = WebViewContentTypes.FromPath(full);
-        if (!contentType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
-            return WebViewFiles.Serve(request, full, contentType, _interceptor.RangeDelivery);
-
-        var marked = ChromiumTransport.MarkHtml(File.ReadAllText(full, Encoding.UTF8), _origins.IpcPath);
-        return WebViewResourceResponse.Bytes(Encoding.UTF8.GetBytes(marked), "text/html; charset=utf-8",
-            new Dictionary<string, string> { ["Cache-Control"] = WebViewContentTypes.CacheControlFromPath(full) });
+        try
+        {
+            return Read(relative, request, 200);
+        }
+        catch (Exception ex) when (_provider is not null)
+        {
+            AppCallback.Log(_log, () => $"[Shenora.Chromium] Serving '{relative}' from {Source} failed", LogLevel.Warning, ex);
+            faulted = true;
+            return null;
+        }
     }
+
+    /// <summary>
+    /// The bundle's file at <paramref name="relative"/>, from the folder or the provider, with
+    /// <paramref name="status"/>; null when the bundle has none. An HTML document is MARKED (D83).
+    /// </summary>
+    private WebViewResourceResponse? Read(string relative, WebViewResourceRequest request, int status)
+    {
+        if (_contentRoot is not null)
+        {
+            var full = WebViewFiles.ResolveContained(Path.Combine(_contentRoot, relative), [_contentRoot]);
+            if (full is null || !File.Exists(full)) return null;
+            var type = WebViewContentTypes.FromPath(full);
+            if (type.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
+                return Html(File.ReadAllText(full, Encoding.UTF8), full, status);
+            return status == 200
+                ? WebViewFiles.Serve(request, full, type, _interceptor.RangeDelivery)
+                : Whole(File.ReadAllBytes(full), full, status);
+        }
+        if (_provider is null || relative.Split('/', '\\').Contains("..")) return null;
+        using var stream = _provider.GetResourceStream(relative);
+        if (stream is null) return null;
+        using var copy = new MemoryStream();
+        stream.CopyTo(copy);
+        return WebViewContentTypes.FromPath(relative).StartsWith("text/html", StringComparison.OrdinalIgnoreCase)
+            ? Html(Encoding.UTF8.GetString(copy.ToArray()), relative, status)
+            : Whole(copy.ToArray(), relative, status);
+    }
+
+    /// <summary>Where the bundle comes from, for the host log.</summary>
+    private string Source => _contentRoot is not null
+        ? $"the folder '{_contentRoot}'"
+        : $"the resource provider {_provider?.GetType().Name ?? "(none)"}";
+
+    private WebViewResourceResponse Html(string html, string path, int status) =>
+        Whole(Encoding.UTF8.GetBytes(ChromiumTransport.MarkHtml(html, _origins.IpcPath)), path, status, "text/html; charset=utf-8");
+
+    private static WebViewResourceResponse Whole(byte[] bytes, string path, int status, string? type = null) => new()
+    {
+        StatusCode = status,
+        ReasonPhrase = status == 200 ? "OK" : "Not Found",
+        Content = new MemoryStream(bytes, writable: false),
+        Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Content-Type"] = type ?? WebViewContentTypes.FromPath(path),
+            // A not-found page is never cached as if it were the page asked for.
+            ["Cache-Control"] = status == 200 ? WebViewContentTypes.CacheControlFromPath(path) : "no-store",
+        },
+    };
 
     /// <summary>
     /// An HTML document the app's pipeline served (its own route, an embedded bundle), marked like a bundle file.

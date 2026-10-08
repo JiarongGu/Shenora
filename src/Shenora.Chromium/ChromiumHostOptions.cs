@@ -1,6 +1,7 @@
 using System.Drawing;
 using Shenora.Core.Ipc;
 using Shenora.Core.Shell;
+using Shenora.Core.WebView;
 
 namespace Shenora.Chromium;
 
@@ -20,6 +21,13 @@ public sealed class ChromiumHostOptions
     /// reachable. Required unless every page comes from <see cref="DevUrl"/>.
     /// </summary>
     public string? ContentRoot { get; init; }
+
+    /// <summary>
+    /// The app's bundle from a provider — an <see cref="EmbeddedResourceProvider"/> serves one built into the app's
+    /// assembly — at <c>https://{VirtualHost}/</c>, as <see cref="ContentRoot"/> serves a folder. One or the other. A
+    /// file comes whole: byte ranges are <see cref="ContentRoot"/>'s.
+    /// </summary>
+    public IWebViewResourceProvider? ResourceProvider { get; init; }
 
     /// <summary>The page in development (a dev server such as Vite). Ignored outside development.</summary>
     public string? DevUrl { get; init; }

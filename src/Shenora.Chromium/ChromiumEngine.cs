@@ -7,6 +7,7 @@ using Shenora.Chromium.Serving;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
 using Shenora.Core.Shell;
+using Shenora.Core.WebView;
 
 namespace Shenora.Chromium;
 
@@ -21,6 +22,13 @@ public sealed class ChromiumEngineOptions
     /// Required unless every page comes from <see cref="DevUrl"/>.
     /// </summary>
     public string? ContentRoot { get; init; }
+
+    /// <summary>
+    /// The app's bundle from a provider — an <see cref="EmbeddedResourceProvider"/> serves one built into the app's
+    /// assembly — at <c>https://{VirtualHost}/</c>, as <see cref="ContentRoot"/> serves a folder. One or the other. A
+    /// file comes whole: byte ranges are <see cref="ContentRoot"/>'s.
+    /// </summary>
+    public IWebViewResourceProvider? ResourceProvider { get; init; }
 
     /// <summary>The pages in development (a dev server such as Vite). Ignored outside development.</summary>
     public string? DevUrl { get; init; }
@@ -79,6 +87,9 @@ public sealed class ChromiumEngine
     public ChromiumEngine(ChromiumEngineOptions options, ILogger<ChromiumEngine>? log = null)
     {
         ArgumentNullException.ThrowIfNull(options);
+        if (options.ContentRoot is not null && options.ResourceProvider is not null)
+            throw new ArgumentException($"{nameof(ChromiumEngineOptions.ContentRoot)} and {nameof(ChromiumEngineOptions.ResourceProvider)} "
+                + "are two sources for one bundle: set one.", nameof(options));
         _options = options;
         _log = log;
     }
@@ -182,7 +193,7 @@ public sealed class ChromiumEngine
             var interceptor = new ChromiumInterceptor();
             _app.Pipeline.ApplyTo(interceptor);
             var serving = new ChromiumServing(_options.ContentRoot, origins, interceptor,
-                _isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log);
+                _isDevelopment && _options.DevUrl is not null ? new HttpClient() : null, _log, _options.ResourceProvider);
             // As the shell does: the first document's first calls run while Chromium routes its request.
             _ = Task.Run(() => AppCallback.Run(() => serving.Warm(origins.App)));
             var services = _app.Services;
