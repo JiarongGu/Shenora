@@ -212,12 +212,14 @@ if (history) {
   files = [messageFile];
   bufOf = () => { try { return readFileSync(path.isAbsolute(messageFile) ? messageFile : path.join(repo, messageFile)); } catch { return Buffer.alloc(0); } };
 } else if (tree) {
-  files = git(['ls-files']).split('\n').filter(Boolean);
+  // -z, NUL-separated: without it git quotes a name outside ASCII ("\346\274…"), the read of that quoted name fails, and
+  // the file passed unscanned — a CJK-named leak went through while the same bytes under an ASCII name were blocked.
+  files = git(['ls-files', '-z']).split('\0').filter(Boolean);
   bufOf = (f) => { try { return readFileSync(path.join(repo, f)); } catch { return Buffer.alloc(0); } };
 } else {
   // ACMRC, not ACM: a `git mv` of a leaking file stages as R (rename) and a copy as C, both of
   // which the old filter skipped entirely.
-  files = git(['diff', '--cached', '--name-only', '--diff-filter=ACMRC']).split('\n').filter(Boolean);
+  files = git(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRC']).split('\0').filter(Boolean);   // -z: see --tree
   bufOf = (f) => { try { return gitBuf(['show', `:${f}`]); } catch { return Buffer.alloc(0); } };
 }
 
