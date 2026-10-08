@@ -122,13 +122,13 @@ internal sealed class ChromiumServing
                 : Whole(File.ReadAllBytes(full), full, status);
         }
         if (_provider is null || relative.Split('/', '\\').Contains("..")) return null;
-        using var stream = _provider.GetResourceStream(relative);
+        var stream = _provider.GetResourceStream(relative);
         if (stream is null) return null;
-        using var copy = new MemoryStream();
-        stream.CopyTo(copy);
-        return WebViewContentTypes.FromPath(relative).StartsWith("text/html", StringComparison.OrdinalIgnoreCase)
-            ? Html(Encoding.UTF8.GetString(copy.ToArray()), relative, status)
-            : Whole(copy.ToArray(), relative, status);
+        // Anything but a document goes on as the provider's own stream, uncopied: ownership passes to CEF.
+        if (!WebViewContentTypes.FromPath(relative).StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
+            return Whole(stream, relative, status);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        return Html(reader.ReadToEnd(), relative, status);
     }
 
     /// <summary>A page load that found nothing: the bundle's own not-found page, else the kit's; a Warning either way.</summary>
@@ -158,13 +158,17 @@ internal sealed class ChromiumServing
         : "no ContentRoot or ResourceProvider is set";
 
     private WebViewResourceResponse Html(string html, string path, int status) =>
-        Whole(Encoding.UTF8.GetBytes(ChromiumTransport.MarkHtml(html, _origins.IpcPath)), path, status, "text/html; charset=utf-8");
+        Whole(new MemoryStream(Encoding.UTF8.GetBytes(ChromiumTransport.MarkHtml(html, _origins.IpcPath)), writable: false), path,
+            status, "text/html; charset=utf-8");
 
-    private static WebViewResourceResponse Whole(byte[] bytes, string path, int status, string? type = null) => new()
+    private static WebViewResourceResponse Whole(byte[] bytes, string path, int status) =>
+        Whole(new MemoryStream(bytes, writable: false), path, status);
+
+    private static WebViewResourceResponse Whole(Stream content, string path, int status, string? type = null) => new()
     {
         StatusCode = status,
         ReasonPhrase = status == 200 ? "OK" : "Not Found",
-        Content = new MemoryStream(bytes, writable: false),
+        Content = content,
         Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["Content-Type"] = type ?? WebViewContentTypes.FromPath(path),

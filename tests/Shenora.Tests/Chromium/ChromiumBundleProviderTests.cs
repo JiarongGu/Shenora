@@ -77,6 +77,28 @@ public class ChromiumBundleProviderTests
         Assert.Contains(log.Lines, l => l.Contains("app.js") && l.Contains("failed"));
     }
 
+    // The provider's own stream is handed on: an embedded file is already in memory, and copying it on CEF's IO thread
+    // for every request (once to a buffer, again to an array) bought nothing.
+    [Fact]
+    public async Task A_providers_file_is_handed_on_without_a_copy()
+    {
+        var provider = new RecordingProvider();
+        var serving = new ChromiumServing(null, Origins, new ChromiumInterceptor(), provider: provider);
+        var request = new WebViewResourceRequest { Uri = new Uri("https://app.local/app.js"), Method = "GET", Headers = new Dictionary<string, string>() };
+
+        var response = await serving.ServeAsync(ChromiumRoute.Bundle, request, CancellationToken.None);
+
+        Assert.Same(provider.Last, response.Content);
+        Assert.Equal("application/javascript", response.Headers["Content-Type"]);
+    }
+
+    private sealed class RecordingProvider : IWebViewResourceProvider
+    {
+        public Stream? Last { get; private set; }
+        public Stream? GetResourceStream(string virtualPath) => Last = new MemoryStream("x"u8.ToArray());
+        public bool Exists(string virtualPath) => true;
+    }
+
     [Fact]
     public void The_provider_is_warmed_once_serving_is_built()
     {
