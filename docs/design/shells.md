@@ -40,6 +40,7 @@ C. engine.Start(app)               ← after the process init, before any hook o
 4. MainForm(services)              ← created, NOT shown
 5. IFormInteraction.SetMainForm    ← native services need the window
 6. WindowStateManager.AttachTo     ← geometry applied BEFORE the loop shows it
+   IStartupScreen.Close, wired     ← a native launcher's screen goes at the form's Shown, or a hidden start's first idle
 7. Application.Run(form)           ← or the MessageLoop test seam
 8. app.Stop()                      ← reverse order, guarded, runs even if startup failed partway
 C. SecondaryWindows.CloseAll, engine.Stop()  ← every browser closes before CEF does

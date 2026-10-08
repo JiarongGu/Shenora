@@ -62,10 +62,18 @@ std::uint32_t sample(const ScreenImage& img, double sx0, double sy0, double sx1,
         add(at(x, y + 1), (1 - tx) * ty);
         add(at(x + 1, y + 1), tx * ty);
     } else {
+        // Each source pixel weighs what of it the footprint covers: at a fractional shrink (a 2× image at 150 %) the
+        // edge pixels count in part, or the picture softens.
         const int x0 = static_cast<int>(std::floor(sx0)), x1 = static_cast<int>(std::ceil(sx1));
         const int y0 = static_cast<int>(std::floor(sy0)), y1 = static_cast<int>(std::ceil(sy1));
-        for (int y = y0; y < y1; ++y)
-            for (int x = x0; x < x1; ++x) add(at(x, y), 1.0);
+        for (int y = y0; y < y1; ++y) {
+            const double wy = std::min(sy1, y + 1.0) - std::max(sy0, static_cast<double>(y));
+            if (wy <= 0) continue;
+            for (int x = x0; x < x1; ++x) {
+                const double wx = std::min(sx1, x + 1.0) - std::max(sx0, static_cast<double>(x));
+                if (wx > 0) add(at(x, y), wx * wy);
+            }
+        }
     }
     if (n <= 0) return 0;
     const auto c = [&](int i) { return static_cast<std::uint32_t>(std::clamp(std::lround(acc[i] / n), 0L, 255L)); };
@@ -109,10 +117,14 @@ ScreenPixels compose_screen(const StartupScreenDescription& d, const ScreenImage
     return out;
 }
 
+int progress_bar_rows(const StartupScreenDescription& d, double scale) {
+    return d.progress_bar ? std::max(1, static_cast<int>(std::lround(kBarHeightDip * scale))) : 0;
+}
+
 void draw_progress(ScreenPixels& frame, const StartupScreenDescription& d, double scale, bool rounded, double phase) {
     if (!d.progress_bar || frame.width <= 0) return;
     const int w = frame.width, h = frame.height;
-    const int bar = std::max(1, static_cast<int>(std::lround(kBarHeightDip * scale)));
+    const int bar = std::min(h, progress_bar_rows(d, scale));
     const double span = w * kBarSpan;
     const double start = phase * (w + span) - span;
     const double r = rounded ? kCornerRadiusDip * scale : 0.0;

@@ -54,6 +54,10 @@ void release_process(StartedProcess& process);
 /// A message a person must read: a message box on Windows (a GUI launcher has no console), stderr elsewhere.
 void show_error(const std::string& title, const std::string& message);
 
+/// Send stdout to the terminal the launcher was started from, where it has none: a GUI-subsystem program run from a
+/// console prints nowhere otherwise. Redirected output (a pipe, a file) is left where it was sent. Nothing off Windows.
+void stdout_to_parent_console();
+
 /// Is a .NET runtime of at least `major` present? False also means "cannot tell" — the caller's job is
 /// then to install, which is safe to do redundantly.
 bool dotnet_runtime_present(int major);

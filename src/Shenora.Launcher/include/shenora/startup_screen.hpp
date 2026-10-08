@@ -36,11 +36,15 @@ struct ScreenPixels { int width = 0; int height = 0; std::vector<std::uint32_t> 
 ScreenPixels compose_screen(const StartupScreenDescription& d, const ScreenImage* image, int width_px, int height_px,
                             double scale, bool rounded);
 
-/// The moving part: an indeterminate bar along the bottom at `phase` (0..1), drawn over `frame`.
+/// The moving part: an indeterminate bar along the bottom at `phase` (0..1), drawn over `frame`. It touches only the
+/// bottom `progress_bar_rows` rows, so a screen repaints those alone as it moves.
 void draw_progress(ScreenPixels& frame, const StartupScreenDescription& d, double scale, bool rounded, double phase);
 
-/// PNG → straight 0xAARRGGBB. WIC on Windows, stb_image elsewhere.
-bool decode_png(const unsigned char* data, std::size_t size, ScreenImage& out);
+/// How many rows at the bottom the bar takes at `scale`; 0 with no bar.
+int progress_bar_rows(const StartupScreenDescription& d, double scale);
+
+/// PNG → straight 0xAARRGGBB. WIC on Windows, stb_image elsewhere. On failure, `reason` (if given) says why.
+bool decode_png(const unsigned char* data, std::size_t size, ScreenImage& out, std::string* reason = nullptr);
 
 class StartupScreen {
 public:

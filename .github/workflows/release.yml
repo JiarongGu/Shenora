@@ -102,8 +102,8 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libx11-dev libxrandr-dev xvfb
 
-      # SHENORA_LAUNCHER_TESTS: the two screen launchers and the fake app the conformance's screen cases drive. Only the
-      # stock shenora-launcher is packed.
+      # SHENORA_LAUNCHER_TESTS: the screen launchers, the fake app and (Windows) the console host the conformance's
+      # screen cases drive, all beside the stock launcher. Only the stock shenora-launcher is packed.
       - name: Build the launcher
         run: |
           cmake -S src/Shenora.Launcher -B build -DCMAKE_BUILD_TYPE=Release -DSHENORA_LAUNCHER_TESTS=ON

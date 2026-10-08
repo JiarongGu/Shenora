@@ -1094,7 +1094,8 @@ function runPosixLauncherBuild() {
     'stat -c "%n %s" /tmp/launcher-build/shenora-launcher',
     // The four binaries out, for the startup screen's run under Xvfb (devtools/_* is gitignored).
     'mkdir -p /src/devtools/_launcher-posix && cp /tmp/launcher-build/shenora-launcher /tmp/launcher-build/shenora-launcher-screen '
-      + '/tmp/launcher-build/shenora-launcher-wide /tmp/launcher-build/shenora-fake-app /src/devtools/_launcher-posix/',
+      + '/tmp/launcher-build/shenora-launcher-wide /tmp/launcher-build/shenora-launcher-stripes /tmp/launcher-build/shenora-launcher-corrupt '
+      + '/tmp/launcher-build/shenora-fake-app /src/devtools/_launcher-posix/',
   ].join('\n');
 
   const ok = step('gcc:13 cross-build (POSIX half)', () => run('docker',

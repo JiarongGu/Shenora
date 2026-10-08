@@ -126,6 +126,14 @@ if(SHENORA_LAUNCHER_TESTS)
   shenora_launcher_executable(shenora-launcher-wide)
   shenora_launcher_startup_screen(shenora-launcher-wide IMAGE "${CMAKE_CURRENT_LIST_DIR}/tests/wide.png"
     WIDTH 200 HEIGHT 100 BACKGROUND "#FF102030" CORNERS SQUARE TIMEOUT_SECONDS 3)
+  # A 3x1 image squeezed into 2x1: each output pixel covers one and a half source pixels.
+  shenora_launcher_executable(shenora-launcher-stripes)
+  shenora_launcher_startup_screen(shenora-launcher-stripes IMAGE "${CMAKE_CURRENT_LIST_DIR}/tests/stripes.png"
+    WIDTH 2 HEIGHT 1 BACKGROUND "#FF000000" CORNERS SQUARE TIMEOUT_SECONDS 3)
+  # A screen whose image does not decode: no screen, a reason in launcher.log, and the app still starts.
+  shenora_launcher_executable(shenora-launcher-corrupt)
+  shenora_launcher_startup_screen(shenora-launcher-corrupt IMAGE "${CMAKE_CURRENT_LIST_DIR}/tests/corrupt.png"
+    TIMEOUT_SECONDS 3)
   # The app those launchers start: records its arguments and closes, leaves or ignores the screen.
   add_executable(shenora-fake-app tests/fake_app.cpp)
   target_link_libraries(shenora-fake-app PRIVATE ${CMAKE_DL_LIBS})
@@ -135,6 +143,12 @@ if(SHENORA_LAUNCHER_TESTS)
     set_property(TARGET shenora-fake-app PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   else()
     target_compile_options(shenora-fake-app PRIVATE -Wall -Wextra -Werror)
+  endif()
+  # A terminal for the GUI-subsystem launcher's --apply-and-exit line: a pipe cannot show what a console does.
+  if(MSVC)
+    add_executable(shenora-console-host tests/console_host.cpp)
+    target_compile_options(shenora-console-host PRIVATE /utf-8 /W4 /WX)
+    set_property(TARGET shenora-console-host PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   endif()
 endif()
 

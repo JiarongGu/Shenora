@@ -14,37 +14,55 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <initializer_list>
 
 namespace shenora {
 
-bool decode_png(const unsigned char* data, std::size_t size, ScreenImage& out) {
+bool decode_png(const unsigned char* data, std::size_t size, ScreenImage& out, std::string* reason) {
     const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     IWICImagingFactory* factory = nullptr;
     IWICStream* stream = nullptr;
     IWICBitmapDecoder* decoder = nullptr;
     IWICBitmapFrameDecode* frame = nullptr;
     IWICFormatConverter* converter = nullptr;
+    HRESULT hr = S_OK;
+    const char* step = nullptr;   // the step that failed, for `reason`
+    const auto did = [&](HRESULT result, const char* what) {
+        hr = result;
+        if (FAILED(result)) step = what;
+        return SUCCEEDED(result);
+    };
     bool ok = false;
-    if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)))
-        && SUCCEEDED(factory->CreateStream(&stream))
-        && SUCCEEDED(stream->InitializeFromMemory(const_cast<BYTE*>(data), static_cast<DWORD>(size)))
-        && SUCCEEDED(factory->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnDemand, &decoder))
-        && SUCCEEDED(decoder->GetFrame(0, &frame))
-        && SUCCEEDED(factory->CreateFormatConverter(&converter))
-        && SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0.0,
-                                           WICBitmapPaletteTypeCustom))) {
-        UINT w = 0, h = 0;
-        if (SUCCEEDED(converter->GetSize(&w, &h)) && w > 0 && h > 0) {
+    UINT w = 0, h = 0;
+    if (did(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)), "starting WIC")
+        && did(factory->CreateStream(&stream), "a stream over its bytes")
+        && did(stream->InitializeFromMemory(const_cast<BYTE*>(data), static_cast<DWORD>(size)), "a stream over its bytes")
+        && did(factory->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnDemand, &decoder),
+               "a decoder for its bytes (not an image WIC reads)")
+        && did(decoder->GetFrame(0, &frame), "its first frame")
+        && did(factory->CreateFormatConverter(&converter), "a format converter")
+        && did(converter->Initialize(frame, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0.0,
+                                     WICBitmapPaletteTypeCustom), "converting it to 32-bit BGRA")
+        && did(converter->GetSize(&w, &h), "its size")) {
+        if (w > 0 && h > 0) {
             out.width = static_cast<int>(w);
             out.height = static_cast<int>(h);
             out.bgra.resize(static_cast<std::size_t>(w) * h);
-            ok = SUCCEEDED(converter->CopyPixels(nullptr, w * 4, w * h * 4, reinterpret_cast<BYTE*>(out.bgra.data())));
+            ok = did(converter->CopyPixels(nullptr, w * 4, w * h * 4, reinterpret_cast<BYTE*>(out.bgra.data())), "its pixels");
+        } else {
+            step = "its size (it has no pixels)";
         }
     }
     for (IUnknown* p : std::initializer_list<IUnknown*>{converter, frame, decoder, stream, factory})
         if (p) p->Release();
     if (SUCCEEDED(init)) CoUninitialize();
+    if (!ok && reason) {
+        char text[128];
+        if (FAILED(hr)) std::snprintf(text, sizeof(text), "%s failed (0x%08lX)", step, static_cast<unsigned long>(hr));
+        else std::snprintf(text, sizeof(text), "%s", step ? step : "unknown");
+        *reason = text;
+    }
     return ok;
 }
 
@@ -100,8 +118,10 @@ public:
 
         rounded_ = desc_.corners == ScreenCorners::Rounded;
         base_ = compose_screen(desc_, image_.width > 0 ? &image_ : nullptr, w_, h_, scale_, rounded_);
+        frame_ = base_;
+        bar_ = std::min(h_, progress_bar_rows(desc_, scale_));
         start_ = std::chrono::steady_clock::now();
-        paint();
+        paint(true);
         ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
         if (desc_.progress_bar) SetTimer(hwnd_, 1, 16, nullptr);
         return true;
@@ -144,7 +164,7 @@ private:
             }
             return 0;
         case WM_TIMER:
-            if (self) self->paint();
+            if (self) self->paint(false);
             return 0;
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE;
@@ -153,11 +173,9 @@ private:
         }
     }
 
-    void paint() {
+    /// `full` puts the whole frame; a tick puts only the bar's rows, the one band that moves.
+    void paint(bool full) {
         if (!hwnd_) return;
-        ScreenPixels frame = base_;
-        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start_).count();
-        draw_progress(frame, desc_, scale_, rounded_, std::fmod(ms / 1500.0, 1.0));
         if (!dc_) {
             dc_ = CreateCompatibleDC(nullptr);
             BITMAPINFO bi{};
@@ -171,16 +189,35 @@ private:
             if (bitmap_) SelectObject(dc_, bitmap_);
         }
         if (!bits_) return;
-        std::copy(frame.bgra.begin(), frame.bgra.end(), static_cast<std::uint32_t*>(bits_));
+        const int band = full || !painted_ ? h_ : bar_;
+        if (band <= 0) return;
+        const std::size_t from = static_cast<std::size_t>(h_ - band) * w_;
+        std::copy(base_.bgra.begin() + from, base_.bgra.end(), frame_.bgra.begin() + from);
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start_).count();
+        draw_progress(frame_, desc_, scale_, rounded_, std::fmod(ms / 1500.0, 1.0));
+        std::copy(frame_.bgra.begin() + from, frame_.bgra.end(), static_cast<std::uint32_t*>(bits_) + from);
         SIZE size{w_, h_};
         POINT zero{0, 0};
         BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-        UpdateLayeredWindow(hwnd_, nullptr, &pos_, &size, dc_, &zero, 0, &blend, ULW_ALPHA);
+        const RECT dirty{0, h_ - band, w_, h_};
+        UPDATELAYEREDWINDOWINFO info{};
+        info.cbSize = sizeof(info);
+        info.pptDst = &pos_;
+        info.psize = &size;
+        info.hdcSrc = dc_;
+        info.pptSrc = &zero;
+        info.pblend = &blend;
+        info.dwFlags = ULW_ALPHA;
+        info.prcDirty = band == h_ ? nullptr : &dirty;
+        if (UpdateLayeredWindowIndirect(hwnd_, &info)) painted_ = true;
     }
 
     StartupScreenDescription desc_;
     ScreenImage image_;
     ScreenPixels base_;
+    ScreenPixels frame_;   // what is on screen: base_ with the bar over its bottom rows
+    int bar_ = 0;
+    bool painted_ = false;
     HWND hwnd_ = nullptr;
     HDC dc_ = nullptr;
     HBITMAP bitmap_ = nullptr;
@@ -198,8 +235,9 @@ private:
 
 std::unique_ptr<StartupScreen> StartupScreen::show(const StartupScreenDescription& d, std::string& error) {
     ScreenImage image;
-    if (d.png && d.png_size && !decode_png(d.png, d.png_size, image)) {
-        error = "the startup screen's PNG would not decode";
+    std::string why;
+    if (d.png && d.png_size && !decode_png(d.png, d.png_size, image, &why)) {
+        error = "the startup screen's PNG would not decode: " + why;
         return nullptr;
     }
     auto screen = std::make_unique<Win32Screen>(d, std::move(image));

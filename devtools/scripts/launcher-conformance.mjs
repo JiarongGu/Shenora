@@ -13,6 +13,8 @@
 //          [--screen <screen-launcher> <wide-launcher> <fake-app>]
 // --screen adds the startup screen's cases: launchers built with SHENORA_LAUNCHER_TESTS=ON (the template with a small
 // screen compiled in) and the fake app they start, which records its arguments and closes, leaves or ignores the screen.
+// The same build's other test binaries (the stripes and corrupt launchers, the Windows console host) are found beside
+// the screen launcher.
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -320,6 +322,57 @@ if (screenAt > 0) {
       assert(code === 0, `the launcher exited ${code} after its window was destroyed`);
       assert(ms < 2500, `the launcher ran ${ms} ms after its window was destroyed`);
       assert(/startup screen (closed|ended)/.test(read(path.join(box.root, 'launcher.log'))), 'launcher.log says nothing of the screen');
+    });
+  }
+
+  // Beside the screen launcher, built by the same SHENORA_LAUNCHER_TESTS=ON build.
+  const besideScreen = (name) => path.join(path.dirname(screenLauncher), name + (process.platform === 'win32' ? '.exe' : ''));
+  const stripesLauncher = besideScreen('shenora-launcher-stripes');
+  const corruptLauncher = besideScreen('shenora-launcher-corrupt');
+
+  test('screen: a fractional shrink weighs each source pixel by how much of it a pixel covers', () => {
+    // 3x1 red, green, blue into 2x1: the left pixel covers all of red and half of green, the right half of green and
+    // all of blue, so 2:1 weights — not the 1:1 a whole-pixel box gives.
+    const { w, h, px } = dump(stripesLauncher, 0);
+    assert(w === 2 && h === 1, `frame ${w}x${h}`);
+    assert(px(0, 0) === 0xffaa5500, `the left pixel ${hex(px(0, 0))}, not 0xffaa5500`);
+    assert(px(1, 0) === 0xff0055aa, `the right pixel ${hex(px(1, 0))}, not 0xff0055aa`);
+  });
+
+  test('screen: a PNG that does not decode says why, and the app still starts with no argument', async () => {
+    const box = screenBox(corruptLauncher);
+    await runScreen(box, 'exit');
+    const file = path.join(box.app, 'args.txt');
+    await until(() => fs.existsSync(file), 5000);
+    assert(fs.existsSync(file), 'the app never started');
+    assert(!argsOf(box).includes('--startup-screen'), 'a launcher with no screen passed --startup-screen');
+    const log = read(path.join(box.root, 'launcher.log'));
+    assert(/would not decode: \S/.test(log), `launcher.log gives no reason: ${JSON.stringify(log.trim())}`);
+  });
+
+  if (process.platform !== 'win32') {
+    test('screen: a killed X connection ends the screen, not the launch', async () => {
+      const box = screenBox(screenLauncher);
+      const { code, ms } = await runScreen(box, 'kill');
+      assert(code === 0, `the launcher exited ${code} after its X connection was killed`);
+      assert(ms < 2500, `the launcher ran ${ms} ms after its X connection was killed`);
+    });
+  }
+
+  // Windows only: the launcher is a GUI-subsystem program, so in a terminal its stdout is no console at all — which the
+  // pipes the apply cases read hide. The console host runs it as a shell does and reads the console back.
+  if (process.platform === 'win32') {
+    test('--apply-and-exit prints its line to the terminal it was started from', (box) => {
+      const host = besideScreen('shenora-console-host');
+      assert(fs.existsSync(host), `no console host at ${host} — build with -DSHENORA_LAUNCHER_TESTS=ON`);
+      const out = path.join(box.root, 'console.txt');
+      // Hidden, with no stdio: libuv then starts the host with a windowless console of its own, so a run from a
+      // terminal never flips that terminal's screen. The host's own failures land in `out`, named.
+      try {
+        execFileSync(host, [out, box.exe, '--apply-and-exit'], { windowsHide: true, stdio: 'ignore' });
+      } catch { /* reported from `out` below */ }
+      const text = read(out);
+      assert(/applied=0 attempted=0/.test(text), `the terminal showed ${JSON.stringify(text.trim())}`);
     });
   }
 

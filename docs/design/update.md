@@ -232,19 +232,26 @@ watched; then the launcher waits until the app closes the screen, the app exits 
 running instance), or the timeout. Both desktop shells close it at the app's first window (`IStartupScreen`,
 `StartupScreenMode.FirstWindow`): the Chromium shell's splash card, else its main window; the WinForms shell's main
 form, or the first idle of an app that starts hidden. An app with a loading step of its own before its first window
-sets `Manual` and calls `Close()` itself.
+sets `Manual` and calls `Close()` itself. A PNG that does not decode is no screen, and `launcher.log` says why; the app
+still starts. A shrinking image is filtered by area, each source pixel weighed by the share of it an output pixel
+covers, so a fractional shrink (a 2× image at 150 %) mixes neighbours only in proportion. Each step of the bar repaints
+only the bar's rows.
 
 - **Windows:** a layered tool window that never takes activation, at the cursor's (or the primary) monitor's DPI,
   centred on its work area, with DWM's transitions off. The corners are drawn by the compositor's coverage, so they
   need no DWM corner support and are exact at any DPI. The PNG is decoded by WIC. As a GUI-subsystem executable the
   launcher opens no console; what a person must read goes to a message box, the rest to `launcher.log`.
+  `--apply-and-exit`'s line goes to the terminal it was started from, or wherever it was redirected.
 - **Linux:** libX11 (and libXrandr) loaded with `dlopen`, so a launcher with no display — a terminal, SSH — or no
   X11 runs and starts the app with no screen. A splash-type window with `WM_CLASS` `ShenoraStartupScreen`, which the
   app's close checks before it sends `WM_DELETE_WINDOW` through xcb. It never takes the keyboard (`WM_HINTS` input
   False), waits up to 500 ms for the window manager to map it before the launch goes on, and installs an X error
   handler, so a window destroyed from outside ends the screen and never the launch (Xlib's default handler exits the
-  process — on the app's side too, which is why its close goes through xcb). Centred on the monitor, not its work
-  area; rounded corners only under a compositor; DPI from `Xft.dpi`. The PNG is decoded by stb_image
+  process — on the app's side too, which is why its close goes through xcb). With libX11 1.7 or later a lost
+  connection (a window manager's force-close) ends the screen the same way, through `XSetIOErrorExitHandler`.
+  Centred on the monitor's work area (`_NET_WORKAREA` for the current desktop, intersected with the monitor, since
+  EWMH gives one rectangle across all of them); `PRIMARY` with no primary output takes the monitor at the origin, where
+  Windows' primary always is. Rounded corners only under a compositor; DPI from `Xft.dpi`. The PNG is decoded by stb_image
   (`launcher-src/third_party/`, public domain / MIT). The X11 headers (`libx11-dev`, `libxrandr-dev`) are needed to
   build the screen, not to run it: without them the library builds as before, and a launcher given a screen warns at
   configure and shows none.
@@ -253,10 +260,13 @@ sets `Manual` and calls `Close()` itself.
   the app's card at ~390–550 ms, and the screen gone 5–7 ms after the card. A freshly copied executable's first run
   reached `main` only after ~320 ms, before any launcher code. A larger PNG costs its decode on the first frame: a
   1920×1200 one (2.8 MB) put the screen at ~220–280 ms warm.
-- **Linux, under Xvfb and openbox** (4 runs of 4): the conformance cases, a window destroyed from outside, the kit's
-  real close against the launcher's window, and the no-display path; not timed.
+- **Linux, under Xvfb and openbox**: the conformance cases (a window destroyed from outside and a killed connection
+  among them), the kit's real close against the launcher's window, and the no-display path; not timed. The work area
+  was checked once by hand, under `_NET_WORKAREA` values set with `xprop` and no window manager: the harness does not
+  cover it.
 - **Accepted:** a second launch shows the screen briefly, until the new process hands itself over and exits. On
-  Linux a killed X connection still ends the launcher: Xlib's I/O error handler must not return.
+  Linux with libX11 older than 1.7 a killed X connection still ends the launcher: Xlib exits after its I/O error
+  handler, and only 1.7 lets that exit be replaced.
 
 ## What is deliberately absent
 

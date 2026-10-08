@@ -132,7 +132,9 @@ int main(int argc, char** argv) {
     }
 
     if (applyAndExit) {
-        // A machine-readable line for the harness. Deliberately terse and stable.
+        // A machine-readable line for the harness. Deliberately terse and stable. On Windows a GUI-subsystem program has
+        // no stdout in a terminal, so it is sent to the one it was started from (a pipe or a file stays as it is).
+        shenora::stdout_to_parent_console();
         std::printf("applied=%d attempted=%d version=%s written=%zu removed=%zu\n",
                     result.applied ? 1 : 0, result.attempted ? 1 : 0,
                     result.version.c_str(), result.written.size(), result.removed.size());

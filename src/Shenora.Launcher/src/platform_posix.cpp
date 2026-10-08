@@ -145,6 +145,8 @@ void show_error(const std::string& title, const std::string& message) {
     std::fprintf(stderr, "%s: %s\n", title.c_str(), message.c_str());
 }
 
+void stdout_to_parent_console() {}   // a POSIX program's stdout is its terminal already
+
 bool dotnet_runtime_present(int major) {
     // No registry here. The shared framework directory is the portable equivalent and is what the
     // installer lays down; checking for a versioned subdirectory is cheaper and more reliable than

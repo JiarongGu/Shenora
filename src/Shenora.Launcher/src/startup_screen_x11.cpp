@@ -35,10 +35,14 @@ struct X11 {
     SHENORA_X(XConnectionNumber) SHENORA_X(XGetSelectionOwner) SHENORA_X(XDestroyWindow) SHENORA_X(XGetDefault)
     SHENORA_X(XQueryPointer) SHENORA_X(XDefaultVisual) SHENORA_X(XDefaultDepth) SHENORA_X(XDisplayWidth)
     SHENORA_X(XDisplayHeight) SHENORA_X(XSetWMNormalHints) SHENORA_X(XSetErrorHandler) SHENORA_X(XSetWMHints)
+    SHENORA_X(XSetIOErrorHandler) SHENORA_X(XGetWindowProperty) SHENORA_X(XFree)
     SHENORA_X(XRRGetScreenResourcesCurrent) SHENORA_X(XRRGetCrtcInfo) SHENORA_X(XRRFreeCrtcInfo)
     SHENORA_X(XRRFreeScreenResources) SHENORA_X(XRRGetOutputPrimary) SHENORA_X(XRRGetOutputInfo)
     SHENORA_X(XRRFreeOutputInfo)
 #undef SHENORA_X
+    // libX11 1.7 and later; declared here, so the headers of an older one still build this.
+    using IOErrorExitHandler = void (*)(Display*, void*);
+    void (*XSetIOErrorExitHandler)(Display*, IOErrorExitHandler, void*) = nullptr;
 
     bool load() {
         lib = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
@@ -53,7 +57,9 @@ struct X11 {
         SHENORA_X(XConnectionNumber) SHENORA_X(XGetSelectionOwner) SHENORA_X(XDestroyWindow) SHENORA_X(XGetDefault)
         SHENORA_X(XQueryPointer) SHENORA_X(XDefaultVisual) SHENORA_X(XDefaultDepth) SHENORA_X(XDisplayWidth)
         SHENORA_X(XDisplayHeight) SHENORA_X(XSetWMNormalHints) SHENORA_X(XSetErrorHandler) SHENORA_X(XSetWMHints)
+        SHENORA_X(XSetIOErrorHandler) SHENORA_X(XGetWindowProperty) SHENORA_X(XFree)
 #undef SHENORA_X
+        XSetIOErrorExitHandler = reinterpret_cast<decltype(XSetIOErrorExitHandler)>(dlsym(lib, "XSetIOErrorExitHandler"));
         // RandR is optional: without it the screen centres on the whole root window.
         if ((randr = dlopen("libXrandr.so.2", RTLD_NOW | RTLD_LOCAL))) {
 #define SHENORA_R(name) name = reinterpret_cast<decltype(name)>(dlsym(randr, #name));
@@ -69,15 +75,17 @@ struct X11 {
 struct Rect { int x, y, w, h; };
 
 class X11Screen;
-X11Screen* g_shown = nullptr;   // the one screen this process shows, for the error handler
+X11Screen* g_shown = nullptr;   // the one screen this process shows, for the error handlers
 int on_x_error(Display*, XErrorEvent* e);
+int on_x_io_error(Display*);
+void on_x_io_exit(Display*, void*);
 
 class X11Screen final : public StartupScreen {
 public:
     X11Screen(const StartupScreenDescription& d, ScreenImage image) : desc_(d), image_(std::move(image)) {}
     ~X11Screen() override {
         if (g_shown == this) g_shown = nullptr;
-        if (display_) {
+        if (display_ && !dead_) {   // a lost connection takes no more calls, XCloseDisplay included
             if (gc_) x_.XFreeGC(display_, gc_);
             if (window_ && !closed_) x_.XDestroyWindow(display_, window_);
             x_.XCloseDisplay(display_);
@@ -92,6 +100,10 @@ public:
         // one ends the screen instead, and the launch goes on.
         g_shown = this;
         x_.XSetErrorHandler(&on_x_error);
+        // A lost connection (the server gone, a window manager's force-close) is fatal too: Xlib exits the process.
+        // libX11 1.7 lets that exit be replaced, and the screen ends instead; an older one still exits.
+        x_.XSetIOErrorHandler(&on_x_io_error);
+        if (x_.XSetIOErrorExitHandler) x_.XSetIOErrorExitHandler(display_, &on_x_io_exit, nullptr);
         const int screen = x_.XDefaultScreen(display_);
         const Window root = x_.XRootWindow(display_, screen);
 
@@ -107,7 +119,7 @@ public:
         scale_ = dpi ? std::max(1.0, std::atof(dpi) / 96.0) : 1.0;
         w_ = static_cast<int>(std::lround(desc_.width_dip * scale_));
         h_ = static_cast<int>(std::lround(desc_.height_dip * scale_));
-        const Rect m = monitor(root, screen);
+        const Rect m = work_area(root, monitor(root, screen));
         const int x = m.x + (m.w - w_) / 2, y = m.y + (m.h - h_) / 2;
 
         XSetWindowAttributes attrs{};
@@ -149,9 +161,11 @@ public:
         depth_ = depth;
         rounded_ = argb_ && desc_.corners == ScreenCorners::Rounded;
         base_ = compose_screen(desc_, image_.width > 0 ? &image_ : nullptr, w_, h_, scale_, rounded_);
+        frame_ = base_;
+        bar_ = std::min(h_, progress_bar_rows(desc_, scale_));
         start_ = std::chrono::steady_clock::now();
         x_.XMapRaised(display_, window_);
-        paint();
+        paint(true);
         x_.XFlush(display_);
         // Mapped is the window manager's to grant, after a round trip: wait for it (a little), so "shown" means on
         // screen before the update apply and the app's start begin, as ShowWindow does on Windows.
@@ -166,6 +180,7 @@ public:
                                           : std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
         pollfd fd{x_.XConnectionNumber(display_), POLLIN, 0};
         for (;;) {
+            // closed_ first: after a lost connection XNextEvent on an empty queue dereferences null.
             while (!closed_ && x_.XPending(display_)) {
                 XEvent ev;
                 x_.XNextEvent(display_, &ev);
@@ -177,13 +192,13 @@ public:
                 } else if (ev.type == DestroyNotify && ev.xdestroywindow.window == window_) {
                     lost();   // destroyed from outside: no dead id is passed on, nor destroyed again
                 } else if (ev.type == Expose) {
-                    paint();
+                    paint(true);
                 }
             }
             if (closed_ || done()) return;
             const auto now = std::chrono::steady_clock::now();
             if (now >= until) return;
-            if (desc_.progress_bar) paint();
+            if (desc_.progress_bar) paint(false);
             const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(until - now).count();
             poll(&fd, 1, static_cast<int>(std::min<long long>(16, left)));
         }
@@ -196,6 +211,10 @@ public:
         closed_ = true;
         window_ = 0;
     }
+    void connection_lost() {
+        dead_ = true;
+        lost();
+    }
 
 private:
     void wait_mapped(int timeout_ms) {
@@ -206,11 +225,11 @@ private:
                 XEvent ev;
                 x_.XNextEvent(display_, &ev);
                 if (ev.type == MapNotify && ev.xmap.window == window_) {
-                    paint();
+                    paint(true);
                     return;
                 }
                 if (ev.type == DestroyNotify && ev.xdestroywindow.window == window_) lost();
-                else if (ev.type == Expose) paint();
+                else if (ev.type == Expose) paint(true);
             }
             const auto now = std::chrono::steady_clock::now();
             if (now >= until) return;
@@ -240,28 +259,73 @@ private:
                 x_.XRRFreeOutputInfo(info);
             }
         }
-        Rect found = whole;
-        for (int i = 0; i < res->ncrtc; ++i) {
+        // With no primary output, the monitor at the origin, where Windows' primary always is. A point on no monitor (a
+        // layout that leaves the origin uncovered) takes the first one lit, never the whole root across them.
+        Rect found = whole, first = whole;
+        bool any = false, hit = false;
+        for (int i = 0; i < res->ncrtc && !hit; ++i) {
             XRRCrtcInfo* c = x_.XRRGetCrtcInfo(display_, res, res->crtcs[i]);
             if (!c) continue;
-            const bool hit = c->width > 0 && (primary ? res->crtcs[i] == primary
-                                                      : px >= c->x && px < c->x + static_cast<int>(c->width)
-                                                            && py >= c->y && py < c->y + static_cast<int>(c->height));
-            if (hit) found = {c->x, c->y, static_cast<int>(c->width), static_cast<int>(c->height)};
+            const Rect r{c->x, c->y, static_cast<int>(c->width), static_cast<int>(c->height)};
+            const bool lit = r.w > 0 && r.h > 0;
+            if (lit && !any) {
+                first = r;
+                any = true;
+            }
+            hit = lit && (primary ? res->crtcs[i] == primary : px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h);
+            if (hit) found = r;
             x_.XRRFreeCrtcInfo(c);
-            if (hit) break;
         }
         x_.XRRFreeScreenResources(res);
-        return found;
+        return hit ? found : first;
     }
 
-    void paint() {
+    /// `m` less the panels: the window manager's `_NET_WORKAREA` for the current desktop, intersected with it. `m` as
+    /// it is when there is none, or the two do not meet. EWMH gives one rectangle across all monitors, so where a window
+    /// manager trims it by a panel on another monitor's edge, this one is trimmed too: a screen a little off centre.
+    Rect work_area(Window root, const Rect& m) {
+        const auto cardinals = [&](const char* name) {
+            std::vector<long> out;
+            const Atom atom = x_.XInternAtom(display_, name, True);
+            Atom type = 0;
+            int format = 0;
+            unsigned long count = 0, after = 0;
+            unsigned char* data = nullptr;
+            if (atom != None
+                && x_.XGetWindowProperty(display_, root, atom, 0, 1024, False, XA_CARDINAL, &type, &format, &count, &after,
+                                         &data) == Success
+                && data && type == XA_CARDINAL && format == 32) {
+                const long* values = reinterpret_cast<const long*>(data);   // format 32 arrives as longs
+                out.assign(values, values + count);
+            }
+            if (data) x_.XFree(data);
+            return out;
+        };
+        const std::vector<long> area = cardinals("_NET_WORKAREA");
+        if (area.size() < 4) return m;
+        const std::vector<long> desktop = cardinals("_NET_CURRENT_DESKTOP");
+        std::size_t i = 0;
+        if (!desktop.empty() && desktop[0] >= 0 && static_cast<std::size_t>(desktop[0]) < area.size() / 4)
+            i = static_cast<std::size_t>(desktop[0]) * 4;
+        const long x0 = std::max<long>(m.x, area[i]), y0 = std::max<long>(m.y, area[i + 1]);
+        const long x1 = std::min<long>(m.x + m.w, area[i] + area[i + 2]);
+        const long y1 = std::min<long>(m.y + m.h, area[i + 1] + area[i + 3]);
+        if (x1 <= x0 || y1 <= y0) return m;
+        return {static_cast<int>(x0), static_cast<int>(y0), static_cast<int>(x1 - x0), static_cast<int>(y1 - y0)};
+    }
+
+    /// `full` puts the whole frame (shown, exposed); a tick puts only the bar's rows, the one band that moves.
+    void paint(bool full) {
         if (closed_ || !window_) return;
-        ScreenPixels frame = base_;
+        const int band = full ? h_ : bar_;
+        if (band <= 0) return;
+        const std::size_t from = static_cast<std::size_t>(h_ - band) * w_;
+        std::copy(base_.bgra.begin() + static_cast<std::ptrdiff_t>(from), base_.bgra.end(),
+                  frame_.bgra.begin() + static_cast<std::ptrdiff_t>(from));
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start_).count();
-        draw_progress(frame, desc_, scale_, rounded_, std::fmod(ms / 1500.0, 1.0));
+        draw_progress(frame_, desc_, scale_, rounded_, std::fmod(ms / 1500.0, 1.0));
         XImage* img = x_.XCreateImage(display_, visual_, static_cast<unsigned>(depth_), ZPixmap, 0,
-                                      reinterpret_cast<char*>(frame.bgra.data()), static_cast<unsigned>(w_),
+                                      reinterpret_cast<char*>(frame_.bgra.data()), static_cast<unsigned>(w_),
                                       static_cast<unsigned>(h_), 32, 0);
         if (!img) return;
         // The frame is 32-bit little-endian 0xAARRGGBB: declared so, Xlib swaps for a big-endian server; a server whose
@@ -272,7 +336,8 @@ private:
             XDestroyImage(img);
             return;
         }
-        x_.XPutImage(display_, window_, gc_, img, 0, 0, 0, 0, static_cast<unsigned>(w_), static_cast<unsigned>(h_));
+        x_.XPutImage(display_, window_, gc_, img, 0, h_ - band, 0, h_ - band, static_cast<unsigned>(w_),
+                     static_cast<unsigned>(band));
         img->data = nullptr;   // the frame's, not Xlib's to free
         XDestroyImage(img);    // a macro: calls img->f.destroy_image, no symbol needed
         x_.XFlush(display_);
@@ -282,6 +347,8 @@ private:
     StartupScreenDescription desc_;
     ScreenImage image_;
     ScreenPixels base_;
+    ScreenPixels frame_;   // what is on screen: base_ with the bar over its bottom rows
+    int bar_ = 0;
     Display* display_ = nullptr;
     Window window_ = 0;
     GC gc_ = nullptr;
@@ -295,6 +362,7 @@ private:
     bool argb_ = false;
     bool rounded_ = false;
     bool closed_ = false;
+    bool dead_ = false;   // the connection is gone
     std::chrono::steady_clock::time_point start_;
 };
 
@@ -303,12 +371,23 @@ int on_x_error(Display*, XErrorEvent* e) {
     return 0;
 }
 
+// Returning lets libX11 1.7 call the exit handler below in place of exit(); an older one exits after it regardless.
+int on_x_io_error(Display*) {
+    if (g_shown) g_shown->connection_lost();
+    return 0;
+}
+
+void on_x_io_exit(Display*, void*) {
+    if (g_shown) g_shown->connection_lost();
+}
+
 }  // namespace
 
 std::unique_ptr<StartupScreen> StartupScreen::show(const StartupScreenDescription& d, std::string& error) {
     ScreenImage image;
-    if (d.png && d.png_size && !decode_png(d.png, d.png_size, image)) {
-        error = "the startup screen's PNG would not decode";
+    std::string why;
+    if (d.png && d.png_size && !decode_png(d.png, d.png_size, image, &why)) {
+        error = "the startup screen's PNG would not decode: " + why;
         return nullptr;
     }
     auto screen = std::make_unique<X11Screen>(d, std::move(image));

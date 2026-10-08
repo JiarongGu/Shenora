@@ -8,6 +8,7 @@
 #include <tlhelp32.h>
 
 #include <algorithm>
+#include <cstdio>
 
 namespace fs = std::filesystem;
 
@@ -160,6 +161,15 @@ void release_process(StartedProcess& process) {
 
 void show_error(const std::string& title, const std::string& message) {
     MessageBoxW(nullptr, widen(message).c_str(), widen(title).c_str(), MB_OK | MB_ICONERROR);
+}
+
+void stdout_to_parent_console() {
+    const HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    // A shell gives a GUI program no handle; a pipe, a file or NUL is a redirect, and the output goes there.
+    if (out && out != INVALID_HANDLE_VALUE && GetFileType(out) != FILE_TYPE_UNKNOWN) return;
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;   // started from no terminal (a double-click)
+    FILE* reopened = nullptr;
+    freopen_s(&reopened, "CONOUT$", "w", stdout);
 }
 
 namespace {

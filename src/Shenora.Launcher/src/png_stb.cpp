@@ -4,16 +4,23 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #define STBI_NO_STDIO
+#define STBI_FAILURE_USERMSG   // its sentences, not its codes: they reach launcher.log
 #include "../third_party/stb_image.h"
 
 #include "shenora/startup_screen.hpp"
 
 namespace shenora {
 
-bool decode_png(const unsigned char* data, std::size_t size, ScreenImage& out) {
+bool decode_png(const unsigned char* data, std::size_t size, ScreenImage& out, std::string* reason) {
     int w = 0, h = 0, n = 0;
     unsigned char* rgba = stbi_load_from_memory(data, static_cast<int>(size), &w, &h, &n, 4);
-    if (!rgba) return false;
+    if (!rgba) {
+        if (reason) {
+            const char* why = stbi_failure_reason();
+            *reason = why ? why : "unknown";
+        }
+        return false;
+    }
     out.width = w;
     out.height = h;
     out.bgra.resize(static_cast<std::size_t>(w) * h);
