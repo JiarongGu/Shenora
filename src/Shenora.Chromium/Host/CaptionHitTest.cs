@@ -20,7 +20,8 @@ namespace Shenora.Chromium.Host;
 /// which is what Snap Layouts attaches to. The non-client press and release there are SWALLOWED: the default
 /// handling would run the OS's own caption-button loop against a caption this window does not draw. So the press
 /// takes the mouse capture itself, as that loop would, and the pointer's moves and the release reach
-/// <see cref="CaptionButtons"/> wherever they happen.
+/// <see cref="CaptionButtons"/> wherever they happen. A framed window's own caption buttons answer the same codes
+/// outside the page's rectangles, and are passed on to that loop.
 /// </para>
 /// <para>
 /// A frameless window's press on the drag area is taken the same way, and handed to the system's move loop once the
@@ -129,6 +130,10 @@ internal sealed unsafe class CaptionHitTest : IDisposable
     // A captured mouse message carries CLIENT coordinates, negative off the window's left or top.
     private CaptionButtonKind? ButtonAtClient(nint lParam) => _buttons.At((short)(lParam & 0xFFFF), (short)((lParam >> 16) & 0xFFFF));
 
+    // The page's button a non-client message is for: its hit-test code, at a point where the page declared that button.
+    // A framed window's own caption buttons answer the same codes, and stay the system's.
+    private CaptionButtonKind? PageButton(nint code, nint lParam) => FromHitTest(code) is { } kind && ButtonAt(lParam) == kind ? kind : null;
+
     // The leave that ends a hover: WM_NCMOUSELEAVE arrives only while it is being tracked, and at once when the
     // pointer is already off the frame.
     private void TrackLeave()
@@ -197,8 +202,9 @@ internal sealed unsafe class CaptionHitTest : IDisposable
                 case WM_NCHITTEST when me.ButtonAt(lParam) is { } kind:
                     return ToHitTest(kind);
                 case WM_NCMOUSEMOVE:
-                    me._buttons.Hover(FromHitTest(wParam));
-                    if (FromHitTest(wParam) is not null) me.TrackLeave();
+                    var hovered = me.PageButton(wParam, lParam);
+                    me._buttons.Hover(hovered);
+                    if (hovered is not null) me.TrackLeave();
                     break;
                 case WM_NCMOUSELEAVE:
                     me._buttons.Leave();
@@ -248,11 +254,11 @@ internal sealed unsafe class CaptionHitTest : IDisposable
                 case WM_EXITSIZEMOVE:
                     me._movePress = null;
                     break;
-                case WM_NCLBUTTONDOWN or WM_NCLBUTTONDBLCLK when FromHitTest(wParam) is { } pressed:
+                case WM_NCLBUTTONDOWN or WM_NCLBUTTONDBLCLK when me.PageButton(wParam, lParam) is { } pressed:
                     me._buttons.Press(pressed);
                     me.BeginCapture();
                     return 0;
-                case WM_NCLBUTTONUP when FromHitTest(wParam) is { } released:   // a press that began elsewhere
+                case WM_NCLBUTTONUP when me.PageButton(wParam, lParam) is { } released:   // a press that began elsewhere
                     me._buttons.Release(released);
                     return 0;
                 // The press's own moves and release, wherever the pointer is. A press cancelled meanwhile (the page's

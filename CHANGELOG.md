@@ -28,6 +28,15 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Fixed
+
+- **A framed Chromium window's own minimize, maximize and close buttons did nothing on Windows.** The caption
+  hit-test took every non-client press on a caption-button code for the page's buttons, so with
+  `FramelessChrome = false` it swallowed the system's own buttons' presses and handed them to page buttons that did
+  not exist. It now keeps a press only where the page declared that button, and passes the system's own buttons on.
+
 ## 0.21.0 — 2026-10-08
 
 ### Breaking
