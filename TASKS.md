@@ -34,6 +34,28 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
+### 🟠 A Chromium window shows CHROMIUM's icon on Windows, not the app's (reported by an adopting app, 2026-10-12)
+
+**The bug.** The app sets `ApplicationIcon`. The build copies it into the launcher, and Explorer shows it on
+`<App>.exe`. But the running main window (`Chrome_WidgetWin_1`) answers `WM_GETICON` with nothing, and
+its class icon is the **Chromium logo**. So the taskbar button, Alt+Tab and the title bar show Chromium, not the
+app. This was measured on the live window (0.21.1, read-only `WM_GETICON` / `GetClassLongPtr(GCLP_HICON)`).
+
+**What fixes it, proven in the app.** The app now sends `WM_SETICON` (big and small, loaded from its `.ico`) to its
+own top-level `Chrome_WidgetWin_*` windows. It re-checks every second, because Chromium may set its icon again.
+With that, the window showed the app's icon, and the browser process's windows showed theirs. It works, but every
+adopter would have to rediscover it.
+
+**Fix in the kit.** Give a Chromium window the app's own icon:
+- read it from the executable (`ExtractIconEx` on `Environment.ProcessPath`, as `WindowsTray.LoadIcon` already does
+  for the tray), or from an explicit `ChromiumWindowOptions.IconPath`;
+- set it on window creation (`WM_SETICON`, or the window class's icon), and again on Chromium's later
+  resets, for the browser process's windows too (`ChromiumBrowserProcessOptions`).
+
+An app with no `ApplicationIcon` keeps today's behaviour.
+
+**Test.** A window's `WM_GETICON(ICON_BIG)` is the app's icon after creation, and after a navigation.
+
 ### 🧭 `Shenora.Chromium` ALONE IS A COMPLETE DESKTOP SHELL — Windows included (D88)
 
 > **`Shenora.Chromium` is completed as a whole shell, usable on its own.** An app on any desktop references
