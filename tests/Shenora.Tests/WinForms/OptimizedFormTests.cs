@@ -60,10 +60,10 @@ public class OptimizedFormTests
     [Fact]
     public void A_throwing_MaximizedChanged_subscriber_does_not_take_the_window_down() => Sta.Run(() =>
     {
-        // Same class as the WndProcHook test above, and the same position: two of the four raise paths
-        // are the WM_SYSCOMMAND maximize/restore interception inside WndProc, so an app subscriber that
-        // throws escapes into the window procedure. This event is PUBLIC and its own summary invites an
-        // app to resync chrome on it, so "no app subscribes" is not an answer.
+        // Same class as the WndProcHook test above, and the same position: the event is raised from
+        // WM_SIZE for the system's own routes, so an app subscriber that throws escapes into the window
+        // procedure. This event is PUBLIC and its own summary invites an app to resync chrome on it, so
+        // "no app subscribes" is not an answer.
         var calls = 0;
         using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
         form.MaximizedChanged += (_, _) =>
@@ -85,14 +85,14 @@ public class OptimizedFormTests
     [Fact]
     public void Restoring_from_an_unreachable_saved_rect_lands_somewhere_visible() => Sta.Run(() =>
     {
-        // _restoreBounds is RAW PHYSICAL px from whichever monitor the window maximized on, so it can
-        // be unreachable later: that monitor unplugged, moved in the virtual desktop, or rescaled
-        // (P5.5 H2). Restoring to it blind put the window where the user cannot grab it.
+        // The windowed bounds are physical px on whichever monitor the window was on, so they can be
+        // unreachable later: that monitor unplugged, moved in the virtual desktop, or rescaled
+        // (P5.5 H2). Restoring to them blind put the window where the user cannot grab it.
         using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
         form.Bounds = new Rectangle(-40000, -40000, 400, 300); // "a monitor that is no longer there"
         _ = form.Handle;
 
-        form.Maximize();                    // captures the off-screen rect as the restore target
+        form.Maximize();
         Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
         form.RestoreFromMax();
 
@@ -104,12 +104,9 @@ public class OptimizedFormTests
     });
 
     [Fact]
-    public void A_framed_window_does_not_subscribe_to_display_changes() => Sta.Run(() =>
+    public void Disposing_twice_is_safe() => Sta.Run(() =>
     {
-        // SystemEvents is a static, process-lifetime publisher, so the subscription must be both
-        // conditional (only a frameless window maximizes manually) and released on dispose — a missed
-        // unsubscribe keeps the whole control tree alive forever.
-        var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
+        var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true, NativeCaptionButtons = true });
         _ = form.Handle;
         form.Dispose();
 
@@ -149,37 +146,70 @@ public class OptimizedFormTests
         Assert.Equal(2, changes);
     });
 
+    // The caption style is what makes Windows animate a minimize, a maximize and a restore: a probe sampling the screen
+    // through each saw no frame between the two states without it, and 4 to 12 with it. WM_NCCALCSIZE hides it.
     [Fact]
-    public void Frameless_manual_maximize_fills_and_restores_without_touching_window_state() => Sta.Run(() =>
+    public void A_frameless_window_keeps_the_caption_style_and_hides_the_caption() => Sta.Run(() =>
     {
-        using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
-        form.StartPosition = FormStartPosition.Manual;
-        form.Bounds = new Rectangle(120, 130, 640, 480);
-        _ = form.Handle; // the manual path needs a real handle (monitor lookup + SetWindowPos)
+        using var form = Frameless(new Rectangle(120, 130, 640, 480));
+        _ = form.Handle;
+
+        Assert.Equal(WS_CAPTION, GetWindowLong(form.Handle, GWL_STYLE) & WS_CAPTION);
+        Assert.Equal(form.Bounds.Top, form.PointToScreen(Point.Empty).Y);
+    });
+
+    // The system's own maximize: the window overhangs its monitor by its frame, and the client is the work area exactly.
+    [Fact]
+    public void Frameless_maximize_is_the_systems_and_its_client_is_the_work_area() => Sta.Run(() =>
+    {
+        using var form = Frameless(new Rectangle(120, 130, 640, 480));
+        ShowWindow(form.Handle, SW_SHOWNOACTIVATE);
         var changes = 0;
         form.MaximizedChanged += (_, _) => changes++;
         var original = form.Bounds;
 
         form.Maximize();
 
+        Assert.Equal(FormWindowState.Maximized, form.WindowState);
         Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
-        // Manual maximize: WindowState stays Normal — IsAppMaximized is the source of truth.
-        Assert.Equal(FormWindowState.Normal, form.WindowState);
-        Assert.True(form.Width > original.Width && form.Height > original.Height);
+        Assert.Equal(WorkArea(form), form.RectangleToScreen(form.ClientRectangle));
 
         form.RestoreFromMax();
 
         Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
-        // The restore-bounds roundtrip. This also guards the restore TARGET, which now comes from
-        // WINDOWPLACEMENT.rcNormalPosition rather than the live window rect (so that maximizing a
-        // SNAPPED window and restoring it exits the snap, as every other Windows app does).
-        // The snapped case itself cannot be built in-process — Aero Snap is an OS shell gesture, and
-        // rcNormalPosition only diverges from the live rect once the OS has actually docked the
-        // window — so it is verified live: Win+Left, SC_MAXIMIZE, SC_RESTORE, asserting the window
-        // lands back on its PRE-snap rectangle. What this test pins is that the new source returns
-        // the right answer in the ordinary case.
         Assert.Equal(original, form.Bounds);
         Assert.Equal(2, changes);
+    });
+
+    // Win+Up, the caption's double click, a snap and the taskbar maximize without this form's members.
+    [Fact]
+    public void A_maximize_by_the_systems_own_route_is_followed() => Sta.Run(() =>
+    {
+        using var form = Frameless(new Rectangle(120, 130, 640, 480));
+        ShowWindow(form.Handle, SW_SHOWNOACTIVATE);
+        var changes = 0;
+        form.MaximizedChanged += (_, _) => changes++;
+
+        SendMessage(form.Handle, WM_SYSCOMMAND, SC_MAXIMIZE, IntPtr.Zero);
+        Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
+        Assert.Equal(1, changes);
+
+        SendMessage(form.Handle, WM_SYSCOMMAND, SC_RESTORE, IntPtr.Zero);
+        Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
+        Assert.Equal(2, changes);
+    });
+
+    // WinForms sizes the window for its styles, whose caption a frameless window's client covers.
+    [Fact]
+    public void ClientSize_is_the_frameless_windows_real_client() => Sta.Run(() =>
+    {
+        using var form = Frameless(new Rectangle(120, 130, 640, 480));
+        _ = form.Handle;
+
+        form.ClientSize = new Size(500, 400);
+
+        GetClientRect(form.Handle, out var client);
+        Assert.Equal(new Size(500, 400), new Size(client.Right - client.Left, client.Bottom - client.Top));
     });
 
     [Fact]
@@ -198,22 +228,25 @@ public class OptimizedFormTests
         Assert.Equal(2, changes);
     });
 
+    // Minimized from maximized, the window is still maximized to the window-state stack, and comes back that way when
+    // the kit brings it forward; RestoreFromMax takes it to its windowed bounds.
     [Fact]
-    public void Restore_from_max_unminimizes_first() => Sta.Run(() =>
+    public void A_window_minimized_from_maximized_stays_maximized_until_restored() => Sta.Run(() =>
     {
-        // Regression: restoring bounds on a still-minimized window mangled them under
-        // WS_MINIMIZE and left the window in the taskbar with the state dropped.
-        using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
-        form.StartPosition = FormStartPosition.Manual;
-        form.Bounds = new Rectangle(100, 100, 640, 480);
-        _ = form.Handle;
+        using var form = Frameless(new Rectangle(100, 100, 640, 480));
+        ShowWindow(form.Handle, SW_SHOWNOACTIVATE);
         form.Maximize();
-        form.WindowState = FormWindowState.Minimized;
 
+        ShowWindow(form.Handle, SW_SHOWMINNOACTIVE);
+        Assert.Equal(FormWindowState.Minimized, form.WindowState);
+        Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
+
+        WindowActivation.Unminimize(form);
+        Assert.Equal(FormWindowState.Maximized, form.WindowState);
+
+        ShowWindow(form.Handle, SW_SHOWMINNOACTIVE);
         form.RestoreFromMax();
-
         Assert.Equal(FormWindowState.Normal, form.WindowState);
-        Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
         Assert.Equal(new Rectangle(100, 100, 640, 480), form.Bounds);
     });
 
@@ -249,10 +282,47 @@ public class OptimizedFormTests
         Assert.Empty(resized);
     });
 
+    private static OptimizedForm Frameless(Rectangle bounds) => new(new OptimizedFormOptions { FramelessChrome = true })
+    {
+        StartPosition = FormStartPosition.Manual,
+        Bounds = bounds,
+        ShowInTaskbar = false,
+    };
+
+    private static Rectangle WorkArea(Form form)
+    {
+        var info = new MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
+        GetMonitorInfo(MonitorFromWindow(form.Handle, 2 /* MONITOR_DEFAULTTONEAREST */), ref info);
+        return Rectangle.FromLTRB(info.rcWork.Left, info.rcWork.Top, info.rcWork.Right, info.rcWork.Bottom);
+    }
+
     private const int SW_SHOWMINNOACTIVE = 7, SW_SHOWNOACTIVATE = 4;
+    private const int WS_CAPTION = 0x00C00000, GWL_STYLE = -16, WM_SYSCOMMAND = 0x0112;
+    private static readonly IntPtr SC_MAXIMIZE = 0xF030, SC_RESTORE = 0xF120;
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public int dwFlags; }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+    private static extern int GetWindowLong(IntPtr hWnd, int index);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hWnd, int flags);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
 
     [Fact]
     public void WndProc_hook_sees_messages() => Sta.Run(() =>

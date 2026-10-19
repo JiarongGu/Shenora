@@ -347,10 +347,7 @@ internal sealed class WinFormsRunner : IShenoraRunner
     // Restored if minimized, shown if hidden (close-to-tray), then the foreground, which the later launch handed over.
     private static void BringForward(Form form)
     {
-        if (form.WindowState == FormWindowState.Minimized)
-        {
-            form.WindowState = FormWindowState.Normal;
-        }
+        WindowActivation.Unminimize(form);
         form.Show();
         form.Activate();
         form.BringToFront();

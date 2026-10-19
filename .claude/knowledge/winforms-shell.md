@@ -30,18 +30,20 @@ owner, `IUiDispatcher`) — don't restate it here.
   close from code with `ExitApplication()` or `Application.Exit()`, never `Close()`. (What does pass
   through: `ApplicationExitCall`, `WindowsShutDown`, `TaskManagerClosing`, `FormOwnerClosing`,
   `MdiFormClosing`.)
-- **Frameless chrome maximizes MANUALLY, so `Form.WindowState` is not the source of truth.** Use the
-  `IAppMaximizable` seam (`IsAppMaximized` / `AppRestoreBounds`), which `WindowStateManager` prefers
-  over the WinForms properties. Reading `WindowState` instead persisted `maximized: false` together
-  with the work-area rect, so the next launch filled the work area believing it was NOT maximized: the
-  border gap the technique exists to remove came back, the page's glyph was wrong, and clicking
-  maximize captured the work-area rect as the restore bounds — making restore a PERMANENT no-op.
-- **A manual maximize goes stale, and a manual restore target can become unreachable.** The fill is a
-  one-shot `SetWindowPos` to one monitor's work area in physical px, so a monitor move, a scale change
-  or a dock/undock leaves it the wrong size while still "maximized" — re-apply on `WM_DPICHANGED` and
-  `SystemEvents.DisplaySettingsChanged` (`RefreshMaximizedFill`). The saved restore rect is raw
-  physical px from a monitor that may be gone, so validate it with `WindowStateManager.IsVisible` (one
-  owner for "can the user reach this") and fall back to a centred work-area rect.
+- **Frameless chrome keeps `WS_CAPTION` and maximizes the system's way; never a `SetWindowPos` fill.**
+  Applies to any change to `OptimizedForm`'s styles, `WM_NCCALCSIZE` or maximize path. Without the caption
+  style, or with a manual work-area fill, Windows plays NO animation for minimize, maximize or restore
+  (measured, all four) — the defect an adopter reported. `WM_NCCALCSIZE` hides the caption, and a
+  maximized window's top keeps its sides' inset, or the client runs past the monitor by the frame.
+  WinForms reckons sizes from `CreateParams`, which include the caption, so anything that turns a client
+  size into a window size (`SetClientSizeCore`) must correct for it.
+- **A window that DOES maximize by hand must implement `IAppMaximizable`**, which `WindowStateManager`
+  prefers over the WinForms properties. Reading `WindowState` instead persisted `maximized: false` together
+  with the work-area rect, so clicking maximize captured the work-area rect as the restore bounds — making
+  restore a PERMANENT no-op.
+- **Un-minimize with `SW_RESTORE`, never `WindowState = Normal`** — the setter restores the windowed bounds
+  whatever the window was, so a window minimized from maximized came back un-maximized
+  (`WindowActivation.Unminimize`).
 - **`SystemEvents` holds a STRONG static reference** — subscribe only when the window actually needs
   it, and detach in `Dispose(bool)`, or the form and its whole control tree leak for the process
   lifetime. It also raises on its own thread: marshal it.

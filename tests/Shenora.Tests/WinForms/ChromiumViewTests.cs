@@ -116,15 +116,27 @@ public class ChromiumViewTests
             Assert.False(FormCaption.Move(frameless, new Point(10, 10), buttonDown: () => false));
             Assert.False(FormCaption.Resize(frameless, 12 /* HTTOP */, buttonDown: () => false));
 
-            frameless.ToggleMaximize();
-            Assert.True(FormCaption.ManuallyMaximized(frameless));
-            Assert.False(FormCaption.Move(frameless, new Point(10, 10), buttonDown: () => true));
+            using var own = new OwnMaximizeForm { ShowInTaskbar = false };
+            _ = own.Handle;
+            Assert.True(FormCaption.ManuallyMaximized(own));
+            Assert.False(FormCaption.Move(own, new Point(10, 10), buttonDown: () => true));
 
-            // A window the system maximized has true restore bounds: the system's own drag restores it.
+            // A window the system maximized has true restore bounds: the system's own drag restores it. A frameless
+            // OptimizedForm is one.
+            frameless.ToggleMaximize();
+            Assert.False(FormCaption.ManuallyMaximized(frameless));
             using var framed = new Form { WindowState = FormWindowState.Maximized, ShowInTaskbar = false };
             _ = framed.Handle;
             Assert.False(FormCaption.ManuallyMaximized(framed));
         });
+    }
+
+    /// <summary>A window maximized its own way, as an app's own frameless form may be: Normal to the system.</summary>
+    private sealed class OwnMaximizeForm : Form, IAppMaximizable
+    {
+        public WindowPlacement AppPlacement => WindowPlacement.Maximized;
+
+        public Rectangle AppRestoreBounds => Rectangle.Empty;
     }
 
     // Posted from the view's own thread, the work runs inline, in the caller's context: the mark must end with it.

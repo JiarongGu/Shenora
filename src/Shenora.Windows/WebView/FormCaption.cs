@@ -45,7 +45,7 @@ internal static class FormCaption
     /// <summary>
     /// The system menu's items from the window's own placement, as the system sets them for a real one: a maximized
     /// window offers Restore and neither Move, Size nor Maximize. The system reads its placement from the window, and an
-    /// <see cref="OptimizedForm"/> maximized its own way looks Normal to it. Close is left as the system has it.
+    /// <see cref="IAppMaximizable"/> maximized its own way looks Normal to it. Close is left as the system has it.
     /// </summary>
     public static void UpdateSystemMenu(nint menu, Form form)
     {
@@ -64,8 +64,8 @@ internal static class FormCaption
     private static void Enable(nint menu, int command, bool enabled) =>
         EnableMenuItem(menu, (uint)command, MF_BYCOMMAND | (enabled ? 0 : MF_GRAYED));
 
-    /// <summary>A frameless window's own work-area maximize, which never shows in <see cref="Form.WindowState"/> and
-    /// keeps restore bounds the OS knows nothing of.</summary>
+    /// <summary>A window maximized its own way (an <see cref="IAppMaximizable"/>), which never shows in
+    /// <see cref="Form.WindowState"/> and keeps restore bounds the OS knows nothing of.</summary>
     public static bool ManuallyMaximized(Form form) =>
         form is IAppMaximizable { AppPlacement: WindowPlacement.Maximized } && form.WindowState != FormWindowState.Maximized;
 

@@ -104,7 +104,7 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
     return this.send('CLOSE');
   }
 
-  /** Authoritative maximize state (a frameless manual maximize never shows in the DOM). */
+  /** Authoritative maximize state (the DOM sees a maximize only as a resize). */
   async isMaximized(): Promise<boolean> {
     const result: { maximized: boolean } = await this.send('IS_MAXIMIZED');
     return result.maximized;
@@ -216,7 +216,7 @@ export function useCaptionButtonState(options: { bus?: ShenoraEventBus } = {}): 
 
 /**
  * The authoritative maximize state, re-queried when a resize SETTLES — a maximize/restore always
- * resizes the window, and the DOM has no other signal for the manual work-area maximize. Failures
+ * resizes the window, and the DOM has no other signal for a maximize. Failures
  * (plain browser, no host) leave it false.
  *
  * ⚠ Read once immediately, then only on the TRAILING edge of a 100 ms debounce, so there are no

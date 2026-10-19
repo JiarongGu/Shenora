@@ -17,7 +17,7 @@ public class SystemMenuTests
 {
     private const int SC_SIZE = 0xF000, SC_MOVE = 0xF010, SC_MINIMIZE = 0xF020, SC_MAXIMIZE = 0xF030, SC_CLOSE = 0xF060,
         SC_RESTORE = 0xF120;
-    private const int WS_SYSMENU = 0x00080000, GWL_STYLE = -16, WM_INITMENUPOPUP = 0x0117;
+    private const int WS_SYSMENU = 0x00080000, GWL_STYLE = -16;
     private const uint MF_BYCOMMAND = 0, MF_GRAYED = 1, MF_DISABLED = 2;
 
     /// <summary>Replaces the system's menu for one test, and records each time it would have opened.</summary>
@@ -41,12 +41,30 @@ public class SystemMenuTests
         Assert.NotEqual(0, GetSystemMenu(form.Handle, false));
     });
 
-    // A manual maximize looks Normal to the system, which would offer Maximize, Move and Size.
+    /// <summary>A window that maximizes its own way, as an app's own frameless form may: Normal to the system.</summary>
+    private sealed class OwnMaximizeForm : Form, IAppMaximizable
+    {
+        // Hidden from the designer: WFO1000 reads a settable public property on a Form as designer state.
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public WindowPlacement AppPlacement { get; set; }
+
+        public Rectangle AppRestoreBounds => Rectangle.Empty;
+
+        public readonly List<int> Commands = [];
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == 0x0112) Commands.Add((int)m.WParam & 0xFFF0);   // WM_SYSCOMMAND
+            base.WndProc(ref m);
+        }
+    }
+
+    // Such a window looks Normal to the system, which would offer Maximize, Move and Size.
     [Fact]
     public void A_window_maximized_its_own_way_offers_restore_and_not_move_size_or_maximize() => Sta.Run(() =>
     {
-        using var form = Frameless();
-        form.ToggleMaximize();
+        using var form = new OwnMaximizeForm { ShowInTaskbar = false, AppPlacement = WindowPlacement.Maximized };
+        _ = form.Handle;
         Assert.Equal(FormWindowState.Normal, form.WindowState);   // the system's view of it
         using var fake = new FakeMenu(choose: SC_RESTORE);
 
@@ -62,10 +80,27 @@ public class SystemMenuTests
         Assert.True(items[SC_MINIMIZE]);
         Assert.True(items[SC_CLOSE]);
 
-        // The choice reaches the window after the menu has closed, and goes its own way.
-        Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
+        // The choice reaches the window after the menu has closed.
+        Assert.Empty(form.Commands);
         Application.DoEvents();
-        Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
+        Assert.Equal([SC_RESTORE], form.Commands);
+    });
+
+    // A frameless OptimizedForm maximizes the system's way, so the system's own items are right for it.
+    [Fact]
+    public void A_maximized_frameless_window_offers_what_the_system_offers_a_maximized_window() => Sta.Run(() =>
+    {
+        using var form = Frameless();
+        form.ToggleMaximize();
+        Assert.Equal(FormWindowState.Maximized, form.WindowState);
+        using var fake = new FakeMenu();
+
+        Assert.True(FormCaption.ShowSystemMenu(form, Point.Empty));
+
+        var items = Assert.Single(fake.Opened).Items;
+        Assert.True(items[SC_RESTORE]);
+        Assert.False(items[SC_MAXIMIZE]);
+        Assert.False(items[SC_MOVE]);
     });
 
     [Fact]
@@ -98,31 +133,6 @@ public class SystemMenuTests
         Assert.Equal(0, GetWindowLong(form.Handle, GWL_STYLE) & WS_SYSMENU);
         Assert.False(FormCaption.ShowSystemMenu(form, Point.Empty));
         Assert.Empty(fake.Opened);
-    });
-
-    // Alt+Space and the taskbar open the window's menu themselves, with the items the system set from its own view.
-    [Fact]
-    public void The_systems_own_menu_is_set_again_for_a_window_maximized_its_own_way() => Sta.Run(() =>
-    {
-        using var form = Frameless();
-        form.ToggleMaximize();
-        var menu = GetSystemMenu(form.Handle, false);
-        void AsTheSystemSeesIt()
-        {
-            EnableMenuItem(menu, (uint)SC_RESTORE, MF_BYCOMMAND | MF_GRAYED);
-            EnableMenuItem(menu, (uint)SC_MAXIMIZE, MF_BYCOMMAND);
-            EnableMenuItem(menu, (uint)SC_MOVE, MF_BYCOMMAND);
-        }
-
-        AsTheSystemSeesIt();
-        SendMessage(form.Handle, WM_INITMENUPOPUP, menu, 0);   // a popup that is not the system menu
-        Assert.False(Items(menu)[SC_RESTORE]);
-
-        SendMessage(form.Handle, WM_INITMENUPOPUP, menu, 1 << 16);   // the system menu
-        var items = Items(menu);
-        Assert.True(items[SC_RESTORE]);
-        Assert.False(items[SC_MAXIMIZE]);
-        Assert.False(items[SC_MOVE]);
     });
 
     // Queued, where the drag's handoff runs inline: the menu is a modal loop, and the route answers before it opens.
@@ -201,7 +211,5 @@ public class SystemMenuTests
 
     [DllImport("user32")] private static extern nint GetSystemMenu(nint hwnd, bool revert);
     [DllImport("user32")] private static extern uint GetMenuState(nint menu, uint item, uint flags);
-    [DllImport("user32")] private static extern int EnableMenuItem(nint menu, uint item, uint flags);
     [DllImport("user32", EntryPoint = "GetWindowLongW")] private static extern int GetWindowLong(nint hwnd, int index);
-    [DllImport("user32")] private static extern nint SendMessage(nint hwnd, int msg, nint wParam, nint lParam);
 }

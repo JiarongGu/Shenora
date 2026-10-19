@@ -158,10 +158,22 @@ arguments and working directory to the running instance. `TryAcquire` answers **
 technique: `WM_NCCALCSIZE` keeps Windows' native side/bottom resize borders and gives the TOP back to the
 client, so the window is edge-resizable and Aero-snap capable with no visible frame and no content inset.
 
-🔴 **Maximize is MANUAL** — the window is sized to the monitor work area via `SetWindowPos` rather than
-`WindowState.Maximized`, which on a borderless window left a ~6 px gap on every edge and squared off the
-Win11 corners. `SC_MAXIMIZE` routes through the same path, so every maximize route agrees. **`IsAppMaximized`
-is the truth, not `Form.WindowState`** — a manual maximize keeps `WindowState.Normal`.
+🔴 **The frameless window keeps `WS_CAPTION`, and maximizes the system's way.** The caption style is what
+makes Windows animate a minimize, a maximize and a restore: measured by sampling the screen through each, a
+window without it (or maximized by a `SetWindowPos` fill of the work area, as this one once was) showed no
+frame between the two states, and one with it showed 4 to 12. `WM_NCCALCSIZE` hides the caption: it gives the
+top back to the client, and a maximized window, which the system overhangs past its monitor by its frame on
+every side, keeps at the top the inset its sides got, so its client is the work area exactly. So
+`Form.WindowState` reads Maximized, the
+system's own routes (Win+Up, the caption's double click, Snap, the taskbar) need no interception, and one
+`WM_SIZE` handler follows every route for the corners and `MaximizedChanged`. `AppPlacement` stays: it counts
+a window minimized from maximized as maximized, which is what the window-state store saves.
+- **Un-minimize with `SW_RESTORE`, never `WindowState = Normal`**, which restores the windowed bounds whatever
+  the window was; the kit's bring-to-front paths (`WindowActivation`, the single-instance hand-off) do.
+- **A saved maximize is applied in `OnLoad`**, before the first show, so the window opens maximized instead of
+  animating up from its windowed bounds.
+- **WinForms' `ClientSize` setter sizes the window for the styles**, so it counted the hidden caption;
+  `SetClientSizeCore` corrects the window by what the client really is.
 
 Chrome commands arrive over IPC on `SHENORA.WINDOW` (`WindowCommandModule` ⇄ `WindowCommands`), and the
 route names are constants on both sides, pinned by `WireMirrorTests`. The module is mapped once, for the main
@@ -182,10 +194,10 @@ things make that true:
   form none, and CEF creates a frameless window without it (style `0x16C70000`, measured). Without it there is
   no menu to open, and `GetSystemMenu` can answer with a menu missing its items, so both helpers refuse a menu with
   none.
-- **The items follow the placement the kit keeps.** A manual maximize looks Normal to the system, which would
-  offer Maximize, Move and Size. So `FormCaption.UpdateSystemMenu` sets the items before the kit's own menu opens,
-  and `OptimizedForm` sets them again on `WM_INITMENUPOPUP` when the system opens it. A Chromium window
-  maximizes the system's way, so the system's items are right.
+- **The items follow the window's placement.** A window maximized its own way (an `IAppMaximizable` the system
+  sees as Normal) would be offered Maximize, Move and Size, so `FormCaption.UpdateSystemMenu` sets the items
+  before the kit's own menu opens. `OptimizedForm` and a Chromium window maximize the system's way, so the
+  system's items are right for them when it opens the menu itself.
 - **It opens queued, never inline**, unlike `START_DRAG`, whose loop must start while the button is down. The
   menu is a modal loop, and inline it would hold the route's answer until the menu closed.
 

@@ -7,9 +7,9 @@ namespace Shenora.Windows;
 public sealed class OptimizedFormOptions
 {
     /// <summary>
-    /// Custom frameless chrome: no title bar, native side/bottom resize borders kept, manual
-    /// work-area maximize, DWM-themed border. False (default) = a normal framed window with
-    /// just the rendering optimizations.
+    /// Custom frameless chrome: no title bar, native side/bottom resize borders kept, the system's own
+    /// animated minimize, maximize and restore, DWM-themed border. False (default) = a normal framed window
+    /// with just the rendering optimizations.
     /// </summary>
     public bool FramelessChrome { get; init; }
 
@@ -61,17 +61,18 @@ public sealed class OptimizedFormOptions
 /// the default title bar is gone and min/max/close/drag/resize are driven from the frontend over IPC
 /// (<c>WindowCommandModule</c> here, <c>WindowCommands</c> in @shenora/react).
 /// <para>
-/// 🔴 Frameless maximize is MANUAL — a <c>SetWindowPos</c> fill of the monitor work area, keeping
-/// <c>WindowState.Normal</c> — so <see cref="AppPlacement"/> is the truth and
-/// <see cref="Form.WindowState"/> is not. See <c>docs/design/shells.md</c> for the technique.
+/// The frameless window keeps its caption style, which is what makes Windows animate its minimize, maximize and
+/// restore, and hides the caption in <c>WM_NCCALCSIZE</c>; it maximizes the system's way, so
+/// <see cref="Form.WindowState"/> reads Maximized as it does for any window. See <c>docs/design/shells.md</c> for
+/// the technique.
 /// </para>
 /// </summary>
 public class OptimizedForm : Form, IAppMaximizable
 {
-    private const int WS_THICKFRAME = 0x00040000, WS_MINIMIZEBOX = 0x00020000, WS_MAXIMIZEBOX = 0x00010000, WS_SYSMENU = 0x00080000;
-    private const int WM_NCCALCSIZE = 0x0083, WM_SYSCOMMAND = 0x0112, WM_NCACTIVATE = 0x0086, WM_NCHITTEST = 0x0084;
-    // Sent when the window moves to a monitor with a different scale factor (PerMonitorV2).
-    private const int WM_DPICHANGED = 0x02E0;
+    private const int WS_CAPTION = 0x00C00000, WS_THICKFRAME = 0x00040000, WS_MINIMIZEBOX = 0x00020000, WS_MAXIMIZEBOX = 0x00010000,
+                      WS_SYSMENU = 0x00080000;
+    private const int WM_SIZE = 0x0005, WM_NCCALCSIZE = 0x0083, WM_NCACTIVATE = 0x0086, WM_NCHITTEST = 0x0084;
+    private const int WPF_RESTORETOMAXIMIZED = 0x0002;
     private const int HTCLIENT = 1, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
     // Answering WM_NCHITTEST with HTMAXBUTTON is what makes Windows 11 offer Snap Layouts on a
     // page-drawn maximize button; a frameless window has no real caption for the OS to find.
@@ -81,7 +82,6 @@ public class OptimizedForm : Form, IAppMaximizable
     // A held press on a caption button captures the mouse, as the system's own caption loop does.
     private const int WM_MOUSEMOVE = 0x0200, WM_LBUTTONUP = 0x0202, WM_RBUTTONDOWN = 0x0204, WM_MBUTTONDBLCLK = 0x0209,
                       WM_XBUTTONDOWN = 0x020B, WM_XBUTTONDBLCLK = 0x020D, WM_CAPTURECHANGED = 0x0215, MK_LBUTTON = 0x0001;
-    private const int SC_MAXIMIZE = 0xF030, SC_RESTORE = 0xF120, WM_INITMENUPOPUP = 0x0117;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_BORDER_COLOR = 34;
     // A frameless window (custom WM_NCCALCSIZE) can lose the AUTOMATIC Win11 rounding, so it is
     // requested explicitly. 33 = DWMWA_WINDOW_CORNER_PREFERENCE.
@@ -90,8 +90,8 @@ public class OptimizedForm : Form, IAppMaximizable
     private readonly OptimizedFormOptions _options;
     private Color? _dwmBorderColor;
     private bool _immersiveDarkMode;
-    private bool _maximized;
-    private Rectangle _restoreBounds;
+    // The placement the corners and MaximizedChanged last followed (SyncPlacement).
+    private bool _placedMaximized;
     // Caption-button regions in CLIENT px. Empty = every message below falls through untouched.
     private CaptionButtonRegion[] _captionButtons = [];
     private CaptionButtonKind? _hotCaptionButton;
@@ -111,7 +111,7 @@ public class OptimizedForm : Form, IAppMaximizable
     private bool _captionActive = true;
     private readonly CaptionButtonRenderer _captionRenderer = new();
 
-    /// <summary>A form with the default options: double-buffered, framed, no manual maximize.</summary>
+    /// <summary>A form with the default options: double-buffered and framed.</summary>
     public OptimizedForm() : this(null)
     {
     }
@@ -148,14 +148,8 @@ public class OptimizedForm : Form, IAppMaximizable
         // No form-level AllowDrop: a drop target is registered PER HWND and DropZoneOverlay registers
         // its own. Setting it here would force OLE/STA on every consumer of this base class.
 
-        // Only a FRAMELESS window maximizes manually, so only it can hold a stale fill.
-        // ⚠ SystemEvents holds a STRONG static reference — unsubscribed in Dispose, or the form and
-        // its whole control tree leak for the process lifetime.
-        if (_options.FramelessChrome)
-            Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
-
         // The maximize glyph is maximize-vs-restore, so it repaints whenever that state moves —
-        // including via Win+Up, the system menu and a snap, which all route through the manual path.
+        // including via Win+Up, the system menu and a snap (SyncPlacement follows every route).
         MaximizedChanged += (_, _) => InvalidateCaptionButtons();
 
         if (_options.FramelessChrome && _options.NativeCaptionButtons)
@@ -168,11 +162,9 @@ public class OptimizedForm : Form, IAppMaximizable
     /// <inheritdoc />
     protected override void Dispose(bool disposing)
     {
-        // Unconditional detach — removing a handler that was never added is a no-op, and a missed
-        // SystemEvents unsubscribe keeps this form alive for the process lifetime.
+        // Unconditional detach — removing a handler that was never added is a no-op.
         if (disposing)
         {
-            Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
             ControlAdded -= OnCaptionChildAdded;
             ControlRemoved -= OnCaptionChildRemoved;
             foreach (var child in _trackedChildren.ToArray()) Untrack(child);
@@ -490,31 +482,40 @@ public class OptimizedForm : Form, IAppMaximizable
     }
 
     /// <summary>
-    /// The authoritative placement. 🔴 Frameless chrome maximizes MANUALLY, so
-    /// <see cref="Form.WindowState"/> is not the source of truth — this property is.
+    /// The window's placement: <see cref="Form.WindowState"/>, except that a window minimized from maximized is
+    /// still maximized here, since that is where it goes back to and what <see cref="WindowStateManager"/> saves.
     /// </summary>
     public WindowPlacement AppPlacement =>
-        (_options.FramelessChrome ? _maximized : WindowState == FormWindowState.Maximized)
+        WindowState == FormWindowState.Maximized || (WindowState == FormWindowState.Minimized && RestoresToMaximized())
             ? WindowPlacement.Maximized
             : WindowPlacement.Normal;
 
-    /// <summary>
-    /// The windowed geometry to restore to — what <see cref="WindowStateManager"/> must PERSIST while
-    /// this window is maximized, since a manual work-area maximize leaves <c>Bounds</c> showing the
-    /// work area and <see cref="Form.RestoreBounds"/> showing nothing useful.
-    /// </summary>
-    public Rectangle AppRestoreBounds => _options.FramelessChrome ? _restoreBounds : RestoreBounds;
+    /// <summary>The windowed geometry to restore to: <see cref="Form.RestoreBounds"/>.</summary>
+    public Rectangle AppRestoreBounds => RestoreBounds;
+
+    private bool RestoresToMaximized()
+    {
+        if (!IsHandleCreated) return false;
+        var placement = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
+        return GetWindowPlacement(Handle, ref placement) && (placement.flags & WPF_RESTORETOMAXIMIZED) != 0;
+    }
 
     /// <summary>
-    /// Apply a saved maximized state once the window is realized.
-    /// <see cref="WindowStateManager.Apply(Form)"/> runs before the form is shown and a manual
-    /// work-area maximize needs a live handle, so it leaves a marker and this consumes it.
+    /// Apply a saved maximized state before the window first shows, so it opens maximized rather than animating
+    /// there from its windowed bounds. <see cref="WindowStateManager.Apply(Form)"/> leaves a marker, since a
+    /// <see cref="Form.WindowState"/> it set itself would be back to Normal by now (measured on a plain form).
     /// </summary>
+    /// <param name="e">The event data.</param>
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        if (WindowStateManager.ConsumeRestoreMaximized(this)) Maximize();
+    }
+
+    /// <inheritdoc />
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        if (WindowStateManager.ConsumeRestoreMaximized(this) && AppPlacement != WindowPlacement.Maximized)
-            Maximize();
 
         // A hole can only be cut once the child has a handle, and an app may report its rectangles
         // during construction. Re-apply here, where every child is realized.
@@ -524,9 +525,9 @@ public class OptimizedForm : Form, IAppMaximizable
 
     /// <summary>
     /// No layout while minimized, so the children keep their bounds through a minimize and its restore. Windows gives
-    /// a minimized window an empty client area (the size of its minimized caption, from a frameless maximize), and a
-    /// Chromium page laid out into it renders itself again from that size on restore and reports its caption buttons
-    /// from that layout first. The restore's own resize lays the children out again, to the bounds they already have.
+    /// a minimized window an empty client area, and a Chromium page laid out into it renders itself again from that
+    /// size on restore and reports its caption buttons from that layout first. The restore's own resize lays the
+    /// children out again, to the bounds they already have.
     /// </summary>
     /// <param name="levent">The event data.</param>
     protected override void OnLayout(LayoutEventArgs levent)
@@ -539,8 +540,8 @@ public class OptimizedForm : Form, IAppMaximizable
     public event EventHandler? MaximizedChanged;
 
     /// <summary>
-    /// Raise <see cref="MaximizedChanged"/> through the app-callback guard — two of the four raise
-    /// paths are inside <c>WndProc</c>, where a subscriber's exception has no catcher.
+    /// Raise <see cref="MaximizedChanged"/> through the app-callback guard — it is raised from
+    /// <c>WndProc</c> too, where a subscriber's exception has no catcher.
     /// ⚠ Containment, not isolation: a throwing subscriber still shadows the ones after it.
     /// </summary>
     private void RaiseMaximizedChanged()
@@ -549,69 +550,33 @@ public class OptimizedForm : Form, IAppMaximizable
         Shenora.AppCallback.Run(() => handler(this, EventArgs.Empty));
     }
 
-    /// <summary>Toggle maximize/restore (the manual work-area path when frameless).</summary>
+    /// <summary>
+    /// Follow a placement change, whichever route made it (this form's members, the caption's double click, Win+Up,
+    /// a snap, the taskbar): the corners, the event, and a restore that would land where nobody can reach.
+    /// </summary>
+    private void SyncPlacement()
+    {
+        var maximized = AppPlacement == WindowPlacement.Maximized;
+        if (maximized == _placedMaximized) return;
+        _placedMaximized = maximized;
+        ApplyCornerPreference();
+        if (!maximized) KeepReachable();
+        RaiseMaximizedChanged();
+    }
+
+    /// <summary>Toggle maximize/restore.</summary>
     public void ToggleMaximize()
     {
         if (AppPlacement == WindowPlacement.Maximized) RestoreFromMax();
         else Maximize();
     }
 
-    /// <summary>Maximize — frameless fills the monitor work area manually; framed uses <see cref="Form.WindowState"/>.</summary>
+    /// <summary>Maximize, the system's way: animated, onto the window's monitor's work area, frameless or not.</summary>
     public void Maximize()
     {
-        if (!_options.FramelessChrome)
-        {
-            if (WindowState == FormWindowState.Maximized) return;
-            WindowState = FormWindowState.Maximized;
-            RaiseMaximizedChanged();
-            return;
-        }
-
-        if (_maximized) return;
-        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
-        if (TryGetRestoreTarget(out var restore)) _restoreBounds = restore;
-
-        if (!TryGetCurrentWorkArea(out var work)) return;
-        _maximized = true;
-        ApplyCornerPreference(); // square corners while maximized
-        FillWorkArea(work);
-        RaiseMaximizedChanged();
-    }
-
-    /// <summary>
-    /// Where this window should go when it is restored — <c>WINDOWPLACEMENT.rcNormalPosition</c>,
-    /// Windows' own restore rectangle, not the live rect. <c>GetWindowRect</c> returns the docked half
-    /// of a SNAPPED window, so restoring from maximize put it straight back into the snap; Aero Snap
-    /// leaves <c>rcNormalPosition</c> at the pre-snap rectangle, so preferring it exits the snap.
-    /// (It is documented as WORKSPACE coordinates; <see cref="RestoreFromMax"/> validates the target,
-    /// so a top/left-docked taskbar costs accuracy rather than reachability.)
-    /// </summary>
-    private bool TryGetRestoreTarget(out Rectangle bounds)
-    {
-        bounds = default;
-        if (!IsHandleCreated) return false;
-
-        var placement = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
-        if (GetWindowPlacement(Handle, ref placement))
-        {
-            var normal = Rectangle.FromLTRB(
-                placement.rcNormalPosition.left, placement.rcNormalPosition.top,
-                placement.rcNormalPosition.right, placement.rcNormalPosition.bottom);
-            if (normal.Width > 0 && normal.Height > 0)
-            {
-                bounds = normal;
-                return true;
-            }
-        }
-
-        // Fall back to the live rect rather than leaving the restore target unset — a stale target is
-        // a window that never comes back.
-        if (GetWindowRect(Handle, out var wr))
-        {
-            bounds = Rectangle.FromLTRB(wr.left, wr.top, wr.right, wr.bottom);
-            return true;
-        }
-        return false;
+        if (WindowState == FormWindowState.Maximized) return;
+        WindowState = FormWindowState.Maximized;
+        SyncPlacement();
     }
 
     /// <summary>
@@ -630,71 +595,34 @@ public class OptimizedForm : Form, IAppMaximizable
         return true;
     }
 
-    private void FillWorkArea(RECT work) =>
-        SetWindowPos(Handle, IntPtr.Zero, work.left, work.top, work.right - work.left, work.bottom - work.top,
-            SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-
     /// <summary>
-    /// Re-apply the maximized fill to whatever monitor the window is on now — a manual maximize is a
-    /// one-shot <c>SetWindowPos</c> in physical px, so a monitor move, a scale change or a dock leaves
-    /// it the wrong size while still "maximized". Called from <c>WM_DPICHANGED</c> and
-    /// <c>SystemEvents.DisplaySettingsChanged</c>.
+    /// Restore from maximize, the system's way: animated, back to the windowed bounds. A window minimized from
+    /// maximized is restored to those bounds too.
     /// </summary>
-    private void RefreshMaximizedFill()
-    {
-        if (!_options.FramelessChrome || !_maximized || IsDisposed || !IsHandleCreated) return;
-        if (WindowState == FormWindowState.Minimized) return; // nothing to fill while minimized
-        if (TryGetCurrentWorkArea(out var work)) FillWorkArea(work);
-    }
-
-    private void OnDisplaySettingsChanged(object? sender, EventArgs e) =>
-        // ⚠ SystemEvents raises this on its OWN thread, so it must be marshalled.
-        new WinFormsUiDispatcher(this).Post(RefreshMaximizedFill);
-
-    /// <summary>Restore from maximize (the manual path when frameless).</summary>
     public void RestoreFromMax()
     {
-        if (!_options.FramelessChrome)
-        {
-            if (WindowState != FormWindowState.Maximized) return;
-            WindowState = FormWindowState.Normal;
-            RaiseMaximizedChanged();
+        if (AppPlacement != WindowPlacement.Maximized) return;
+        WindowState = FormWindowState.Normal;
+        SyncPlacement();
+    }
+
+    /// <summary>
+    /// Move a restored window that no monitor shows to a centred half of the work area. Its windowed bounds can be
+    /// on a monitor since unplugged, moved or rescaled; checked through the window-state stack's own reachability
+    /// rule.
+    /// </summary>
+    private void KeepReachable()
+    {
+        if (WindowState != FormWindowState.Normal) return;
+        var bounds = Bounds;
+        if (bounds.Width <= 0 || bounds.Height <= 0
+            || WindowStateManager.IsVisible(bounds.X, bounds.Y, bounds.Width, bounds.Height,
+                                            Screen.AllScreens.Select(s => s.Bounds), new WindowStateOptions()))
             return;
-        }
-
-        if (!_maximized) return;
-        // Un-minimize first (mirrors Maximize): restoring bounds on a still-minimized window mangles
-        // them under WS_MINIMIZE and leaves the window in the taskbar.
-        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
-        _maximized = false;
-        ApplyCornerPreference(); // rounded corners again when windowed
-
-        // ⚠ _restoreBounds is RAW PHYSICAL px from whichever monitor the window was maximized on, which
-        // may since have been unplugged, moved or rescaled — restoring to it blind put the window
-        // somewhere the user cannot grab. Validate through the window-state stack's own reachability
-        // check, and fall back to a centred half-work-area.
-        var target = _restoreBounds;
-        if (target.Width > 0 && target.Height > 0
-            && !WindowStateManager.IsVisible(target.X, target.Y, target.Width, target.Height,
-                                             Screen.AllScreens.Select(s => s.Bounds), new WindowStateOptions()))
-        {
-            target = Rectangle.Empty;
-        }
-
-        if (target.Width <= 0 && TryGetCurrentWorkArea(out var work))
-        {
-            var w = (work.right - work.left) / 2;
-            var h = (work.bottom - work.top) / 2;
-            target = new Rectangle(work.left + w / 2, work.top + h / 2, w, h);
-        }
-
-        if (target.Width > 0)
-        {
-            _restoreBounds = target;
-            SetWindowPos(Handle, IntPtr.Zero, target.X, target.Y, target.Width, target.Height,
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-        }
-        RaiseMaximizedChanged();
+        if (!TryGetCurrentWorkArea(out var work)) return;
+        var w = (work.right - work.left) / 2;
+        var h = (work.bottom - work.top) / 2;
+        Bounds = new Rectangle(work.left + w / 2, work.top + h / 2, w, h);
     }
 
     /// <summary>
@@ -715,11 +643,13 @@ public class OptimizedForm : Form, IAppMaximizable
         get
         {
             var cp = base.CreateParams;
-            // Keep Aero snap / edge resize / taskbar min-max without the caption, and the system menu, which Alt+Space
-            // and the taskbar open (WinForms gives a borderless form none). Null-guarded: the
-            // BASE Form constructor evaluates this before our ctor assigns _options, and that early
+            // Keep Aero snap / edge resize / taskbar min-max, and the system menu, which Alt+Space and the taskbar open
+            // (WinForms gives a borderless form none). And the CAPTION style, which WM_NCCALCSIZE hides: without it
+            // Windows plays no animation as the window minimizes, maximizes or restores (measured, all four). Null-guarded:
+            // the BASE Form constructor evaluates this before our ctor assigns _options, and that early
             // read is bookkeeping only — the value that matters is re-read at handle creation.
-            if (_options is { FramelessChrome: true }) cp.Style |= WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
+            if (_options is { FramelessChrome: true })
+                cp.Style |= WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
             return cp;
         }
     }
@@ -729,6 +659,24 @@ public class OptimizedForm : Form, IAppMaximizable
     {
         base.OnHandleCreated(e);
         if (_options.FramelessChrome) ApplyDwmChrome();
+    }
+
+    /// <summary>
+    /// Size the window so its client is <paramref name="x"/> × <paramref name="y"/>. WinForms sizes the window for its
+    /// styles, whose caption a frameless window's client covers, so the client came out taller by the caption (58 px
+    /// at 200 %, measured); the window is corrected by the difference it reports itself.
+    /// </summary>
+    /// <param name="x">The client width.</param>
+    /// <param name="y">The client height.</param>
+    protected override void SetClientSizeCore(int x, int y)
+    {
+        base.SetClientSizeCore(x, y);
+        if (!_options.FramelessChrome || !IsHandleCreated || WindowState != FormWindowState.Normal
+            || !GetClientRect(Handle, out var client))
+            return;
+        var dx = x - (client.right - client.left);
+        var dy = y - (client.bottom - client.top);
+        if (dx != 0 || dy != 0) Size = new Size(Width + dx, Height + dy);
     }
 
     private void ApplyDwmChrome()
@@ -749,7 +697,7 @@ public class OptimizedForm : Form, IAppMaximizable
     private void ApplyCornerPreference()
     {
         if (!IsHandleCreated) return;
-        var corner = _maximized || !_options.RoundedCorners ? DWMWCP_DONOTROUND : DWMWCP_ROUND;
+        var corner = AppPlacement == WindowPlacement.Maximized || !_options.RoundedCorners ? DWMWCP_DONOTROUND : DWMWCP_ROUND;
         DwmSetWindowAttribute(Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
     }
 
@@ -774,42 +722,17 @@ public class OptimizedForm : Form, IAppMaximizable
             return;
         }
 
+        // Every maximize, restore and minimize arrives here, whichever route made it.
+        if (m.Msg == WM_SIZE)
+        {
+            base.WndProc(ref m);
+            SyncPlacement();
+            return;
+        }
+
         if (!_options.FramelessChrome)
         {
             base.WndProc(ref m);
-            return;
-        }
-
-        // The window moved to a monitor with a different scale factor: let WinForms rescale fonts and
-        // child controls FIRST, then re-apply our manual fill.
-        if (m.Msg == WM_DPICHANGED)
-        {
-            base.WndProc(ref m);
-            RefreshMaximizedFill();
-            return;
-        }
-
-        // Route the system maximize/restore (Win+Up, system menu, snap) through the manual path so
-        // every maximize route agrees.
-        if (m.Msg == WM_SYSCOMMAND)
-        {
-            var cmd = (int)m.WParam & 0xFFF0;
-            if (cmd == SC_MAXIMIZE) { Maximize(); return; }
-            // ⚠ Intercept SC_RESTORE only when NOT minimized: a minimized window's restore must reach
-            // DefWindowProc to un-minimize, and swallowing it left the window stuck in the taskbar.
-            if (cmd == SC_RESTORE && _maximized && WindowState != FormWindowState.Minimized)
-            {
-                RestoreFromMax();
-                return;
-            }
-        }
-
-        // The system menu, as Alt+Space or the taskbar opens it: the system sets its items from the window's own state,
-        // where a manual maximize looks Normal, so they are set again from the placement.
-        if (m.Msg == WM_INITMENUPOPUP && (((long)m.LParam >> 16) & 0xFFFF) != 0)
-        {
-            base.WndProc(ref m);
-            FormCaption.UpdateSystemMenu(m.WParam, this);
             return;
         }
 
@@ -823,20 +746,16 @@ public class OptimizedForm : Form, IAppMaximizable
 
         if (m.Msg == WM_NCCALCSIZE && m.WParam != IntPtr.Zero)
         {
-            if (_maximized)
-            {
-                // The window IS sized to the work area, so the client fills it with NO inset —
-                // otherwise the native side/bottom resize border shows as a ~6 px gap per edge.
-                m.Result = IntPtr.Zero;
-                return;
-            }
-            // Normal: let DefWindowProc compute the standard non-client inset (the native,
-            // invisible-on-Win11 resize borders), then give the TOP back to the client.
+            // Let DefWindowProc compute the standard non-client inset (the native, invisible-on-Win11 resize
+            // borders, and the caption), then give the TOP back to the client. A maximized window overhangs its
+            // monitor by its frame on every side, so its top keeps the inset its sides got: the client is then the
+            // work area exactly.
             var nccsp = Marshal.PtrToStructure<NCCALCSIZE_PARAMS>(m.LParam);
             var originalTop = nccsp.rgrc0.top;
+            var originalLeft = nccsp.rgrc0.left;
             base.WndProc(ref m);
             nccsp = Marshal.PtrToStructure<NCCALCSIZE_PARAMS>(m.LParam);
-            nccsp.rgrc0.top = originalTop;
+            nccsp.rgrc0.top = IsZoomed(Handle) ? originalTop + (nccsp.rgrc0.left - originalLeft) : originalTop;
             Marshal.StructureToPtr(nccsp, m.LParam, true);
             m.Result = IntPtr.Zero;
             return;
@@ -953,7 +872,7 @@ public class OptimizedForm : Form, IAppMaximizable
                 }
 
                 var border = Math.Max(6, DpiHelper.Scale(_options.TopResizeBorder, DpiHelper.ScaleFromDeviceDpi(DeviceDpi)));
-                if (!_maximized && p.Y >= 0 && p.Y < border)
+                if (WindowState != FormWindowState.Maximized && p.Y >= 0 && p.Y < border)
                     m.Result = (IntPtr)(p.X < border ? HTTOPLEFT : p.X >= ClientSize.Width - border ? HTTOPRIGHT : HTTOP);
             }
             return;
@@ -995,11 +914,10 @@ public class OptimizedForm : Form, IAppMaximizable
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
 
     private const int MONITOR_DEFAULTTONEAREST = 2;
-    private const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_FRAMECHANGED = 0x20;
     [DllImport("user32.dll")] private static extern IntPtr DefWindowProc(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr hwnd, int flags);
-    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] private static extern bool IsZoomed(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);

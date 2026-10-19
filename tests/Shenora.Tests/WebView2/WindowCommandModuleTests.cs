@@ -509,7 +509,7 @@ public class WindowCommandModuleTests
     }
 
     [Fact]
-    public async Task An_optimized_form_elsewhere_maximizes_and_takes_caption_buttons_its_own_way()
+    public async Task An_optimized_form_elsewhere_maximizes_and_takes_caption_buttons_through_its_own_members()
     {
         using var main = CreateForm();
         using var other = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true })
@@ -545,9 +545,9 @@ public class WindowCommandModuleTests
             maximized = await facade.HandleMessageAsync(Request("IS_MAXIMIZED"));
         }
 
-        // Its manual work-area maximize, which WindowState never shows.
+        // The window the page is in, not the main one.
         Assert.Equal(WindowPlacement.Maximized, other.AppPlacement);
-        Assert.Equal(FormWindowState.Normal, other.WindowState);
+        Assert.Equal(FormWindowState.Maximized, other.WindowState);
         Assert.True(IpcJson.SerializeToElement(maximized.Data!).GetProperty("maximized").GetBoolean());
         Assert.Equal(FormWindowState.Normal, main.WindowState);
         other.SetCaptionButtons(null);

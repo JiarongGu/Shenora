@@ -35,6 +35,21 @@ public class WindowActivationTests
         Assert.NotEqual(before, form.Handle);
     });
 
+    // The tray's restore, SecondaryWindows.Activate and a later launch's hand-off: a window minimized from maximized goes
+    // back maximized, where `WindowState = Normal` restored its windowed bounds.
+    [Fact]
+    public void BringToFront_puts_a_window_minimized_from_maximized_back_maximized() => Sta.Run(() =>
+    {
+        using var form = new Form { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(100, 100, 400, 300) };
+        form.Show();
+        form.WindowState = FormWindowState.Maximized;
+        form.WindowState = FormWindowState.Minimized;
+
+        WindowActivation.BringToFront(form);
+
+        Assert.Equal(FormWindowState.Maximized, form.WindowState);
+    });
+
     [Fact]
     public void ShowTaskbarButton_sets_the_style_and_keeps_the_handle() => Sta.Run(() =>
     {

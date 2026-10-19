@@ -169,13 +169,13 @@ public class WindowStateManagerTests
     // ---- Store integration (pure part) ----
 
     // ── The app-maximized seam (P5.5 H2) ──────────────────────────────────────────────────────────
-    // Frameless chrome maximizes by hand and keeps WindowState.Normal, so reading Form.WindowState /
+    // A window that maximizes by hand keeps WindowState.Normal, so reading Form.WindowState /
     // Form.RestoreBounds persisted "not maximized" together with the WORK-AREA rect as the normal
     // size. Next launch: the window filled the work area believing it wasn't maximized, the border gap
     // came back, the chrome glyph was wrong, and clicking maximize captured the work-area rect as the
     // restore bounds — making RESTORE A PERMANENT NO-OP. Live in the reference composition.
 
-    /// <summary>A window that manages its own maximize, like frameless <c>OptimizedForm</c>.</summary>
+    /// <summary>A window that manages its own maximize.</summary>
     private sealed class AppMaximizedForm : Form, IAppMaximizable
     {
         // DesignerSerializationVisibility.Hidden: WFO1000 treats a settable public property on a
@@ -216,11 +216,9 @@ public class WindowStateManagerTests
     [Fact]
     public void Save_keeps_the_app_restore_truth_when_closed_while_minimized() => Sta.Run(() =>
     {
-        // The corruption path: a frameless maximize fills the work area with WindowState still Normal,
-        // so WinForms' own RestoreBounds tracks the FILL rect (an ordinary resize, as far as it saw).
-        // Minimizing then closing used to let the Minimized fallback overwrite AppRestoreBounds with
-        // that rect — persisting the work area as the windowed size, which the next launch's maximize
-        // re-derives its restore target from: restore-down became a permanent no-op.
+        // Closed while minimized from maximized: WindowState says Minimized and Bounds are the iconic
+        // window's, so the save must take the placement from AppPlacement and the windowed size from the
+        // restore bounds. Persisting the wrong size made restore-down a permanent no-op once (P5.5 H2).
         var store = new FakeWindowStateStore();
         using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
         form.StartPosition = FormStartPosition.Manual;
@@ -327,6 +325,41 @@ public class WindowStateManagerTests
         Assert.True(WindowStateManager.ConsumeRestoreMaximized(form));
         Assert.False(WindowStateManager.ConsumeRestoreMaximized(form));   // taken exactly once
     }
+
+    // An OptimizedForm maximizes the system's way, which animates: applied once shown, a saved maximize would grow the
+    // window from its windowed bounds in front of the user. So it is applied before the first show, which then finds
+    // the window maximized.
+    [Fact]
+    public void A_saved_maximize_opens_an_OptimizedForm_already_maximized() => Sta.Run(() =>
+    {
+        const int WM_WINDOWPOSCHANGED = 0x0047, SWP_SHOWWINDOW = 0x0040, WS_MAXIMIZE = 0x01000000, GWL_STYLE = -16;
+        var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, 10, 10, WindowPlacement.Maximized) };
+        using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true }) { ShowInTaskbar = false };
+        new WindowStateManager(store).Apply(form, 1.0);
+        bool? maximizedAsShown = null;
+        form.WndProcHook = m =>
+        {
+            // WINDOWPOS.flags: after hwnd, hwndInsertAfter and four ints.
+            if (m.Msg == WM_WINDOWPOSCHANGED && maximizedAsShown is null
+                && (System.Runtime.InteropServices.Marshal.ReadInt32(m.LParam, 2 * IntPtr.Size + 16) & SWP_SHOWWINDOW) != 0)
+                maximizedAsShown = (GetWindowLong(m.HWnd, GWL_STYLE) & WS_MAXIMIZE) != 0;
+            return null;
+        };
+        FormWindowState atShown = default;
+        form.Shown += (_, _) =>
+        {
+            atShown = form.WindowState;
+            form.Close();
+        };
+
+        Application.Run(form);
+
+        Assert.True(maximizedAsShown);
+        Assert.Equal(FormWindowState.Maximized, atShown);
+    });
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+    private static extern int GetWindowLong(IntPtr hWnd, int index);
 
     [Fact]
     public void Restoring_maximized_leaves_the_app_s_own_Form_Tag_alone_and_still_works()

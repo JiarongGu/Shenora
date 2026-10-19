@@ -150,7 +150,7 @@ public class CaptionButtonTests
         SendNc(form, WM_NCLBUTTONUP, HTMAXBUTTON);
 
         // Routed through ToggleMaximize, the SAME member the page's IPC command uses — so the
-        // frameless manual-maximize bookkeeping cannot diverge between the two paths (P5.5 H2).
+        // two paths cannot diverge (P5.5 H2).
         Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
     });
 

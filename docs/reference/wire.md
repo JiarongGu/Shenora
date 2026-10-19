@@ -195,7 +195,7 @@ Frameless chrome drives the real window through these.
 | `WindowCommandModule.MinimizeType` | `MINIMIZE` | Route: minimize the window. |
 | `WindowCommandModule.ToggleMaximizeType` | `TOGGLE_MAXIMIZE` | Route: maximize if restored, restore if maximized. |
 | `WindowCommandModule.CloseType` | `CLOSE` | Route: close the window (the app's FormClosing logic still runs). |
-| `WindowCommandModule.IsMaximizedType` | `IS_MAXIMIZED` | Route: is it maximized? Answers { maximized } — authoritative for the chrome's glyph, since a manual work-area maximize never shows in WindowState. |
+| `WindowCommandModule.IsMaximizedType` | `IS_MAXIMIZED` | Route: is it maximized? Answers { maximized } — authoritative for the chrome's glyph, since the page sees a maximize only as a resize. |
 | `WindowCommandModule.StartDragType` | `START_DRAG` | Route: begin an OS window-move loop (the page's header on mousedown). |
 | `WindowCommandModule.StartResizeType` | `START_RESIZE` | Route: begin an OS resize loop: { edge } — top, topLeft or topRight. |
 | `WindowCommandModule.ShowSystemMenuType` | `SHOW_SYSTEM_MENU` | Route: open the window's system menu at the pointer, as a right click on a caption does (the page's caption, on its contextmenu event). |

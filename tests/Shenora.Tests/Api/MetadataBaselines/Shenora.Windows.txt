@@ -117,10 +117,12 @@ Shenora.Windows.OptimizedForm
   method OnDeactivate
   method OnHandleCreated
   method OnLayout
+  method OnLoad
   method OnPaint
   method OnShown
   method RestoreFromMax
   method SetCaptionButtons
+  method SetClientSizeCore
   method ToggleMaximize
   method WndProc
   property AppPlacement

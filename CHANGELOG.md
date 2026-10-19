@@ -30,8 +30,28 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Breaking
+
+- **A maximized frameless `OptimizedForm` reads `Form.WindowState == Maximized`.** It maximized by sizing itself to
+  the work area and kept `Normal`; it now maximizes the system's way (below). `AppPlacement` is right either way, and
+  `Maximize`, `RestoreFromMax` and `ToggleMaximize` keep their meaning. Code that un-minimizes with
+  `WindowState = Normal` now brings a window minimized from maximized back to its windowed bounds: call
+  `ShowWindow(handle, SW_RESTORE)` to put it back as it was. And `AppPlacement` reads `Maximized` for an
+  `OptimizedForm` minimized from maximized, framed or not, so `WindowStateManager` saves it as maximized.
+
+### Changed
+
+- **A frameless `OptimizedForm` minimizes, maximizes and restores with the system's animations.** It played none: a
+  window without the caption style gets no animation from Windows, and it maximized by sizing itself to the work
+  area. It keeps the caption style now, hidden by `WM_NCCALCSIZE`, and maximizes the system's way, so Win+Up, Snap,
+  the caption's double click and the taskbar take the system's path, and `MaximizedChanged` and the corners follow
+  every route. A saved maximize is applied before the window first shows, so it opens maximized, and setting
+  `ClientSize` gives the window that client.
+
 ### Fixed
 
+- **The tray's restore, a later launch's hand-off and `SecondaryWindows.Activate` brought a window minimized from
+  maximized back un-maximized.** They un-minimized with `WindowState = Normal`; they restore with `SW_RESTORE` now.
 - **Restoring a minimized `OptimizedForm` re-rendered its page and moved its caption buttons.** WinForms lays a
   minimized window's children out into its empty client area, so the page's control was shrunk to nothing (to the
   minimized caption's size, from a frameless maximize). On restore a `ChromiumView`'s page laid itself out again from

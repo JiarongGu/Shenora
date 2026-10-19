@@ -15,16 +15,16 @@ public sealed class WindowCommandOptions
     public required Form Window { get; init; }
 
     /// <summary>
-    /// Maximize/restore toggle. Default: toggles <see cref="Form.WindowState"/> — correct for a framed
-    /// window, WRONG for frameless custom chrome, which leaves a gap on every edge. A frameless app
-    /// wires its manual path here (e.g. <c>OptimizedForm.ToggleMaximize</c>).
+    /// Maximize/restore toggle. Default: toggles <see cref="Form.WindowState"/>, which is right for any
+    /// window the system maximizes, <c>OptimizedForm</c>'s frameless chrome included. A window that
+    /// maximizes its own way wires that here.
     /// </summary>
     public Action? ToggleMaximize { get; init; }
 
     /// <summary>
-    /// Authoritative maximize state. Default: <see cref="Form.WindowState"/> — a frameless app
-    /// wires its own (e.g. <c>OptimizedForm.AppPlacement</c>; its manual maximize never sets
-    /// WindowState).
+    /// Authoritative maximize state. Default: <see cref="Form.WindowState"/>. A window that maximizes
+    /// its own way, which never shows in WindowState, wires its own (e.g. an <c>IAppMaximizable</c>'s
+    /// <c>AppPlacement</c>).
     /// </summary>
     public Func<bool>? IsMaximized { get; init; }
 
@@ -81,7 +81,7 @@ public sealed class WindowCommandOptions
 /// (<see cref="WebViewIpcBridge"/>, <see cref="ChromiumView"/>) report it: a <see cref="SecondaryWindows"/>
 /// window's close button closes that window, not the app's. A window is the page's top-level form, so a page in a
 /// form embedded in the main one (an MDI child) commands the main window. The options describe the main window. Another window
-/// is commanded as itself: an <see cref="OptimizedForm"/> maximizes its own way and takes its caption buttons,
+/// is commanded as itself: an <see cref="OptimizedForm"/> maximizes through its own members and takes its caption buttons,
 /// relative to the page that sent them, and a plain form uses <see cref="Form.WindowState"/> (an
 /// <see cref="IAppMaximizable"/> one its placement); <c>SET_THEME</c> has no route there. A page whose window is gone
 /// commands nothing. A programmatic send commands the main window, unless it runs in work a page's request started,
@@ -105,7 +105,7 @@ public sealed class WindowCommandModule : ModuleBase
     public const string CloseType = "CLOSE";
 
     /// <summary>Route: is it maximized? Answers <c>{ maximized }</c> — authoritative for the chrome's glyph,
-    /// since a manual work-area maximize never shows in <c>WindowState</c>.</summary>
+    /// since the page sees a maximize only as a resize.</summary>
     public const string IsMaximizedType = "IS_MAXIMIZED";
 
     /// <summary>Route: begin an OS window-move loop (the page's header on mousedown). No payload.</summary>
@@ -199,9 +199,9 @@ public sealed class WindowCommandModule : ModuleBase
                 return Task.FromResult<object?>(new { Maximized = window.Maximized() });
 
             case StartDragType:
-                // ⚠ Refused while maximized: a manual work-area maximize keeps WindowState.Normal, so
+                // ⚠ Refused while maximized: a window maximized its own way keeps WindowState.Normal, so
                 // the OS would drag the maximized-size window with stale restore bounds. The page's
-                // header restores first, as native caption drags do.
+                // header restores first.
                 // Started only while the button is still down: the request arrives after the press, and a loop
                 // started after the release follows the pointer until the next click.
                 if (window.Maximized())

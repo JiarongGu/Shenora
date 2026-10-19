@@ -22,10 +22,11 @@ namespace Shenora.Windows;
 /// </para>
 /// <para>
 /// The page's <c>-webkit-app-region: drag</c> area is its window's caption: a mouse drag there moves the window, a
-/// still click does nothing, a double click maximizes or restores it (an <see cref="OptimizedForm"/> its own way), and
-/// a right click opens its system menu. A touch or a pen there is the page's, and does not move the window. A
-/// frameless window maximized its own way is not moved, as the <c>START_DRAG</c> window command does not move it; a
-/// window the system maximized or snapped is left to the system's own drag, as a caption's is.
+/// still click does nothing, a double click maximizes or restores it, and a right click opens its system menu. A touch
+/// or a pen there is the page's, and does not move the window. A window maximized its own way (an
+/// <see cref="IAppMaximizable"/> the system sees as Normal) is not moved, as the <c>START_DRAG</c> window command does
+/// not move it; a window the system maximized or snapped, an <see cref="OptimizedForm"/> among them, is left to the
+/// system's own drag, as a caption's is.
 /// </para>
 /// </summary>
 public sealed class ChromiumView : Control

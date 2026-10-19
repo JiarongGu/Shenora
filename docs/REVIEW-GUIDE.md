@@ -290,10 +290,9 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   window's DECISION and nothing about whether the OS ever asks — that gap is what let P5.6 ship
   broken once with a green suite. It is closed by asserting the covering child's `Region` really has
   the cluster cut out (unit-testable) plus a live `WindowFromPoint` probe and a human pass for the
-  Snap Layouts flyout. **Aero Snap:** `WINDOWPLACEMENT.rcNormalPosition` only diverges from the live
-  window rect once the OS has actually docked the window, and snapping is a shell gesture, so
-  "maximize+restore exits the snap" is proven live (Win+Left → SC_MAXIMIZE → SC_RESTORE, asserting
-  the pre-snap rectangle). The unit tests pin the ordinary case. Don't file either as a coverage gap.
+  Snap Layouts flyout. **The minimize/maximize/restore animations** are DWM's, so they are measured by
+  sampling the screen through each transition; the unit tests pin the `WS_CAPTION` style that buys them
+  and the work-area client of a real maximize. Don't file either as a coverage gap.
 - **Proven live (e2e), not unit-tested:** real WebView2 behavior is driven against the sample via
   CDP (`window.__shenora`) + `win-input` + `wgc` screenshots — hosting, IPC round-trip,
   notifications, window commands, drop-zone registration, secondary windows, and the P5 render-

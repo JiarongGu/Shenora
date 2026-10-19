@@ -29,7 +29,19 @@ internal static class WindowActivation
 
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_APPWINDOW = 0x00040000;
-    private const int SW_HIDE = 0, SW_SHOW = 5;
+    private const int SW_HIDE = 0, SW_SHOW = 5, SW_RESTORE = 9;
+
+    /// <summary>
+    /// Un-minimize <paramref name="form"/> to where it was minimized from, maximized if it was. <c>WindowState =
+    /// Normal</c> restores the windowed bounds whatever the window was, so a maximized window minimized and brought
+    /// forward came back un-maximized. No-op when it is not minimized.
+    /// </summary>
+    internal static void Unminimize(Form form)
+    {
+        if (form.WindowState != FormWindowState.Minimized) return;
+        if (form.IsHandleCreated) ShowWindow(form.Handle, SW_RESTORE);
+        else form.WindowState = FormWindowState.Normal;
+    }
 
     /// <summary>
     /// Give <paramref name="form"/> a taskbar button, WITHOUT recreating its window handle.
@@ -75,7 +87,7 @@ internal static class WindowActivation
         try
         {
             // Un-minimize first: Activate() on a minimized window does not restore it.
-            if (form.WindowState == FormWindowState.Minimized) form.WindowState = FormWindowState.Normal;
+            Unminimize(form);
             if (!form.Visible) form.Show();
             form.Activate();
             form.BringToFront();

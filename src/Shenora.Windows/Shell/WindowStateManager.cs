@@ -92,8 +92,9 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
         }
         if (!placed) form.StartPosition = FormStartPosition.CenterScreen;
 
-        // Restore maximized through the window's OWN mechanism when it has one. Deferred to first Shown
-        // either way — set earlier, a plain Form is back to Normal by OnLoad.
+        // Restore maximized through the window's OWN mechanism when it has one: an OptimizedForm takes the
+        // marker in OnLoad, before its first show; a plain Form on first Shown — set earlier, it is back to
+        // Normal by OnLoad.
         if (placement != WindowPlacement.Normal)
         {
             MarkRestoreMaximized(form);
@@ -102,9 +103,8 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     }
 
     /// <summary>
-    /// Forms whose saved state was MAXIMIZED, waiting to apply it once they have a handle. A marker rather
-    /// than a direct call because <c>Apply</c> runs before the window is realized, and a manual work-area
-    /// maximize needs a real one.
+    /// Forms whose saved state was MAXIMIZED, waiting to apply it. A marker rather than a direct call
+    /// because a <c>WindowState</c> that <c>Apply</c> sets is back to Normal by the time the form shows.
     /// </summary>
     /// <remarks>
     /// 🔴 <b>A SIDE TABLE, because <see cref="Control.Tag"/> is the APP's property and this used to take
@@ -126,7 +126,7 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     internal static bool ConsumeRestoreMaximized(Form form) => RestoreMaximized.Remove(form);
 
     /// <summary>Consume the marker from <see cref="Form.Shown"/> for a plain form —
-    /// <see cref="IAppMaximizable"/> implementors consume it in <c>OnShown</c> themselves, and
+    /// <see cref="OptimizedForm"/> consumes it in <c>OnLoad</c> itself, and
     /// <c>WindowState.Maximized</c> set earlier does not survive <c>OnLoad</c>.</summary>
     private static void DeferMaximizeToShown(Form form)
     {
@@ -317,7 +317,7 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     }
 
     // Managed WorkingArea is ~12 px short per edge on a HiDPI monitor, which is fine for a shrink-to-fit
-    // clamp (over-conservative, not off by a monitor) — unlike OptimizedForm's manual maximize, which uses
+    // clamp (over-conservative, not off by a monitor); where the exact rect matters the kit uses
     // GetMonitorInfo. Primary FIRST, because Screen.AllScreens is not documented to be primary-first and
     // PickTarget's fallback takes the first work area it sees.
     private static IEnumerable<Rectangle> WorkAreas()
