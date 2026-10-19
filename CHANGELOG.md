@@ -43,9 +43,8 @@ at the first list and missed five more breaking changes.
 
 - **A frameless `OptimizedForm` minimizes, maximizes and restores with the system's animations.** It played none: a
   window without the caption style gets no animation from Windows, and it maximized by sizing itself to the work
-  area. It keeps the caption style now, hidden by `WM_NCCALCSIZE`, and maximizes the system's way, so Win+Up, Snap,
-  the caption's double click and the taskbar take the system's path, and `MaximizedChanged` and the corners follow
-  every route. A saved maximize is applied before the window first shows, so it opens maximized, and setting
+  area. It keeps the caption style now, hidden by `WM_NCCALCSIZE`, and maximizes the system's way, so Win+Up, Snap
+  and the taskbar take the system's path, and `MaximizedChanged` and the corners follow every route. A saved maximize is applied before the window first shows, so it opens maximized, and setting
   `ClientSize` gives the window that client.
 
 ### Fixed
