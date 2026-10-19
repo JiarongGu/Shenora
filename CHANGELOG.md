@@ -28,6 +28,17 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Fixed
+
+- **Restoring a minimized `OptimizedForm` re-rendered its page and moved its caption buttons.** WinForms lays a
+  minimized window's children out into its empty client area, so the page's control was shrunk to nothing (to the
+  minimized caption's size, from a frameless maximize). On restore a `ChromiumView`'s page laid itself out again from
+  that size, and the caption buttons the window paints sat where the shrunk page had reported them until it reported
+  again. An `OptimizedForm` now does no layout while minimized, so its children keep their bounds through the
+  minimize and the restore.
+
 ## 0.21.1 — 2026-10-12
 
 ### Fixed

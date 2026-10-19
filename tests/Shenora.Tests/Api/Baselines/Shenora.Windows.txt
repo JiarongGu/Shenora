@@ -113,6 +113,7 @@ class Shenora.Windows.OptimizedForm : System.Windows.Forms.Form, Shenora.Windows
   protected override void OnActivated(System.EventArgs e)
   protected override void OnDeactivate(System.EventArgs e)
   protected override void OnHandleCreated(System.EventArgs e)
+  protected override void OnLayout(System.Windows.Forms.LayoutEventArgs levent)
   protected override void OnPaint(System.Windows.Forms.PaintEventArgs e)
   protected override void OnShown(System.EventArgs e)
   protected override void WndProc(ref System.Windows.Forms.Message m)

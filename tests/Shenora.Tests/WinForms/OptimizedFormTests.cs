@@ -217,6 +217,43 @@ public class OptimizedFormTests
         Assert.Equal(new Rectangle(100, 100, 640, 480), form.Bounds);
     });
 
+    // Windows gives a minimized window an empty client area, and WinForms lays the children out into it. A Chromium
+    // page shrunk that way renders itself again on restore, and reports its caption buttons from the tiny layout
+    // first. Shown for real, off-screen and never activated: only a shown window is minimized.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_minimized_window_keeps_its_childrens_layout_through_the_restore(bool maximizedFirst) => Sta.Run(() =>
+    {
+        using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true })
+        {
+            StartPosition = FormStartPosition.Manual,
+            Bounds = new Rectangle(-20000, -20000, 800, 600),
+            ShowInTaskbar = false,
+        };
+        var child = new Panel { Dock = DockStyle.Fill };
+        form.Controls.Add(child);
+        ShowWindow(form.Handle, SW_SHOWNOACTIVATE);
+        if (maximizedFirst) form.Maximize();
+        var laidOut = child.Size;
+        var resized = new List<Size>();
+        child.SizeChanged += (_, _) => resized.Add(child.Size);
+
+        ShowWindow(form.Handle, SW_SHOWMINNOACTIVE);
+        Assert.Equal(FormWindowState.Minimized, form.WindowState);
+        Assert.Equal(laidOut, child.Size);
+
+        ShowWindow(form.Handle, SW_SHOWNOACTIVATE);
+        Assert.NotEqual(FormWindowState.Minimized, form.WindowState);
+        Assert.Equal(laidOut, child.Size);
+        Assert.Empty(resized);
+    });
+
+    private const int SW_SHOWMINNOACTIVE = 7, SW_SHOWNOACTIVATE = 4;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
     [Fact]
     public void WndProc_hook_sees_messages() => Sta.Run(() =>
     {

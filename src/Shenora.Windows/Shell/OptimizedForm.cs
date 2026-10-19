@@ -522,6 +522,19 @@ public class OptimizedForm : Form, IAppMaximizable
         InvalidateCaptionButtons();
     }
 
+    /// <summary>
+    /// No layout while minimized, so the children keep their bounds through a minimize and its restore. Windows gives
+    /// a minimized window an empty client area (the size of its minimized caption, from a frameless maximize), and a
+    /// Chromium page laid out into it renders itself again from that size on restore and reports its caption buttons
+    /// from that layout first. The restore's own resize lays the children out again, to the bounds they already have.
+    /// </summary>
+    /// <param name="levent">The event data.</param>
+    protected override void OnLayout(LayoutEventArgs levent)
+    {
+        if (IsHandleCreated && IsIconic(Handle)) return;
+        base.OnLayout(levent);
+    }
+
     /// <summary>Raised after the maximize/restore state changes (chrome glyphs resync on it).</summary>
     public event EventHandler? MaximizedChanged;
 
@@ -979,6 +992,7 @@ public class OptimizedForm : Form, IAppMaximizable
     private struct TRACKMOUSEEVENT { public int cbSize; public uint dwFlags; public IntPtr hwndTrack; public uint dwHoverTime; }
     [DllImport("user32.dll")] private static extern bool TrackMouseEvent(ref TRACKMOUSEEVENT track);
     [DllImport("user32.dll")] private static extern IntPtr GetCapture();
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
 
     private const int MONITOR_DEFAULTTONEAREST = 2;
     private const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_FRAMECHANGED = 0x20;

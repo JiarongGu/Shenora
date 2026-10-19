@@ -116,6 +116,7 @@ Shenora.Windows.OptimizedForm
   method OnActivated
   method OnDeactivate
   method OnHandleCreated
+  method OnLayout
   method OnPaint
   method OnShown
   method RestoreFromMax
