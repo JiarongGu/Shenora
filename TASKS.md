@@ -159,6 +159,27 @@ is left is mostly measurement that needs hardware or a person.
 - [ ] **The clipboard at exit.** It hands no copy to a clipboard manager (the freedesktop `SAVE_TARGETS` handover), so
   a copy leaves with the app where no manager copies on change; and it writes no format larger than one X request.
 
+### 🅿️ THE CHROMIUM WEB PANEL (D97) — built, its live run and cookie-persistence check are parked
+
+`ChromiumWindows.CreateWebPanelAsync` embeds a web-content browser as a child of a shell window, in a chosen profile's
+request context, reusing the session browser (D91) as the driver. Built and unit-tested for what a test can reach
+without CEF (arguments, the not-running shell, an unknown window). The WS_CHILD + request-context creation is modelled
+on the proven `ChromiumSessionHost.Create` (`create_browser_sync` + `Attach`) with a child `window_info`, but has not
+RUN — this machine has no CEF runtime.
+
+- [ ] 🅿️ **Confirm the embed renders and is drivable, on Windows.** A panel in the main window, `SetBounds`, navigate,
+  `GoBack`/`GoForward`, read a cookie — against a real CEF process. ⚠ The one unverified assumption is that
+  `create_browser_sync` makes a parented ALLOY windowed browser (the proven app-page child uses the ASYNC
+  `cef_browser_host_create_browser`); if sync refuses one, switch this path to async and attach on `on_after_created`.
+- [ ] 🅿️ **Confirm cookie/session PERSISTENCE across a restart.** The mechanism is wired — the profile's own request
+  context has its own `cache_path`, which persists cookies that carry an expiry, and `PersistSessionCookies` (default
+  true) keeps the session cookies too — but the restart has not been run. Sign in in a panel, close the app, reopen,
+  and confirm it is still signed in; A/B `PersistSessionCookies`.
+- [ ] **Decide whether history nav generalises onto `ISessionBrowser`.** `GoBack`/`GoForward`/`Reload`/`Stop` are on the
+  panel today (Chromium-only, no Core or WebView2 change); WebView2's `CoreWebView2` has the same four, so they could
+  move to the shared session contract if a second consumer wants them there.
+- [ ] **macOS/Linux child panels.** Windows only today, as `ChromiumChildBrowser` is; the parenting is `WS_CHILD`.
+
 ### 🟡 THE PLAYBACK HEALTH FIGURES — the adopter has now BUILT them, so this is a harvest call
 
 `MediaPlayerStatus.Engine` answers *which* player ran, never *how well*. The adopter has since shipped both

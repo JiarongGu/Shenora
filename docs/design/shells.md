@@ -481,6 +481,17 @@ of a window** — cleanup happens after `Application.Run` returns, or a WebView2
 behind. ⚠ **The interactive flow ends with its window**: a close nobody holds (the app exiting, a bare `WM_CLOSE`)
 takes the window without cancelling `WindowClosed`, so the session stops waiting on the driver then.
 
+The Chromium shell reuses the same session browser for a fourth shape it does not share with WebView2: a **web panel**
+(`ChromiumWebPanel`, D97). `ChromiumWindows.CreateWebPanelAsync` reads a named window's handle on CEF's UI thread, then
+`ChromiumSessionHost.CreateChildAsync` makes a `ChromiumSessionBrowser` (windowed, not off-screen) as a `WS_CHILD` of
+that handle with `create_browser_sync` and the profile's request context — the same `Admit`/`ProfileFor` rule as any
+session (a folder directly inside the data folder, never the app's own). The panel exposes that browser as its
+`ISessionBrowser` (navigate, script, cookies, events) plus `SetBounds` on the child HWND and `GoBack`/`GoForward`/
+`Reload`/`Stop`, so the host places it in a region its page reserves and draws its own chrome. The context sets the
+profile's proxy through Chromium's `proxy` preference and `persist_session_cookies`, so a sign-in survives a restart.
+It runs in the shell's own CEF process, which is why it needs no `ChromiumEngine` (that would be a second CEF init).
+Windows only, today. WHY: D97.
+
 ## What is deliberately absent
 
 - **No UI component library, ever** (D13). The splash, the tray menu palette and the drop-zone hover

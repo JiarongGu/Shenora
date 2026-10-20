@@ -173,6 +173,85 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         return browser;
     }
 
+#if CEF_WINDOWS
+    private const uint WS_CHILD = 0x40000000, WS_VISIBLE = 0x10000000, WS_CLIPCHILDREN = 0x02000000, WS_CLIPSIBLINGS = 0x04000000,
+        WS_TABSTOP = 0x00010000;
+#endif
+
+    /// <summary>
+    /// Make a web-content browser as a CHILD of a host window (D97): a CEF browser parented to <paramref name="parentWindow"/>'s
+    /// handle, in the profile's request context, driven as any session browser is and with nothing of the app's own. It
+    /// runs in this shell's own CEF process, so it needs no separate <see cref="ChromiumEngine"/>. Windows only, today.
+    /// </summary>
+    internal Task<ChromiumSessionBrowser> CreateChildAsync(SessionBrowserOptions options, Action<SessionProcessReport>? onGone,
+        nint parentWindow, Rectangle bounds, Color? background, bool persistSessionCookies, string? proxyServer, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (parentWindow == 0) return Task.FromException<ChromiumSessionBrowser>(new ArgumentException("A parent window is required.", nameof(parentWindow)));
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var profile = Admit(options, windowless: false);
+            var (context, ready) = Open(profile, persistSessionCookies, proxyServer);
+            return SessionCalls.Made<ChromiumSessionBrowser>(ready, profile, options.InitTimeout, cancellationToken, _ui,
+                () => CreateChild(options, onGone, profile, parentWindow, bounds, background, (_cef_request_context_t*)context),
+                browser => Task.WhenAll(browser.Ready, browser.FirstPage),
+                browser => _ui.InvokeAsync(browser.Close, CancellationToken.None),
+                () => Release((_cef_request_context_t*)context));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromException<ChromiumSessionBrowser>(ex);
+        }
+    }
+
+    // CEF's UI thread, once the profile is ready: a child browser parented to a host window's handle. The context is
+    // always the browser's own, released as it goes (or here, if it cannot be made). The window's handle is read back for
+    // the panel to place.
+    private ChromiumSessionBrowser CreateChild(SessionBrowserOptions options, Action<SessionProcessReport>? onGone, string profile,
+        nint parentWindow, Rectangle bounds, Color? background, _cef_request_context_t* context)
+    {
+#if !CEF_WINDOWS
+        Release(context);
+        throw new PlatformNotSupportedException("A Chromium web panel is Windows only, today.");
+#else
+        var size = new Size(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height));
+        var browser = new ChromiumSessionBrowser(options, () => null, onGone, size, _ui, windowless: false);
+        var windowInfo = new _cef_window_info_t
+        {
+            size = (nuint)sizeof(_cef_window_info_t),
+            style = WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_TABSTOP,
+            parent_window = parentWindow,
+            bounds = new _cef_rect_t { x = bounds.X, y = bounds.Y, width = size.Width, height = size.Height },
+            runtime_style = cef_runtime_style_t.CEF_RUNTIME_STYLE_ALLOY,   // D84
+        };
+        var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
+        if (background is { } color) settings.background_color = (uint)color.ToArgb();
+        // On about:blank, as the windowless path is and for the same reason (Create, above): a first page loading as the
+        // browser is made can finish after the host's first navigation has begun and take it for its own.
+        _cef_browser_t* made;
+        const string blank = "about:blank";
+        fixed (char* u = blank)
+        {
+            var url = CefStrings.View(u, blank.Length);
+            // The call consumes a reference to the context; ours stays.
+            ((_cef_base_ref_counted_t*)context)->add_ref((_cef_base_ref_counted_t*)context);
+            made = Cef.cef_browser_host_create_browser_sync(&windowInfo, browser.ClientForCef(), &url, &settings, null, context);
+        }
+        if (made == null)
+        {
+            browser.NeverMade();
+            Release(context);
+            throw new InvalidOperationException($"Chromium would not make a web panel browser (profile '{profile}').");
+        }
+        browser.Attach(made);
+        browser.WhenClosed(() => Release(context));
+        using (var host = new CefRef<_cef_browser_host_t>(made->get_host(made)))
+            if (!host.IsNull) browser.SetWindowHandle((nint)host.Ptr->get_window_handle(host.Ptr));
+        return browser;
+#endif
+    }
+
     // CEF's UI thread, once the profile is ready: a session browser in a window of its own. An owned context is released
     // as the browser goes, or here if the window cannot be made.
     private ChromiumSessionWindow OpenWindow(SessionBrowserOptions options, Func<string?> scope, Action<SessionProcessReport>? onGone, string title,
@@ -219,11 +298,23 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
     }
 
     /// <summary>The profile's request context (a reference of the caller's), and when it is ready for a browser.</summary>
-    private (nint Context, Task Ready) Open(string profile)
+    private (nint Context, Task Ready) Open(string profile) => Open(profile, persistSessionCookies: false, proxyServer: null);
+
+    /// <summary>
+    /// The profile's request context (a reference of the caller's), and when it is ready for a browser.
+    /// <paramref name="persistSessionCookies"/> keeps cookies with no expiry across a restart (a sign-in usually survives
+    /// one that way); <paramref name="proxyServer"/> routes the profile through a proxy, set on the context once it is
+    /// ready (D97). Cookies WITH an expiry persist regardless, since the context has its own on-disk cache.
+    /// </summary>
+    private (nint Context, Task Ready) Open(string profile, bool persistSessionCookies, string? proxyServer)
     {
         Directory.CreateDirectory(profile);
-        var ready = new ProfileReady(_colorSchemes);
-        var settings = new _cef_request_context_settings_t { size = (nuint)sizeof(_cef_request_context_settings_t) };
+        var ready = new ProfileReady(_colorSchemes, proxyServer);
+        var settings = new _cef_request_context_settings_t
+        {
+            size = (nuint)sizeof(_cef_request_context_settings_t),
+            persist_session_cookies = persistSessionCookies ? 1 : 0,
+        };
         _cef_request_context_t* context;
         fixed (char* p = profile)
         {
@@ -235,6 +326,44 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         return ((nint)context, ready.Initialized);
     }
 
+    // The profile's proxy (D97), set on its request context's "proxy" preference: a dictionary naming a fixed server, so
+    // the route binds to this profile and no other. Null leaves it routing directly. CEF's UI thread, where the context's
+    // initialization handler runs (set_preference's requirement).
+    private static void ApplyProxy(_cef_request_context_t* context, string? proxyServer)
+    {
+        if (string.IsNullOrWhiteSpace(proxyServer)) return;
+        var preferences = &context->@base;
+        const string name = "proxy";
+        fixed (char* n = name)
+        {
+            var nameString = CefStrings.View(n, name.Length);
+            if (preferences->can_set_preference(preferences, &nameString) != 1) return;
+        }
+        var dictionary = Cef.cef_dictionary_value_create();
+        SetDictionaryString(dictionary, "mode", "fixed_servers");
+        SetDictionaryString(dictionary, "server", proxyServer);
+        var value = Cef.cef_value_create();
+        value->set_dictionary(value, dictionary);   // the value takes ownership of the dictionary
+        var error = default(_cef_string_utf16_t);
+        fixed (char* n = name)
+        {
+            var nameString = CefStrings.View(n, name.Length);
+            preferences->set_preference(preferences, &nameString, value, &error);   // consumes the value's reference
+        }
+        Cef.cef_string_utf16_clear(&error);
+    }
+
+    private static void SetDictionaryString(_cef_dictionary_value_t* dictionary, string key, string value)
+    {
+        fixed (char* k = key)
+        fixed (char* v = value)
+        {
+            var keyString = CefStrings.View(k, key.Length);
+            var valueString = CefStrings.View(v, value.Length);
+            dictionary->set_string(dictionary, &keyString, &valueString);
+        }
+    }
+
     private static void Release(_cef_request_context_t* context) =>
         ((_cef_base_ref_counted_t*)context)->release((_cef_base_ref_counted_t*)context);
 
@@ -243,10 +372,12 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
     {
         private readonly TaskCompletionSource _initialized = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly ChromiumColorSchemes? _colorSchemes;
+        private readonly string? _proxyServer;
 
-        public ProfileReady(ChromiumColorSchemes? colorSchemes)
+        public ProfileReady(ChromiumColorSchemes? colorSchemes, string? proxyServer = null)
         {
             _colorSchemes = colorSchemes;
+            _proxyServer = proxyServer;
             Struct->on_request_context_initialized = &RequestContextInitialized;
         }
 
@@ -264,6 +395,8 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
             // The app's colour scheme as the profile opens (a later change reaches the main window's context, not this one).
             var owner = From<ProfileReady>(self);
             if (owner._colorSchemes is { } schemes) context.Ptr->set_chrome_color_scheme(context.Ptr, schemes.Current, 0);
+            // The profile's proxy, if any (D97), while the context is ready and on the thread set_preference needs.
+            ApplyProxy(context.Ptr, owner._proxyServer);
             owner._initialized.TrySetResult();
         }
     }

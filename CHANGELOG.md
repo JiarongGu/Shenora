@@ -28,6 +28,20 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **`ChromiumWindows.CreateWebPanelAsync` embeds a web-content browser as a child of a shell window** (D97). A new
+  `ChromiumWebPanel` runs a CEF browser as a native child of a window the `UseChromium` shell owns, in a caller-chosen
+  profile's request context, in the shell's own CEF process (no second `ChromiumEngine`, which cannot coexist). The host
+  positions it with `SetBounds` in a region its page reserves, draws its own chrome, and drives it through the session
+  browser the auxiliary sessions already expose (`ChromiumWebPanel.Browser` is an `ISessionBrowser` — navigate, run
+  script, read cookies) plus `GoBack`/`GoForward`/`Reload`/`Stop`. The profile follows the session rule (D91): a folder
+  directly inside the shell's data folder, never the app's own. `ChromiumWebPanelOptions.ProxyServer` routes the profile
+  through a proxy set on its request context's `proxy` preference, and `PersistSessionCookies` (default true) keeps
+  session cookies across a restart. Windows only, today, as `ChromiumChildBrowser` is.
+
 ## 0.22.0 — 2026-10-19
 
 ### Breaking

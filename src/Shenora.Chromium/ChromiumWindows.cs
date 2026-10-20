@@ -26,6 +26,7 @@ public sealed unsafe class ChromiumWindows
     private readonly IEventBus? _events;
     private readonly ILogger? _log;
     private readonly IUrlLauncher _urls;
+    private readonly ChromiumSessionHost? _sessionHost;
     private readonly ChromiumColorSchemes? _colorSchemes;
     // A name is reserved by Open on any thread, as null, and gets its window on CEF's UI thread, where every later post
     // for it runs after that one. Read by HasWindow from any thread, so a concurrent collection, not a Dictionary.
@@ -36,7 +37,7 @@ public sealed unsafe class ChromiumWindows
     private IWindowStateStore? _windowStore;   // the main window's saved state, when the app keeps it
 
     internal ChromiumWindows(ChromiumHostOptions options, CefUiDispatcher ui, IMessageDispatcher dispatcher, IEventBus? events, ILogger? log,
-        IUrlLauncher urls, ChromiumColorSchemes? colorSchemes = null)
+        IUrlLauncher urls, ChromiumSessionHost? sessionHost = null, ChromiumColorSchemes? colorSchemes = null)
     {
         _colorSchemes = colorSchemes;
         _options = options;
@@ -45,6 +46,7 @@ public sealed unsafe class ChromiumWindows
         _events = events;
         _log = log;
         _urls = urls;
+        _sessionHost = sessionHost;
     }
 
     /// <summary>True while the named window is open (or opening).</summary>
@@ -82,6 +84,37 @@ public sealed unsafe class ChromiumWindows
     /// running.</summary>
     /// <param name="name">The window's name.</param>
     public bool Activate(string name) => _ui.Post(() => WhenOpen(name, w => w.Activate()));
+
+    /// <summary>
+    /// Embed a web-content browser as a child of the named window (D97): a CEF browser parented to that window's handle,
+    /// in a profile of the caller's choosing, running in this shell's own CEF process. The host places it with
+    /// <see cref="ChromiumWebPanel.SetBounds"/> inside a region its page reserves and draws its own chrome; it drives the
+    /// content through <see cref="ChromiumWebPanel.Browser"/>. Windows only, today.
+    /// </summary>
+    /// <param name="windowName">The window to host it in; it must be open (<see cref="MainWindowName"/> for the shell's
+    /// main window).</param>
+    /// <param name="options">The panel's profile, policies, initial page, placement and proxy.</param>
+    /// <param name="cancellationToken">Abandons the wait; a browser made after it is abandoned is torn down.</param>
+    /// <returns>The panel, once its browser exists and its first page has settled.</returns>
+    /// <exception cref="InvalidOperationException">The shell is not running, or no window named <paramref name="windowName"/>
+    /// is open.</exception>
+    /// <exception cref="ArgumentException">The profile is not a folder directly inside the shell's data folder, or is the
+    /// app's own (D91).</exception>
+    public Task<ChromiumWebPanel> CreateWebPanelAsync(string windowName, ChromiumWebPanelOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(windowName);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.Session);
+        if (Volatile.Read(ref _serving) is null) throw new InvalidOperationException("The Chromium shell is not running.");
+        var sessionHost = _sessionHost ?? throw new InvalidOperationException("The Chromium shell has no session host to make a web panel.");
+        // The async orchestration lives off the unsafe class, which cannot await; the handle is read on the UI thread,
+        // where the window's pointer is touched.
+        return ChromiumWebPanel.CreateAsync(_ui, sessionHost, windowName, () => HandleOf(windowName), options, cancellationToken);
+    }
+
+    // UI thread: the named window's native handle, or 0 when it is not (yet) open.
+    private nint HandleOf(string name) => _open.TryGetValue(name, out var window) && window is not null ? window.WindowHandle : 0;
 
     // A name reserved and not yet made — its Open posted from another thread and still queued — takes the request once
     // it is: queued again behind that open, where it was dropped.

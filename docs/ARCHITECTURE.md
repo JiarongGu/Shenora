@@ -241,6 +241,10 @@ Shenora.slnx
 │   │                                          (Host/ChromiumSessionWindow), each profile a request
 │   │                                          context directly under the data folder, driven through
 │   │                                          the in-process DevTools channel (Host/DevToolsChannel).
+│   │                                          ChromiumWebPanel (D97) embeds one of those session
+│   │                                          browsers as a CHILD of a shell window, in a chosen
+│   │                                          profile, for a host that places it and draws its own
+│   │                                          chrome (ChromiumWindows.CreateWebPanelAsync).
 │   │                                          Serving/ answers the app's origin (the bundle — a folder,
 │   │                                          or Core's IWebViewResourceProvider, embedded resources
 │   │                                          above all — marked, then the app's interceptor pipeline,

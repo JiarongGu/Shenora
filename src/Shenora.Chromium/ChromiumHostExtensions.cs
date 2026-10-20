@@ -80,7 +80,7 @@ public static class ChromiumHostExtensions
             work => CefTask.Post(cef_thread_id_t.TID_UI, work)));
         builder.Services.AddSingleton(sp => new ChromiumWindows(options, sp.GetRequiredService<CefUiDispatcher>(),
             sp.GetRequiredService<IMessageDispatcher>(), sp.GetService<IEventBus>(), sp.GetService<ILogger<ChromiumWindows>>(),
-            sp.GetRequiredService<IUrlLauncher>(), sp.GetRequiredService<ChromiumColorSchemes>()));
+            sp.GetRequiredService<IUrlLauncher>(), sp.GetRequiredService<ChromiumSessionHost>(), sp.GetRequiredService<ChromiumColorSchemes>()));
         if (options.Tray is { } tray)
         {
             var name = builder.ApplicationName;

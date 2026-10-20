@@ -153,6 +153,7 @@ docs cite them — so the number is the column to scan.
 | **D94** | THE NATIVE LAUNCHER OWNS THE FIRST FRAMES: A STARTUP SCREEN, COMPILED INTO IT, UNTIL THE APP'S FIRST WINDOW. |
 | **D95** | ONE BUNDLE PROVIDER FOR BOTH DESKTOP SHELLS, AND A PAGE FOR A PAGE THAT IS NOT THERE. |
 | **D96** | A WINDOWS CHROMIUM APP CAN PUBLISH AS THREE FILES AND TWO FOLDERS, AS AN OPTION. |
+| **D97** | THE CHROMIUM SHELL EMBEDS A WEB PANEL: A CHILD BROWSER IN A SHELL WINDOW, IN A CHOSEN PROFILE. |
 
 <!-- decisions-index:end -->
 
@@ -1354,6 +1355,21 @@ docs cite them — so the number is the column to scan.
     the SDK's clean never touches and the shim would otherwise load; such a publish starts through `MyApp.exe` only
     (`dotnet lib\MyApp.App.dll` does not find CEF, and a resolver would serve a start nothing makes); Windows only —
     macOS is already one `.app`, and Linux needs a spike of its own.
+
+- **D97 — THE CHROMIUM SHELL EMBEDS A WEB PANEL: A CHILD BROWSER IN A SHELL WINDOW, IN A CHOSEN PROFILE.**
+  `ChromiumWindows.CreateWebPanelAsync` makes a web-content browser a native CHILD of a window the shell owns
+  (`ChromiumWebPanel`): a CEF browser parented to that window's handle, in a caller-chosen profile's request context,
+  in the shell's OWN CEF process. The host places it (`SetBounds`) in a region its page reserves, draws its own
+  chrome, and drives it through the session browser the auxiliary sessions already expose (`ISessionBrowser`), plus
+  back/forward/reload on the panel. Windows only, today, as `ChromiumChildBrowser` is.
+  - 🔴 **Why not `ChromiumEngine`/`ChromiumChildBrowser` (D83):** that path needs a STARTED engine — a second CEF
+    init this process cannot do — and serves the app's OWN origin with its IPC bridge. The panel is arbitrary web
+    content in a chosen profile, so it reuses the session browser (D91), already in-process and already drivable.
+  - **The profile is a session profile (D91):** a folder directly inside the shell's data folder, never the app's
+    own; point it at a signed-in `ChromiumBrowserProcess`'s folder to reuse that sign-in, but not while that process
+    holds it open (one process per data folder).
+  - **Proxy and cookies ride the request context:** the proxy is the context's `proxy` preference, bound to this profile
+    alone; `persist_session_cookies` keeps session cookies across a restart, expiring ones persist from its cache.
 
 ## Anti-goals — deliberately NOT built
 

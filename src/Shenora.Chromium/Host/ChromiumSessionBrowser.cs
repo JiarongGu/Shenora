@@ -29,6 +29,8 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
     private int _filterErrorReported;
     private Action? _closed;
     private readonly bool _windowless;
+    private nint _windowHandle;   // the child window's handle, when this browser is a child of a host window (D97); else 0
+    private readonly TaskCompletionSource _closedSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     // windowless: off-screen, as the pool's and a stream's are; false for one in a window.
     public ChromiumSessionBrowser(SessionBrowserOptions options, Func<string?> scope, Action<SessionProcessReport>? onGone, Size viewport,
@@ -61,6 +63,41 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
         _closed = null;
         _client.Release();
         closed?.Invoke();
+        _closedSignal.TrySetResult();
+    }
+
+    /// <summary>The browser's own window while it exists, else 0: a child of a host window, for a panel that places it
+    /// (D97). Any thread.</summary>
+    internal nint WindowHandle => Volatile.Read(ref _windowHandle);
+
+    /// <summary>Record the child window's handle, read back as the browser is made in a host window. UI thread.</summary>
+    internal void SetWindowHandle(nint handle) => Volatile.Write(ref _windowHandle, handle);
+
+    /// <summary>Completes once the browser has gone, however it went.</summary>
+    internal Task Closed => _closedSignal.Task;
+
+    /// <summary>Go back in history, if there is anywhere to go. UI thread.</summary>
+    internal void GoBack()
+    {
+        if (_browser != null && _browser->can_go_back(_browser) == 1) _browser->go_back(_browser);
+    }
+
+    /// <summary>Go forward in history, if there is anywhere to go. UI thread.</summary>
+    internal void GoForward()
+    {
+        if (_browser != null && _browser->can_go_forward(_browser) == 1) _browser->go_forward(_browser);
+    }
+
+    /// <summary>Reload the current page. UI thread.</summary>
+    internal void Reload()
+    {
+        if (_browser != null) _browser->reload(_browser);
+    }
+
+    /// <summary>Stop the current load. UI thread.</summary>
+    internal void Stop()
+    {
+        if (_browser != null) _browser->stop_load(_browser);
     }
 
     // The session's own browser, by CEF's id for it. A popup the page opens gets this browser's client too, so every
@@ -500,12 +537,14 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
         if (_browser == null) return;
         foreach (var popup in _popups.Values.ToArray()) ForceClose((_cef_browser_t*)popup);   // gone with the page that opened them
         using (new CefRef<_cef_browser_t>(_browser)) _browser = null;
+        Volatile.Write(ref _windowHandle, 0);
         _devTools?.Dispose();
         _devTools = null;
         _client.Release();
         var closed = _closed;
         _closed = null;
         closed?.Invoke();
+        _closedSignal.TrySetResult();
     }
 
     private void RendererGone(cef_termination_status_t status, int errorCode)

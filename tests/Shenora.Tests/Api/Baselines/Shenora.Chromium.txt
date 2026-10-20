@@ -117,6 +117,25 @@ sealed class Shenora.Chromium.ChromiumTrayOptions
   public string OpenMenuItemText { get; init; }
   public string? IconPath { get; init; }
   public string? Text { get; init; }
+sealed class Shenora.Chromium.ChromiumWebPanel : System.IDisposable
+  public Shenora.Core.Sessions.ISessionBrowser Browser { get; }
+  public System.IntPtr WindowHandle { get; }
+  public System.Threading.Tasks.Task Closed { get; }
+  public void Dispose()
+  public void Focus()
+  public void GoBack()
+  public void GoForward()
+  public void Reload()
+  public void SetBounds(System.Drawing.Rectangle bounds)
+  public void Stop()
+sealed class Shenora.Chromium.ChromiumWebPanelOptions
+  public System.Action<Shenora.Core.Sessions.SessionProcessReport>? OnGone { get; init; }
+  public System.Drawing.Color? BackgroundColor { get; init; }
+  public System.Drawing.Rectangle Bounds { get; init; }
+  public bool PersistSessionCookies { get; init; }
+  public required Shenora.Core.Sessions.SessionBrowserOptions Session { get; init; }
+  public string? ProxyServer { get; init; }
+  public string? Url { get; init; }
 sealed class Shenora.Chromium.ChromiumWindowOptions
   public .ctor()
   public Shenora.Core.Shell.IWindowStateStore? StateStore { get; init; }
@@ -130,6 +149,7 @@ sealed class Shenora.Chromium.ChromiumWindowOptions
   public string? Path { get; init; }
   public string? Title { get; init; }
 sealed class Shenora.Chromium.ChromiumWindows
+  public System.Threading.Tasks.Task<Shenora.Chromium.ChromiumWebPanel> CreateWebPanelAsync(string windowName, Shenora.Chromium.ChromiumWebPanelOptions options, System.Threading.CancellationToken cancellationToken = default)
   public bool Activate(string name)
   public bool Close(string name)
   public bool HasWindow(string name)

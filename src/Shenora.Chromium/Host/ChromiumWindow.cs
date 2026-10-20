@@ -169,6 +169,10 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
 #endif
     public bool IsVisible => _window != null && ((_cef_view_t*)_window)->is_visible((_cef_view_t*)_window) == 1;
 
+    /// <summary>The window's native handle while it exists, else 0 — an HWND on Windows — for a child browser parented to
+    /// it (D97). UI thread.</summary>
+    public nint WindowHandle => _window == null ? 0 : (nint)_window->get_window_handle(_window);
+
     /// <summary>CEF asks before the window closes. UI thread.</summary>
     private bool MayClose()
     {
