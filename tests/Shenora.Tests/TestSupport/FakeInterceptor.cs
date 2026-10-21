@@ -39,7 +39,9 @@ internal sealed class FakeInterceptor(WebViewRangeDelivery delivery = WebViewRan
     /// A raw <c>Range</c> header value (<c>bytes=0-99</c>), or null for a request that carries none. The
     /// header is what a media element's seek IS, so a route test that cannot send one cannot test seeking.
     /// </param>
-    public Task<WebViewResourceResponse?> AskAsync(string url, string? range = null) =>
+    /// <param name="cancellationToken">What a shell that signals a client abort would pass the pipeline.</param>
+    public Task<WebViewResourceResponse?> AskAsync(string url, string? range = null,
+                                                   CancellationToken cancellationToken = default) =>
         _pipeline.Build() is { } handler
             ? handler(new WebViewResourceRequest
             {
@@ -48,6 +50,6 @@ internal sealed class FakeInterceptor(WebViewRangeDelivery delivery = WebViewRan
                 Headers = range is null
                     ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                     : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Range"] = range },
-            }, CancellationToken.None)
+            }, cancellationToken)
             : Task.FromResult<WebViewResourceResponse?>(null);
 }

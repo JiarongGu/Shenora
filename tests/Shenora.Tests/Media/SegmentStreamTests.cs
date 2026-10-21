@@ -138,6 +138,44 @@ public class SegmentStreamTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// A producer that stays alive and publishes NOTHING until a test says so, except the first segment of a
+    /// window listed in <see cref="PublishesAt"/> — the shape of a seek to a segment that has to be encoded.
+    /// </summary>
+    private sealed class SlowEngine : ISegmentEngine
+    {
+        /// <summary>Window starts at which the run publishes its first segment at once.</summary>
+        public HashSet<int> PublishesAt { get; init; } = [];
+
+        private readonly object _lock = new();
+        private readonly List<int> _starts = [];
+
+        /// <summary>The first segment of every run started, in order.</summary>
+        public int[] Starts { get { lock (_lock) return [.. _starts]; } }
+
+        public bool IsAvailable => true;
+        public string Describe() => "slow";
+        public TimeSpan? DurationOf(MediaByteSource source) => TimeSpan.FromSeconds(2000);
+        public bool HasPicture(MediaByteSource source) => false;
+        public SegmentPlan? PlanSegments(MediaByteSource source, SegmentLengths lengths, CancellationToken ct = default) => null;
+        public bool HasRenderedPicture(string segment) => true;
+
+        public ISegmentRun? Start(SegmentRunRequest request)
+        {
+            lock (_lock) _starts.Add(request.FirstSegment);
+            File.WriteAllText(Path.Combine(request.Directory, SegmentRunRequest.InitSegmentName), "init");
+            if (PublishesAt.Contains(request.FirstSegment))
+                File.WriteAllText(Path.Combine(request.Directory, $"seg{request.FirstSegment}.m4s"), "seg-body");
+            return new Run();
+        }
+
+        private sealed class Run : ISegmentRun
+        {
+            public bool HasExited => false;
+            public void Dispose() { }
+        }
+    }
+
     private string NewSource(string name = "track.flac")
     {
         var path = Path.Combine(_sources, name);
@@ -171,6 +209,120 @@ public class SegmentStreamTests : IDisposable
     {
         using var reader = new StreamReader(response.Content);
         return await reader.ReadToEndAsync();
+    }
+
+    // ── a moving playhead: the gate is not held across a sleep ───────────────────────────────────────
+
+    private static async Task<T> Within<T>(Task<T> task, string what)
+    {
+        var finished = await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(8)));
+        Assert.True(ReferenceEquals(finished, task), what);
+        return await task;
+    }
+
+    private static async Task WaitUntil(Func<bool> condition, string what)
+    {
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(8);
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < until, what);
+            await Task.Delay(10);
+        }
+    }
+
+    /// <summary>
+    /// 🔴 A wait for segment 199 used to HOLD the source's gate while it slept, so the seek to 300 queued behind
+    /// it for up to the whole wait budget and then ran against whatever the abandoned wait left behind. The
+    /// older waiter must also give up WITHOUT restarting, or it kills the run the newer request needs.
+    /// </summary>
+    [Fact]
+    public async Task A_newer_seek_is_not_blocked_by_an_older_wait_and_the_older_one_answers_503_without_restarting()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        var engine = new SlowEngine { PublishesAt = [300] };
+        using var _ = interceptor.UseSegmentStream(engine, Options());
+
+        var older = Task.Run(() => interceptor.AskAsync("https://x/shenora-hls/track.flac/seg199.m4s"));
+        await WaitUntil(() => engine.Starts.Length == 1, "the first request never started a run");
+
+        var newer = await Within(Task.Run(() => interceptor.AskAsync("https://x/shenora-hls/track.flac/seg300.m4s")),
+            "the newer seek stayed queued behind the older wait");
+        var olderAnswer = await Within(older, "the superseded wait kept waiting");
+
+        Assert.Equal(200, newer!.StatusCode);
+        Assert.Equal(503, olderAnswer!.StatusCode);
+        // Started for 199 (nothing was producing) and for 300 — and never again for what the older one wanted.
+        Assert.Equal([199, 300], engine.Starts);
+    }
+
+    /// <summary>
+    /// The other direction, without which the test above passes against a route that gives up on EVERY newer
+    /// request: k then k+1 is one playhead moving on, so the first wait stays, no run is restarted, and both are
+    /// served when the producer publishes.
+    /// </summary>
+    [Fact]
+    public async Task A_sequential_request_inside_the_lookahead_does_not_supersede_or_restart()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        var engine = new SlowEngine();
+        using var _ = interceptor.UseSegmentStream(engine, Options());
+
+        var first = Task.Run(() => interceptor.AskAsync("https://x/shenora-hls/track.flac/seg5.m4s"));
+        await WaitUntil(() => engine.Starts.Length == 1, "the first request never started a run");
+        var second = Task.Run(() => interceptor.AskAsync("https://x/shenora-hls/track.flac/seg6.m4s"));
+
+        // Let several polls pass with both waiting: a superseded first request would have answered by now.
+        await Task.Delay(300);
+        Assert.False(first.IsCompleted, "the first wait gave up although the newer request was inside its reach");
+
+        var directory = Directory.GetDirectories(_cache).Single();
+        File.WriteAllText(Path.Combine(directory, "seg5.m4s"), "five");
+        File.WriteAllText(Path.Combine(directory, "seg6.m4s"), "six");
+
+        Assert.Equal(200, (await Within(first, "seg5 was never served"))!.StatusCode);
+        Assert.Equal(200, (await Within(second, "seg6 was never served"))!.StatusCode);
+        Assert.Equal([5], engine.Starts);
+    }
+
+    /// <summary>
+    /// A cancelled request stops waiting and never restarts — what a client abort means when a shell signals one.
+    /// </summary>
+    [Fact]
+    public async Task A_cancelled_request_does_not_restart_the_producer()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        var engine = new SlowEngine();
+        using var _ = interceptor.UseSegmentStream(engine, Options());
+        using var cancel = new CancellationTokenSource();
+        await cancel.CancelAsync();
+
+        var answer = await Within(Task.Run(() => interceptor.AskAsync(
+            "https://x/shenora-hls/track.flac/seg50.m4s", cancellationToken: cancel.Token)), "a cancelled request kept waiting");
+
+        Assert.Equal(503, answer!.StatusCode);
+        Assert.Empty(engine.Starts);
+    }
+
+    /// <summary>A request cancelled WHILE waiting stops at its next check instead of spending the budget.</summary>
+    [Fact]
+    public async Task A_request_cancelled_while_waiting_stops_waiting()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        var engine = new SlowEngine();
+        using var _ = interceptor.UseSegmentStream(engine, Options());
+        using var cancel = new CancellationTokenSource();
+
+        var waiting = Task.Run(() => interceptor.AskAsync(
+            "https://x/shenora-hls/track.flac/seg50.m4s", cancellationToken: cancel.Token));
+        await WaitUntil(() => engine.Starts.Length == 1, "the request never started a run");
+        await cancel.CancelAsync();
+
+        Assert.Equal(503, (await Within(waiting, "a cancelled wait kept the budget"))!.StatusCode);
+        Assert.Equal([50], engine.Starts);
     }
 
     // ── the head ramp: what the first segment costs ───────────────────────────────────────────────────

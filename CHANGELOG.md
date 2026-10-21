@@ -28,6 +28,30 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **The segment route's `fetch` option takes a second argument, `{ signal?: AbortSignal }`** (`bindSegmentStream`). The
+  binder passes the signal of a segment fetch a newer seek has made pointless. Optional and backward compatible: a
+  `fetch` that ignores it still works and simply cannot be cut short.
+
+### Fixed
+
+- **A seek past the buffered end now fetches** (`bindSegmentStream`). A fragmented-MP4 init segment declares no duration,
+  so `element.duration` stayed `Infinity`, `seekable` equalled `buffered`, and the seek was clamped with no segment
+  requested. The binder sets the `MediaSource` duration to the playlist's total before the init append.
+- **A seek during a drag no longer waits for the fetch it superseded** (`bindSegmentStream`). The pump awaited the old
+  target's segment, which on a source still being produced is a full producer restart, before the wanted one paid its
+  own. A `seeking` that moves the playhead off the segment being fetched now aborts that fetch (never an append already
+  started); the pump re-evaluates, and an aborted fetch is neither a failure nor a 503 backoff.
+- **A segment request no longer holds the source's gate while it waits** (`UseSegmentStream`). The wait polled inside
+  the lock for up to `WaitBudget`, so the seek a person made next queued behind one they had abandoned. The gate is now
+  taken to check and restart, never to sleep. The newest request for a source wins: an older waiter the newest is not
+  about to reach (outside `Lookahead`) answers 503 at its next check without restarting the producer, and a request
+  whose token is cancelled stops waiting the same way. Only the Chromium shell passes a token that CEF cancels; the
+  Windows (WebView2) and mobile shells pass none, so there the newest-wins rule is what frees the gate.
+
 ## 0.23.1 — 2026-10-21
 
 ### Added

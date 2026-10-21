@@ -39,6 +39,8 @@ class FakeTarget {
 
 class FakeSourceBuffer extends FakeTarget {
   readonly appends: number[] = [];
+  /** The owning source's `duration` at each append, so a test can say what was declared BEFORE the init went in. */
+  readonly durationAtAppend: number[] = [];
   updating = false;
 
   /** Fail every append through the buffer's `error` event — an undecodable init, a quota refusal. */
@@ -46,6 +48,7 @@ class FakeSourceBuffer extends FakeTarget {
 
   appendBuffer(bytes: Uint8Array) {
     this.appends.push(bytes.byteLength);
+    this.durationAtAppend.push(FakeMediaSource.last?.duration ?? Number.NaN);
     // Asynchronous, exactly like the real thing: an implementation that completed synchronously would
     // hide a re-entrancy bug rather than expose one.
     queueMicrotask(() => this.emit(FakeSourceBuffer.failAppends ? 'error' : 'updateend'));
@@ -55,6 +58,8 @@ class FakeSourceBuffer extends FakeTarget {
 class FakeMediaSource extends FakeTarget {
   static openImmediately = false;
   readyState = 'closed';
+  /** NaN until set, exactly as a real MediaSource reports before anything declares a length. */
+  duration = Number.NaN;
   streaming = true;
   buffers: FakeSourceBuffer[] = [];
   endedWith = 0;
@@ -473,6 +478,112 @@ describe('bindSegmentStream', () => {
     expect(element.countFor('timeupdate')).toBe(0);
     expect(element.countFor('seeking')).toBe(0);
     expect(source.countFor('startstreaming')).toBe(0);
+  });
+});
+
+describe('bindSegmentStream — the playlist declares the length', () => {
+  it('sets the source duration to the playlist total BEFORE the init segment is appended', async () => {
+    // 🔴 An fMP4 init declares no duration, so `element.duration` stayed Infinity and a seek past the buffered
+    // end was clamped with no segment fetched. Set after the append is too late to matter to that first seek.
+    const { doFetch } = harness();
+    const element = new FakeElement();
+    const binding = await bindSegmentStream({
+      manifest: '/hls/index.m3u8', element: element as never,
+      globals: globalsWith(false), fetch: doFetch as never,
+      createObjectURL: () => 'blob:fake',
+    });
+
+    const buffer = FakeMediaSource.last!.buffers[0]!;
+    expect(buffer.durationAtAppend[0]).toBe(12);   // two 6 s segments, already declared at the init append
+    binding.dispose();
+  });
+});
+
+describe('bindSegmentStream — a newer seek supersedes the fetch in flight', () => {
+  const TEN = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-TARGETDURATION:6', '#EXT-X-MAP:URI="init.mp4"',
+    ...Array.from({ length: 10 }, (_, i) => [`#EXTINF:6.000,`, `seg${i}.m4s`]).flat(), '#EXT-X-ENDLIST'].join(String.fromCharCode(10));
+
+  /** seg0 is held open by the test; every other fetch answers at once. */
+  function slowFirst(honourSignal: boolean) {
+    const base = harness({ manifest: TEN }).doFetch;
+    const asked: string[] = [];
+    const aborted: string[] = [];
+    let release!: () => void;
+    const slow = new Promise<void>((res) => { release = res; });
+    const doFetch = async (url: string, init?: { signal?: AbortSignal }) => {
+      if (url.endsWith('seg0.m4s')) {
+        asked.push(url);
+        await new Promise<void>((res, rej) => {
+          if (honourSignal) {
+            init?.signal?.addEventListener('abort', () => {
+              aborted.push(url);
+              rej(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+            });
+          }
+          void slow.then(res);
+        });
+      } else if (!url.endsWith('.m3u8') && !url.endsWith('init.mp4')) {
+        asked.push(url);
+      }
+      return base(url);
+    };
+    return { doFetch, asked, aborted, release: () => release() };
+  }
+
+  async function bind(doFetch: unknown) {
+    const element = new FakeElement();
+    const errors: string[] = [];
+    const binding = await bindSegmentStream({
+      manifest: '/hls/index.m3u8', element: element as never,
+      globals: globalsWith(false), fetch: doFetch as never,
+      createObjectURL: () => 'blob:fake',
+      onDiagnostic: (line) => { if (/answered|failed|threw/.test(line)) errors.push(line); },
+    });
+    return { element, binding, errors };
+  }
+
+  it('aborts the fetch for a segment the playhead has left, fetches the wanted one, and never appends the old', async () => {
+    const { doFetch, asked, aborted } = slowFirst(true);
+    const { element, binding, errors } = await bind(doFetch);
+    await vi.waitFor(() => expect(asked).toContain('/hls/seg0.m4s'));
+
+    element.currentTime = 30;   // segment 5
+    element.emit('seeking');
+
+    await vi.waitFor(() => expect(binding.appended.has(5)).toBe(true));
+    expect(aborted).toEqual(['/hls/seg0.m4s']);
+    expect(binding.appended.has(0)).toBe(false);
+    expect(errors).toEqual([]);   // an abort is not a failure
+    binding.dispose();
+  });
+
+  it('does not abort when the seek stays inside the segment being fetched', async () => {
+    const { doFetch, asked, aborted, release } = slowFirst(true);
+    const { element, binding } = await bind(doFetch);
+    await vi.waitFor(() => expect(asked).toContain('/hls/seg0.m4s'));
+
+    element.currentTime = 3;    // still segment 0
+    element.emit('seeking');
+    expect(aborted).toEqual([]);
+
+    release();
+    await vi.waitFor(() => expect(binding.appended.has(0)).toBe(true));
+    binding.dispose();
+  });
+
+  it('still ends with the wanted segment appended when the fetch ignores the signal', async () => {
+    const { doFetch, asked, aborted, release } = slowFirst(false);
+    const { element, binding } = await bind(doFetch);
+    await vi.waitFor(() => expect(asked).toContain('/hls/seg0.m4s'));
+
+    element.currentTime = 30;
+    element.emit('seeking');
+    release();   // the old fetch resolves late; its bytes belong to a target the playhead left
+
+    await vi.waitFor(() => expect(binding.appended.has(5)).toBe(true));
+    expect(aborted).toEqual([]);
+    expect(binding.appended.has(0)).toBe(false);
+    binding.dispose();
   });
 });
 

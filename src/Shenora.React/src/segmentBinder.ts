@@ -37,8 +37,11 @@ export interface SegmentBinderOptions {
   /** Where to look for a MediaSource. Defaults to `globalThis`. */
   globals?: MediaSourceGlobals;
 
-  /** Defaults to `globalThis.fetch`. */
-  fetch?: (url: string) => Promise<{ ok: boolean; status: number; arrayBuffer(): Promise<ArrayBuffer>; text(): Promise<string> }>;
+  /**
+   * Defaults to `globalThis.fetch`. Segment fetches pass a second argument whose `signal` aborts a fetch a newer seek
+   * has made pointless; a fetch that ignores it still works and simply cannot be cut short.
+   */
+  fetch?: (url: string, init?: { signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; arrayBuffer(): Promise<ArrayBuffer>; text(): Promise<string> }>;
 
   /** Defaults to `URL.createObjectURL`. Only used when `srcObject` is refused. */
   createObjectURL?: (source: object) => string;
@@ -145,7 +148,7 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
     onDiagnostic,
   } = options;
 
-  const doFetch = options.fetch ?? ((url: string) => fetch(url) as never);
+  const doFetch = options.fetch ?? ((url: string, init?: { signal?: AbortSignal }) => fetch(url, init) as never);
   const say = (line: string) => onDiagnostic?.(line);
 
   /**
@@ -237,6 +240,19 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
     revokeAndRethrow(e);
   }
 
+  // 🔴 A fragmented-MP4 init segment declares NO duration, so without this `element.duration` stays Infinity,
+  // `seekable` equals `buffered`, and a seek past the buffered end is clamped silently: no segment is fetched.
+  // The playlist already states the length. Set before the init append, while the source is still `open`.
+  const total = parsed.segments.reduce((sum, entry) => sum + entry.seconds, 0);
+  if (source.readyState === 'open' && Number.isFinite(total) && total > 0) {
+    try {
+      source.duration = total;
+    } catch (e) {
+      // Not fatal: playback still works, only a seek past the buffered end is lost.
+      say(`segments: could not declare the duration (${(e as Error).message})`);
+    }
+  }
+
   // ── state ───────────────────────────────────────────────────────────────────────────────────────
   const appended = new Set<number>();
   const held = new Set<number>();   // appended AND seen in `buffered` — see forgetEvicted
@@ -244,6 +260,8 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
   let streaming = true;
   let disposed = false;
   let pumping = false;
+  /** The fetch under way, if any — what a seek may abort. An append is never in here: it is never aborted. */
+  let inFlight: { index: number; controller: AbortController } | null = null;
 
   /**
    * Append one buffer and settle when the source buffer says so.
@@ -324,8 +342,24 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
         if (index === null) break;
 
         const entry = parsed.segments[index]!;
-        const response = await doFetch(resolve(manifestUrl, entry.uri));
+        const controller = new AbortController();
+        inFlight = { index, controller };
+        let response: Awaited<ReturnType<typeof doFetch>> | undefined;
+        let body: ArrayBuffer | undefined;
+        try {
+          response = await doFetch(resolve(manifestUrl, entry.uri), { signal: controller.signal });
+          if (response.ok) body = await response.arrayBuffer();
+        } catch (e) {
+          // An aborted fetch is a decision, not a failure: no fail(), no backoff.
+          if (!controller.signal.aborted) throw e;
+        } finally {
+          inFlight = null;
+        }
         if (disposed) return;
+        // Also covers a fetch that ignored the signal and resolved anyway: what it carries is for a target the
+        // playhead has left, so it is dropped and the loop asks again.
+        if (controller.signal.aborted) continue;
+        if (!response) break;
         if (response.status === 503) {
           // 🔴 503 IS THE HOST SAYING "still producing" — a WAIT, and it must actually be waited FOR.
           // This used to say exactly that in a comment and then `fail()` and break, with nothing
@@ -341,7 +375,7 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
         }
         waits = 0;   // progress: the next stall starts its backoff from the bottom again
 
-        await append(new Uint8Array(await response.arrayBuffer()));
+        await append(new Uint8Array(body!));
         appended.add(index);
         if (disposed) return;
       }
@@ -363,10 +397,29 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
   const onEnd = () => { streaming = false; say('segments: endstreaming'); };
   const wake = () => { void pump(); };
 
+  /**
+   * A seek moved the playhead: a fetch for a segment the pump would no longer choose is waiting on a producer
+   * restart that nobody needs, and the wanted segment pays its own behind it. Abort it; the pump re-evaluates.
+   * ⚠ Only a fetch. Aborting an append mid-flight would leave the SourceBuffer in an undefined state.
+   */
+  const onSeeking = () => {
+    if (inFlight) {
+      const wanted = nextSegment(
+        { currentTime: element.currentTime, bufferedAhead: bufferedAhead(element), appended, streaming },
+        { segments: parsed.segments, targetAheadSeconds },
+      );
+      if (wanted !== null && wanted !== inFlight.index) {
+        say(`segments: seek makes seg${inFlight.index} stale (wanted seg${wanted}) — aborting its fetch`);
+        inFlight.controller.abort();
+      }
+    }
+    wake();
+  };
+
   source.addEventListener('startstreaming', onStart);
   source.addEventListener('endstreaming', onEnd);
   element.addEventListener('timeupdate', wake);
-  element.addEventListener('seeking', wake);
+  element.addEventListener('seeking', onSeeking);
   element.addEventListener('waiting', wake);
 
   void pump();
@@ -379,12 +432,13 @@ export async function bindSegmentStream(options: SegmentBinderOptions): Promise<
     dispose() {
       if (disposed) return;
       disposed = true;
+      inFlight?.controller.abort();
       // The 503 retry must not outlive the binding — it would re-enter a pump over a torn-down source.
       if (waitTimer !== null) { clearTimeout(waitTimer); waitTimer = null; }
       source.removeEventListener('startstreaming', onStart);
       source.removeEventListener('endstreaming', onEnd);
       element.removeEventListener('timeupdate', wake);
-      element.removeEventListener('seeking', wake);
+      element.removeEventListener('seeking', onSeeking);
       element.removeEventListener('waiting', wake);
       if (objectUrl) revoke(objectUrl);
     },

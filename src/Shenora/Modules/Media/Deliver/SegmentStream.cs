@@ -229,7 +229,7 @@ internal sealed class SegmentStream : IDisposable
         if (resource.Equals(SegmentRunRequest.InitSegmentName, StringComparison.OrdinalIgnoreCase))
         {
             // Asking for it drives segment 0, exactly as a request for seg0 would.
-            return EnsureSegment(source, 0) && File.Exists(InitPath(source))
+            return EnsureSegment(source, 0, cancellationToken) && File.Exists(InitPath(source))
                 ? WebViewFiles.Serve(request, InitPath(source), SegmentContentType, _delivery)
                 : MediaConversionExtensions.NotReadyYet();
         }
@@ -237,7 +237,7 @@ internal sealed class SegmentStream : IDisposable
         if (!TryParseSegmentIndex(resource, out var index) || index < 0 || index >= source.SegmentCount)
             return WebViewResourceResponse.NotFound();
 
-        return EnsureSegment(source, index)
+        return EnsureSegment(source, index, cancellationToken)
             ? WebViewFiles.Serve(request, SegmentPath(source, index), SegmentContentType, _delivery)
             : MediaConversionExtensions.NotReadyYet();
     }
@@ -405,14 +405,27 @@ internal sealed class SegmentStream : IDisposable
     /// <summary>
     /// Have segment <paramref name="index"/> on disk and closed, restarting the window if it is not coming.
     /// Serialised per source, so two requests cannot each undo the other's restart.
+    /// <para>
+    /// 🔴 <b>The gate is held to CHECK and to RESTART, never across the sleep.</b> It used to be held for the whole
+    /// wait (up to <see cref="SegmentStreamOptions.WaitBudget"/>), so the seek a person made NEXT queued behind a
+    /// wait for one they had already abandoned, and then ran against whatever that wait left behind.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>The newest request for a source wins.</b> A waiter whose index is no longer the newest, and which the
+    /// newest is not about to reach (inside <see cref="SegmentStreamOptions.Lookahead"/>), answers 503 at its next
+    /// check WITHOUT restarting: a restart for a target nobody is waiting for kills the run the newest request needs.
+    /// A cancelled request stops waiting the same way.
+    /// </para>
     /// </summary>
-    private bool EnsureSegment(Source source, int index)
+    private bool EnsureSegment(Source source, int index, CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow + _options.WaitBudget;
+        // Outside the gate on purpose: it must be visible while another request holds the gate to restart.
+        Volatile.Write(ref source.Wanted, index);
 
-        lock (source.Gate)
+        while (true)
         {
-            while (true)
+            lock (source.Gate)
             {
                 // The verification can REJECT what is on disk, so it sits between "the file is there" and
                 // "serve it" rather than after the loop.
@@ -428,6 +441,13 @@ internal sealed class SegmentStream : IDisposable
                 // stalls until the budget expires with the ladder never advancing.
                 if (StalledWithoutPicture(source)) continue;
 
+                if (cancellationToken.IsCancellationRequested) return false;
+                if (Superseded(source, index))
+                {
+                    Log(() => $"segments: seg{index} is no longer wanted (newest request is seg{Volatile.Read(ref source.Wanted)})");
+                    return false;
+                }
+
                 if (RestartReason(source, index) is { } reason && !Restart(source, index, reason)) return false;
 
                 if (DateTime.UtcNow >= deadline)
@@ -436,10 +456,22 @@ internal sealed class SegmentStream : IDisposable
                             + $" (window from {source.WindowStart}, attempt {source.Attempt})");
                     return false;
                 }
-
-                Thread.Sleep(PollMilliseconds);
             }
+
+            // Wakes early on a cancel; the token's handle never signals for CancellationToken.None.
+            cancellationToken.WaitHandle.WaitOne(PollMilliseconds);
         }
+    }
+
+    /// <summary>
+    /// True when a NEWER request names a segment this one will not be served by: behind it, or past
+    /// <see cref="SegmentStreamOptions.Lookahead"/>. A newer request inside that reach is the same playhead
+    /// moving on, and the window this wait is for is the one it will use.
+    /// </summary>
+    private bool Superseded(Source source, int index)
+    {
+        var wanted = Volatile.Read(ref source.Wanted);
+        return wanted < index || wanted > index + _options.Lookahead;
     }
 
     /// <summary>
@@ -773,8 +805,14 @@ internal sealed class SegmentStream : IDisposable
         /// <summary>When the current window started — the clock the picture grace is measured against.</summary>
         public DateTime WindowStartedUtc { get; set; } = DateTime.UtcNow;
 
-        /// <summary>Serialises the window: one run per source, never two.</summary>
+        /// <summary>Serialises the window: one run per source, never two. Held to check and restart, never to sleep.</summary>
         public object Gate { get; } = new();
+
+        /// <summary>
+        /// The segment the NEWEST request asked for, written before that request waits for the gate. A field
+        /// rather than a property so <see cref="Volatile"/> can reach it.
+        /// </summary>
+        public int Wanted = -1;
     }
 
     /// <summary>Removing the route and killing the windows are one operation, so they are one disposable.</summary>

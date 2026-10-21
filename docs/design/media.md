@@ -116,6 +116,19 @@ picture. A run that publishes nothing at all falls to `WaitBudget` and answers `
 encoder ladder. Reading the `.part` instead would judge a file mid-write, where "no picture yet" and "no
 picture ever" are the same bytes.
 
+**A moving playhead: the newest request wins, on both sides.** A seek to an unproduced segment costs a producer restart, so a drag must not pay one per position it passes
+through. **Route:** `EnsureSegment` holds the source's gate to check and restart, never across the sleep, and
+records the newest segment asked for (`Source.Wanted`) before it waits for the gate. A waiter the newest request
+is behind, or past `Lookahead` ahead of, answers `503` at its next check without restarting; a cancelled request
+does the same. **Binder:** a `seeking` that moves the playhead off the segment being fetched aborts that fetch
+(`fetch`'s `{ signal }`), never an append, and the pump re-evaluates. The binder also sets the `MediaSource`
+duration from the playlist before the init append, because an fMP4 init declares none and a seek past the
+buffered end is otherwise clamped.
+
+⚠ Only the Chromium shell hands the route a token CEF cancels; the WebView2 and mobile shells pass
+`CancellationToken.None`, so there the newest-wins rule is what frees the gate. Whether CEF raises its cancel
+callback for a request abandoned before its response is opened is unverified.
+
 ⚠ **A re-encoded track is cut on a whole number of seconds and a fractional grid is REFUSED, not rounded.**
 What makes a grid hittable is that both platform encoders emit a keyframe every second — a coupling that
 lives in those two files and nowhere else, which is why no forced-keyframe API was needed. A 2.5-second grid
