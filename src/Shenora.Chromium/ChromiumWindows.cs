@@ -108,13 +108,13 @@ public sealed unsafe class ChromiumWindows
         ArgumentNullException.ThrowIfNull(options.Session);
         if (Volatile.Read(ref _serving) is null) throw new InvalidOperationException("The Chromium shell is not running.");
         var sessionHost = _sessionHost ?? throw new InvalidOperationException("The Chromium shell has no session host to make a web panel.");
-        // The async orchestration lives off the unsafe class, which cannot await; the handle is read on the UI thread,
-        // where the window's pointer is touched.
-        return ChromiumWebPanel.CreateAsync(_ui, sessionHost, windowName, () => HandleOf(windowName), options, cancellationToken);
+        // The async orchestration lives off the unsafe class, which cannot await; the window is resolved on the UI
+        // thread, where its pointer is touched to float the panel's overlay over it.
+        return ChromiumWebPanel.CreateAsync(_ui, sessionHost, windowName, () => WindowNamed(windowName), options, cancellationToken);
     }
 
-    // UI thread: the named window's native handle, or 0 when it is not (yet) open.
-    private nint HandleOf(string name) => _open.TryGetValue(name, out var window) && window is not null ? window.WindowHandle : 0;
+    // UI thread: the named window, or null when it is not (yet) open.
+    private ChromiumWindow? WindowNamed(string name) => _open.TryGetValue(name, out var window) ? window : null;
 
     // A name reserved and not yet made — its Open posted from another thread and still queued — takes the request once
     // it is: queued again behind that open, where it was dropped.

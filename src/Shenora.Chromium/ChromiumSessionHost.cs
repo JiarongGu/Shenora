@@ -173,43 +173,38 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         return browser;
     }
 
-#if CEF_WINDOWS
-    private const uint WS_CHILD = 0x40000000, WS_VISIBLE = 0x10000000, WS_CLIPCHILDREN = 0x02000000, WS_CLIPSIBLINGS = 0x04000000,
-        WS_TABSTOP = 0x00010000;
-#endif
-
     /// <summary>
-    /// Make a web-content browser as a CHILD of a host window (D97): a CEF browser parented to <paramref name="parentWindow"/>'s
-    /// handle, in the profile's request context, driven as any session browser is and with nothing of the app's own. It
-    /// runs in this shell's own CEF process, so it needs no separate <see cref="ChromiumEngine"/>. Windows only, today.
+    /// Make a web-content browser embedded in a host window (D97): a CEF <c>CefBrowserView</c> in the profile's request
+    /// context, floated over <paramref name="host"/>'s page as a CUSTOM-docked overlay and placed by the panel, driven as
+    /// any session browser is and with nothing of the app's own. It runs in this shell's own CEF process, so it needs no
+    /// separate <see cref="ChromiumEngine"/>. Windows only, today.
     /// </summary>
-    internal Task<ChromiumSessionBrowser> CreateChildAsync(SessionBrowserOptions options, Action<SessionProcessReport>? onGone,
-        nint parentWindow, Rectangle bounds, Color? background, bool persistSessionCookies, string? proxyServer, CancellationToken cancellationToken)
+    internal Task<ChromiumWebPanelBrowser> CreateChildAsync(SessionBrowserOptions options, Action<SessionProcessReport>? onGone,
+        ChromiumWindow host, Rectangle bounds, Color? background, bool persistSessionCookies, string? proxyServer, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
-        if (parentWindow == 0) return Task.FromException<ChromiumSessionBrowser>(new ArgumentException("A parent window is required.", nameof(parentWindow)));
+        ArgumentNullException.ThrowIfNull(host);
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             var profile = Admit(options, windowless: false);
             var (context, ready) = Open(profile, persistSessionCookies, proxyServer);
-            return SessionCalls.Made<ChromiumSessionBrowser>(ready, profile, options.InitTimeout, cancellationToken, _ui,
-                () => CreateChild(options, onGone, profile, parentWindow, bounds, background, (_cef_request_context_t*)context),
-                browser => Task.WhenAll(browser.Ready, browser.FirstPage),
-                browser => _ui.InvokeAsync(browser.Close, CancellationToken.None),
+            return SessionCalls.Made<ChromiumWebPanelBrowser>(ready, profile, options.InitTimeout, cancellationToken, _ui,
+                () => CreateChild(options, onGone, profile, host, bounds, background, (_cef_request_context_t*)context),
+                panel => panel.Ready,
+                panel => _ui.InvokeAsync(panel.Close, CancellationToken.None),
                 () => Release((_cef_request_context_t*)context));
         }
         catch (Exception ex)
         {
-            return Task.FromException<ChromiumSessionBrowser>(ex);
+            return Task.FromException<ChromiumWebPanelBrowser>(ex);
         }
     }
 
-    // CEF's UI thread, once the profile is ready: a child browser parented to a host window's handle. The context is
-    // always the browser's own, released as it goes (or here, if it cannot be made). The window's handle is read back for
-    // the panel to place.
-    private ChromiumSessionBrowser CreateChild(SessionBrowserOptions options, Action<SessionProcessReport>? onGone, string profile,
-        nint parentWindow, Rectangle bounds, Color? background, _cef_request_context_t* context)
+    // CEF's UI thread, once the profile is ready: a browser-view panel floated over the host window. The context is
+    // always the browser's own, released as it goes (or here, if the panel cannot be made).
+    private ChromiumWebPanelBrowser CreateChild(SessionBrowserOptions options, Action<SessionProcessReport>? onGone, string profile,
+        ChromiumWindow host, Rectangle bounds, Color? background, _cef_request_context_t* context)
     {
 #if !CEF_WINDOWS
         Release(context);
@@ -217,38 +212,19 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
 #else
         var size = new Size(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height));
         var browser = new ChromiumSessionBrowser(options, () => null, onGone, size, _ui, windowless: false);
-        var windowInfo = new _cef_window_info_t
+        var panel = new ChromiumWebPanelBrowser(browser, host, bounds, background);
+        try
         {
-            size = (nuint)sizeof(_cef_window_info_t),
-            style = WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_TABSTOP,
-            parent_window = parentWindow,
-            bounds = new _cef_rect_t { x = bounds.X, y = bounds.Y, width = size.Width, height = size.Height },
-            runtime_style = cef_runtime_style_t.CEF_RUNTIME_STYLE_ALLOY,   // D84
-        };
-        var settings = new _cef_browser_settings_t { size = (nuint)sizeof(_cef_browser_settings_t) };
-        if (background is { } color) settings.background_color = (uint)color.ToArgb();
-        // On about:blank, as the windowless path is and for the same reason (Create, above): a first page loading as the
-        // browser is made can finish after the host's first navigation has begun and take it for its own.
-        _cef_browser_t* made;
-        const string blank = "about:blank";
-        fixed (char* u = blank)
-        {
-            var url = CefStrings.View(u, blank.Length);
-            // The call consumes a reference to the context; ours stays.
-            ((_cef_base_ref_counted_t*)context)->add_ref((_cef_base_ref_counted_t*)context);
-            made = Cef.cef_browser_host_create_browser_sync(&windowInfo, browser.ClientForCef(), &url, &settings, null, context);
+            panel.Open(context);   // adds and consumes a reference it makes of its own; our 'context' reference stays
         }
-        if (made == null)
+        catch
         {
-            browser.NeverMade();
             Release(context);
-            throw new InvalidOperationException($"Chromium would not make a web panel browser (profile '{profile}').");
+            throw;
         }
-        browser.Attach(made);
+        // The context is the panel's own, let go as its browser closes.
         browser.WhenClosed(() => Release(context));
-        using (var host = new CefRef<_cef_browser_host_t>(made->get_host(made)))
-            if (!host.IsNull) browser.SetWindowHandle((nint)host.Ptr->get_window_handle(host.Ptr));
-        return browser;
+        return panel;
 #endif
     }
 

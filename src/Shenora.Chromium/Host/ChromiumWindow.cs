@@ -169,9 +169,35 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
 #endif
     public bool IsVisible => _window != null && ((_cef_view_t*)_window)->is_visible((_cef_view_t*)_window) == 1;
 
-    /// <summary>The window's native handle while it exists, else 0 — an HWND on Windows — for a child browser parented to
-    /// it (D97). UI thread.</summary>
+    /// <summary>The window's native handle while it exists, else 0 — an HWND on Windows. UI thread.</summary>
     public nint WindowHandle => _window == null ? 0 : (nint)_window->get_window_handle(_window);
+
+    /// <summary>The window's device scale factor (its display's DIP↔pixel ratio), or 1 when it has no display yet.
+    /// A web panel's bounds arrive in client pixels and go to its overlay in Views DIP (D97). UI thread.</summary>
+    internal float DeviceScaleFactor
+    {
+        get
+        {
+            if (_window == null) return 1f;
+            using var display = new CefRef<_cef_display_t>(_window->get_display(_window));
+            return display.IsNull ? 1f : display.Ptr->get_device_scale_factor(display.Ptr);
+        }
+    }
+
+    /// <summary>
+    /// Float <paramref name="view"/> over the window's page as a CUSTOM-docked overlay (D97): the panel's browser view,
+    /// placed by the controller returned (<c>set_bounds</c> in Views DIP). The overlay takes a reference of its own, so
+    /// the caller keeps theirs. Null when the window is gone. UI thread.
+    /// </summary>
+    /// <param name="view">The view to float — a <c>CefBrowserView</c> for a web panel.</param>
+    /// <param name="canActivate">True lets the overlay take focus and input, which a web panel needs.</param>
+    internal _cef_overlay_controller_t* AddCustomOverlay(_cef_view_t* view, bool canActivate)
+    {
+        if (_window == null) return null;
+        // Passing a view INTO CEF hands it one reference, as add_child_view does; add one first so the caller keeps its own.
+        ((_cef_base_ref_counted_t*)view)->add_ref((_cef_base_ref_counted_t*)view);
+        return _window->add_overlay_view(_window, view, cef_docking_mode_t.CEF_DOCKING_MODE_CUSTOM, canActivate ? 1 : 0);
+    }
 
     /// <summary>CEF asks before the window closes. UI thread.</summary>
     private bool MayClose()

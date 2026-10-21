@@ -1370,6 +1370,11 @@ docs cite them — so the number is the column to scan.
     holds it open (one process per data folder).
   - **Proxy and cookies ride the request context:** the proxy is the context's `proxy` preference, bound to this profile
     alone; `persist_session_cookies` keeps session cookies across a restart, expiring ones persist from its cache.
+  - 🔴 **A Views OVERLAY, not a raw child HWND (fixed 0.23.1):** first built as a `WS_CHILD` browser parented to the
+    window's HWND, it placed right but showed only its background and took no input — a Views `CefWindow` presents and
+    routes only to views in its own widget, never a foreign child HWND. Now a `CefBrowserView` added as a CUSTOM overlay
+    (`AddOverlayView`, ALLOY to match the window), as the window hosts its own page. `SetBounds` keeps client pixels;
+    `WindowHandle` is now 0. Unit-verified only — render/input needs a real-CEF run.
 
 ## Anti-goals — deliberately NOT built
 

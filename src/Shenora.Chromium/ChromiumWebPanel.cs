@@ -1,5 +1,4 @@
 using System.Drawing;
-using System.Runtime.InteropServices;
 using Shenora.Chromium.Host;
 using Shenora.Core.Sessions;
 
@@ -67,27 +66,28 @@ public sealed class ChromiumWebPanelOptions
 /// </summary>
 public sealed class ChromiumWebPanel : IDisposable
 {
-    private readonly ChromiumSessionBrowser _browser;
+    private readonly ChromiumWebPanelBrowser _panel;
     private readonly CefUiDispatcher _ui;
     private int _disposed;
 
-    internal ChromiumWebPanel(ChromiumSessionBrowser browser, CefUiDispatcher ui)
+    internal ChromiumWebPanel(ChromiumWebPanelBrowser panel, CefUiDispatcher ui)
     {
-        _browser = browser;
+        _panel = panel;
         _ui = ui;
     }
 
-    // The async orchestration, off ChromiumWindows' unsafe class (which cannot await): the parent window's handle is read
-    // on the UI thread, the child browser is made in the profile's request context, and the first page is navigated.
+    // The async orchestration, off ChromiumWindows' unsafe class (which cannot await): the host window is resolved on the
+    // UI thread, the browser-view panel is made in the profile's request context and floated over the window, and the
+    // first page is navigated.
     internal static async Task<ChromiumWebPanel> CreateAsync(CefUiDispatcher ui, ChromiumSessionHost sessionHost, string windowName,
-        Func<nint> parentHandle, ChromiumWebPanelOptions options, CancellationToken cancellationToken)
+        Func<ChromiumWindow?> host, ChromiumWebPanelOptions options, CancellationToken cancellationToken)
     {
-        var parent = await ui.InvokeAsync(() => Task.FromResult(parentHandle()), cancellationToken).ConfigureAwait(false);
-        if (parent == 0) throw new InvalidOperationException($"No window named '{windowName}' is open to host a web panel.");
-        var browser = await sessionHost.CreateChildAsync(options.Session, options.OnGone, parent, options.Bounds,
+        var window = await ui.InvokeAsync(() => Task.FromResult(host()), cancellationToken).ConfigureAwait(false);
+        if (window is null) throw new InvalidOperationException($"No window named '{windowName}' is open to host a web panel.");
+        var panel = await sessionHost.CreateChildAsync(options.Session, options.OnGone, window, options.Bounds,
             options.BackgroundColor, options.PersistSessionCookies, options.ProxyServer, cancellationToken).ConfigureAwait(false);
-        if (options.Url is { } url) await ui.InvokeAsync(() => browser.Navigate(url), cancellationToken).ConfigureAwait(false);
-        return new ChromiumWebPanel(browser, ui);
+        if (options.Url is { } url) await ui.InvokeAsync(() => panel.Browser.Navigate(url), cancellationToken).ConfigureAwait(false);
+        return new ChromiumWebPanel(panel, ui);
     }
 
     /// <summary>
@@ -96,55 +96,45 @@ public sealed class ChromiumWebPanel : IDisposable
     /// <see cref="ISessionBrowser.NavigationCompleted"/> and the rest (D91). Its members run on the shell's UI thread,
     /// which is the thread the app runs on.
     /// </summary>
-    public ISessionBrowser Browser => _browser;
+    public ISessionBrowser Browser => _panel.Browser;
 
-    /// <summary>The browser's own child window while it exists, else 0: a child of its host window's handle. Any
-    /// thread.</summary>
-    public nint WindowHandle => _browser.WindowHandle;
+    /// <summary>
+    /// 0 for a web panel. The panel is a CEF Views overlay, placed through <see cref="SetBounds"/> in the window's view
+    /// hierarchy — it has no native child window of its own to hand out, unlike the raw <c>WS_CHILD</c> browser this once
+    /// was (D97). Kept for source compatibility; nothing a consumer needs reads it. Any thread.
+    /// </summary>
+    public nint WindowHandle => _panel.Browser.WindowHandle;
 
     /// <summary>Completes once the browser has closed, however it closed.</summary>
-    public Task Closed => _browser.Closed;
+    public Task Closed => _panel.Browser.Closed;
 
-    /// <summary>Place the panel in its host window, in the window's client pixels. Any thread.</summary>
-    /// <param name="bounds">The panel's rectangle.</param>
-    public void SetBounds(Rectangle bounds)
-    {
-        var window = _browser.WindowHandle;
-        if (window != 0) Place(window, bounds);
-    }
+    /// <summary>
+    /// Place the panel in its host window, in the window's client pixels — the same coordinates this took before (D97).
+    /// Applied on the shell's UI thread as a CEF Views overlay (converted to the window's DIP there), so it is a post, not
+    /// an immediate move. Any thread.
+    /// </summary>
+    /// <param name="bounds">The panel's rectangle, in the host window's client pixels.</param>
+    public void SetBounds(Rectangle bounds) => _ui.Queue(() => _panel.SetBounds(bounds));
 
     /// <summary>Navigate back in this panel's history, if it can. The shell's UI thread.</summary>
-    public void GoBack() => _browser.GoBack();
+    public void GoBack() => _panel.Browser.GoBack();
 
     /// <summary>Navigate forward in this panel's history, if it can. The shell's UI thread.</summary>
-    public void GoForward() => _browser.GoForward();
+    public void GoForward() => _panel.Browser.GoForward();
 
     /// <summary>Reload the current page. The shell's UI thread.</summary>
-    public void Reload() => _browser.Reload();
+    public void Reload() => _panel.Browser.Reload();
 
     /// <summary>Stop the current load. The shell's UI thread.</summary>
-    public void Stop() => _browser.Stop();
+    public void Stop() => _panel.Browser.Stop();
 
     /// <summary>Give the page keyboard focus. The shell's UI thread.</summary>
-    public void Focus() => _browser.Focus();
+    public void Focus() => _panel.Browser.Focus();
 
     /// <summary>Close the panel's browser; <see cref="Closed"/> completes once it has. Any thread; idempotent.</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
-        _ui.Queue(_browser.Close);
+        _ui.Queue(_panel.Close);
     }
-
-#if CEF_WINDOWS
-    private static void Place(nint window, Rectangle bounds) =>
-        SetWindowPos(window, 0, bounds.X, bounds.Y, bounds.Width, bounds.Height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
-
-    private const uint SWP_NOZORDER = 0x0004, SWP_NOACTIVATE = 0x0010, SWP_ASYNCWINDOWPOS = 0x4000;
-
-    [DllImport("user32", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetWindowPos(nint window, nint insertAfter, int x, int y, int width, int height, uint flags);
-#else
-    private static void Place(nint window, Rectangle bounds) { }
-#endif
 }

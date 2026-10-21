@@ -28,6 +28,25 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Fixed
+
+- **An embedded `ChromiumWebPanel` renders its page and takes keyboard and mouse** (D97). As shipped in 0.23.0 the
+  panel was placed and sized correctly but showed only its background colour and took no input: it was a raw `WS_CHILD`
+  HWND browser (`cef_browser_host_create_browser_sync` with `window_info.parent_window` = the host window's HWND) layered
+  over a CEF **Views** window, which composites and routes input only to views in its OWN widget — the foreign HWND's
+  compositor surface was never presented and the Views focus system never reached it. The panel is now a CEF
+  `CefBrowserView` floated over the host window's page as a CUSTOM-docked **overlay** (`CefWindow::AddOverlayView`),
+  ALLOY style to match the window — the same Views widget the window's own page and its caption-button overlays already
+  render and route through. The public surface is unchanged: `CreateWebPanelAsync`, `ChromiumWebPanel.Browser`
+  (`ISessionBrowser`), `GoBack`/`GoForward`/`Reload`/`Stop`/`Focus`/`Dispose`/`Closed` and `SetBounds(Rectangle)` keep
+  their signatures, and `SetBounds` keeps taking the host window's **client pixels** (converted to Views DIP internally).
+  Two behaviour notes for a consumer: `SetBounds` is now applied on the shell's UI thread (a post, not an immediate
+  move — it already ran there in effect), and `ChromiumWebPanel.WindowHandle` is now **0** — a Views overlay has no
+  native child window of its own to hand out; nothing a consumer needs reads it, and placement goes through `SetBounds`.
+  Windows only, today.
+
 ## 0.23.0 — 2026-10-21
 
 ### Added
