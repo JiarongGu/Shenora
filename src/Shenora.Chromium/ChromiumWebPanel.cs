@@ -116,6 +116,14 @@ public sealed class ChromiumWebPanel : IDisposable
     /// <param name="bounds">The panel's rectangle, in the host window's client pixels.</param>
     public void SetBounds(Rectangle bounds) => _ui.Queue(() => _panel.SetBounds(bounds));
 
+    /// <summary>
+    /// Show or hide the panel in place, without moving it off-screen. A hide stays until the next
+    /// <see cref="SetVisible"/>(true) or <see cref="SetBounds"/> (placing the panel shows it). Applied on the shell's
+    /// UI thread, like <see cref="SetBounds"/>. Any thread.
+    /// </summary>
+    /// <param name="visible">True shows the panel; false hides it where it is.</param>
+    public void SetVisible(bool visible) => _ui.Queue(() => _panel.SetVisible(visible));
+
     /// <summary>Navigate back in this panel's history, if it can. The shell's UI thread.</summary>
     public void GoBack() => _panel.Browser.GoBack();
 

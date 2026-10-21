@@ -28,6 +28,7 @@ internal sealed unsafe class ChromiumWebPanelBrowser
     private Rectangle _bounds;       // last requested, in the host window's CLIENT PIXELS
     private bool _torn;
     private bool _closing;
+    private bool _hidden;            // SetVisible(false) hides until SetVisible(true) or the next SetBounds
     private readonly TaskCompletionSource _created = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public ChromiumWebPanelBrowser(ChromiumSessionBrowser browser, ChromiumWindow host, Rectangle bounds, Color? background)
@@ -80,16 +81,28 @@ internal sealed unsafe class ChromiumWebPanelBrowser
         ApplyBounds(_bounds);
     }
 
-    /// <summary>Place the panel in the host window's client area, in the window's CLIENT PIXELS. UI thread.</summary>
+    /// <summary>Place the panel in the host window's client area, in the window's CLIENT PIXELS. Placing it also shows
+    /// it, winning over an earlier <see cref="SetVisible"/>(false). UI thread.</summary>
     public void SetBounds(Rectangle bounds)
     {
         _bounds = bounds;
+        _hidden = false;   // placing the panel shows it, as SetBounds moving a WS_CHILD on-screen did
         if (_overlay != null && !_torn) ApplyBounds(bounds);
+    }
+
+    /// <summary>
+    /// Show or hide the panel without moving it. A hide wins until the next <see cref="SetVisible"/>(true) or
+    /// <see cref="SetBounds"/> — <see cref="ApplyBounds"/> leaves a hidden panel hidden. UI thread.
+    /// </summary>
+    public void SetVisible(bool visible)
+    {
+        _hidden = !visible;
+        if (_overlay != null && !_torn) _overlay->set_visible(_overlay, visible ? 1 : 0);
     }
 
     // The overlay controller takes Views DIP, as the caption-button overlays do; the caller's client pixels are the
     // window's device pixels, so divide by its scale. A moved window reaches another display's scale on the next
-    // SetBounds, which the host drives on every resize.
+    // SetBounds, which the host drives on every resize. A hidden panel keeps its bounds but is not shown.
     private void ApplyBounds(Rectangle bounds)
     {
         var scale = _host.DeviceScaleFactor;
@@ -102,7 +115,7 @@ internal sealed unsafe class ChromiumWebPanelBrowser
             height = Math.Max(1, (int)Math.Round(bounds.Height / scale)),
         };
         _overlay->set_bounds(_overlay, &rect);
-        if (_overlay->is_visible(_overlay) == 0) _overlay->set_visible(_overlay, 1);
+        if (!_hidden && _overlay->is_visible(_overlay) == 0) _overlay->set_visible(_overlay, 1);
     }
 
     /// <summary>

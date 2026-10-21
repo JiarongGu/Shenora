@@ -30,6 +30,13 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Added
+
+- **`ChromiumWebPanel.SetVisible(bool)` shows or hides the panel in place** (D97). A consumer switching views can hide
+  the overlay without moving it off-screen (which a CEF Views overlay may clamp back on-screen rather than clip). A hide
+  stays until the next `SetVisible(true)` or `SetBounds` — placing the panel shows it, as moving the old `WS_CHILD`
+  on-screen did. Applied on the shell's UI thread, like `SetBounds`.
+
 ### Fixed
 
 - **An embedded `ChromiumWebPanel` renders its page and takes keyboard and mouse** (D97). As shipped in 0.23.0 the
