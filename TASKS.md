@@ -101,8 +101,6 @@ package's Linux helper has not run: see below); how it works is `docs/design/she
 is left is mostly measurement that needs hardware or a person.
 
 **Windows**
-- [ ] 🅿️ **The app's icon on the taskbar and in Alt+Tab, by eye.** Measured: the window class's icon is the app's
-  (`dev.mjs input icons`) and `WM_GETICON` is empty, so both should take it; a person looking is the check.
 - [ ] **The app's icon on the D86 browser process's windows, and after a navigation.** Same probe
   (`input icons --proc <App>` while `ChromiumBrowserProcess` runs, and again after the page navigates); only the
   shell's main window was measured. Chrome's own tabbed windows may send `WM_SETICON` themselves.
