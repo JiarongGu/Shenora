@@ -51,6 +51,12 @@ at the first list and missed five more breaking changes.
   player's URLs through an options object of its own, and that copy dropped `Log`.
 - **A conversion that cannot be submitted is logged once per route, at Error,** rather than at Debug on every
   retry — through `MediaAccessOptions.Log`, so an app that set none still sees nothing.
+- **On Windows a Chromium window wears the app's icon, not Chromium's** (`Shenora.Chromium`). The build already
+  stamped `ApplicationIcon` into the launcher, but the window's class icon was Chromium's logo, so the taskbar and
+  Alt+Tab showed Chromium. The shell now hands CEF the exe's first icon group (`chrome_app_icon_id`), and CEF
+  registers its window class with it: measured on the main window, whose class icon is now the app's. Nothing to
+  configure, and an app with no `ApplicationIcon` keeps Chromium's. The D86 browser process's windows were not
+  measured, so an app that re-sends `WM_SETICON` to those should keep doing so until they are.
 
 ## 0.23.2 — 2026-10-21
 

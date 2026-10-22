@@ -34,28 +34,6 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 🟠 A Chromium window shows CHROMIUM's icon on Windows, not the app's (reported by an adopting app, 2026-10-12)
-
-**The bug.** The app sets `ApplicationIcon`. The build copies it into the launcher, and Explorer shows it on
-`<App>.exe`. But the running main window (`Chrome_WidgetWin_1`) answers `WM_GETICON` with nothing, and
-its class icon is the **Chromium logo**. So the taskbar button, Alt+Tab and the title bar show Chromium, not the
-app. This was measured on the live window (0.21.1, read-only `WM_GETICON` / `GetClassLongPtr(GCLP_HICON)`).
-
-**What fixes it, proven in the app.** The app now sends `WM_SETICON` (big and small, loaded from its `.ico`) to its
-own top-level `Chrome_WidgetWin_*` windows. It re-checks every second, because Chromium may set its icon again.
-With that, the window showed the app's icon, and the browser process's windows showed theirs. It works, but every
-adopter would have to rediscover it.
-
-**Fix in the kit.** Give a Chromium window the app's own icon:
-- read it from the executable (`ExtractIconEx` on `Environment.ProcessPath`, as `WindowsTray.LoadIcon` already does
-  for the tray), or from an explicit `ChromiumWindowOptions.IconPath`;
-- set it on window creation (`WM_SETICON`, or the window class's icon), and again on Chromium's later
-  resets, for the browser process's windows too (`ChromiumBrowserProcessOptions`).
-
-An app with no `ApplicationIcon` keeps today's behaviour.
-
-**Test.** A window's `WM_GETICON(ICON_BIG)` is the app's icon after creation, and after a navigation.
-
 ### 🧭 `Shenora.Chromium` ALONE IS A COMPLETE DESKTOP SHELL — Windows included (D88)
 
 > **`Shenora.Chromium` is completed as a whole shell, usable on its own.** An app on any desktop references
@@ -122,6 +100,11 @@ package's Linux helper has not run: see below); how it works is `docs/design/she
 is left is mostly measurement that needs hardware or a person.
 
 **Windows**
+- [ ] 🅿️ **The app's icon on the taskbar and in Alt+Tab, by eye.** Measured: the window class's icon is the app's
+  (`dev.mjs input icons`) and `WM_GETICON` is empty, so both should take it; a person looking is the check.
+- [ ] **The app's icon on the D86 browser process's windows, and after a navigation.** Same probe
+  (`input icons --proc <App>` while `ChromiumBrowserProcess` runs, and again after the page navigates); only the
+  shell's main window was measured. Chrome's own tabbed windows may send `WM_SETICON` themselves.
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out
   an ARM64 launcher, shim and `libcef.dll`; running it needs ARM64 hardware or a `windows-11-arm` CI runner. ⚠ The
   release job's cross-compile on `windows-latest` is untried until it runs.
@@ -220,6 +203,14 @@ Once in five `verify` runs (2026-10-01), `vitest (cli package)` ended on an unha
 `Error: Channel closed` (`ERR_IPC_CHANNEL_CLOSED`, tinypool's `ProcessWorker.send`), with every test passed; alone it
 passed 5 of 5. A forks-pool worker whose IPC channel closed under load, unattributed. If it recurs: count it under
 `verify` and alone, then try `pool: 'threads'` in `src/Shenora.Cli/vitest.config.ts` as the A/B.
+
+### 🟡 The splash's cover was once not under the splash in z-order
+
+Once in two `verify` runs (2026-10-22), `WindowsSplashTests.A_frameless_owner_is_covered_click_through_under_the_splash_until_it_draws`
+failed at `Assert.Equal(cover, below)`: walking down the z-order from the splash (`GW_HWNDNEXT`) reached the end without
+meeting the cover. Alone it passed 5 of 5; nothing in that change touched the splash, and another app's windows were
+starting on the desktop at the time. If it recurs: count it under `verify` and alone, and log the z-order (owner, cover,
+splash, and what sits between) at the failure before changing the test or the surface.
 
 ### 🟡 A blocked main window's title-bar close is not tried on a Mac
 

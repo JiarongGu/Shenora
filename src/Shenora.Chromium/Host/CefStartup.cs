@@ -123,6 +123,9 @@ internal static unsafe class CefStartup
             log_severity = cef_log_severity_t.LOGSEVERITY_WARNING,
         };
         if (settings.BackgroundColor is { } color) cef.background_color = color;
+#if CEF_WINDOWS
+        cef.chrome_app_icon_id = AppIconId(args.instance, Environment.ProcessPath);
+#endif
         // A .NET culture name as it stands: CEF resolves it to the nearest locale it carries (zh-Hans-CN to zh-CN, en-AU
         // to en-GB, es-MX to es-419, measured), and to en-US when that one's locale files were not laid out.
         var locale = settings.Locale ?? System.Globalization.CultureInfo.CurrentUICulture.Name;
@@ -216,6 +219,33 @@ internal static unsafe class CefStartup
 #if CEF_WINDOWS
     private static _cef_main_args_t MainArgs(nint instance) =>
         new() { instance = instance != 0 ? instance : GetModuleHandleW(null) };
+
+    /// <summary>
+    /// The id of the running exe's first icon group, which CEF then gives its windows in place of Chromium's own, or
+    /// 0. The build stamps the app's <c>ApplicationIcon</c> into its launcher, so an app without one keeps Chromium's.
+    /// Never <c>dotnet.exe</c>'s, whose icon is not the app's either.
+    /// </summary>
+    internal static int AppIconId(nint module, string? processPath)
+    {
+        if (string.Equals(Path.GetFileNameWithoutExtension(processPath), "dotnet", StringComparison.OrdinalIgnoreCase))
+            return 0;
+        // An integer resource id is a pointer-sized value under 0x10000. Windows lists named groups first, and a name
+        // cannot be passed as an id, so the first INTEGER one.
+        var first = 0;
+        EnumResourceNamesW(module, RtGroupIcon, (_, _, name, _) =>
+        {
+            if (name is > 0 and < 0x10000) { first = (int)name; return 0; }
+            return 1;
+        }, 0);
+        return first;
+    }
+
+    private const nint RtGroupIcon = 14;
+
+    private delegate int EnumResourceName(nint module, nint type, nint name, nint param);
+
+    [DllImport("kernel32.dll")]
+    private static extern int EnumResourceNamesW(nint module, nint type, EnumResourceName callback, nint param);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern nint GetModuleHandleW(string? name);

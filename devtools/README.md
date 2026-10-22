@@ -38,7 +38,7 @@ hand-run `dotnet build` failing on `XA5300` says nothing about the gate.
 | `rclick <fx> <fy>` | as `click`, right button |
 | `move <fx> <fy>` | background mouse-move to a client-rect fraction (hover states) |
 | `drag <fx1> <fy1> <fx2> <fy2>` | background press-move-release between two client-rect fractions |
-| `input <args…>` | raw `win-input` passthrough (`list`, `click x y`, `rclick x y`, `move x y`, `drag x1 y1 x2 y2`) |
+| `input <args…>` | raw `win-input` passthrough (`list`, `click x y`, `rclick x y`, `move x y`, `drag x1 y1 x2 y2`, `icons`). `icons` is read-only: each top-level window's `WM_GETICON` and class icon, with size and DOMINANT colour, beside the exe's own icon — colour rather than pixels, since the shell may scale an icon |
 | `responsiveness <fx> <fy> [--label n] [--duration\|--interval\|--timeout ms]` | click a control, then sample `SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG)` sub-100ms to measure whether the UI thread keeps pumping — the probe behind the one-way-IPC UI-thread claim (see below) |
 | `android <devices\|connect\|deploy\|run\|log\|shot\|eval\|tap\|bench>` | the MAUI sample's device loop — see the section below. `eval "<js>"` reads page state as TEXT and `tap "<selector>"` clicks with a **TRUSTED** event (an injected `click()` grants no user activation, which is what made a correct autoplay refusal look like a shell defect for a day) |
 | `mac <doctor\|setup\|push\|build\|run\|shot\|tap\|type\|swipe\|safari-eval\|mirror\|log\|devices\|device\|device-log\|provision\|profiles\|awake\|layout-check\|island-watch\|ssh>` | the same loop on iOS, driven over SSH on a Mac — see the section below |

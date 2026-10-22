@@ -18,6 +18,7 @@
 //   win-input rclick <x> <y>            right click  (down+up → context menu)
 //   win-input move   <x> <y>            mouse move
 //   win-input drag   <x1> <y1> <x2> <y2>  press, move, release
+//   win-input icons                     each window's icon and class icon vs the exe's (Icons.cs), read-only
 //   --proc <Name>  target process (else the DEVTOOL_PROC env var)   |   --hwnd 0x1234  explicit HWND
 
 using System;
@@ -79,6 +80,7 @@ internal static class WinInput
         var nums = NumArgs(args);
 
         if (action == "list") { ListWindows(proc); return 0; }
+        if (action == "icons") return WinIcons.Report(proc);
 
         IntPtr top = hwndArg != null
             ? new IntPtr(Convert.ToInt64(hwndArg.Replace("0x", ""), 16))

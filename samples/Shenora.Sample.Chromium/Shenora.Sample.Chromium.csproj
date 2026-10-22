@@ -33,6 +33,8 @@
     <IsPackable>false</IsPackable>
     <!-- macOS: the link scheme and the document type the bundle declares, so macOS routes them to the app. -->
     <ShenoraChromiumInfoPlist>Info.plist</ShenoraChromiumInfoPlist>
+    <!-- Windows: the layout stamps it into the launcher, and the shell's windows wear it. -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
