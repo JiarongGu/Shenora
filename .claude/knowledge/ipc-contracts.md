@@ -137,8 +137,10 @@ a rule is read as instructions — this line pointed at a folded package and a r
   that route **every HOST path must answer** — a throw, a second request, a dismissal the platform reports
   differently — and one that can end without answering is the defect to fix, since nothing on the client
   will. The Chromium shell's dialogs answer on a throw and queue a second request (CEF otherwise never
-  answered the first). Unverified on a device: an iOS swipe-down dismissal, and Android with
-  `ActivityResultRelay.Deliver` not forwarded, which used to surface as a `TIMEOUT` and is now silent.
+  answered the first). Android with `ActivityResultRelay.Deliver` not forwarded fails the request when the
+  launching activity instance resumes, or finishes, with no result; a launch from an activity that is not
+  resumed is not watched and still waits. iOS also answers the export picker's swipe-down (its
+  presentation-controller dismissal), which no simulator run has yet exercised.
 - **Composition helpers belong on `IMessageDispatcher`, via extensions over its ONE `Use` primitive.**
   They were instance methods on `MessageDispatcher`, so late mapping required a DOWNCAST — and the
   reference composition's `if (dispatcher is MessageDispatcher concrete)` had no `else`, so any decorator

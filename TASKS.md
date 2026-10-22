@@ -187,15 +187,17 @@ and it landed at 20.00 s both before and after the change. Position is not the s
 - [ ] **On a device, with a long-GOP file**: seek during the open with the picture surface up, and look for
   green until the next keyframe — before the change (the commit's parent) and after.
 
-### 🅿️ PARKED: a mobile dialog that ends without answering now waits for good
+### 🅿️ PARKED: an iOS swipe-down on the export picker, on the simulator
 
-The page waits on a file dialog with no timeout (the 30 s default lost slow picks), so every host path must
-answer (`ipc-contracts.md`). Two mobile paths are unverified:
+The page waits on a file dialog with no timeout, so every host path must answer (`ipc-contracts.md`).
+`IosFileDialogs.ExportAsync` now also answers the picker's presentation-controller dismissal (`DidDismiss`, as
+MAUI Essentials' own picker does) beside the delegate's pick and cancel. Compiled, never run: the build Mac had no
+`ios` workload and 160 MiB free (2026-10-22).
 
-- [ ] **iOS**: a swipe-down dismissal of the export picker. `IosFileDialogs.ExportAsync` answers only through its
-  delegate's pick and cancel; the simulator can show whether `WasCancelled` fires.
-- [ ] **Android**: an app that does not forward `OnActivityResult` to `ActivityResultRelay.Deliver` used to end in
-  a `TIMEOUT` and now never answers. The relay could notice a result that never arrived once the activity resumes.
+- [ ] **On the simulator** (`dev.mjs mac swipe`): open SAVE_TEXT's export picker and swipe it down; the request
+  answers `success:false` once. Then pick a destination: it answers `success:true`, so the dismissal did not fire
+  first (it would delete the temp under the system's copy). To learn whether `WasCancelled` alone covered the
+  swipe, log both callbacks in a throwaway build; the answer alone cannot say which fired.
 
 ### 🟡 The CLI package's vitest run failed once on "Channel closed"
 

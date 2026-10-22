@@ -40,6 +40,12 @@ at the first list and missed five more breaking changes.
   are not compared (an app that rewrites requests between the two routes passes each its own), and one options
   object shared by two webviews no longer reads as misordered on the second.
 
+### Changed
+
+- **The iOS export picker now also handles a swipe-down dismissal** (`Shenora.iOS`): its presentation controller's
+  dismissal answers as cancelled, beside the picker's own cancel callback, as MAUI Essentials' picker does. Whether
+  the cancel callback alone already covered a swipe is unmeasured; built, not yet run on a simulator.
+
 ### Fixed
 
 - **A conversion behind `app.UseMediaPlayer()` now runs on the kit's own scheduler.** The conversion claims its
@@ -57,6 +63,17 @@ at the first list and missed five more breaking changes.
   registers its window class with it: measured on the main window, whose class icon is now the app's. Nothing to
   configure, and an app with no `ApplicationIcon` keeps Chromium's. The D86 browser process's windows were not
   measured, so an app that re-sends `WM_SETICON` to those should keep doing so until they are.
+- **An Android save dialog whose result was never forwarded now fails instead of waiting forever**
+  (`Shenora.Android`). A dialog's request has no timeout, so an app that does not forward
+  `MainActivity.OnActivityResult` to `ActivityResultRelay.Deliver` left the page waiting for good. The relay now
+  watches the launching activity: Android delivers a result before resuming it, so a request still unanswered when
+  that activity resumes after pausing lost its result, and the kit's save fails with an `InvalidOperationException`
+  naming the missing line (the page sees `UNKNOWN_ERROR`; the message goes to the host log). Another activity
+  resuming — another instance of the same type included — is not taken for the return; a recreated launcher is
+  followed; a launcher that finishes while the picker is open fails the request at once (not measured). A launch
+  from an activity that is not resumed is not watched. An app's own `ActivityResultRelay.Begin` callback
+  receives the contract's cancelled result in these cases. Measured on an emulator against a control build that hung: Back, a pick and a
+  font-scale recreation, each with and without the forward, and a second instance stacked over the open picker.
 
 ## 0.23.2 — 2026-10-21
 

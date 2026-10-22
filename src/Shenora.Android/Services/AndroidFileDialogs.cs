@@ -172,9 +172,12 @@ public sealed class AndroidFileDialogs : MobileFileDialogsBase
     /// completed it, and the platform is free to invoke a callback more than once.
     /// </summary>
     private sealed class UriCallback(TaskCompletionSource<AndroidUri?> completion)
-        : Java.Lang.Object, IActivityResultCallback
+        : Java.Lang.Object, IActivityResultCallback, ILostResultCallback
     {
         public void OnActivityResult(Java.Lang.Object? result) =>
             completion.TrySetResult(result as AndroidUri);
+
+        public void OnResultLost(string why) =>
+            completion.TrySetException(new InvalidOperationException(why));
     }
 }

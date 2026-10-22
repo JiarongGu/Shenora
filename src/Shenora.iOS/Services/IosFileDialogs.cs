@@ -73,6 +73,10 @@ public sealed class IosFileDialogs : MobileFileDialogsBase
             {
                 Delegate = new ExportDelegate(completion),
             };
+            // A swipe-down dismisses the sheet through its presentation controller, which need not call
+            // WasCancelled; MAUI Essentials' own picker answers it the same way. Whichever fires first wins.
+            if (picker.PresentationController is { } presentation)
+                presentation.Delegate = new DismissDelegate(completion);
             presenter.PresentViewController(picker, animated: true, completionHandler: null);
         }).ConfigureAwait(false);
 
@@ -98,6 +102,15 @@ public sealed class IosFileDialogs : MobileFileDialogsBase
             completion.TrySetResult(urls.Length > 0);
 
         public override void WasCancelled(UIDocumentPickerViewController controller) =>
+            completion.TrySetResult(false);
+    }
+
+    /// <summary>An interactive dismissal (swipe-down) answers as a cancel. Apple documents this callback for a
+    /// user's dismissal only, not a programmatic one such as the picker closing after a pick; unmeasured here.</summary>
+    private sealed class DismissDelegate(TaskCompletionSource<bool> completion)
+        : UIAdaptivePresentationControllerDelegate
+    {
+        public override void DidDismiss(UIPresentationController presentationController) =>
             completion.TrySetResult(false);
     }
 }

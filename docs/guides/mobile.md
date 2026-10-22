@@ -634,8 +634,10 @@ back. Three consequences an adopter should design around:
   and only then hand it over, so an interrupted save leaves the user's previous document untouched — the
   same guarantee the desktop gets from `Files.BeginReplace`. That is the whole reason the shape is a
   callback rather than a path.
-- 🔴 **Android needs ONE line in your `MainActivity`, and without it a recreated activity loses the
-  picker's answer.** Forward activity results to the kit's relay before calling base:
+- 🔴 **Android needs ONE line in your `MainActivity`, and without it the save picker's answer never
+  arrives.** The save then fails as soon as your activity is back on screen, rather than leaving the page
+  waiting: the page gets `UNKNOWN_ERROR` (`exceptionType: InvalidOperationException`), and the exception's
+  message, in your host log, names this line. Forward activity results to the kit's relay before calling base:
 
   ```csharp
   protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
