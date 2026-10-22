@@ -591,7 +591,11 @@ let handedOff = false;
 //
 // ⚠ Report on TRANSITIONS plus `timeupdate` — the element fires that ~4x a second, which is the rate the
 // host wants for a position and far below anything that needs throttling.
+// HOOK PARITY for the background handoff, which hands over only a page that was playing: the state last reported
+// (what the host believes), when the page went hidden, and whether the host's own pause is on its way.
+let shownState, pageHidden = false, hiddenAt = 0, pauseRequested = false;
 const reportPlayer = (state, error) => {
+  shownState = state;
   try {
     channel.post(JSON.stringify({
       id: `m${++diagSeq}`, module: 'SHENORA.MEDIA', type: 'PLAYER_REPORT',
@@ -611,7 +615,15 @@ const reportPlayer = (state, error) => {
 
 vid.addEventListener('loadedmetadata', () => reportPlayer('Opening'));
 vid.addEventListener('playing', () => reportPlayer('Playing'));
-vid.addEventListener('pause', () => reportPlayer(vid.ended ? 'Ended' : 'Paused'));
+// A pause nobody asked for, as the page goes hidden, is the PLATFORM's (hook parity). Measured here on an Android
+// emulator: the page goes hidden with the video still playing, and its `pause` follows ~80 ms later.
+vid.addEventListener('pause', () => {
+  const asked = pauseRequested;
+  pauseRequested = false;
+  if (!vid.ended && !asked && document.visibilityState === 'hidden'
+      && (!pageHidden || performance.now() - hiddenAt < 1000)) return;
+  reportPlayer(vid.ended ? 'Ended' : 'Paused');
+});
 vid.addEventListener('ended', () => reportPlayer('Ended'));
 vid.addEventListener('error', () => reportPlayer('Failed'));
 // 🔴 HOOK PARITY, and it is what makes the background-handoff question ASKABLE here at all.
@@ -631,8 +643,14 @@ vid.addEventListener('timeupdate', () => {
 // Android emulator — page 19.79 s, host 0.01 s, `HANDOFF: TookOver at 0.01s`. This is the fix under test,
 // so hook parity deliberately does NOT silence it: parity means "report like the hook", and the hook does.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'hidden') return;
-  reportPlayer(vid.paused ? (vid.ended ? 'Ended' : 'Paused') : 'Playing');
+  pageHidden = document.visibilityState === 'hidden';
+  if (pageHidden) {
+    hiddenAt = performance.now();
+    // The playback state the host already holds, at the current position; nothing for Opening, Failed or Empty.
+    if (['Playing', 'Buffering', 'Paused', 'Ended'].includes(shownState)) reportPlayer(shownState);
+  } else if ((shownState === 'Playing' || shownState === 'Buffering') && vid.paused) {
+    reportPlayer(vid.ended ? 'Ended' : 'Paused');   // shown again: correct a host still believing it plays
+  }
 });
 
 // ── AND THE OTHER HALF: THE HOST DRIVING THIS ELEMENT ─────────────────────────────────────────────
@@ -649,6 +667,7 @@ playerCommand = (n) => {
   const p = n.payload ?? {};
   switch (n.type) {
     case 'PLAYER_LOAD':
+      shownState = undefined;   // load() pauses with no `pause` event
       vid.src = p.uri ?? '';
       // load() rather than trusting the src assignment: a second load on the same element keeps the
       // previous buffer, and a seek then lands in the OLD media.
@@ -667,7 +686,7 @@ playerCommand = (n) => {
         reportPlayer('Failed', (err && err.name) ? err.name : 'PlayRejected');
       });
       break;
-    case 'PLAYER_PAUSE': vid.pause(); break;
+    case 'PLAYER_PAUSE': pauseRequested = !vid.paused; vid.pause(); break;
     case 'PLAYER_SEEK': vid.currentTime = p.position ?? 0; break;
     case 'PLAYER_RATE': vid.playbackRate = p.rate ?? 1; break;
     case 'PLAYER_UNLOAD':

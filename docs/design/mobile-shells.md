@@ -684,10 +684,20 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     moment. **So the playhead must come from something that OUTLIVES the pause.** The probe used a page
     global (`timeupdate` → `{src, t}`), which is what a raw-JS probe could reach; **the kit uses
     `IMediaPlayer.Status`**, fed by the page's own `PLAYER_REPORT`, and an app gets that from
-    `useMediaPlayer(ref)`. ⚠ The hook reports on TRANSITIONS ONLY, so the position is as of the last one —
-    the platform's own pause fires `pause` and refreshes it, but that report has to cross IPC before the
-    process freezes. UNMEASURED on the hook's path: the sample's page also reports on `timeupdate`, so a
-    green sample result does not prove it.
+    `useMediaPlayer(ref)`.
+  - **The order, measured 2026-10-22 (MuMu, API 32):** the page goes hidden with the element still playing,
+    the platform's `pause` follows ~80 ms later with the page ALREADY hidden, and `Window.Stopped` comes 35 ms
+    to 0.8 s after the hidden event. So a `pause` nobody asked for, that close to hiding, is the platform's:
+    the hook drops one within a second of `visibilitychange` (a pause the host asked for, or a later one — a
+    media key with a desktop window in the tray — is reported), and `ToBackgroundAsync` hands off only a page
+    reported `Playing` or `Buffering`.
+    Measured: a playing film `TookOver`; one the user paused answered `Nothing — the page player is Paused`
+    (before, it was `TookOver` and played on natively). ⚠ iOS's order is unmeasured: should iOS pause the
+    element before the page is hidden, a playing film would read as paused there and stay behind.
+  - ⚠ **The POSITION on the hook's path can be stale.** The hook reports on transitions only, so the playhead
+    the host hands over comes from the hidden-time report, and that report lost the race with `Window.Stopped`
+    in 3 of 5 runs with the sample in hook parity: handed over at 1.60 s after ~6 s of play, and at 0.00 s
+    after ~6 s and ~11 s. Open in `TASKS.md`.
   - 🔴 **TWO OWNERS OF ONE ELEMENT LOSE.** The page's own JS handoff also called `vid.pause()`, which
     destroyed the very state the host needed. Only one side may drive the element per transition — the page
     hands off, the HOST hands back.

@@ -223,14 +223,20 @@ tried.
 - [ ] On a Mac, with an interactive session's window showing, close the main window from its title bar: it stays; and
   the app's own close (`ChromiumWindows.Close("main")`, the tray's Exit) still ends it.
 
-### 🟡 A background handoff resumes a film the user had paused
+### 🟠 A background handoff can hand over a STALE position (measured on Android)
 
-`BackgroundPlaybackTransfer.ToBackgroundAsync` hands off a `Paused` player as well as a `Playing` one, because the
-platform pauses a backgrounded element itself before `Window.Stopped` (`docs/design/mobile-shells.md`). So a film the
-user paused starts playing natively when they leave the app. Found in review, not seen live.
+With the page reporting as `useMediaPlayer` does (transitions only), the playhead `ToBackgroundAsync` hands over comes
+from the page's hidden-time report, and that report lost the race with `Window.Stopped` in 3 of 5 runs (2026-10-22,
+MuMu, the sample in hook parity): handed over at 1.60 s after ~6 s of play, and at 0.00 s after ~6 s and ~11 s, so
+the film restarts near its beginning. Both arrive on the UI thread; `Stopped` came 35 ms to 0.8 s after the page went hidden.
+**An owner call** among: wait briefly in `ToBackgroundAsync` for a report that arrives after it starts (delays the
+handoff), have the hook report the position periodically while playing (battery and IPC), or let the host ask the
+page for its position at handoff (a new message). Measure the chosen one over several runs.
 
-- [ ] Measure on Android whether the platform's pause arrives while `document.hidden` is already true; if it does,
-  `useMediaPlayer` can tell that pause from the user's, and the transfer can hand off only a film that was playing.
+- [ ] 🅿️ **The same intent rule on iOS.** A user-paused film now stays behind because the page goes hidden BEFORE the
+  platform pauses it (measured on Android). On iOS that order is unmeasured: should iOS pause the element first, a
+  playing film would read as paused and not be handed off. Background a playing film and a paused one on the
+  simulator and read `HANDOFF`.
 
 ### 📱 WHAT IS LEFT ON ANDROID NEEDS A PHONE'S ENCODER, NOT AN EMULATOR'S
 

@@ -31,6 +31,12 @@ export const MEDIA_PLAYER_REPORT = 'PLAYER_REPORT';
 export const MEDIA_PLAYER_STATUS = 'PLAYER_STATUS';
 
 /**
+ * How long after the page goes hidden an unasked-for pause is taken for the platform's own. Measured on Android:
+ * ~80 ms; the margin is wide because a person cannot press a media key in that time after leaving the app.
+ */
+const PLATFORM_PAUSE_WINDOW_MS = 1000;
+
+/**
  * A CONVERSION's events, on the same module. **A wire contract** mirrored from C#
  * `MediaConversionEvents` — a conversion outlives the request that started it, so the page learns from
  * these rather than from a response.
@@ -122,8 +128,18 @@ export function useMediaPlayer(
     if (!element) return;
     const link = bridge ?? getBridge();
 
+    // The state last reported — what the host believes — which the platform's own pause of a hidden page must
+    // not overwrite: the background handoff hands over only a page that was playing.
+    let shown: MediaPlayerReportState | undefined;
+    // When the page last went hidden (`hidden` once the handler has run), and whether the host's own pause is
+    // on its way to the element.
+    let hidden = false;
+    let hiddenAt = 0;
+    let pauseRequested = false;
+
     // The element is the only clock: the host tracks no position of its own.
     const report = (state: MediaPlayerReportState, error?: string) => {
+      shown = state;
       const duration = Number.isFinite(element.duration) ? element.duration : null;
       const payload: MediaPlayerReport = {
         state,
@@ -148,6 +164,7 @@ export function useMediaPlayer(
     const subscriptions = [
       eventBus.subscribe<{ uri: string; startAt: number }>(module, MediaPlayerCommands.load, (message) => {
         const { uri, startAt } = message.payload ?? { uri: '', startAt: 0 };
+        shown = undefined;   // load() pauses with no `pause` event: the previous track's state is not this one's
         element.src = uri;
         // load() rather than trusting the src assignment: a second load on the same element keeps the
         // previous buffer otherwise, and a seek then lands in the OLD media.
@@ -171,7 +188,13 @@ export function useMediaPlayer(
           report('Failed', typeof name === 'string' && name ? name : 'PlayRejected');
         });
       }),
-      eventBus.subscribe(module, MediaPlayerCommands.pause, () => element.pause()),
+      eventBus.subscribe(module, MediaPlayerCommands.pause, () => {
+        // Asked for — from the lock screen, a media key, the app — so reported even while the page is hidden.
+        // Only when the element is playing: pausing a paused one fires nothing, and the flag would then pass a
+        // later platform pause through.
+        pauseRequested = !element.paused;
+        element.pause();
+      }),
       eventBus.subscribe<{ position: number }>(module, MediaPlayerCommands.seek, (message) => {
         element.currentTime = message.payload?.position ?? 0;
       }),
@@ -190,12 +213,25 @@ export function useMediaPlayer(
 
     // ── element → host ────────────────────────────────────────────────────────────────────────────
     // Transitions only — no `timeupdate`, see the remarks.
+    //
+    // A pause nobody asked for, as the page goes hidden, is the PLATFORM's: measured on Android, the element's
+    // `pause` follows the hidden event by ~80 ms. It is dropped, so the host keeps what the user had. A pause
+    // the host asked for, or one later than PLATFORM_PAUSE_WINDOW_MS after hiding (a media key while the window
+    // sits in the tray), is reported.
+    const onPause = () => {
+      const asked = pauseRequested;
+      pauseRequested = false;
+      if (element.ended) { report('Ended'); return; }
+      if (!asked && document.visibilityState === 'hidden'
+          && (!hidden || performance.now() - hiddenAt < PLATFORM_PAUSE_WINDOW_MS)) return;
+      report('Paused');
+    };
     const listeners: Array<[keyof HTMLMediaElementEventMap, () => void]> = [
       ['loadedmetadata', () => report('Paused')],
       ['canplay', () => report(element.paused ? 'Paused' : 'Playing')],
       ['play', () => report('Playing')],
       ['playing', () => report('Playing')],
-      ['pause', () => report(element.ended ? 'Ended' : 'Paused')],
+      ['pause', onPause],
       ['waiting', () => report('Buffering')],
       ['seeked', () => report(element.paused ? 'Paused' : 'Playing')],
       ['ended', () => report('Ended')],
@@ -205,23 +241,36 @@ export function useMediaPlayer(
 
     // 🔴 REPORT WHEN THE PAGE IS ABOUT TO BE HIDDEN, or the host's position is whatever the last
     // TRANSITION left — for steady playback, the moment it started. The user then backgrounds mid-film
-    // and `BackgroundPlaybackTransfer` resumes from the beginning. The platform's `pause` does fire,
-    // but not in time to cross IPC before the process is frozen.
+    // and `BackgroundPlaybackTransfer` resumes from the beginning.
     //
     // ⚠ `visibilitychange` rather than `pagehide`: it fires while the document is still alive and the
     // bridge can still post, and both mobile shells raise it on the way to the background. ONE report
-    // per background, not `timeupdate`'s ~4/second.
-    const onHidden = () => {
-      if (document.visibilityState !== 'hidden') return;
-      report(element.paused ? (element.ended ? 'Ended' : 'Paused') : 'Playing');
+    // per background, not `timeupdate`'s ~4/second. It repeats the playback state the host already holds, with
+    // the current position, so a platform pause that came first cannot turn a playing film into a paused one —
+    // and says nothing for Empty, Opening or Failed, which a position does not change.
+    // Back on screen, a host still believing `Playing` hears what the element really does: a pause dropped while
+    // hidden, or a host command that changed nothing (pausing a paused element), would otherwise never correct it.
+    const playback = (state: MediaPlayerReportState | undefined) =>
+      state === 'Playing' || state === 'Buffering' || state === 'Paused' || state === 'Ended';
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hidden = true;
+        hiddenAt = performance.now();
+        if (playback(shown)) report(shown!);
+      } else {
+        hidden = false;
+        if ((shown === 'Playing' || shown === 'Buffering') && element.paused) {
+          report(element.ended ? 'Ended' : 'Paused');
+        }
+      }
     };
-    document.addEventListener('visibilitychange', onHidden);
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       for (const subscription of subscriptions) subscription();
       for (const [event, handler] of listeners) element.removeEventListener(event, handler);
       cancelPendingSeek();
-      document.removeEventListener('visibilitychange', onHidden);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [ref, module, bridge, eventBus]);
 }

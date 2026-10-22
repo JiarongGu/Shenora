@@ -75,12 +75,14 @@ public class BackgroundPlaybackTransferTests
     }
 
     /// <summary>
-    /// 🔴 The ORDERING trap, as a test. The platform pauses the page's element before the host's lifecycle
-    /// hook runs, so a PAUSED page with a real position is the normal case at handoff time — not a reason to
-    /// skip. The first implementation checked "is it playing?" and skipped every real handoff.
+    /// 🔴 A film the USER paused stays paused when they leave the app. It was handed over and played on
+    /// natively, because the platform's own pause of the hidden page reached the host as <c>Paused</c> and
+    /// looked the same; <c>useMediaPlayer</c> now drops that pause, so <c>Paused</c> here is the user's.
+    /// Measured on Android: a paused film was <c>TookOver</c> before this, and the page goes hidden before
+    /// the platform pauses it.
     /// </summary>
     [Fact]
-    public async Task A_PAUSED_page_still_hands_over_because_the_platform_paused_it_first()
+    public async Task A_page_the_user_PAUSED_is_left_paused()
     {
         var (_, native, handoff) = Build(new MediaPlayerStatus
         {
@@ -90,8 +92,38 @@ public class BackgroundPlaybackTransferTests
 
         var result = await handoff.ToBackgroundAsync();
 
+        Assert.Equal(BackgroundPlaybackOutcome.Nothing, result.Outcome);
+        Assert.Empty(native.Calls);
+    }
+
+    /// <summary>A page caught BUFFERING was playing and stalled: its film goes on in the background.</summary>
+    [Fact]
+    public async Task A_BUFFERING_page_hands_over()
+    {
+        var (_, native, handoff) = Build(new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Buffering,
+            Position = TimeSpan.FromSeconds(7),
+        });
+
+        var result = await handoff.ToBackgroundAsync();
+
         Assert.Equal(BackgroundPlaybackOutcome.TookOver, result.Outcome);
-        Assert.Contains("seek:12.00", native.Calls);
+        Assert.Equal(["open:/library/film.mkv", "seek:7.00", "play"], native.Calls);
+    }
+
+    /// <summary>Neither a finished film nor one still opening is playing, so neither is handed over.</summary>
+    [Theory]
+    [InlineData(MediaPlayerState.Ended)]
+    [InlineData(MediaPlayerState.Opening)]
+    public async Task A_page_that_is_not_playing_moves_nothing(MediaPlayerState state)
+    {
+        var (_, native, handoff) = Build(new MediaPlayerStatus { State = state, Position = TimeSpan.FromSeconds(60) });
+
+        var result = await handoff.ToBackgroundAsync();
+
+        Assert.Equal(BackgroundPlaybackOutcome.Nothing, result.Outcome);
+        Assert.Empty(native.Calls);
     }
 
     [Fact]
@@ -149,6 +181,64 @@ public class BackgroundPlaybackTransferTests
         Assert.Equal(BackgroundPlaybackOutcome.Resumed, result.Outcome);
         Assert.Equal(["close"], native.Calls);
         Assert.Equal(["seek:53.31", "play"], page.Calls);
+    }
+
+    /// <summary>
+    /// A native player the handoff STARTED and something then paused while the app was away — the lock screen's
+    /// controls, wired by the app — hands back a page at its position and paused: playing on would undo that pause
+    /// the moment the user returns.
+    /// </summary>
+    [Fact]
+    public async Task Coming_back_to_a_native_player_PAUSED_while_away_leaves_the_page_paused()
+    {
+        var (page, native, handoff) = Build(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(10) });
+        await handoff.ToBackgroundAsync();
+        native.Status = new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Paused,
+            Position = TimeSpan.FromSeconds(21.5),
+            Duration = TimeSpan.FromSeconds(60),
+        };
+
+        var result = await handoff.ToForegroundAsync();
+
+        Assert.Equal(BackgroundPlaybackOutcome.Paused, result.Outcome);
+        Assert.Equal(["seek:21.50"], page.Calls);
+    }
+
+    /// <summary>
+    /// A native player reads Paused between opening and playing. Back before the handoff has played it, that is not
+    /// anyone's pause: the page resumes, as it always did.
+    /// </summary>
+    [Fact]
+    public async Task Coming_back_before_the_handoff_played_the_native_player_resumes_the_page()
+    {
+        var (page, native, handoff) = Build(new MediaPlayerStatus { State = MediaPlayerState.Empty });
+        native.Status = new MediaPlayerStatus { State = MediaPlayerState.Paused, Position = TimeSpan.FromSeconds(3) };
+
+        var result = await handoff.ToForegroundAsync();
+
+        Assert.Equal(BackgroundPlaybackOutcome.Resumed, result.Outcome);
+        Assert.Equal(["seek:3.00", "play"], page.Calls);
+    }
+
+    /// <summary>Paused AT its end is finished, not paused: the page is parked there rather than sought to it.</summary>
+    [Fact]
+    public async Task A_native_player_paused_at_its_end_counts_as_finished()
+    {
+        var (page, native, handoff) = Build(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(10) });
+        await handoff.ToBackgroundAsync();
+        native.Status = new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Paused,
+            Position = TimeSpan.FromSeconds(60),
+            Duration = TimeSpan.FromSeconds(60),
+        };
+
+        var result = await handoff.ToForegroundAsync();
+
+        Assert.Equal(BackgroundPlaybackOutcome.Finished, result.Outcome);
+        Assert.Equal(["pause"], page.Calls);
     }
 
     /// <summary>

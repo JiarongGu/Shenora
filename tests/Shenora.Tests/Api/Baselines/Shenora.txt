@@ -1715,6 +1715,7 @@ enum Shenora.Modules.Media.BackgroundPlaybackOutcome (int)
   public const Shenora.Modules.Media.BackgroundPlaybackOutcome Failed = 5
   public const Shenora.Modules.Media.BackgroundPlaybackOutcome Finished = 3
   public const Shenora.Modules.Media.BackgroundPlaybackOutcome Nothing = 0
+  public const Shenora.Modules.Media.BackgroundPlaybackOutcome Paused = 6
   public const Shenora.Modules.Media.BackgroundPlaybackOutcome Resumed = 2
   public const Shenora.Modules.Media.BackgroundPlaybackOutcome TookOver = 1
   public const Shenora.Modules.Media.BackgroundPlaybackOutcome Unresolved = 4

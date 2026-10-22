@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ShenoraBridge } from './bridge.js';
 import { ShenoraEventBus } from './eventBus.js';
 import { FakeTransport } from './testing/fakeTransport.js';
@@ -125,6 +125,166 @@ describe('useMediaPlayer', () => {
     element.dispatchEvent(new Event('timeupdate'));
 
     expect(reports(transport)).toHaveLength(0);
+  });
+
+  describe('going to the background', () => {
+    const setHidden = (hidden: boolean) =>
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
+    const setPaused = (element: HTMLMediaElement, paused: boolean) =>
+      Object.defineProperty(element, 'paused', { configurable: true, get: () => paused });
+    afterEach(() => setHidden(false));
+
+    /**
+     * 🔴 The background handoff hands over only a page that was PLAYING, so the platform's own pause of a
+     * hidden page must not reach the host as the user's. Measured on Android: the page goes hidden with the
+     * element still playing, and its `pause` follows ~80 ms later with the page already hidden.
+     */
+    it("does not report the platform's pause of a hidden page", async () => {
+      const { transport, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setPaused(element, true);
+      element.dispatchEvent(new Event('pause'));
+
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing']);
+    });
+
+    it('a page the user paused goes to the background paused', async () => {
+      const { transport, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+      setPaused(element, true);
+      element.dispatchEvent(new Event('pause'));
+
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Paused', 'Paused']);
+    });
+
+    /** Should a platform pause the element after hiding the page but before saying so, the report holds. */
+    it('reports the visible state even when the platform paused before the page heard it was hidden', async () => {
+      const { transport, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+
+      setHidden(true);
+      setPaused(element, true);
+      element.dispatchEvent(new Event('pause'));
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing']);
+    });
+
+    /** A pause the HOST asked for — the lock screen, a media key, the app — is the user's, hidden or not. */
+    it('reports a pause the host asked for while the page is hidden', async () => {
+      const { transport, bus, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      await send(bus, MediaPlayerCommands.pause);
+      setPaused(element, true);
+      element.dispatchEvent(new Event('pause'));
+
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Paused']);
+    });
+
+    /** Long after hiding, a pause is not the platform's backgrounding: a media key with the window in the tray. */
+    it('reports a pause that comes long after the page was hidden', async () => {
+      const { transport, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+      const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      now.mockReturnValue(10_000);
+      setPaused(element, true);
+      element.dispatchEvent(new Event('pause'));
+      now.mockRestore();
+
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Paused']);
+    });
+
+    /** Back on screen the host hears the element's real state, or it goes on believing a dropped pause away. */
+    it('reports what the element is really doing when the page is shown again', async () => {
+      const { transport, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setPaused(element, true);
+      element.dispatchEvent(new Event('pause'));
+
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Paused']);
+    });
+
+    /**
+     * `load()` pauses with no `pause` event, so a new track does not inherit the last one's `Playing` — and while
+     * it opens, hiding sends nothing that would complete its open early.
+     */
+    it("a new load forgets the previous track's state", async () => {
+      const { transport, bus, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+      await send(bus, MediaPlayerCommands.load, { uri: 'next.mp4', startAt: 0 });
+      setPaused(element, true);
+
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing']);
+    });
+
+    /** A host pause of an element already paused fires no event, so it must not let a later platform pause through. */
+    it("a host pause that changed nothing does not excuse a later platform pause", async () => {
+      const { transport, bus, element } = createFixture();
+      setPaused(element, true);
+      await send(bus, MediaPlayerCommands.pause);
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setPaused(element, true);
+      element.dispatchEvent(new Event('pause'));
+
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing']);
+    });
+
+    /** Only the `pause` event is the platform's: a track that opens as the page hides still completes its open. */
+    it('a track opening as the page hides still reports its metadata', async () => {
+      const { transport, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      element.dispatchEvent(new Event('loadedmetadata'));
+
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Paused']);
+    });
+
+    /** A failure is not a playback state: hiding and showing the page neither repeats it without its reason nor clears it. */
+    it('a failed player stays failed through a hide and a show', async () => {
+      const { transport, element } = createFixture();
+      element.dispatchEvent(new Event('error'));
+
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(reports(transport).map((r) => r.state)).toEqual(['Failed']);
+    });
   });
 
   /**

@@ -23,6 +23,11 @@ public enum BackgroundPlaybackOutcome
 
     /// <summary>The transfer threw. <see cref="BackgroundPlaybackResult.Detail"/> names the type.</summary>
     Failed,
+
+    /// <summary>The page took the playhead back and stays PAUSED: the native player the handoff started was paused
+    /// while the app was away — by whatever the app wired to it, the lock screen's controls for one — so playing on
+    /// would undo that. The kit's native players never pause by themselves.</summary>
+    Paused,
 }
 
 /// <summary>The outcome of one transfer, with the position it happened at.</summary>
@@ -65,7 +70,10 @@ public sealed class BackgroundPlaybackOptions
 /// <para>⚠ <b>Four traps:</b></para>
 /// <list type="number">
 /// <item><b>The playhead comes from the PLAYER, not the element</b> — <c>visibilitychange</c> fires before
-/// any host lifecycle hook, so by then the element reports "not playing" about something that was.</item>
+/// any host lifecycle hook, and the platform then pauses the hidden element itself, so by then the element
+/// reports "not playing" about something that was. Only a page reported <c>Playing</c> or <c>Buffering</c> is
+/// handed off, so a page must not report that platform pause as its own: <c>useMediaPlayer</c> drops a pause
+/// nobody asked for that comes as the page goes hidden, and a page reporting by hand must do the same.</item>
 /// <item><b>ONE owner per transition.</b> The page hands off, the HOST hands back; both driving the element
 /// destroys the state the other needs.</item>
 /// <item><b>The native player needs a source it can OPEN</b>, which is not the page's URL — hence
@@ -85,14 +93,20 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
     private readonly IMediaPlayer _native = native ?? throw new ArgumentNullException(nameof(native));
     private readonly BackgroundPlaybackOptions _options = options ?? throw new ArgumentNullException(nameof(options));
 
+    // The last handoff got as far as PLAYING the native player. Until it has, the player reads Paused because it
+    // has only just opened, not because anyone paused it.
+    private volatile bool _nativeStarted;
+
     /// <summary>The app is going away: take the playhead off the page and give it to the platform. Call from
     /// the host's own "stopped" lifecycle hook — <c>Window.Stopped</c> under MAUI, i.e. <c>onStop</c> /
     /// <c>didEnterBackground</c>.</summary>
     public async Task<BackgroundPlaybackResult> ToBackgroundAsync(CancellationToken cancellationToken = default)
     {
+        _nativeStarted = false;
         var status = _page.Status;
-        // ⚠ Playing OR paused-with-a-position — the platform may already have paused the element (trap 1).
-        if (status.State is MediaPlayerState.Empty or MediaPlayerState.Failed)
+        // Only a page that was PLAYING: a film the user paused stays paused. This relies on the page not
+        // reporting the platform's own pause as it goes hidden, which `useMediaPlayer` drops (trap 1).
+        if (status.State is not (MediaPlayerState.Playing or MediaPlayerState.Buffering))
         {
             return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Nothing, status.Position,
                 $"the page player is {status.State}");
@@ -110,6 +124,7 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
             await _native.OpenAsync(new MediaSource { Uri = source }, cancellationToken).ConfigureAwait(false);
             await _native.SeekAsync(status.Position, cancellationToken).ConfigureAwait(false);
             await _native.PlayAsync(cancellationToken).ConfigureAwait(false);
+            _nativeStarted = true;
             Report(() => $"[Shenora] background handoff: {status.Position.TotalSeconds:F2}s -> native, state={_native.Status.State}");
             return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.TookOver, status.Position);
         }
@@ -134,6 +149,8 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
     public async Task<BackgroundPlaybackResult> ToForegroundAsync(CancellationToken cancellationToken = default)
     {
         var status = _native.Status;
+        var started = _nativeStarted;
+        _nativeStarted = false;
         if (status.State is MediaPlayerState.Empty)
         {
             return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Nothing, default, "nothing to give back");
@@ -165,6 +182,11 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
             }
 
             await _page.SeekAsync(at, cancellationToken).ConfigureAwait(false);
+            if (status.State is MediaPlayerState.Paused && started)
+            {
+                Report(() => $"[Shenora] background handback: native was PAUSED at {at.TotalSeconds:F2}s — the page stays paused");
+                return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Paused, at);
+            }
             await _page.PlayAsync(cancellationToken).ConfigureAwait(false);
             Report(() => $"[Shenora] background handback: native -> page at {at.TotalSeconds:F2}s");
             return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Resumed, at);

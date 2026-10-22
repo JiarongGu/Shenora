@@ -39,6 +39,23 @@ at the first list and missed five more breaking changes.
   drops. Only an app whose computed route was already dead is affected; mount it first. Separate options objects
   are not compared (an app that rewrites requests between the two routes passes each its own), and one options
   object shared by two webviews no longer reads as misordered on the second.
+- **`BackgroundPlaybackTransfer.ToBackgroundAsync` hands off only a page reported `Playing` or `Buffering`.** A film
+  the user paused now stays paused when they leave the app; it used to be handed to the native player and play on.
+  `useMediaPlayer` makes this hold by not reporting the platform's own pause as the page goes hidden (below). **A
+  page that reports `PLAYER_REPORT` by hand must do the same**, or a playing film can read as paused (whenever the
+  platform's pause reaches the host before `Window.Stopped`) and not be handed off: drop a `pause` event it did not
+  ask for that comes while hidden and within about a second of the `visibilitychange` (or before it), and send its
+  hidden-time report with the playback state it last reported rather than the element's. The MAUI sample's page
+  does exactly this.
+
+### Added
+
+- **`BackgroundPlaybackOutcome.Paused`: coming back to a native player that was paused while away leaves the page
+  paused.** `ToForegroundAsync` seeked and PLAYED the page whatever the native player was doing, so a film the app
+  had paused natively — from the lock screen's controls it wired to that player, say — started again the moment the
+  app returned. It now seeks the page and answers `Paused`, once the handoff has played the native player (before
+  that, a just-opened player reads Paused and the page resumes as before). The kit's native players never pause by
+  themselves. Unit-tested; not run on a device (the sample wires no control to its native player).
 
 ### Changed
 
@@ -48,6 +65,13 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **`useMediaPlayer` no longer reports the platform pausing a page as it goes hidden as the user pausing it**
+  (`@shenora/react`). Measured on Android: the page goes hidden with the film still playing, and the element's
+  `pause` follows ~80 ms later; that pause reached the host as `Paused`, so a playing film and a paused one looked
+  the same at handoff. A `pause` event nobody asked for within a second of hiding is now dropped; one the host asked
+  for (`PLAYER_PAUSE`) or a later one is reported. The hidden-time report repeats the playback state the host already
+  holds (nothing for Opening, Failed or Empty), and a host still believing `Playing` hears the element's real state
+  when the page is shown again.
 - **A conversion behind `app.UseMediaPlayer()` now runs on the kit's own scheduler.** The conversion claims its
   source path, and the scheduler the kit registers listed no path scope, so every submit threw, the failure was
   logged to nowhere, and the page was answered `503` forever. That scheduler now adds `PathClaims.Scope` when the

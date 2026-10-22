@@ -510,6 +510,14 @@ window.Resumed += async (_, _) => { try { await transfer.ToForegroundAsync(); } 
 
 - 🔴 **`Stopped`/`Resumed`, NOT `Deactivated`/`Activated`.** The latter also fire for a dialog or the
   notification shade, which would move audio out of a page that is still on screen.
+- 🔴 **Only a page that was PLAYING is handed off** (`Playing` or `Buffering`); a film the user paused stays
+  paused. The platform pauses the element by itself as the page goes hidden, and `useMediaPlayer` does not
+  report that pause, so `Paused` means the user's. **A page that reports by hand must do the same** — drop a
+  `pause` event it did not ask for that comes while hidden and within about a second of `visibilitychange`,
+  and send the playback state it last reported in its hidden-time report — or a playing film can read as
+  paused and not be handed off. The MAUI sample's page is a worked example.
+- **A native player paused while you were away comes back paused** (`Paused`), if your app wired something
+  to it (the lock screen's controls, say); the kit's native players never pause by themselves.
 - **The native player is resolved by its concrete type on purpose.** The shells do not register it as
   `IMediaPlayer`, because the default one must stay the page-backed player or `useMediaPlayer(ref)`
   silently drives the wrong thing.
