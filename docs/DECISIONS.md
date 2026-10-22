@@ -1461,6 +1461,8 @@ Growth is harvest-driven (D15) and adoption-driven, so "next" is not a phase.
   hypothetical: D20's portable contracts in `Shenora` (`IUiDispatcher`, `IFileDialogs`, `IClipboardService`,
   `IUrlLauncher`, `IUiInteraction`). D16 covers the transport seam, D20 the feature seams; neither ships an
   implementation until there is a consumer.
-- **Contract codegen (C# ⇄ TS)** — out of initial scope; revisit after adoption feedback.
+- **Contract codegen (C# ⇄ TS)** — not built: the wire's own constants are already mirrored (`WireMirrorTests`) and
+  generated (`docs/reference/wire.md`). A spike starts only when an adopter shows a route's payload or result drifting
+  between its C# type and the TS type it wrote by hand — then as a build-time `@shenora/cli` step, never a runtime package.
 - **Harvest-promotions from ongoing app development** (D15) — anything proven in a sibling gets generalised
   and lands here as a task before shipping in a minor.
