@@ -729,7 +729,10 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     reported **`resumed t=0.00`** — seeking to the very end REWINDS, and `play()` then started the film from
     the opening. Coming back to the credits is a worse bug than losing the audio. So a finished playback
     must hand back a FINISHED page: park just before the end, do not play, and say so. Detect it with
-    `State is Ended` OR `Position >= Duration - 500ms`, because the position can report just under.
+    `State is Ended` OR `Position >= Duration - 500ms`, because the position can report just under. ⚠ **Parking
+    means SEEKING there**: a page only paused stays where it was hidden — 52.04 s of a 60 s clip on Android
+    (2026-10-23), so play replays what was heard natively. The page is sought 500 ms short of the end: parked at
+    59.52 s in 3 runs on MuMu.
   - 🔴 **A PARKED PAGE RESUMES BY ITSELF: Chromium plays again a video it paused for a hidden page as soon as
     the page is shown** (2026-10-23, MuMu, API 32). After `HANDBACK: Finished at 60.00s` the page reported
     `Paused 45.98s` as it was shown and `Playing 46.04s` 10 ms later, then played to its end. The host's pause

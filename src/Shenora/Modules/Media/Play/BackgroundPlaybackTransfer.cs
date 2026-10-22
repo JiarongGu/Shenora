@@ -14,8 +14,8 @@ public enum BackgroundPlaybackOutcome
     /// <summary>The page took the playhead back and is playing again.</summary>
     Resumed,
 
-    /// <summary>Playback FINISHED while the app was away, so the page was parked at the end rather than
-    /// restarted.</summary>
+    /// <summary>Playback FINISHED while the app was away, so the page was parked just short of its end
+    /// (<see cref="BackgroundPlaybackOptions.EndTolerance"/> before it), paused, rather than restarted.</summary>
     Finished,
 
     /// <summary>The app supplied no source the native player could open. Nothing moved.</summary>
@@ -50,8 +50,9 @@ public sealed class BackgroundPlaybackOptions
     /// </summary>
     public required Func<string?> ResolveNativeSource { get; init; }
 
-    /// <summary>How close to the end counts as FINISHED. A player can stop a few milliseconds short of its
-    /// duration, and handing that position back restarts the film.</summary>
+    /// <summary>How close to the end counts as FINISHED, and how far short of the end a finished page is parked. A
+    /// player can stop a few milliseconds short of its duration, and handing that position back restarts the
+    /// film.</summary>
     public TimeSpan EndTolerance { get; init; } = TimeSpan.FromMilliseconds(500);
 
     /// <summary>Diagnostics. The host's own sink, never the page's.</summary>
@@ -81,7 +82,7 @@ public sealed class BackgroundPlaybackOptions
 /// <item><b>The native player needs a source it can OPEN</b>, which is not the page's URL — hence
 /// <see cref="BackgroundPlaybackOptions.ResolveNativeSource"/>.</item>
 /// <item>🔴 <b>Playback may FINISH while you are away, and handing that position back RESTARTS the film</b>
-/// — seeking a 60 s element to 60.00 rewinds it. A finished playback parks the page at the end.</item>
+/// — seeking a 60 s element to 60.00 rewinds it. A finished playback parks the page just short of the end.</item>
 /// </list>
 /// <para>⚠ <b>Opening the native player PAUSES the page by itself</b> on both mobile platforms, because it
 /// takes the audio session — so this does not pause the page.</para>
@@ -203,7 +204,11 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
         {
             if (finished)
             {
-                // Park AT the end: seeking to the duration rewinds the element and play() restarts the film.
+                // Park JUST SHORT of the end: seeking to the duration rewinds the element and play() restarts the
+                // film, and leaving it where the page stopped replays what was heard while away. With no duration,
+                // or no tolerance to stop short by, there is no safe place to seek to, so it is only paused.
+                if (status.Duration is { } length && _options.EndTolerance > TimeSpan.Zero && length > _options.EndTolerance)
+                    await _page.SeekAsync(length - _options.EndTolerance, cancellationToken).ConfigureAwait(false);
                 await _page.PauseAsync(cancellationToken).ConfigureAwait(false);
                 Report(() => $"[Shenora] background handback: FINISHED at {at.TotalSeconds:F2}s — the page is parked, not restarted");
                 return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Finished, at);

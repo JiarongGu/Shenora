@@ -307,7 +307,8 @@ public class BackgroundPlaybackTransferTests
         Assert.Equal(["seek:3.00", "play"], page.Calls);
     }
 
-    /// <summary>Paused AT its end is finished, not paused: the page is parked there rather than sought to it.</summary>
+    /// <summary>Paused AT its end is finished, not paused: the page is parked just short of the end rather than
+    /// sought to it.</summary>
     [Fact]
     public async Task A_native_player_paused_at_its_end_counts_as_finished()
     {
@@ -323,7 +324,7 @@ public class BackgroundPlaybackTransferTests
         var result = await handoff.ToForegroundAsync();
 
         Assert.Equal(BackgroundPlaybackOutcome.Finished, result.Outcome);
-        Assert.Equal(["pause"], page.Calls);
+        Assert.Equal(["seek:59.50", "pause"], page.Calls);
     }
 
     /// <summary>
@@ -346,7 +347,7 @@ public class BackgroundPlaybackTransferTests
         var result = await handoff.ToForegroundAsync();
 
         Assert.Equal(BackgroundPlaybackOutcome.Finished, result.Outcome);
-        Assert.Equal(["pause"], page.Calls);
+        Assert.Equal(["seek:59.50", "pause"], page.Calls);
         Assert.DoesNotContain("play", page.Calls);
     }
 
@@ -374,6 +375,49 @@ public class BackgroundPlaybackTransferTests
 
         Assert.Equal(BackgroundPlaybackOutcome.Finished, result.Outcome);
         Assert.DoesNotContain("play", page.Calls);
+    }
+
+    /// <summary>
+    /// Parked where the page STOPPED, the film replays what was heard while away the moment the user presses play
+    /// — measured on Android: back at 52.04 s of a 60 s clip that had finished natively. With no duration there is
+    /// no safe place to seek to (the duration itself rewinds), so it is only paused.
+    /// </summary>
+    [Fact]
+    public async Task A_finished_page_with_no_known_duration_is_only_paused()
+    {
+        var (page, native, handoff) = Build(new MediaPlayerStatus { State = MediaPlayerState.Empty });
+        native.Status = new MediaPlayerStatus { State = MediaPlayerState.Ended, Position = TimeSpan.FromSeconds(60) };
+
+        var result = await handoff.ToForegroundAsync();
+
+        Assert.Equal(BackgroundPlaybackOutcome.Finished, result.Outcome);
+        Assert.Equal(["pause"], page.Calls);
+    }
+
+    /// <summary>A zero tolerance would park the page AT its duration — the seek that rewinds it.</summary>
+    [Fact]
+    public async Task A_finished_page_with_no_end_tolerance_is_only_paused()
+    {
+        var page = new FakePlayer();
+        var native = new FakePlayer
+        {
+            Status = new MediaPlayerStatus
+            {
+                State = MediaPlayerState.Ended,
+                Position = TimeSpan.FromSeconds(60),
+                Duration = TimeSpan.FromSeconds(60),
+            },
+        };
+        var handoff = new BackgroundPlaybackTransfer(page, native, new BackgroundPlaybackOptions
+        {
+            ResolveNativeSource = () => "/library/film.mkv",
+            EndTolerance = TimeSpan.Zero,
+        });
+
+        var result = await handoff.ToForegroundAsync();
+
+        Assert.Equal(BackgroundPlaybackOutcome.Finished, result.Outcome);
+        Assert.Equal(["pause"], page.Calls);
     }
 
     /// <summary>A native player that will not close must not cost the page its playhead.</summary>

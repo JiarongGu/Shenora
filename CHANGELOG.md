@@ -114,6 +114,11 @@ at the first list and missed five more breaking changes.
   (in one the resume came before the host's pause and played ~60 ms); `Paused` is unit-tested only (the sample
   wires no control to its native player). **A page that reports
   `PLAYER_REPORT` by hand must do the same**; the MAUI sample's page does.
+- **A film that finished while the app was away comes back at its end, not where the page stopped** (`Shenora`,
+  `BackgroundPlaybackTransfer`). `Finished` only paused the page, which stays where it was hidden — back at 52.04 s
+  of a 60 s film that had finished natively, so pressing play replayed what was heard while away (the docs said it
+  was parked at the end). It now seeks the page `EndTolerance` (500 ms) short of the end, then pauses; with no known
+  duration it only pauses. Measured on an Android emulator, 3 runs: parked at 59.52 s each time.
 - **A rate set on `MediaPlayer` survives the next open, and no player takes a NaN or infinite rate** (`Shenora`).
   A load resets the element's `playbackRate`, so the next track played at 1x while the host still reported the
   rate it had set; `OpenAsync` now sends that rate after the load. `SetRateAsync` refuses a NaN or infinite rate

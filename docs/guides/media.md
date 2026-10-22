@@ -535,8 +535,9 @@ window.Resumed += async (_, _) => { try { await transfer.ToForegroundAsync(); } 
   `async void`: an escape is an unhandled UI-thread exception, not a failed transfer. And MAUI's `Window`
   is process-scoped, so a handler left attached puts TWO transfers on the next transition.
 - **A playback that FINISHED while you were away is parked, not restarted** — handing its position back
-  would seek a finished element to its own duration and rewind it. That is the `Finished` outcome, and it
-  pauses rather than plays.
+  would seek a finished element to its own duration and rewind it. That is the `Finished` outcome: the page is
+  sought `EndTolerance` (500 ms) short of its end and paused, so pressing play does not replay what was heard
+  while away. With no known duration it is only paused.
 - ⚠ **How long the NATIVE player survives is UNMEASURED past ~45 s** (Android 45 s, iOS 43 s, against a
   60 s clip, on an emulator and a simulator — both gentler than a handset). Both runs were bounded by the
   fixture, not by the platform. A foreground service is the APP's to post; that split is what
