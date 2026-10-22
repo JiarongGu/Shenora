@@ -10,20 +10,33 @@ afterEach(() => {
   for (const s of servers.splice(0)) s.close();
 });
 
+/**
+ * Ports the Fetch standard refuses (`fetch failed / Caused by: bad port`) that an OS can hand out for port 0.
+ * Windows hands ephemeral ports out IN SEQUENCE across its dynamic range, and a range starting at 1024 — a
+ * development machine here — walks through every one of these, so a suite that binds port 0 and fetches fails
+ * whenever the machine's counter is on one. Measured: 3,000 binds from 1,300 landed on the first seven.
+ */
+const FETCH_BLOCKED = new Set([1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566,
+  6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
+
+/** Bind an OS-assigned port that `fetch` will talk to, and return it. */
+async function listenFetchable(server: http.Server, host: string): Promise<number> {
+  for (;;) {
+    await new Promise<void>((resolve) => server.listen(0, host, resolve));
+    const address = server.address();
+    if (typeof address === 'string' || address === null) throw new Error('no port');
+    if (!address.port) throw new Error('the test server reported port 0 — the bind did not take');
+    if (!FETCH_BLOCKED.has(address.port)) return address.port;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
 /** Start a service bound to every interface, so a request can arrive from off-loopback. */
 async function serve(): Promise<{ port: number; state: InspectState }> {
   const state = new InspectState();
   const { server } = createInspectService({ state, page: () => inspectPage() });
   servers.push(server);
-  await new Promise<void>((resolve) => server.listen(0, '0.0.0.0', resolve));
-  const address = server.address();
-  if (typeof address === 'string' || address === null) throw new Error('no port');
-  // ⚠ Says what happened. Under a FULL `verify` — where the .NET build and 1,792 tests saturate the box
-  // first — this has come back as 0 despite the listen callback having fired, and the only symptom was
-  // `fetch failed / Caused by: bad port` from a URL reading `:0`, which reads as a broken fetch rather
-  // than a bind that did not take. Isolated, this suite passed 8/8.
-  if (!address.port) throw new Error('the test server reported port 0 — the bind did not take');
-  return { port: address.port, state };
+  return { port: await listenFetchable(server, '0.0.0.0'), state };
 }
 
 const get = async (host: string, port: number, path: string): Promise<number> =>
@@ -110,10 +123,7 @@ describe('the trust boundary', () => {
       host: () => ({ label: 'mac', sh(c: string) { calls.push(c); return { status: 0, out: '' }; } }) as never,
     });
     servers.push(server);
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const address = server.address();
-    if (typeof address === 'string' || address === null) throw new Error('no port');
-    const port = address.port;
+    const port = await listenFetchable(server, '127.0.0.1');
 
     // http.request, not fetch: fetch will not let a caller set Host or Origin, which is what a browser sends.
     const post = (headers: Record<string, string>): Promise<{ status: number; cors: string | undefined }> =>
@@ -165,11 +175,9 @@ describe('the host seam', () => {
     };
     const { server } = createInspectService({ page: () => inspectPage(), host: () => fake });
     servers.push(server);
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const address = server.address();
-    if (typeof address === 'string' || address === null) throw new Error('no port');
+    const port = await listenFetchable(server, '127.0.0.1');
 
-    const res = await fetch(`http://127.0.0.1:${address.port}/api/inspect/host`, {
+    const res = await fetch(`http://127.0.0.1:${port}/api/inspect/host`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command: 'xcodebuild -version' }),
@@ -185,11 +193,9 @@ describe('the host seam', () => {
   it('says so plainly when no Mac is configured, rather than pretending to run', async () => {
     const { server } = createInspectService({ page: () => inspectPage() });
     servers.push(server);
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const address = server.address();
-    if (typeof address === 'string' || address === null) throw new Error('no port');
+    const port = await listenFetchable(server, '127.0.0.1');
 
-    const res = await fetch(`http://127.0.0.1:${address.port}/api/inspect/host`, {
+    const res = await fetch(`http://127.0.0.1:${port}/api/inspect/host`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command: 'echo hi' }),
@@ -297,10 +303,8 @@ describe('eval reports failure in the EXIT CODE, not only in text', () => {
     const state = new InspectState();
     const { server } = createInspectService({ state, page: () => inspectPage() });
     servers.push(server);
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const address = server.address();
-    if (typeof address === 'string' || address === null) throw new Error('no port');
-    const args = ['--port', String(address.port)];
+    const port = await listenFetchable(server, '127.0.0.1');
+    const args = ['--port', String(port)];
 
     try {
       process.exitCode = saved;
