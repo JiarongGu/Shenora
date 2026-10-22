@@ -139,6 +139,27 @@ public class ChromiumPublishFoldersTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    /// <summary>
+    /// A self-contained Windows publish is refused by the KIT, naming CEF's launcher and the way out, before the SDK's
+    /// own NETSDK1067 — which says only that self-contained needs an apphost the kit had turned off.
+    /// </summary>
+    [Fact]
+    public void A_self_contained_Windows_publish_is_refused_with_the_way_out()
+    {
+        var root = NewRoot();
+        try
+        {
+            var (project, dist) = App(root, folders: false);
+            var output = Run("dotnet", ["publish", project, "-o", Path.Combine(root, "publish"), $"-p:ShenoraCefDist={dist}",
+                "--self-contained", "true", "--disable-build-servers", "-nologo", "-v:minimal"], expectSuccess: false);
+
+            Assert.Contains("cannot be self-contained yet", output, StringComparison.Ordinal);
+            Assert.Contains("--self-contained false", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("NETSDK1067", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     private static string NewRoot() => Path.Combine(Path.GetTempPath(), "shenora-publish-" + Guid.NewGuid().ToString("N"));
 
     // A real publish of a one-file app through the real targets into root\publish; the tree it left.
@@ -239,7 +260,7 @@ public class ChromiumPublishFoldersTests
 
     private static string TargetsFile() => Path.Combine(RepoRoot(), "src", "Shenora.Chromium", "build", "Shenora.Chromium.targets");
 
-    private static string Run(string exe, string[] args)
+    private static string Run(string exe, string[] args, bool expectSuccess = true)
     {
         var info = new ProcessStartInfo(exe) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (var arg in args) info.ArgumentList.Add(arg);
@@ -247,8 +268,8 @@ public class ChromiumPublishFoldersTests
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
         Assert.True(process.WaitForExit(TimeSpan.FromMinutes(3)), "the build did not finish in 3 minutes");
-        Assert.True(process.ExitCode == 0, $"the build exited {process.ExitCode}: {stdout.Result}{stderr.Result}");
-        return stdout.Result;
+        Assert.True((process.ExitCode == 0) == expectSuccess, $"the build exited {process.ExitCode}: {stdout.Result}{stderr.Result}");
+        return stdout.Result + stderr.Result;
     }
 
     private static string RepoRoot()

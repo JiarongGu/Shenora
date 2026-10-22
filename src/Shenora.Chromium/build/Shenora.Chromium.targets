@@ -290,6 +290,13 @@ public sealed class ShenoraChromiumStampLauncher : Task
     </Task>
   </UsingTask>
 
+  <!-- Ahead of the SDK's own refusal (NETSDK1067, "self-contained requires the apphost"), which names neither CEF nor
+       the way out: on Windows the kit turns the apphost off because CEF's launcher is the app's exe. -->
+  <Target Name="_ShenoraChromiumSelfContainedCheck" BeforeTargets="_CheckForUnsupportedAppHostUsage"
+          Condition="'$(ShenoraChromiumLayout)' == 'true' and $(RuntimeIdentifier.StartsWith('win')) and '$(SelfContained)' == 'true'">
+    <Error Text="A Windows Shenora.Chromium app cannot be self-contained yet: CEF's launcher is the app's exe, so the kit turns the .NET apphost off (UseAppHost=false), and the SDK needs one for a self-contained app. Publish framework-dependent (--self-contained false, or &lt;SelfContained&gt;false&lt;/SelfContained&gt;); the machine then needs the .NET 10 runtime. macOS and Linux publish self-contained." />
+  </Target>
+
   <!-- Every refusal runs BEFORE the fetch, so a build that cannot be laid out never downloads 165 MB first. -->
   <Target Name="_ShenoraChromiumCheck">
     <Error Condition="'$(ShenoraCefPlatform)' == ''"

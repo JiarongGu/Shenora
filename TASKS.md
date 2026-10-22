@@ -65,8 +65,9 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   of the app (D94).
 - [ ] **The Chromium shell's folders publish on Linux (D96):** the same `engine/` and `lib/` shape, through the
   helper's and `libcef.so`'s library search paths (rpath). A spike first.
-- [ ] **A self-contained Windows Chromium publish.** The SDK refuses it with or without folders (NETSDK1067: the kit
-  sets `UseAppHost=false`, because CEF's launcher is the exe), so only macOS and Linux publish self-contained. With it
+- [ ] **A self-contained Windows Chromium publish.** Refused today, by the kit's own check with the way out: the kit
+  sets `UseAppHost=false` (CEF's launcher is the exe) and the SDK needs an apphost to be self-contained, so only
+  macOS and Linux publish self-contained. With it
   enabled, the shim would find `hostfxr.dll` beside the app (`lib\` in a folders publish), a path never run.
 - [ ] 🅿️ **Whether a later launch's window takes the foreground on Linux and macOS.** Not observed: WSL's desktop and
   Xvfb enforce no focus-stealing prevention, so they cannot show it. On Linux a later launch could hand over its
@@ -107,7 +108,7 @@ is left is mostly measurement that needs hardware or a person.
   shell's main window was measured. Chrome's own tabbed windows may send `WM_SETICON` themselves.
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out
   an ARM64 launcher, shim and `libcef.dll`; running it needs ARM64 hardware or a `windows-11-arm` CI runner. ⚠ The
-  release job's cross-compile on `windows-latest` is untried until it runs.
+  release job builds the ARM64 shim (the 0.23.2 package's is PE machine `0xaa64`); it has never been loaded.
 - [ ] 🅿️ **The system menu from the real taskbar.** Measured only with the message the taskbar sends
   (`WM_POPUPSYSTEMMENU`, posted). A person Shift+right-clicking the app's taskbar button is the check, since a probe
   must not act on the taskbar, another app's window.
@@ -129,7 +130,9 @@ is left is mostly measurement that needs hardware or a person.
   needs their yes.
 
 **Linux**
-- [ ] **The release's `chromium-helper-linux` job has not run in CI**; its steps were rehearsed on WSL.
+- [ ] 🅿️ **The CI-built Linux helper has never RUN.** The release's `chromium-helper-linux` job builds the linux-x64
+  and linux-arm64 helpers the packages carry (ELF, read in 0.19.0 and 0.23.2); the runs on WSL used helpers built
+  locally.
 - [ ] 🅿️ **A real desktop with working GL.** On WSL the window's close took 8–12 s in development mode (every run)
   and in about one production run in five, with WSL's own GL (`ZINK: failed to choose pdev` on every run); with
   SwiftShader or no GPU it closed in 15–190 ms.

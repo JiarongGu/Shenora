@@ -59,6 +59,11 @@ at the first list and missed five more breaking changes.
 
 ### Changed
 
+- **A self-contained Windows Chromium build or publish fails with the kit's own message** (`Shenora.Chromium`):
+  CEF's launcher is the app's exe, so the kit turns the .NET apphost off, and the SDK then refused with a bare
+  NETSDK1067 that named neither. The message says why and how to publish instead (framework-dependent). Measured
+  beside it: the Chromium sample's framework-dependent win-x64 publish, flat and with folders, starts from a fresh
+  folder and closes with exit code 0.
 - **The iOS export picker now also handles a swipe-down dismissal** (`Shenora.iOS`): its presentation controller's
   dismissal answers as cancelled, beside the picker's own cancel callback, as MAUI Essentials' picker does. Whether
   the cancel callback alone already covered a swipe is unmeasured; built, not yet run on a simulator.

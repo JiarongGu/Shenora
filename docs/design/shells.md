@@ -70,6 +70,13 @@ when that holds it, with `engine\` added to the DLL search for what Chromium loa
 launcher), and a subprocess stays silent. Such a publish starts through `<App>.exe` only: run as
 `dotnet lib\<App>.App.dll`, it does not find CEF.
 
+**What a Windows publish has been seen to do** (the Chromium sample, win-x64, framework-dependent, published to a
+fresh folder outside the build tree on a machine with the .NET 10 runtime, 2026-10-22): flat and with folders, each
+started from the artifact (its window in 3.6 s and 7.6 s, its data folder created beside it) and closed by a posted
+`WM_CLOSE` with exit code 0 and no process left. A self-contained Windows publish is refused by the kit's own check
+(`_ShenoraChromiumSelfContainedCheck`) before the SDK's bare NETSDK1067. Unseen: a machine without the .NET SDK,
+win-arm64, and any macOS or Linux artifact the release built (`TASKS.md`).
+
 ## The Chromium hosts
 
 `Shenora.Chromium` is a shell of its own on CEF's Views framework and the engine the WinForms shell hosts (D83), and
