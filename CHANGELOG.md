@@ -64,6 +64,12 @@ at the first list and missed five more breaking changes.
   NETSDK1067 that named neither. The message says why and how to publish instead (framework-dependent). Measured
   beside it: the Chromium sample's framework-dependent win-x64 publish, flat and with folders, starts from a fresh
   folder and closes with exit code 0.
+- **The web panel (D97) has run on real CEF, and its docs say what it is** (`Shenora.Chromium`). On Windows it draws
+  on screen, takes mouse and keyboard input posted to the shell's window, goes back and forward, hides and moves, keeps
+  profiles apart, and across a restart keeps a session cookie with `PersistSessionCookies` true and drops it with false
+  (the Chromium sample's opt-in `PanelProbe`). The XML docs described the retired native child window, and said a
+  panel could reuse a `ChromiumBrowserProcess` sign-in by naming its folder, which it cannot (that profile is the
+  `Default` folder, which no panel may name). `Browser`'s docs now say how to reach the UI thread its members need.
 - **The iOS export picker now also handles a swipe-down dismissal** (`Shenora.iOS`): its presentation controller's
   dismissal answers as cancelled, beside the picker's own cancel callback, as MAUI Essentials' picker does. Whether
   the cancel callback alone already covered a swipe is unmeasured; built, not yet run on a simulator.

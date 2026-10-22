@@ -86,8 +86,8 @@ public sealed unsafe class ChromiumWindows
     public bool Activate(string name) => _ui.Post(() => WhenOpen(name, w => w.Activate()));
 
     /// <summary>
-    /// Embed a web-content browser as a child of the named window (D97): a CEF browser parented to that window's handle,
-    /// in a profile of the caller's choosing, running in this shell's own CEF process. The host places it with
+    /// Embed a web-content browser in the named window (D97): a CEF browser view floated over the window's page as a Views
+    /// overlay, in a profile of the caller's choosing, running in this shell's own CEF process. The host places it with
     /// <see cref="ChromiumWebPanel.SetBounds"/> inside a region its page reserves and draws its own chrome; it drives the
     /// content through <see cref="ChromiumWebPanel.Browser"/>. Windows only, today.
     /// </summary>

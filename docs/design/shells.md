@@ -497,15 +497,23 @@ behind. ⚠ **The interactive flow ends with its window**: a close nobody holds 
 takes the window without cancelling `WindowClosed`, so the session stops waiting on the driver then.
 
 The Chromium shell reuses the same session browser for a fourth shape it does not share with WebView2: a **web panel**
-(`ChromiumWebPanel`, D97). `ChromiumWindows.CreateWebPanelAsync` reads a named window's handle on CEF's UI thread, then
-`ChromiumSessionHost.CreateChildAsync` makes a `ChromiumSessionBrowser` (windowed, not off-screen) as a `WS_CHILD` of
-that handle with `create_browser_sync` and the profile's request context — the same `Admit`/`ProfileFor` rule as any
-session (a folder directly inside the data folder, never the app's own). The panel exposes that browser as its
-`ISessionBrowser` (navigate, script, cookies, events) plus `SetBounds` on the child HWND and `GoBack`/`GoForward`/
-`Reload`/`Stop`, so the host places it in a region its page reserves and draws its own chrome. The context sets the
-profile's proxy through Chromium's `proxy` preference and `persist_session_cookies`, so a sign-in survives a restart.
-It runs in the shell's own CEF process, which is why it needs no `ChromiumEngine` (that would be a second CEF init).
-Windows only, today. WHY: D97.
+(`ChromiumWebPanel`, D97). `ChromiumWindows.CreateWebPanelAsync` finds a named window on CEF's UI thread, then
+`ChromiumSessionHost.CreateChildAsync` makes a `ChromiumSessionBrowser` in a `CefBrowserView` (ALLOY, to match the
+window) floated over the window's page as a CUSTOM overlay, with the profile's request context — the same
+`Admit`/`ProfileFor` rule as any session (a folder directly inside the data folder, never the app's own). A Views
+window presents and routes input only to views in its own widget, which is why it is an overlay and not a raw child
+HWND (that first build placed right and showed only its background). The panel exposes the browser as its
+`ISessionBrowser` (navigate, script, cookies, events) plus `SetBounds` (client pixels, converted to Views DIP),
+`SetVisible` and `GoBack`/`GoForward`/`Reload`/`Stop`, so the host places it in a region its page reserves and draws
+its own chrome. The context sets the profile's proxy through Chromium's `proxy` preference and
+`persist_session_cookies`. It runs in the shell's own CEF process, which is why it needs no `ChromiumEngine` (that
+would be a second CEF init). Windows only, today. WHY: D97.
+
+**Seen on real CEF** (Windows, the Chromium sample's opt-in `PanelProbe`, 2026-10-22): the panel's pixels on screen are
+its page's, a click and keys posted to the shell's window reach the panel's page, back/forward, `SetVisible` and
+`SetBounds` move what is on screen, two profiles keep separate cookies, and across a restart the session cookie stays
+with `PersistSessionCookies` true and goes with false (the persistent one stays either way). Its `ISessionBrowser`
+members must be called on the shell's UI thread: from another, CEF refuses the DevTools calls behind script and cookies.
 
 ## What is deliberately absent
 

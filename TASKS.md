@@ -145,26 +145,22 @@ is left is mostly measurement that needs hardware or a person.
 - [ ] **The clipboard at exit.** It hands no copy to a clipboard manager (the freedesktop `SAVE_TARGETS` handover), so
   a copy leaves with the app where no manager copies on change; and it writes no format larger than one X request.
 
-### 🅿️ THE CHROMIUM WEB PANEL (D97) — built, its live run and cookie-persistence check are parked
+### 🌐 THE CHROMIUM WEB PANEL (D97) — runs on Windows; what is left
 
-`ChromiumWindows.CreateWebPanelAsync` embeds a web-content browser as a child of a shell window, in a chosen profile's
-request context, reusing the session browser (D91) as the driver. Built and unit-tested for what a test can reach
-without CEF (arguments, the not-running shell, an unknown window). The WS_CHILD + request-context creation is modelled
-on the proven `ChromiumSessionHost.Create` (`create_browser_sync` + `Attach`) with a child `window_info`, but has not
-RUN — this machine has no CEF runtime.
+It has run on real CEF (the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`; how it works and what was seen:
+`docs/design/shells.md`).
 
-- [ ] 🅿️ **Confirm the embed renders and is drivable, on Windows.** A panel in the main window, `SetBounds`, navigate,
-  `GoBack`/`GoForward`, read a cookie — against a real CEF process. ⚠ The one unverified assumption is that
-  `create_browser_sync` makes a parented ALLOY windowed browser (the proven app-page child uses the ASYNC
-  `cef_browser_host_create_browser`); if sync refuses one, switch this path to async and attach on `on_after_created`.
-- [ ] 🅿️ **Confirm cookie/session PERSISTENCE across a restart.** The mechanism is wired — the profile's own request
-  context has its own `cache_path`, which persists cookies that carry an expiry, and `PersistSessionCookies` (default
-  true) keeps the session cookies too — but the restart has not been run. Sign in in a panel, close the app, reopen,
-  and confirm it is still signed in; A/B `PersistSessionCookies`.
+- [ ] 🟡 **A session cookie was missing from a panel recreated in the same process, twice in seven runs.** The
+  sequence: a panel in profile A, a panel in profile B opened and closed, A disposed, a new panel in A at once —
+  `persist` came back, `session` did not (`SHENORA_SAMPLE_PANEL_PROBE=5`). Without the B panel it kept both, 6 of 6;
+  across a restart it kept both every time. A lead, not a cause: count it again before changing anything (flushing
+  the context's cookie store on close is the first thing to A/B).
 - [ ] **Decide whether history nav generalises onto `ISessionBrowser`.** `GoBack`/`GoForward`/`Reload`/`Stop` are on the
   panel today (Chromium-only, no Core or WebView2 change); WebView2's `CoreWebView2` has the same four, so they could
   move to the shared session contract if a second consumer wants them there.
-- [ ] **macOS/Linux child panels.** Windows only today, as `ChromiumChildBrowser` is; the parenting is `WS_CHILD`.
+- [ ] **macOS/Linux panels.** Windows only today: `ChromiumSessionHost.CreateChild` throws `PlatformNotSupportedException`
+  in the macOS and Linux builds, while the overlay it builds is Views on every OS. Lift the guard and run the probe on
+  Linux first (WSL can).
 
 ### 🟡 THE PLAYBACK HEALTH FIGURES — the adopter has now BUILT them, so this is a harvest call
 

@@ -1358,24 +1358,19 @@ docs cite them — so the number is the column to scan.
     macOS is already one `.app`, and Linux needs a spike of its own.
 
 - **D97 — THE CHROMIUM SHELL EMBEDS A WEB PANEL: A CHILD BROWSER IN A SHELL WINDOW, IN A CHOSEN PROFILE.**
-  `ChromiumWindows.CreateWebPanelAsync` makes a web-content browser a native CHILD of a window the shell owns
-  (`ChromiumWebPanel`): a CEF browser parented to that window's handle, in a caller-chosen profile's request context,
+  `ChromiumWindows.CreateWebPanelAsync` embeds a web-content browser in a window the shell owns (`ChromiumWebPanel`):
+  a CEF browser view floated over the window's page as a Views overlay, in a caller-chosen profile's request context,
   in the shell's OWN CEF process. The host places it (`SetBounds`) in a region its page reserves, draws its own
-  chrome, and drives it through the session browser the auxiliary sessions already expose (`ISessionBrowser`), plus
-  back/forward/reload on the panel. Windows only, today, as `ChromiumChildBrowser` is.
+  chrome, and drives it through `ISessionBrowser`, plus back/forward/reload. Windows only, today.
   - 🔴 **Why not `ChromiumEngine`/`ChromiumChildBrowser` (D83):** that path needs a STARTED engine — a second CEF
     init this process cannot do — and serves the app's OWN origin with its IPC bridge. The panel is arbitrary web
     content in a chosen profile, so it reuses the session browser (D91), already in-process and already drivable.
   - **The profile is a session profile (D91):** a folder directly inside the shell's data folder, never the app's
-    own; point it at a signed-in `ChromiumBrowserProcess`'s folder to reuse that sign-in, but not while that process
-    holds it open (one process per data folder).
-  - **Proxy and cookies ride the request context:** the proxy is the context's `proxy` preference, bound to this profile
-    alone; `persist_session_cookies` keeps session cookies across a restart, expiring ones persist from its cache.
-  - 🔴 **A Views OVERLAY, not a raw child HWND (fixed 0.23.1):** first built as a `WS_CHILD` browser parented to the
-    window's HWND, it placed right but showed only its background and took no input — a Views `CefWindow` presents and
-    routes only to views in its own widget, never a foreign child HWND. Now a `CefBrowserView` added as a CUSTOM overlay
-    (`AddOverlayView`, ALLOY to match the window), as the window hosts its own page. `SetBounds` keeps client pixels;
-    `WindowHandle` is now 0. Unit-verified only — render/input needs a real-CEF run.
+    own — so never a `ChromiumBrowserProcess`'s `Default` profile, whose sign-in is not reachable this way.
+  - **Proxy and cookies ride the profile's own request context** (its `proxy` preference, `persist_session_cookies`).
+  - 🔴 **A Views OVERLAY, never a raw child HWND:** a Views `CefWindow` presents and routes input only to views in its
+    own widget, so the panel is a `CefBrowserView` added as a CUSTOM overlay (ALLOY, to match the window). `SetBounds`
+    takes client pixels; `WindowHandle` is 0. Seen working on Windows: `docs/design/shells.md`.
 
 ## Anti-goals — deliberately NOT built
 

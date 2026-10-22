@@ -170,6 +170,7 @@ internal static class Program
             app.Services.GetRequiredService<MissionSchedulerOptions>().Observers =
                 [new MissionEventPublisher(events, PortableSampleModule.Module)];
             app.Services.GetRequiredService<IMissionScheduler>().Lane(MissionLanes.DemoIo).Capacity = 2;
+            PanelProbe.StartIfAsked(app);   // opt-in: the web panel run for real (see PanelProbe)
         });
         builder.Services.AddIpcModule<PortableSampleModule>();
 

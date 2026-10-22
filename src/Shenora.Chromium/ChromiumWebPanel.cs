@@ -18,8 +18,8 @@ public sealed class ChromiumWebPanelOptions
     /// <para>
     /// ⚠ As for any Chromium session, the profile must be a folder directly inside the shell's own data folder
     /// (<see cref="ChromiumSessionHost.ProfilesDirectory"/>) and not the app's own, the only place CEF keeps a profile
-    /// (D91). Point it at the SAME folder a signed-in <see cref="ChromiumBrowserProcess"/> uses to reuse that sign-in —
-    /// but never while that process has the folder open, since Chromium allows one process per data folder.
+    /// (D91). A <see cref="ChromiumBrowserProcess"/>'s sign-in cannot be shared this way: its profile is the
+    /// <c>Default</c> folder inside its own data folder, which no panel may name.
     /// </para>
     /// </summary>
     public required SessionBrowserOptions Session { get; init; }
@@ -55,8 +55,8 @@ public sealed class ChromiumWebPanelOptions
 }
 
 /// <summary>
-/// A web-content browser embedded as a child of one of the shell's windows (D97): a CEF browser as a native child of a
-/// window the shell owns, running in the shell's own CEF process (not a second <see cref="ChromiumEngine"/>, which cannot
+/// A web-content browser embedded in one of the shell's windows (D97): a CEF browser view floated over the window's page
+/// as a Views overlay, running in the shell's own CEF process (not a second <see cref="ChromiumEngine"/>, which cannot
 /// coexist), in a caller-chosen profile's request context. The host places it (<see cref="SetBounds"/>) in a region its
 /// page reserves and drives it through <see cref="Browser"/>; the host draws its own chrome (address bar, back/forward)
 /// in the page. Windows only, today.
@@ -93,8 +93,9 @@ public sealed class ChromiumWebPanel : IDisposable
     /// <summary>
     /// The embedded browser, driven exactly as any session browser is: <see cref="ISessionBrowser.Navigate"/>,
     /// <see cref="ISessionBrowser.ExecuteScriptAsync"/>, <see cref="ISessionBrowser.GetCookiesAsync"/>,
-    /// <see cref="ISessionBrowser.NavigationCompleted"/> and the rest (D91). Its members run on the shell's UI thread,
-    /// which is the thread the app runs on.
+    /// <see cref="ISessionBrowser.NavigationCompleted"/> and the rest (D91). Its members run on the shell's UI thread;
+    /// from any other thread go through <see cref="ChromiumSessionHost.Ui"/>, since CEF refuses its DevTools calls (the
+    /// script and cookie members) from elsewhere.
     /// </summary>
     public ISessionBrowser Browser => _panel.Browser;
 
