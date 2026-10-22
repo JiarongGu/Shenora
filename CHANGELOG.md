@@ -76,6 +76,13 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A long request's progress is held by the throttle, never lost** (`Shenora`, `IpcRequestTrackerOptions.ProgressInterval`).
+  The throttle was leading-edge only: a report inside the interval was kept but not published until the next report
+  or the end, so a burst followed by a quiet stretch left the page on the burst's FIRST value. A held report is now
+  published when the interval ends; a burst still costs at most one snapshot now and one at the end.
+- **`createShenoraStore` asks for its snapshot once under React StrictMode** (`@shenora/react`). StrictMode's
+  development double-mount unsubscribes and subscribes again in one go, and the store detached in between, dropping the
+  snapshot and asking again. The last unsubscribe now detaches a microtask later, which a subscribe in between cancels.
 - **`useMediaPlayer` no longer reports the platform pausing a page as it goes hidden as the user pausing it**
   (`@shenora/react`). Measured on Android: the page goes hidden with the film still playing, and the element's
   `pause` follows ~80 ms later; that pause reached the host as `Paused`, so a playing film and a paused one looked

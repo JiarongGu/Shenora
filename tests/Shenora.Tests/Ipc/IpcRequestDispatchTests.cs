@@ -300,7 +300,10 @@ public class IpcRequestDispatchTests
         var (tracker, events, clock) = Tracking();
         var dispatcher = new MessageDispatcher(requests: tracker).MapRoute("APP", "PING", _ => "pong");
 
-        Assert.True((await dispatcher.DispatchAsync(Request(module: "APP", type: "PING"))).Success);
+        // Bounded in REAL time while the fake clock stands still: a response held for the grace period or a
+        // notification tick would never arrive, and must fail here rather than hang the suite.
+        var response = await dispatcher.DispatchAsync(Request(module: "APP", type: "PING")).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(response.Success);
         clock.Advance(TimeSpan.FromSeconds(1));                  // the grace timer can never fire late
 
         Assert.Empty(events);

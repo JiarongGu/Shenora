@@ -281,6 +281,26 @@ describe('ShenoraBridge', () => {
     expect(getBridge()).not.toBe(first);
   });
 
+  /**
+   * Replacing the default (a test, HMR) must END what the old one had in flight: its transport is detached, so an
+   * answer can never come, and a request waiting on a person (`timeoutMs: Infinity`) would otherwise wait forever.
+   */
+  it('configureBridge rejects what the previous default had in flight, and leaves no timer', async () => {
+    vi.useFakeTimers();
+    const transport = new FakeTransport();
+    configureBridge({ transport, eventBus: new ShenoraEventBus() });
+    const finite = getBridge().invoke('M', 'SLOW');
+    const unbounded = getBridge().invoke('M', 'PICK', { timeoutMs: Infinity });
+
+    configureBridge({ transport: new FakeTransport(), eventBus: new ShenoraEventBus() });
+
+    await expect(finite).rejects.toMatchObject({ code: IpcErrorCodes.noTransport });
+    await expect(unbounded).rejects.toMatchObject({ code: IpcErrorCodes.noTransport });
+    expect(vi.getTimerCount()).toBe(0);
+    expect(transport.subscribed).toBe(false);
+    vi.useRealTimers();
+  });
+
   describe('post (one-way)', () => {
     it('sends the SAME envelope as invoke, with no pending call and no timer', () => {
       vi.useFakeTimers();

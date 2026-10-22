@@ -30,8 +30,8 @@ function harness(initialList: unknown[], storeOptions: { module?: string; scope?
       /**
        * Answer the pending `LIST` snapshot request with `initialList`, then wait for the store to
        * fold the response. Deterministic on the microtask queue, not a fixed timer: the snapshot
-       * request is posted SYNCHRONOUSLY inside `subscribe` (P5.5 H2's double-mount guard runs
-       * before any await), so by the time this runs the request is already in `transport.posted`.
+       * request is posted SYNCHRONOUSLY inside `subscribe`, so by the time this runs the request is
+       * already in `transport.posted`.
        */
       settled: (): Promise<void> =>
         new Promise((resolve) => {

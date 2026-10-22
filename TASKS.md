@@ -198,6 +198,19 @@ MAUI Essentials' own picker does) beside the delegate's pick and cancel. Compile
   first (it would delete the temp under the system's copy). To learn whether `WasCancelled` alone covered the
   swipe, log both callbacks in a throwaway build; the answer alone cannot say which fired.
 
+### 🟡 IPC lifecycle coverage that the 2026-10-22 pass left
+
+The bridges' gate wiring is now pinned (Chromium's `DocumentStarted`, WebView2's `Attach` read from its IL), along with
+the re-handshake after a reload, the progress throttle and `configureBridge`'s rejection of the old default's work.
+Still uncovered:
+
+- [ ] **`MobileIpcBridge` has no test.** It is MAUI source compiled into the mobile packages, which the test project
+  cannot reference; its gate never closes on a document change (by design). A MAUI-free seam or a device probe.
+- [ ] **A request in flight across a reload, on the host.** Nothing cancels it on navigation (only disposing the bridge
+  does), and its response goes into the new document, whose client drops the unknown id. Pinned on the client only.
+- [ ] **`NotificationPump.Enqueue` after dispose still queues** (no disposed check); bounded and never drained, so
+  memory only. WebView2's and the mobile bridge's `SendNotification` reach it; Chromium's `Notify` checks first.
+
 ### 🟡 The CLI package's vitest run failed once on "Channel closed"
 
 Once in five `verify` runs (2026-10-01), `vitest (cli package)` ended on an unhandled rejection from its worker pool,

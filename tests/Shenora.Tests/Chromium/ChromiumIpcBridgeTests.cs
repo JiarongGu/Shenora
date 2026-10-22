@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Shenora.Chromium.Host;
+using Shenora.Chromium.Serving;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
 
@@ -276,18 +277,103 @@ public class ChromiumIpcBridgeTests
         Assert.False(bridge.IsClientReady);
     }
 
+    /// <summary>
+    /// The page's frame can go between a tick's drain and its push. The push is then REALLY made and throws: it
+    /// must not escape the tick, and the tick must go on. (It once ran with the gate closed and nothing queued, so the
+    /// push was never called and the test passed with no guard at all.)
+    /// </summary>
     [Fact]
-    public void A_throwing_push_neither_escapes_nor_stops_the_tick()
+    public async Task A_throwing_push_neither_escapes_nor_stops_the_tick()
     {
         var host = new FakeHost();
-        var bridge = new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher() },
-            host.Dispatcher, _ => throw new InvalidOperationException("frame gone"), host.Schedule);
+        var bus = new EventBus();
+        var failing = false;
+        var attempts = 0;
+        var bridge = new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher(), EventBus = bus },
+            host.Dispatcher, json =>
+            {
+                if (!failing) { host.Pushed.Add(json); return; }
+                attempts++;
+                throw new InvalidOperationException("frame gone");
+            }, host.Schedule);
         bridge.Start();
         host.RunUi();
+        bridge.Incoming(Request(IpcHostBridge.HandshakeModule, IpcHostBridge.HandshakeType));
+        await SettleAsync(host);
+        failing = true;
+        bus.Emit(new EventMessage { Module = "TEST", Type = "QUEUED" });
 
         host.Tick();
 
+        Assert.Equal(1, attempts);   // the push was made, and threw
         Assert.Single(host.Ticks);   // re-scheduled after the failure
+    }
+
+    /// <summary>
+    /// A new document closes the gate, and the NEXT page's handshake opens it on what was queued meanwhile: the
+    /// reload loses nothing the host emitted while it ran.
+    /// </summary>
+    [Fact]
+    public async Task After_a_new_document_the_next_handshake_receives_what_was_queued_meanwhile()
+    {
+        var (bridge, host, bus) = Make();
+        bridge.Incoming(Request(IpcHostBridge.HandshakeModule, IpcHostBridge.HandshakeType));
+        await SettleAsync(host);
+        bridge.DocumentReplaced();
+        host.RunUi();
+        bus.Emit(new EventMessage { Module = "TEST", Type = "DURING_RELOAD" });
+        host.Tick();
+        host.Pushed.Clear();
+
+        bridge.Incoming(Request(IpcHostBridge.HandshakeModule, IpcHostBridge.HandshakeType));
+        await SettleAsync(host);
+        host.Tick();
+
+        Assert.True(bridge.IsClientReady);
+        Assert.Contains(host.Pushed, json => json.Contains("DURING_RELOAD", StringComparison.Ordinal));
+    }
+
+    /// <summary>A dead renderer closes the gate as a new document does: a flush would drain into nothing.</summary>
+    [Fact]
+    public async Task A_dead_renderer_closes_the_gate_until_the_page_handshakes_again()
+    {
+        var (bridge, host, bus) = Make();
+        bridge.Incoming(Request(IpcHostBridge.HandshakeModule, IpcHostBridge.HandshakeType));
+        await SettleAsync(host);
+
+        bridge.RendererGone();
+        host.RunUi();
+        bus.Emit(new EventMessage { Module = "TEST", Type = "AFTER_CRASH" });
+        host.Pushed.Clear();
+        host.Tick();
+
+        Assert.False(bridge.IsClientReady);
+        Assert.Empty(host.Pushed);
+    }
+
+    /// <summary>
+    /// The WIRING, not just the bridge: the page's browser hearing of a new main-frame document closes its own
+    /// bridge's gate. Called directly on the bridge, the other tests would pass with this link cut.
+    /// </summary>
+    [Fact]
+    public async Task The_browser_closes_its_bridges_gate_when_a_new_document_starts()
+    {
+        var host = new FakeHost();
+        var origins = ChromiumOrigins.For("app.local", null, isDevelopment: false);
+        var browser = new ChromiumBrowser("main",
+            new ChromiumServing(null, origins, new ChromiumInterceptor()), origins,
+            _ => new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher() },
+                host.Dispatcher, host.Pushed.Add, host.Schedule), null);
+        browser.Bridge.Start();
+        host.RunUi();
+        browser.Bridge.Incoming(Request(IpcHostBridge.HandshakeModule, IpcHostBridge.HandshakeType));
+        await SettleAsync(host);
+        Assert.True(browser.Bridge.IsClientReady);
+
+        browser.DocumentStarted();
+        host.RunUi();
+
+        Assert.False(browser.Bridge.IsClientReady);
     }
 
     [Fact]

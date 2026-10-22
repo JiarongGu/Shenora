@@ -462,6 +462,46 @@ public class WebViewIpcBridgeTests
         public string Boom => throw new InvalidOperationException("secret detail from a getter");
     }
 
+    /// <summary>
+    /// 🔴 THE GATE'S WIRING, which the gate tests above cannot see: they close it by calling it. <c>Attach</c> must
+    /// hook <c>ContentLoading</c> (a new document) and <c>ProcessFailed</c> (a dead renderer) to handlers that close
+    /// the gate — and NEVER <c>NavigationStarting</c>, which also fires for navigations that never replace the
+    /// document, so the surviving page, having spent its one READY, never receives again. Read from the compiled
+    /// IL, because a live <c>CoreWebView2</c> needs a browser process the suite does not start.
+    /// </summary>
+    [Fact]
+    public void Attach_closes_the_gate_on_a_new_document_and_a_dead_renderer_never_on_NavigationStarting()
+    {
+        var attach = References(typeof(WebViewIpcBridge), nameof(WebViewIpcBridge.Attach));
+
+        Assert.Contains("add_WebMessageReceived", attach);
+        Assert.Contains("add_ContentLoading", attach);
+        Assert.Contains("OnContentLoading", attach);
+        Assert.Contains("add_ProcessFailed", attach);
+        Assert.Contains("OnProcessFailed", attach);
+        Assert.DoesNotContain("add_NavigationStarting", attach);
+        Assert.Contains("ResetClientReady", References(typeof(WebViewIpcBridge), "OnContentLoading"));
+        Assert.Contains("ResetClientReady", References(typeof(WebViewIpcBridge), "OnProcessFailed"));
+    }
+
+    // The methods a body calls (call, callvirt) or takes as a delegate (ldftn): each is an opcode and a 4-byte token.
+    // A stray byte pair that happens to look like one resolves to nothing and is skipped.
+    private static HashSet<string> References(Type type, string methodName)
+    {
+        var method = type.GetMethod(methodName,
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
+        var il = method.GetMethodBody()!.GetILAsByteArray()!;
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i + 4 < il.Length; i++)
+        {
+            var at = il[i] is 0x28 or 0x6F ? i + 1 : il[i] == 0xFE && il[i + 1] == 0x06 ? i + 2 : -1;
+            if (at < 0 || at + 4 > il.Length) continue;
+            try { names.Add(method.Module.ResolveMethod(BitConverter.ToInt32(il, at))!.Name); }
+            catch (ArgumentException) { }
+        }
+        return names;
+    }
+
     private sealed class ThrowingDispatcher : IMessageDispatcher
     {
         public Task<IpcResponse> DispatchAsync(IpcRequest request, CancellationToken cancellationToken = default) =>

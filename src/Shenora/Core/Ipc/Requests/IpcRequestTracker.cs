@@ -18,6 +18,7 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
     private readonly IEventBus _bus;
     private readonly IpcRequestTrackerOptions _options;
     private readonly object _lock = new();
+    private readonly object _publishGate = new();
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
 
     /// <summary>Finished ids in finish order, so pruning drops the OLDEST first.</summary>
@@ -116,12 +117,54 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
             if (!entry.Announced) return;
 
             var now = _options.TimeProvider.GetUtcNow();
-            if (_options.ProgressInterval > TimeSpan.Zero && now - entry.LastEmitUtc < _options.ProgressInterval) return;
+            // Capped at one interval: a clock that jumped backwards must not hold progress for the length of the jump.
+            var wait = TimeSpan.FromTicks(Math.Min((entry.LastEmitUtc + _options.ProgressInterval - now).Ticks,
+                                                   _options.ProgressInterval.Ticks));
+            if (_options.ProgressInterval > TimeSpan.Zero && wait > TimeSpan.Zero)
+            {
+                // Held, never dropped: published when the interval ends, so a burst followed by a quiet stretch
+                // still lands on its LAST value. One timer at a time; a later report rides the same one. The token
+                // makes a callback from a timer since replaced a no-op (disposing a timer cannot stop one running).
+                if (entry.Trailing is null)
+                {
+                    var token = new object();
+                    entry.TrailingToken = token;
+                    entry.Trailing = _options.TimeProvider.CreateTimer(
+                        static state =>
+                        {
+                            var args = (object[])state!;
+                            ((IpcRequestTracker)args[0]).PublishHeld((string)args[1], args[2]);
+                        },
+                        new object[] { this, id, token }, wait, Timeout.InfiniteTimeSpan);
+                }
+                return;
+            }
             entry.LastEmitUtc = now;
+            entry.Trailing?.Dispose();
+            entry.Trailing = null;
+            entry.TrailingToken = null;
             toPublish = entry;
         }
 
         if (toPublish is not null) Publish(toPublish);
+    }
+
+    /// <summary>The throttle's interval ended with a report held: publish the entry as it now stands.</summary>
+    private void PublishHeld(string id, object token)
+    {
+        Entry? toPublish = null;
+        lock (_lock)
+        {
+            if (!_entries.TryGetValue(id, out var entry) || entry.State != IpcRequestState.Running
+                || !ReferenceEquals(entry.TrailingToken, token)) return;
+            entry.Trailing?.Dispose();
+            entry.Trailing = null;
+            entry.TrailingToken = null;
+            entry.LastEmitUtc = _options.TimeProvider.GetUtcNow();
+            toPublish = entry;
+        }
+
+        Publish(toPublish);
     }
 
     /// <summary>
@@ -148,6 +191,9 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
             entry.FinishedAt = _options.TimeProvider.GetUtcNow();
             entry.Announce?.Dispose();
             entry.Announce = null;
+            entry.Trailing?.Dispose();   // the terminal snapshot carries the latest progress
+            entry.Trailing = null;
+            entry.TrailingToken = null;
             // On BOTH exits, not just the fast path below: the linked source holds a live registration on
             // the host's lifetime token, so an announced entry retained in history would keep it alive
             // until eviction. Double disposal is fine — CTS.Dispose is idempotent.
@@ -272,7 +318,19 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
 
     private void Publish(Entry entry)
     {
-        var status = ToStatus(entry);
+        // ONE publisher at a time, reading the entry INSIDE: when two threads publish one entry (the throttle's timer
+        // and the body finishing), the snapshot emitted LAST is the entry's latest state, so a held Running can never
+        // follow the terminal one — the pump keeps the later of two. ⚠ Taken only outside `_lock`, never inside it.
+        lock (_publishGate)
+        {
+            IpcRequestStatus status;
+            lock (_lock) status = ToStatus(entry);
+            Emit(entry, status);
+        }
+    }
+
+    private void Emit(Entry entry, IpcRequestStatus status)
+    {
         _bus.Emit(new EventMessage
         {
             Module = _options.ModuleName,
@@ -315,6 +373,7 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
             foreach (var entry in _entries.Values)
             {
                 entry.Announce?.Dispose();
+                entry.Trailing?.Dispose();
                 entry.Cts?.Dispose();
             }
             _entries.Clear();
@@ -345,6 +404,13 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
 
         /// <summary>The one-shot grace timer, disposed the moment the request finishes.</summary>
         public ITimer? Announce { get; set; }
+
+        /// <summary>The progress throttle's one-shot timer while a report is held; disposed when it fires, when a
+        /// report publishes, or when the request finishes.</summary>
+        public ITimer? Trailing { get; set; }
+
+        /// <summary>Identifies <see cref="Trailing"/>'s callback, so one from a timer since replaced does nothing.</summary>
+        public object? TrailingToken { get; set; }
     }
 
     /// <summary>The per-request scope handed to the dispatch path.</summary>

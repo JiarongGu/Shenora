@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, render, screen } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, StrictMode, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ShenoraBridge } from './bridge.js';
 import { ShenoraEventBus } from './eventBus.js';
@@ -107,7 +107,7 @@ describe('createShenoraStore', () => {
     expect(screen.getByTestId('stamp').textContent).toBe(new Date(1000).toISOString());
   });
 
-  it('opens ONE subscription per event type no matter how many components read it', () => {
+  it('opens ONE subscription per event type no matter how many components read it', async () => {
     const { useDeploy, bus, emit } = fixture();
     const subscribe = vi.spyOn(bus, 'subscribe');
     function Reader(): ReactNode {
@@ -122,6 +122,7 @@ describe('createShenoraStore', () => {
     expect(subscribe).toHaveBeenCalledTimes(3);
 
     view.unmount();
+    await act(async () => {});   // the detach waits a microtask (StrictMode's remount would cancel it)
 
     // …and the last component leaving tears them down. Asserted BEHAVIOURALLY — an earlier version
     // of this test counted the spy's return values, which is 3 whether or not anything unsubscribed:
@@ -156,8 +157,7 @@ describe('createShenoraStore', () => {
   it('re-snapshots when a component mounts after every subscriber left', async () => {
     // Between subscriber epochs the store is OFF the bus, so anything the host emitted in the gap
     // is gone — and an entry the host evicted in that window can never be corrected by a later
-    // event. The once-only flag dedupes same-tick double mounts (StrictMode); it must not make the
-    // first snapshot permanent across epochs.
+    // event. A real departure must re-snapshot rather than keep the first one.
     const { useDeploy, transport } = fixture({ snapshot: true });
     function Reader(): ReactNode {
       const status = useDeploy((s) => s.status);
@@ -168,7 +168,8 @@ describe('createShenoraStore', () => {
     await act(async () => {
       transport.respondToLast({ status: 'running', lines: [] });
     });
-    first.unmount(); // the last subscriber leaves; the bus subscription is gone
+    first.unmount(); // the last subscriber leaves…
+    await act(async () => {}); // …and, a microtask later, the bus subscription is gone
 
     render(createElement(Reader));
     // Asked AGAIN — counted, because lastRequest() would still show the first ask if no second went out.
@@ -214,11 +215,45 @@ describe('createShenoraStore', () => {
     }
     render(createElement('div', null, createElement(Reader), createElement(Reader)));
 
-    // React StrictMode double-invokes effects and two components mount in one tick; neither may
-    // duplicate the request. The guard is set BEFORE the await for exactly this.
+    // Two components mount in one tick and share one attach, so one request (StrictMode has its own test).
     expect(transport.posted.filter((r) => r.type === 'GET_STATE')).toHaveLength(1);
     await act(async () => transport.respondToLast({ status: 'running', lines: [] }));
     expect(useDeploy.getState().status).toBe('running');
+  });
+
+  /**
+   * StrictMode's development double-mount subscribes, unsubscribes and subscribes again in one go. Detaching on
+   * that unsubscribe dropped the snapshot and asked for it again — two requests for one mount, the first answer
+   * thrown away. Rendered under StrictMode for real, since the test above only mounts two siblings.
+   */
+  it('snapshots ONCE under StrictMode', async () => {
+    const { useDeploy, transport } = fixture({ snapshot: true });
+    function Reader(): ReactNode {
+      useDeploy();
+      return null;
+    }
+    render(createElement(StrictMode, null, createElement(Reader)));
+    await act(async () => {});
+
+    expect(transport.posted.filter((r) => r.type === 'GET_STATE')).toHaveLength(1);
+    await act(async () => transport.respondToLast({ status: 'running', lines: [] }));
+    expect(useDeploy.getState().status).toBe('running');
+  });
+
+  /** An unsubscribe called twice is a no-op the second time: the store still attaches for the next subscriber. */
+  it('an unsubscribe called twice does not leave the next subscriber detached', async () => {
+    const { useDeploy, emit } = fixture();
+    const off = useDeploy.subscribe(() => {});
+    off();
+    await Promise.resolve();   // the deferred detach runs
+    off();                     // again — must not arm another
+    const listener = vi.fn();
+    useDeploy.subscribe(listener);
+
+    emit('PROGRESS', { line: 'heard' });
+
+    expect(useDeploy.getState().lines).toEqual(['heard']);
+    expect(listener).toHaveBeenCalled();
   });
 
   it('reports a throwing reducer without corrupting shared state', () => {

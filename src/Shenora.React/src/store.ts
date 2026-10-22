@@ -200,8 +200,8 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
 
   const loadSnapshot = (): void => {
     if (!snapshot || snapshotLoaded) return;
-    snapshotLoaded = true; // set BEFORE awaiting: two components mounting in the same tick (React
-    // StrictMode double-invokes effects) must not both fire the request.
+    snapshotLoaded = true; // cleared by a failed request (retried on the next attach) and by detach. Mounts
+    // in one tick share one attach (subscribe's listener count), and StrictMode's remount its deferred detach.
     const epoch = snapshotEpoch;
     bridge()
       .invoke<unknown>(module, snapshot.type, { payload: snapshot.payload, scope })
@@ -241,14 +241,31 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
     snapshotEpoch++;
   };
 
+  // The last listener left and the detach waits one microtask: StrictMode's development double-mount
+  // unsubscribes and subscribes again in one go, and detaching in between dropped the snapshot and asked for it
+  // again. A subscribe before it runs cancels it; a real last unmount still detaches.
+  let detachPending = false;
+
   const subscribe = (listener: () => void): (() => void) => {
     // ONE subscription per event type for the whole store: the first listener attaches, the last one
     // to leave detaches.
-    if (listeners.size === 0) attach();
+    if (detachPending) detachPending = false;
+    else if (listeners.size === 0) attach();
     listeners.add(listener);
+    let active = true;
     return () => {
+      // Once only: a second call after the detach ran would leave a pending detach on a detached store, and the
+      // next subscribe would cancel it instead of attaching.
+      if (!active) return;
+      active = false;
       listeners.delete(listener);
-      if (listeners.size === 0) detach();
+      if (listeners.size > 0) return;
+      detachPending = true;
+      queueMicrotask(() => {
+        if (!detachPending || listeners.size > 0) return;
+        detachPending = false;
+        detach();
+      });
     };
   };
 

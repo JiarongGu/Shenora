@@ -11,7 +11,7 @@ namespace Shenora.Tests.Ipc;
 public class IpcRequestTrackerTests
 {
     private static (IpcRequestTracker Tracker, List<EventMessage> Events, FakeTimeProvider Clock) Build(
-        TimeSpan? grace = null, int maxHistory = 50)
+        TimeSpan? grace = null, int maxHistory = 50, TimeSpan? progressInterval = null)
     {
         var bus = new EventBus();
         var events = new List<EventMessage>();
@@ -20,10 +20,73 @@ public class IpcRequestTrackerTests
         return (new IpcRequestTracker(bus, new IpcRequestTrackerOptions
         {
             GracePeriod = grace ?? TimeSpan.FromMilliseconds(50),
-            ProgressInterval = TimeSpan.Zero,      // throttling has its own test
+            ProgressInterval = progressInterval ?? TimeSpan.Zero,   // the throttle's own tests pass one
             MaxHistory = maxHistory,
             TimeProvider = clock,
         }), events, clock);
+    }
+
+    /// <summary>
+    /// 🔴 THROTTLED PROGRESS IS DELAYED, NEVER LOST. A report inside the interval is held, and published when the
+    /// interval ends — the throttle used to be leading-edge only, so a burst followed by a quiet stretch left the
+    /// page on the burst's FIRST value until the next report or the end.
+    /// </summary>
+    [Fact]
+    public void A_throttled_report_is_published_when_the_interval_ends()
+    {
+        var (tracker, events, clock) = Build(progressInterval: TimeSpan.FromMilliseconds(100));
+        using var scope = tracker.Begin(Request());
+        clock.Advance(TimeSpan.FromMilliseconds(50));    // announced
+        clock.Advance(TimeSpan.FromMilliseconds(100));   // an interval since
+        events.Clear();
+
+        scope.Report(new IpcProgress(2, 10, "steps"), null);   // published
+        scope.Report(new IpcProgress(3, 10, "steps"), null);   // held
+        Assert.Equal(new IpcProgress(2, 10, "steps"), Payload(Assert.Single(events)).Progress);
+
+        clock.Advance(TimeSpan.FromMilliseconds(100));
+
+        Assert.Equal(new IpcProgress(3, 10, "steps"), Payload(events[^1]).Progress);
+    }
+
+    /// <summary>
+    /// A held report never outlives the request: once the terminal snapshot is out, the held one is not sent after
+    /// it — the page keeps the last snapshot per id, and a late Running would bring a finished request back.
+    /// </summary>
+    [Fact]
+    public void A_held_report_is_not_published_after_the_request_finished()
+    {
+        var (tracker, events, clock) = Build(progressInterval: TimeSpan.FromMilliseconds(100));
+        var scope = tracker.Begin(Request());
+        clock.Advance(TimeSpan.FromMilliseconds(50));
+        clock.Advance(TimeSpan.FromMilliseconds(100));
+        scope.Report(new IpcProgress(1, 10, "steps"), null);   // published
+        scope.Report(new IpcProgress(2, 10, "steps"), null);   // held
+
+        scope.Dispose();
+        clock.Advance(TimeSpan.FromMilliseconds(200));
+
+        var last = Payload(events[^1]);
+        Assert.Equal(IpcRequestState.Completed, last.State);
+        Assert.Equal(new IpcProgress(2, 10, "steps"), last.Progress);   // the terminal snapshot carries the held value
+    }
+
+    /// <summary>The throttle still throttles: a burst inside one interval costs one snapshot now and one at its end.</summary>
+    [Fact]
+    public void A_burst_inside_one_interval_publishes_at_most_twice()
+    {
+        var (tracker, events, clock) = Build(progressInterval: TimeSpan.FromMilliseconds(100));
+        using var scope = tracker.Begin(Request());
+        clock.Advance(TimeSpan.FromMilliseconds(50));    // announced
+        clock.Advance(TimeSpan.FromMilliseconds(100));   // an interval since
+        events.Clear();
+
+        for (var i = 1; i <= 20; i++) scope.Report(new IpcProgress(i, 20, "steps"), null);
+        clock.Advance(TimeSpan.FromMilliseconds(100));
+        clock.Advance(TimeSpan.FromMilliseconds(100));   // nothing new: no further snapshot
+
+        Assert.Equal(2, events.Count);
+        Assert.Equal(new IpcProgress(20, 20, "steps"), Payload(events[^1]).Progress);
     }
 
     private static IpcRequest Request(string id = "r-1", string module = "DEPLOY", string type = "PUSH",

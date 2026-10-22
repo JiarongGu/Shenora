@@ -24,8 +24,9 @@ public sealed class IpcRequestTrackerOptions
     public TimeSpan GracePeriod { get; set; } = TimeSpan.FromMilliseconds(50);
 
     /// <summary>
-    /// Minimum gap between PROGRESS snapshots for one request once it is being announced. Terminal
-    /// transitions are never throttled. Zero disables throttling.
+    /// Minimum gap between PROGRESS snapshots for one request once it is being announced. A report inside the
+    /// gap is held and published when the gap ends, never dropped. Terminal transitions are never throttled.
+    /// Zero disables throttling.
     /// </summary>
     public TimeSpan ProgressInterval { get; set; } = TimeSpan.FromMilliseconds(100);
 
