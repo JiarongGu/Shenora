@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
 
 namespace Shenora;
@@ -59,7 +60,15 @@ public static class MissionExtensions
 
         builder.Services.TryAddSingleton(options);
         builder.Services.TryAddSingleton<IMissionScheduler>(provider =>
-            new MissionScheduler(provider.GetRequiredService<MissionSchedulerOptions>()));
+        {
+            // ⚠ On the RESOLVED options, never the captured ones: an app may have registered its own.
+            var resolved = provider.GetRequiredService<MissionSchedulerOptions>();
+            // The kit's own media conversion claims its source path, so this scheduler must understand path
+            // claims whatever else the app registered. An app scope already named "path" is kept as it is.
+            if (!resolved.Scopes.Any(scope => scope.Name == PathClaims.ScopeName))
+                resolved.Scopes = [.. resolved.Scopes, PathClaims.Scope];
+            return new MissionScheduler(resolved);
+        });
 
         return builder;
     }

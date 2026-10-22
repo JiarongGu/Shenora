@@ -21,6 +21,11 @@ public sealed class MissionSchedulerOptions
     /// <summary>
     /// Claim scopes this scheduler understands. A <see cref="MissionClaim"/> naming an unregistered scope
     /// throws at submit rather than being ignored.
+    /// <para>
+    /// The scheduler the kit registers adds <see cref="Files.PathClaims.Scope"/> when no scope here is named
+    /// <c>path</c>, because the kit's own media conversion claims its source path. A
+    /// <see cref="MissionScheduler"/> you construct yourself gets only what you list.
+    /// </para>
     /// </summary>
     public IReadOnlyList<IClaimScope> Scopes { get; set; } = [];
 

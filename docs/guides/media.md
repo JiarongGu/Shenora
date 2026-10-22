@@ -154,7 +154,7 @@ open a file the webview refuses, and a page that stays one plain `<video>`. Noth
 it is what the sample does.
 
 **1. The container, once.** `Add` is the service-collection level; `Use` is the pipeline (D73, following
-D66's rule). One `MediaAccessOptions` is registered because three options types must share it — containment
+D66's rule). One `MediaAccessOptions` is registered because every route should share it — containment
 stated once is a security boundary, and three copies is how it drifts.
 
 ```csharp
@@ -163,7 +163,7 @@ builder.Services.AddShenoraMedia(new MediaAccessOptions
     Resolve      = uri => MyRouteToSourceFile(uri),   // null = not mine
     AllowedRoots = [libraryDir],                      // EMPTY serves NOTHING — fail-closed
     CacheRoot    = convertedDir,                      // unused by the computed route; the others need it
-    Log          = line => MyLog(line),               // ⚠ reaches the PLATFORM CONVERTERS too
+    Log          = AppCallback.Logger(MyLog),         // ⚠ reaches the PLATFORM CONVERTERS too
 });
 ```
 
@@ -171,10 +171,10 @@ builder.Services.AddShenoraMedia(new MediaAccessOptions
 and a picture that cannot be converted then says only `dropped:["mpeg4"]` — the codec, and nothing about
 why. That silence cost three device round-trips in one session.
 
-**2. The routes, in this order.** 🔴 **The order is load-bearing and nothing enforces it.** Registered the
+**2. The routes, in this order.** 🔴 **The order is load-bearing.** Registered the
 other way round, the conversion route answers every request its own `Resolve` matches, so a plannable film
 would `503` through a whole transcode and the computed route becomes dead code *that still passes every test
-of its own*.
+of its own*. On the same interceptor with the same `MediaAccessOptions`, that order throws at mount.
 
 ```csharp
 var access = services.GetRequiredService<MediaAccessOptions>();

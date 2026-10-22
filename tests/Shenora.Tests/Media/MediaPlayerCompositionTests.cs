@@ -36,12 +36,86 @@ public class MediaPlayerCompositionTests
     private static MediaPlaybackPlan Plan(MediaPlaybackAction action) =>
         new(action, [], ContainerOpens: true, Reason: "test");
 
-    private static MediaAccessOptions Access(TempDir root, string cacheRoot = "") => new()
+    private static MediaAccessOptions Access(TempDir root, string cacheRoot = "", Action<string>? log = null) => new()
     {
         Resolve = static _ => null,
         AllowedRoots = [root.Root],
         CacheRoot = cacheRoot,
+        Log = log is null ? null : AppCallback.Logger(log),
     };
+
+    /// <summary>A muxer that records it was asked to write, and writes nothing.</summary>
+    private sealed class RecordingWriter : IMediaContainerWriter
+    {
+        public TaskCompletionSource Wrote { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public string Container => "mp4";
+        public bool CanCarry(MediaStreamKind kind, string codec) => true;
+
+        public MediaRemuxerResult Write(Stream source, Stream destination, IMediaStreamConversion? conversion,
+                                        CancellationToken cancellationToken = default)
+        {
+            Wrote.TrySetResult();
+            return new MediaRemuxerResult(MediaRemuxerOutcome.Succeeded, "recorded");
+        }
+    }
+
+    /// <summary>The URL the player hands the page for <paramref name="source"/>, made absolute.</summary>
+    private static string PlayerUrl(ShenoraApplication app, string source) =>
+        new Uri(new Uri("https://x.local"),
+            app.Services.GetRequiredService<MediaPlayerOptions>().ResolveUri!(source, Plan(MediaPlaybackAction.Remux)))
+            .AbsoluteUri;
+
+    /// <summary>
+    /// 🔴 <b>The documented snippet, past the mount: a request CONVERTS.</b> Mounting succeeded and the
+    /// route answered 503 "not yet", but the conversion it submitted claims the source's path, and the
+    /// scheduler the kit registers knew no path scope — so the submit threw, was logged to nowhere, and the
+    /// page was answered 503 forever. Each sample registered the scope itself, so none of them saw it.
+    /// </summary>
+    [Fact]
+    public async Task The_DOCUMENTED_snippet_CONVERTS_a_local_source_on_the_kit_s_own_scheduler()
+    {
+        using var root = TempDir.Create();
+        var writer = new RecordingWriter();
+        var builder = Builder(root);
+        builder.UseMediaPlayer((x, services) =>
+        {
+            x.Access = Access(root);
+            services.AddSingleton<IMediaContainerWriter>(writer);
+        });
+        using var app = builder.Build();
+        var interceptor = new FakeInterceptor();
+        using var _ = interceptor.UseMediaPlayer(app.Services);
+        var source = Path.Combine(root.Root, "clip.mkv");
+        File.WriteAllBytes(source, [1, 2, 3]);
+
+        var response = await interceptor.AskAsync(PlayerUrl(app, source));
+
+        Assert.Equal(503, response!.StatusCode);
+        await writer.Wrote.Task.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    /// <summary>
+    /// The mounted route reads the player's URLs through a <see cref="MediaAccessOptions"/> of its own, and
+    /// that copy dropped <see cref="MediaAccessOptions.Log"/> — so the player's conversion route was mute even
+    /// for an app that configured a log.
+    /// </summary>
+    [Fact]
+    public async Task The_MOUNTED_route_logs_through_the_app_s_own_access_Log()
+    {
+        using var root = TempDir.Create();
+        using var elsewhere = TempDir.Create();
+        var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var builder = Builder(root);
+        builder.UseMediaPlayer(x => x.Access = Access(root, log: lines.Enqueue));
+        using var app = builder.Build();
+        var interceptor = new FakeInterceptor();
+        using var _ = interceptor.UseMediaPlayer(app.Services);
+
+        var response = await interceptor.AskAsync(PlayerUrl(app, Path.Combine(elsewhere.Root, "clip.mkv")));
+
+        Assert.Equal(404, response!.StatusCode);
+        Assert.Contains(lines, l => l.Contains("outside the allowed roots", StringComparison.Ordinal));
+    }
 
     /// <summary>
     /// 🔴 <b>The documented reason <c>TryAddEnumerable</c> names its implementation type.</b> Registering

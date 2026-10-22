@@ -17,10 +17,9 @@ public static class MediaServiceCollectionExtensions
     /// registration WINS and calling this twice is harmless; it registers no route and starts nothing.
     /// </summary>
     /// <remarks>
-    /// ⚠ <see cref="MediaAccessOptions.Log"/> is the sink the PLATFORM CONVERTERS reach. A shell registers
-    /// its converters without one, so they stay MUTE until an app casts the pipeline
-    /// (<c>GetService&lt;IMediaStreamConversion&gt;() as MediaConversionPipeline</c>) and re-registers them
-    /// (D73).
+    /// ⚠ <see cref="MediaAccessOptions.Log"/> is the sink the mobile shells' PLATFORM CONVERTERS reach; without
+    /// this registration they are mute. Adding a converter of the app's own to that pipeline still means a cast
+    /// (<c>GetService&lt;IMediaStreamConversion&gt;() as MediaConversionPipeline</c>) (D73).
     /// </remarks>
     /// <param name="services">The app's container.</param>
     /// <param name="access">

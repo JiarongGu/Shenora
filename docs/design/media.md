@@ -227,17 +227,32 @@ is still handled directly — the conversion route's `AllowRemoteSource` predica
 
 `UseComputedRemux` must precede `UseMediaConversion`, or the conversion route answers every request its own
 `Resolve` matches and **the computed route becomes dead code that still passes all of its own tests**.
-Nothing enforces this today; a test or an analyser is the wanted fix, not a composite helper that hides
-the ordering.
+**On the same interceptor with the same `MediaAccessOptions` the wrong order THROWS at mount**: both routes
+match through that object's `Resolve`, and the conversion route never passes on a request it matched. The
+one composition that could still reach the computed route is a middleware between them that REWRITES the
+request; it passes each route its own options. The count is kept per interceptor
+(`MediaAccessOptions.ConversionRoutes`), so one options object shared by two webviews is fine, and a disposed
+conversion route stops counting. Separate options objects are not compared — their predicates are opaque and
+may not overlap. A `UseSegmentStream` route behind a conversion route on the same options has the same hazard
+and no check: its `Resolve` sees a stripped URL, so the overlap cannot be proven.
 
-Three more from the same composition audit (D73), each silent rather than loud:
+🔴 **The conversion route claims its source PATH** (`PathClaims.Exclusive`), so its scheduler must understand
+`PathClaims.Scope`. The scheduler the kit registers adds that scope; one an app constructs itself must list
+it, or every submit fails and the page is answered `503` on every retry. The fault is logged once per route,
+at Error, through `MediaAccessOptions.Log` — so with no `Log` it is still silent.
 
-- **Diagnostics require a DOWNCAST**, so a shell's converters are mute until an app casts the pipeline —
-  a composition that looks complete and reports nothing.
-- **The conversion pipeline degrades silently without an `IMediaCapability`**, rather than saying it
-  cannot judge what the device supports.
-- **Three options types must share ONE `MediaAccessOptions` and ONE `IMissionScheduler`.** Separate
-  instances compile, run, and give each route its own containment and its own queue.
+The rest of the same composition audit (D73) is legal composition, not a defect:
+
+- **Adding an app converter to a mobile shell's pipeline takes a cast** (`IMediaStreamConversion` →
+  `MediaConversionPipeline`). The shell's own converters log through the `MediaAccessOptions` that
+  `AddShenoraMedia` registered; without one they are mute.
+- **A `MediaConversionPipeline` built without an `IMediaCapability` skips the device check** and judges by
+  building the converter's codecs. Every shell that registers a pipeline hands it the capability, so this
+  is reached only by an app that builds its own.
+- **The routes share a `MediaAccessOptions` and a scheduler only if the app passes the same ones.**
+  `UseComputedRemux` and `UseMediaConversion` each take a scheduler (`UseSegmentStream` takes none).
+  Separate instances are legal — two webviews may want different roots — and give each route its own
+  containment and its own queue.
 
 Each route answers a not-ready request the same way — `503 Retry-After: 1` — because the alternative (a
 404) ends playback permanently for a source that is merely still being planned.

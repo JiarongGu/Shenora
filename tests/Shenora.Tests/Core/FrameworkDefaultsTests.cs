@@ -104,6 +104,87 @@ public class FrameworkDefaultsTests
     }
 
     /// <summary>
+    /// 🔴 <b>The kit's own media conversion claims its source PATH, so the scheduler the kit registers must
+    /// understand path claims.</b> It did not: <c>Scopes</c> defaulted to empty, so every conversion behind
+    /// <c>app.UseMediaPlayer()</c> threw at submit and the page was answered 503 forever. Every sample
+    /// registered the scope by hand, which is why none of them saw it.
+    /// </summary>
+    [Fact]
+    public async Task The_DEFAULT_scheduler_accepts_a_PATH_claim()
+    {
+        using var root = TempDir.Create();
+        using var app = BuildBare(root);
+
+        var result = await Submit(app, PathClaims.Exclusive(root.Root));
+
+        Assert.Equal(MissionOutcome.Completed, result.Outcome);
+    }
+
+    /// <summary>
+    /// An app that names its OWN scopes keeps them, and the path scope is added beside them rather than
+    /// lost — the media route claims a path whatever else the app registered.
+    /// </summary>
+    [Fact]
+    public async Task An_app_s_own_scopes_keep_the_PATH_scope_beside_them()
+    {
+        using var root = TempDir.Create();
+        var builder = Builder(root);
+        builder.UseMissions(x => x.Scopes = [new FlatClaimScope("entity")]);
+        using var app = builder.Build();
+
+        var result = await Submit(app, PathClaims.Exclusive(root.Root), MissionClaim.Exclusive("entity", "42"));
+
+        Assert.Equal(MissionOutcome.Completed, result.Outcome);
+    }
+
+    /// <summary>An app's own scope NAMED <c>path</c> is the one used — the kit adds its own only when absent.</summary>
+    [Fact]
+    public void An_app_s_own_scope_named_path_is_KEPT()
+    {
+        using var root = TempDir.Create();
+        var mine = new FlatClaimScope(PathClaims.ScopeName);
+        var builder = Builder(root);
+        builder.UseMissions(x => x.Scopes = [mine]);
+        using var app = builder.Build();
+
+        _ = app.Services.GetRequiredService<IMissionScheduler>();
+
+        Assert.Same(mine, Assert.Single(app.Services.GetRequiredService<MissionSchedulerOptions>().Scopes));
+    }
+
+    /// <summary>
+    /// The scope is added to the RESOLVED options, so options an app registered itself — without
+    /// <c>UseMissions</c> — get it too.
+    /// </summary>
+    [Fact]
+    public async Task Options_registered_DIRECTLY_get_the_PATH_scope_too()
+    {
+        using var root = TempDir.Create();
+        var builder = Builder(root);
+        builder.Services.AddSingleton(new MissionSchedulerOptions { GlobalLaneCapacity = 1 });
+        using var app = builder.Build();
+
+        var result = await Submit(app, PathClaims.Exclusive(root.Root));
+
+        Assert.Equal(MissionOutcome.Completed, result.Outcome);
+    }
+
+    private static ShenoraApplicationBuilder Builder(TempDir root) =>
+        ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions
+        {
+            ApplicationName = "probe",
+            Paths = new ShenoraPathsOptions { ExplicitRoot = root.Root },
+        });
+
+    private static Task<MissionResult> Submit(ShenoraApplication app, params MissionClaim[] claims) =>
+        app.Services.GetRequiredService<IMissionScheduler>().SubmitAsync(new MissionDefinition
+        {
+            Kind = "probe",
+            Claims = claims,
+            Run = (_, _) => Task.CompletedTask,
+        }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+
+    /// <summary>
     /// The same for the media player, whose options carry the one thing the kit refuses to choose — the
     /// containment boundary. A default registration must never widen it.
     /// </summary>

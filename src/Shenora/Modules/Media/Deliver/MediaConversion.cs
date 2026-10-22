@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Logging;
 using Shenora.Core.Events;
 using Shenora.Core.WebView;
 using Shenora.Engine;
@@ -233,11 +235,6 @@ public static class MediaConversionExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(options.Access.Module);
 
         var converter = options.Converter();
-
-        // Ordering marker for `UseComputedRemux`, which must be registered BEFORE this route — see
-        // `MediaAccessOptions.ConversionRegistered` for why it reports rather than throws.
-        options.Access.ConversionRegistered = true;
-
         var delivery = interceptor.RangeDelivery;
 
         // 🔴 SOURCES WHOSE CONVERSION CANNOT SUCCEED, REMEMBERED: `request.Dropped` is populated only AFTER
@@ -250,6 +247,18 @@ public static class MediaConversionExtensions
         bool IsKnownUnconvertible(string cacheKey)
         {
             lock (unconvertibleGate) return unconvertible.ContainsKey(cacheKey);
+        }
+
+        // A submit-time fault is the COMPOSITION (a scheduler that refuses the claim), so it recurs on every
+        // retry: logged once per route, at Error, rather than once per request.
+        var submitFaultLogged = 0;
+        void ReportSubmitFault(Exception ex)
+        {
+            if (Interlocked.Exchange(ref submitFaultLogged, 1) != 0) return;
+            AppCallback.Log(options.Access.Log,
+                () => $"[Shenora.Modules.Media] could not submit a conversion ({ex.GetType().Name}: {ex.Message}); "
+                    + "the page is answered 503 until this is fixed (logged once)",
+                LogLevel.Error);
         }
 
         void RememberUnconvertible(string cacheKey)
@@ -266,7 +275,7 @@ public static class MediaConversionExtensions
             }
         }
 
-        return interceptor.Use((request, next, cancellationToken) =>
+        var registration = interceptor.Use((request, next, cancellationToken) =>
         {
             if (options.Access.Resolve(request.Uri) is not { } requested) return next(request, cancellationToken);
 
@@ -332,9 +341,28 @@ public static class MediaConversionExtensions
             // The planner's verdict travels with the job, so the converter is TOLD rather than re-deriving it.
             var action = options.ResolveAction?.Invoke(request.Uri) ?? MediaPlaybackAction.Remux;
             StartConversion(scheduler, events, options, converter, source, cachePath, key, action,
-                isLocal: !IsRemote(source, out _), onUnconvertible: RememberUnconvertible);
+                isLocal: !IsRemote(source, out _), onUnconvertible: RememberUnconvertible,
+                onSubmitFault: ReportSubmitFault);
             return Task.FromResult<WebViewResourceResponse?>(NotReadyYet());
         });
+
+        // Counted for `UseComputedRemux`'s order check (`MediaAccessOptions.ConversionRoutes`).
+        var mounted = options.Access.ConversionRoutes.GetValue(interceptor, static _ => new StrongBox<int>());
+        Interlocked.Increment(ref mounted.Value);
+        return new Unmount(() =>
+        {
+            // Uncounted even when the interceptor's own dispose throws — it is the app's to implement.
+            try { registration.Dispose(); }
+            finally { Interlocked.Decrement(ref mounted.Value); }
+        });
+    }
+
+    private sealed class Unmount(Action unmount) : IDisposable
+    {
+        private Action? _unmount = unmount;
+
+        // Idempotent: a second dispose must not uncount a route mounted since.
+        public void Dispose() => Interlocked.Exchange(ref _unmount, null)?.Invoke();
     }
 
     /// <summary>Is this source an absolute <c>http</c>/<c>https</c> url rather than a path?</summary>
@@ -370,7 +398,7 @@ public static class MediaConversionExtensions
     private static void StartConversion(IMissionScheduler scheduler, IEventBus events,
         MediaConversionOptions options, Func<MediaConversionRequest, CancellationToken, Task> converter,
         string source, string cachePath, string key,
-        MediaPlaybackAction action, bool isLocal, Action<string> onUnconvertible)
+        MediaPlaybackAction action, bool isLocal, Action<string> onUnconvertible, Action<Exception> onSubmitFault)
     {
         var definition = new MissionDefinition
         {
@@ -384,7 +412,7 @@ public static class MediaConversionExtensions
                                                     () => onUnconvertible(key), missionToken),
         };
 
-        _ = SubmitGuardedAsync(scheduler, definition, options);
+        _ = SubmitGuardedAsync(scheduler, definition, onSubmitFault);
     }
 
     /// <summary>
@@ -393,7 +421,7 @@ public static class MediaConversionExtensions
     /// fault — otherwise an unobserved exception on a platform event thread with nothing above it.
     /// </summary>
     private static async Task SubmitGuardedAsync(IMissionScheduler scheduler, MissionDefinition definition,
-        MediaConversionOptions options)
+        Action<Exception> onFault)
     {
         try
         {
@@ -401,7 +429,7 @@ public static class MediaConversionExtensions
         }
         catch (Exception ex)
         {
-            Log(options, () => $"[Shenora.Modules.Media] could not submit a conversion ({ex.GetType().Name}: {ex.Message})");
+            onFault(ex);
         }
     }
 

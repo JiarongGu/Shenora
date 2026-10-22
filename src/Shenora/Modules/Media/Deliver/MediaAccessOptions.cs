@@ -1,4 +1,6 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
+using Shenora.Core.WebView;
 
 namespace Shenora.Modules.Media;
 
@@ -30,15 +32,16 @@ public sealed class MediaAccessOptions
     public ILogger? Log { get; init; }
 
     /// <summary>
-    /// Has a CONVERSION route already been registered on this object? Set by <c>UseMediaConversion</c>, read
-    /// by <c>UseComputedRemux</c>, which REPORTS when it finds itself registered second.
+    /// How many CONVERSION routes on this object are mounted on each interceptor. Counted by
+    /// <c>UseMediaConversion</c> and its disposal; read by <c>UseComputedRemux</c>, which refuses to mount
+    /// behind one.
     /// </summary>
     /// <remarks>
-    /// Middleware run in registration order, so a conversion route registered FIRST answers every request
-    /// its own <see cref="Resolve"/> matches — a plannable film then <c>503</c>s through a whole transcode
-    /// and the computed route becomes dead code that still passes every test of its own. ⚠ It reports rather
-    /// than THROWS: the order bites only when the two routes' predicates OVERLAP, and a predicate is an
-    /// opaque function, so nothing here can decide whether a given pair collides.
+    /// Both routes match requests through this object's <see cref="Resolve"/>, and the conversion route
+    /// answers every request it matches. Middleware run in registration order, so on the same interceptor a
+    /// conversion route mounted first leaves the computed route nothing to serve. ⚠ Keyed per interceptor:
+    /// one options object shared by two webviews mounts both routes on each, in order, and is correct.
+    /// Separate options objects are not compared — their predicates are opaque and may not overlap.
     /// </remarks>
-    internal bool ConversionRegistered { get; set; }
+    internal ConditionalWeakTable<IWebViewInterceptor, StrongBox<int>> ConversionRoutes { get; } = new();
 }

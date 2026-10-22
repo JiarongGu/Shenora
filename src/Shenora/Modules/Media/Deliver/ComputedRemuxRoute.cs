@@ -53,9 +53,10 @@ public interface IComputedRemuxRoute : IDisposable
 /// <see cref="IComputedRemuxRoute.PlanAsync"/> first (D72).
 /// </para>
 /// <para>
-/// ⚠ <b>REGISTER IT BEFORE the conversion route</b> — middleware run in registration order, and the other
-/// way round leaves this one dead code that still passes every test of its own. Registered first it never
-/// consults <see cref="MediaAccessOptions.CacheRoot"/>; register it AFTER if a cached artifact must win.
+/// ⚠ <b>REGISTER IT BEFORE the conversion route</b> — middleware run in registration order, and the
+/// conversion route answers every request its <see cref="MediaAccessOptions.Resolve"/> matches, so behind it
+/// this one would never serve. On the same interceptor and the same options that order THROWS. Registered
+/// first, this route never consults <see cref="MediaAccessOptions.CacheRoot"/>.
 /// </para>
 /// </summary>
 public static class ComputedRemuxExtensions
@@ -74,6 +75,10 @@ public static class ComputedRemuxExtensions
     /// The route handle. Dispose to remove the route, drop the layouts AND cancel a walk still in flight.
     /// ⚠ <b>Keep it for <see cref="IComputedRemuxRoute.PlanAsync"/> too</b> — the only way to warm a source.
     /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// A conversion route with the same <paramref name="options"/> is already mounted on
+    /// <paramref name="interceptor"/>, so this one could never serve.
+    /// </exception>
     public static IComputedRemuxRoute UseComputedRemux(this IWebViewInterceptor interceptor,
         IMissionScheduler scheduler, MediaAccessOptions options)
     {
@@ -82,15 +87,19 @@ public static class ComputedRemuxExtensions
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(options.Resolve);
 
-        // 🔴 THE ORDER CHECK. Reports rather than throws: the two Resolve predicates may not overlap.
-        if (options.ConversionRegistered)
+        // 🔴 THE ORDER CHECK. Same options and same interceptor means the same Resolve, so a conversion route
+        // mounted first answers everything this one could — dead, so a throw rather than a warning. The one
+        // exception is a middleware between them that REWRITES the request; that app passes a separate
+        // options object, which is never compared.
+        if (options.ConversionRoutes.TryGetValue(interceptor, out var mounted) && Volatile.Read(ref mounted.Value) > 0)
         {
-            AppCallback.Log(options.Log, () =>
-                "[Shenora.Modules.Media] ⚠ UseComputedRemux was registered AFTER UseMediaConversion on the "
-                + "same MediaAccessOptions. Middleware run in registration order, so if their Resolve "
-                + "predicates overlap the conversion route answers first and this route never serves — a "
-                + "plannable film would transcode instead of being remuxed. Register this one FIRST, or "
-                + "give the two routes non-overlapping paths (see docs/guides/media.md).");
+            throw new InvalidOperationException(
+                "UseComputedRemux was mounted AFTER UseMediaConversion on the same interceptor with the same "
+                + "MediaAccessOptions. Both routes match requests through that object's Resolve, and the "
+                + "conversion route answers every request it matches, so this route could never serve: a "
+                + "plannable film would transcode instead of being remuxed. Mount UseComputedRemux first "
+                + "(docs/guides/media.md); a composition that rewrites requests between the two routes passes "
+                + "each its own MediaAccessOptions.");
         }
 
         return ComputedRemuxRoute.Use(interceptor, scheduler, options);

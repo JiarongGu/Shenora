@@ -57,7 +57,9 @@ scheduler.Lane("gpu").Capacity = 1;   // a scarce shared resource — see "Known
 
 Register only the scopes you use. A claim naming an **unregistered scope throws at submit** rather
 than being ignored — silently dropping an exclusion the caller asked for is the one failure mode a
-scheduler must not have. Pass an explicit `GlobalLaneCapacity` in your own tests: a concurrency
+scheduler must not have. The scheduler the kit registers (`builder.UseMissions(...)`, or nothing at all)
+adds `PathClaims.Scope` itself, because the kit's media conversion claims paths; one you construct, as
+above, gets only what you list. Pass an explicit `GlobalLaneCapacity` in your own tests: a concurrency
 assertion keyed off the host's core count passes or fails by machine, which is how a parallelism
 regression hides on the one box with two cores.
 

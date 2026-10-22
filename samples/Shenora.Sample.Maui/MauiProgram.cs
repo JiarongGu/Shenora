@@ -2,7 +2,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Shenora;
 using Shenora.Mobile;
 using Shenora.Sample.Logic;
-using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
@@ -107,7 +106,6 @@ public static class MauiProgram
 		shenora.UseMissions(options =>
 		{
 			options.GlobalLaneCapacity = 4;
-			options.Scopes = [PathClaims.Scope];
 			options.Log = AppCallback.Logger(Log);
 		});
 		// ⚠ The observer needs a SERVICE, so it attaches once a provider exists rather than in the

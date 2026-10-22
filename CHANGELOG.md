@@ -28,6 +28,30 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Breaking
+
+- **`UseComputedRemux` THROWS when mounted behind `UseMediaConversion` on the same interceptor with the same
+  `MediaAccessOptions`** (`InvalidOperationException`, naming both and the fix). Both routes match through that
+  object's `Resolve` and the conversion route answers everything it matches, so a computed route mounted second
+  never served: plannable films transcoded instead. It used to log at Debug, which a default Information filter
+  drops. Only an app whose computed route was already dead is affected; mount it first. Separate options objects
+  are not compared (an app that rewrites requests between the two routes passes each its own), and one options
+  object shared by two webviews no longer reads as misordered on the second.
+
+### Fixed
+
+- **A conversion behind `app.UseMediaPlayer()` now runs on the kit's own scheduler.** The conversion claims its
+  source path, and the scheduler the kit registers listed no path scope, so every submit threw, the failure was
+  logged to nowhere, and the page was answered `503` forever. That scheduler now adds `PathClaims.Scope` when the
+  app's `Scopes` names no `path` scope (`UseMissions`); a `MissionScheduler` an app constructs still gets only
+  what it lists. Each sample registered the scope by hand, which is why none of them showed it.
+- **The player's mounted conversion route logs through the app's `MediaAccessOptions.Log`.** The route reads the
+  player's URLs through an options object of its own, and that copy dropped `Log`.
+- **A conversion that cannot be submitted is logged once per route, at Error,** rather than at Debug on every
+  retry — through `MediaAccessOptions.Log`, so an app that set none still sees nothing.
+
 ## 0.23.2 — 2026-10-21
 
 ### Added

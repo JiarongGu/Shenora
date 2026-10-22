@@ -185,6 +185,7 @@ public static class MediaPlayerExtensions
                     AllowedRoots = options.Access.AllowedRoots,
                     CacheRoot = options.Access.CacheRoot,
                     Module = options.Access.Module,
+                    Log = options.Access.Log,
                 },
             });
     }

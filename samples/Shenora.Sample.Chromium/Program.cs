@@ -4,7 +4,6 @@ using Shenora.Core.Events;
 using Shenora.Core.Ipc;
 using Shenora.Core.Shell;
 using Shenora.Core.WebView;
-using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
 using Shenora.Sample.Logic;
 
@@ -163,7 +162,6 @@ internal static class Program
         {
             // Explicit rather than the clamp(cores-1,1,4) default, so the demo overlaps the same on every machine.
             options.GlobalLaneCapacity = 4;
-            options.Scopes = [PathClaims.Scope];
         });
         builder.OnStarting(app =>
         {

@@ -2,7 +2,6 @@ using Shenora.Core.Shell;
 using Shenora;
 using Shenora.Windows;
 using Microsoft.Extensions.DependencyInjection;
-using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
@@ -122,7 +121,6 @@ internal static class Program
             // Explicit rather than the clamp(cores-1,1,4) default, so the sample behaves the same on
             // every machine — the same reason the concurrency tests pass one.
             options.GlobalLaneCapacity = 4;
-            options.Scopes = [PathClaims.Scope];
             options.Log = AppCallback.Logger(Console.WriteLine);
         });
         // ⚠ The observer is attached in a STARTING hook rather than in the options above, because it

@@ -263,69 +263,134 @@ public sealed class MediaConversionPolicyTests
     // ── the registration ORDER, which was prose in three places and enforced nowhere ──────────────────
 
     /// <summary>
-    /// 🔴 <b>Registering the routes in the WRONG order now SAYS SO.</b> Middleware run in registration
-    /// order, so a conversion route registered first answers everything its own <c>Resolve</c> matches: a
-    /// plannable film transcodes instead of being remuxed, and the computed route becomes dead code that
-    /// still passes every test of its own. That hazard lived in three comments and nothing an app runs.
+    /// 🔴 <b>Mounting the computed route BEHIND a conversion route on the same interceptor and options
+    /// THROWS.</b> Both match through the same <c>Resolve</c> and the conversion route answers everything it
+    /// matches, so the computed route would never serve — a plannable film transcodes instead of being
+    /// remuxed, while every test of the computed route alone still passes. It used to log at Debug, which a
+    /// default Information filter drops.
     /// </summary>
     [Fact]
-    public void Registering_the_computed_route_AFTER_the_conversion_route_reports_it()
+    public void Mounting_the_computed_route_BEHIND_the_conversion_route_THROWS()
     {
-        var lines = new List<string>();
-        var access = Access(lines.Add);
+        var access = Access();
         var interceptor = new FakeInterceptor();
 
-        using var conversion = interceptor.UseMediaConversion(Scheduler, new EventBus(),
-            new MediaConversionOptions { Access = access, Convert = (_, _) => Task.CompletedTask });
-        using var computed = interceptor.UseComputedRemux(Scheduler, access);
+        using var conversion = Conversion(interceptor, access);
+        var thrown = Assert.Throws<InvalidOperationException>(() => interceptor.UseComputedRemux(Scheduler, access));
 
-        Assert.Contains(lines, l => l.Contains("registered AFTER", StringComparison.Ordinal));
+        Assert.Contains("mounted AFTER UseMediaConversion", thrown.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// ⚠ <b>And the RIGHT order stays silent</b> — the half a warning gets wrong. A gate that fires on the
-    /// correct composition teaches its reader to ignore it, which `phase-workflow.md` records as its own
-    /// defect class ("test where it must stay QUIET").
-    /// </summary>
+    /// <summary>⚠ The documented order is accepted — the half a check gets wrong.</summary>
     [Fact]
-    public void Registering_them_in_the_documented_order_says_NOTHING()
+    public void The_documented_order_is_accepted()
     {
-        var lines = new List<string>();
-        var access = Access(lines.Add);
+        var access = Access();
         var interceptor = new FakeInterceptor();
 
         using var computed = interceptor.UseComputedRemux(Scheduler, access);
-        using var conversion = interceptor.UseMediaConversion(Scheduler, new EventBus(),
-            new MediaConversionOptions { Access = access, Convert = (_, _) => Task.CompletedTask });
-
-        Assert.DoesNotContain(lines, l => l.Contains("registered AFTER", StringComparison.Ordinal));
+        using var conversion = Conversion(interceptor, access);
     }
 
     /// <summary>
-    /// ⚠ <b>The marker is per OPTIONS OBJECT, not process-wide</b> — an app hosting two webviews with
-    /// separate access options must not have one warn about the other's ordering.
+    /// ⚠ <b>Keyed per INTERCEPTOR.</b> One options object shared by two webviews mounts both routes on each,
+    /// in order. The check was keyed per options object alone, so the second webview's computed route found
+    /// the first webview's conversion route and was reported as misordered.
     /// </summary>
     [Fact]
-    public void Two_separate_access_objects_do_not_warn_about_each_other()
+    public void One_access_object_on_TWO_webviews_in_order_is_accepted()
     {
-        var lines = new List<string>();
-        var first = Access(lines.Add);
-        var second = Access(lines.Add);
-        var interceptor = new FakeInterceptor();
+        var access = Access();
+        var first = new FakeInterceptor();
+        var second = new FakeInterceptor();
 
-        using var conversion = interceptor.UseMediaConversion(Scheduler, new EventBus(),
-            new MediaConversionOptions { Access = first, Convert = (_, _) => Task.CompletedTask });
-        using var computed = interceptor.UseComputedRemux(Scheduler, second);
-
-        Assert.DoesNotContain(lines, l => l.Contains("registered AFTER", StringComparison.Ordinal));
+        using var computed1 = first.UseComputedRemux(Scheduler, access);
+        using var conversion1 = Conversion(first, access);
+        using var computed2 = second.UseComputedRemux(Scheduler, access);
+        using var conversion2 = Conversion(second, access);
     }
 
-    private static MediaAccessOptions Access(Action<string> log) => new()
+    /// <summary>A conversion route that has been DISPOSED no longer stands in front of anything.</summary>
+    [Fact]
+    public void A_DISPOSED_conversion_route_does_not_block_the_computed_route()
+    {
+        var access = Access();
+        var interceptor = new FakeInterceptor();
+
+        Conversion(interceptor, access).Dispose();
+
+        using var computed = interceptor.UseComputedRemux(Scheduler, access);
+    }
+
+    /// <summary>A conversion route disposed TWICE uncounts once, so a route mounted since still counts.</summary>
+    [Fact]
+    public void Disposing_a_conversion_route_TWICE_uncounts_it_once()
+    {
+        var access = Access();
+        var interceptor = new FakeInterceptor();
+        var first = Conversion(interceptor, access);
+        using var second = Conversion(interceptor, access);
+
+        first.Dispose();
+        first.Dispose();
+
+        Assert.Throws<InvalidOperationException>(() => interceptor.UseComputedRemux(Scheduler, access));
+    }
+
+    /// <summary>
+    /// A scheduler that refuses the conversion's path claim fails EVERY submit, so the page is answered 503
+    /// on every retry. That is the composition rather than the request: logged once per route, at Error.
+    /// </summary>
+    [Fact]
+    public async Task A_submit_the_scheduler_refuses_is_logged_ONCE_at_Error()
+    {
+        using var root = TempDir.Create();
+        File.WriteAllBytes(Path.Combine(root.Root, "clip.mkv"), [1]);
+        var log = new RecordingLogger();
+        await using var noPathScope = new MissionScheduler(new MissionSchedulerOptions { GlobalLaneCapacity = 1 });
+        var interceptor = new FakeInterceptor();
+        using var route = interceptor.UseMediaConversion(noPathScope, new EventBus(), new MediaConversionOptions
+        {
+            Access = new MediaAccessOptions
+            {
+                Resolve = uri => Path.Combine(root.Root, uri.Query.TrimStart('?')),
+                AllowedRoots = [root.Root],
+                CacheRoot = Path.Combine(root.Root, "cache"),
+                Log = log,
+            },
+            Convert = (_, _) => Task.CompletedTask,
+        });
+
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(503, (await interceptor.AskAsync("https://x.local/media?clip.mkv"))!.StatusCode);
+
+        var errors = log.Lines.Where(l => l.StartsWith("Error ", StringComparison.Ordinal)).ToArray();
+        var error = Assert.Single(errors);
+        Assert.Contains("could not submit a conversion", error, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Separate options objects are not compared: their predicates are opaque functions and may well not
+    /// overlap, so refusing would break a legal composition.
+    /// </summary>
+    [Fact]
+    public void Two_separate_access_objects_are_not_compared()
+    {
+        var interceptor = new FakeInterceptor();
+
+        using var conversion = Conversion(interceptor, Access());
+        using var computed = interceptor.UseComputedRemux(Scheduler, Access());
+    }
+
+    private static IDisposable Conversion(FakeInterceptor interceptor, MediaAccessOptions access) =>
+        interceptor.UseMediaConversion(Scheduler, new EventBus(),
+            new MediaConversionOptions { Access = access, Convert = (_, _) => Task.CompletedTask });
+
+    private static MediaAccessOptions Access() => new()
     {
         Resolve = static _ => null,
         AllowedRoots = [Path.GetTempPath()],
         CacheRoot = Path.Combine(Path.GetTempPath(), "shenora-order-" + Guid.NewGuid().ToString("N")[..8]),
-        Log = AppCallback.Logger(log),
     };
 
     private static readonly MissionScheduler Scheduler =

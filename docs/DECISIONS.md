@@ -1018,14 +1018,15 @@ docs cite them — so the number is the column to scan.
   - **The rule is not invented here — it SHIPPED with D64's test:** ***`Use` means a wider configuration
     INCLUDING its pipeline; `Add` is the service-collection level only.*** So the media tier gets
     `services.AddShenoraMedia(...)` and the routes stay `Use…`.
-  - **What the composition audit found:** four hazards that are silent rather than loud, led by route ORDER
-    being load-bearing and unenforced. As-built in `docs/design/media.md`.
+  - **What the composition audit found:** route ORDER is load-bearing and was silent; where it is PROVABLE
+    (same interceptor, same options) a wrong order now throws at mount. Its three other findings proved to be
+    legal composition, documented rather than refused. As-built in `docs/design/media.md`.
   - ✅ **THE DOC IS THE DELIVERABLE, NOT THE CODE** — `docs/guides/media.md` had covered `UseMediaConversion`
     and **not `UseComputedRemux` at all**, leaving the PRIMARY delivery path (D71) absent from the only page
     an adopter reads.
   - 🔴 **A `UseMedia` composite is NOT yet earned**, settled empirically by writing that doc. What it
-    exposed is that **the ordering hazard cannot be fixed by prose** — the doc has to SAY "nothing enforces
-    this", the shape of a defect waiting for a gate. **Prefer a test or an analyser over a hiding helper.**
+    exposed is that **the ordering hazard cannot be fixed by prose**, so the fix is a guard at mount. **Prefer a
+    guard, a test or an analyser over a hiding helper.**
 
 - **D74 — ONE PATH FOR BOTH STREAM KINDS: the only difference is the encode/decode logic.** Chosen
   2026-08-12 over a recommendation to close the video tier as good enough: a proper media pipeline, not
