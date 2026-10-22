@@ -81,6 +81,21 @@ public class MediaPlayerModuleTests
         Assert.Equal(14.0, answer.GetProperty("position").GetDouble());
     }
 
+    /// <summary><c>hidden</c> says the platform stopped a hidden page's element: that position is held.</summary>
+    [Fact]
+    public async Task A_report_marked_hidden_is_held_rather_than_carried_forward()
+    {
+        var options = new MediaPlayerOptions();
+        var clock = new FakeTimeProvider();
+        using var player = new MediaPlayer(new RecordingBus(), options, clock);
+        await DispatchAsync(player, options, new { state = "Playing", position = 10.0, duration = 245.25, hidden = true });
+
+        clock.Advance(TimeSpan.FromSeconds(4));
+
+        Assert.Equal(MediaPlayerState.Playing, player.Status.State);
+        Assert.Equal(TimeSpan.FromSeconds(10), player.Status.Position);
+    }
+
     /// <summary>
     /// A live stream has no duration, and the wire carries <c>null</c> for it.
     /// <para>

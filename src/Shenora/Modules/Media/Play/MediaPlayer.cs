@@ -104,8 +104,9 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     private readonly object _gate = new();
 
     private MediaPlayerStatus _status = new() { State = MediaPlayerState.Empty };
-    // When `_status` was set: the anchor a playing position is carried forward from.
+    // When `_status` was set: the anchor a playing position is carried forward from, unless it is held.
     private long _statusAt;
+    private bool _held;
     private TaskCompletionSource? _opening;
     private double _rate = 1.0;
     private bool _disposed;
@@ -146,9 +147,10 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     /// While <see cref="MediaPlayerState.Playing"/>, <see cref="MediaPlayerStatus.Position"/> is the page's last
     /// report carried forward at the rate asked for and held at the duration — an ESTIMATE, because the page
     /// reports on transitions only, and its next report replaces it. <c>BackgroundPlaybackTransfer</c> reads it
-    /// at <c>Window.Stopped</c>, which can come before the page's hidden-time report. ⚠ A hidden page still reads
-    /// <c>Playing</c> after the platform pauses its element (<c>useMediaPlayer</c> keeps the user's intent), so its
-    /// position runs on until the page is shown again and reports.
+    /// at <c>Window.Stopped</c>, which can come before the page's hidden-time report. A hidden page still reads
+    /// <c>Playing</c> after the platform stops its element (<c>useMediaPlayer</c> keeps the user's intent), so the page
+    /// says where it stopped with <c>hidden</c> on the wire and that position is HELD until the page reports again.
+    /// ⚠ A page that does not mark it runs on past the pause until it reports again.
     /// </para>
     /// </summary>
     public MediaPlayerStatus Status { get { lock (_gate) return Current() with { Engine = EngineName }; } }
@@ -169,7 +171,7 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
             // The time played so far ran at the OLD rate; carrying it forward at the new one would move the past.
             var now = Current();
             _rate = rate;
-            Set(now with { Rate = rate });
+            Set(now with { Rate = rate }, _held);
         }
         Send(MediaPlayerEvents.Rate, new { rate });
         return Task.CompletedTask;
@@ -324,7 +326,12 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     /// <c>pause</c>, <c>waiting</c>, <c>seeked</c>, <c>ended</c>, <c>error</c>, and no more.
     /// </para>
     /// </summary>
-    public void Report(MediaPlayerStatus status)
+    public void Report(MediaPlayerStatus status) => ApplyReport(status, held: false);
+
+    /// <param name="status">What the element is doing.</param>
+    /// <param name="held">The platform has stopped the element of a hidden page (<c>hidden</c> on the wire), which the
+    /// page reports as the state the host holds: its position is held rather than carried forward.</param>
+    internal void ApplyReport(MediaPlayerStatus status, bool held)
     {
         ArgumentNullException.ThrowIfNull(status);
 
@@ -333,7 +340,7 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
         {
             // ⚠ The rate stays the player's: taking the page's verbatim silently resets a configured 1.5x
             // on the first report from a page that does not carry one.
-            Set(status with { Rate = _rate });
+            Set(status with { Rate = _rate }, held);
             opening = _opening;
 
             if (opening is not null && status.State is not MediaPlayerState.Opening) _opening = null;
@@ -371,17 +378,18 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     }
 
     /// <summary>Under <c>_gate</c>.</summary>
-    private void Set(MediaPlayerStatus status)
+    private void Set(MediaPlayerStatus status, bool held = false)
     {
         _status = status;
         _statusAt = _clock.GetTimestamp();
+        _held = held;
     }
 
     /// <summary>The status now: a playing position carried forward from its anchor, held at a known duration
     /// rather than run past it — the page reports <c>ended</c> itself. Under <c>_gate</c>.</summary>
     private MediaPlayerStatus Current()
     {
-        if (_status.State is not MediaPlayerState.Playing) return _status;
+        if (_status.State is not MediaPlayerState.Playing || _held) return _status;
         // In seconds, so an absurd rate saturates rather than overflowing TimeSpan inside a property getter.
         var seconds = _status.Position.TotalSeconds + _clock.GetElapsedTime(_statusAt).TotalSeconds * _rate;
         var position = seconds < TimeSpan.MaxValue.TotalSeconds ? TimeSpan.FromSeconds(seconds) : TimeSpan.MaxValue;

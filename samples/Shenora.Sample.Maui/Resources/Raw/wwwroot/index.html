@@ -599,7 +599,7 @@ let shownState, pageHidden = false, hiddenAt = 0, pauseRequested = false;
 // already-paused element cannot cancel (hook parity).
 let pausedThisHide = false, resumeComing = false, holdPaused = false, shownAt = -Infinity;
 const forgetHold = () => { pausedThisHide = false; resumeComing = false; holdPaused = false; };
-const reportPlayer = (state, error) => {
+const reportPlayer = (state, error, asHidden = false) => {
   shownState = state;
   try {
     channel.post(JSON.stringify({
@@ -612,6 +612,8 @@ const reportPlayer = (state, error) => {
         duration: Number.isFinite(vid.duration) ? vid.duration : null,
         // A rejected play() has no `MediaError` at all, so the caller's reason wins when it has one.
         error: error ?? (vid.error ? `MEDIA_ERR_${vid.error.code}` : null),
+        // Once the platform has stopped the hidden element: the host HOLDS this position rather than carrying it.
+        ...(asHidden ? { hidden: true } : {}),
       },
       timestamp: new Date().toISOString(),
     }));
@@ -640,7 +642,12 @@ vid.addEventListener('pause', () => {
   const asked = pauseRequested;
   pauseRequested = false;
   if (!vid.ended && !asked && document.visibilityState === 'hidden'
-      && (!pageHidden || performance.now() - hiddenAt < 1000)) { pausedThisHide = true; return; }
+      && (!pageHidden || performance.now() - hiddenAt < 1000)) {
+    pausedThisHide = true;
+    // Where the element STOPPED, as what the host holds, marked so the host holds it (hook parity).
+    if (shownState === 'Playing' || shownState === 'Buffering') reportPlayer(shownState, undefined, true);
+    return;
+  }
   reportPlayer(vid.ended ? 'Ended' : 'Paused');
 });
 vid.addEventListener('ended', () => reportPlayer('Ended'));
@@ -668,7 +675,8 @@ document.addEventListener('visibilitychange', () => {
     hiddenAt = performance.now();
     resumeComing = false;
     // The playback state the host already holds, at the current position; nothing for Opening, Failed or Empty.
-    if (['Playing', 'Buffering', 'Paused', 'Ended'].includes(shownState)) reportPlayer(shownState);
+    // Marked only when the platform paused the element first: one that plays on hidden must keep moving.
+    if (['Playing', 'Buffering', 'Paused', 'Ended'].includes(shownState)) reportPlayer(shownState, undefined, pausedThisHide);
   } else {
     shownAt = performance.now();
     resumeComing = pausedThisHide;

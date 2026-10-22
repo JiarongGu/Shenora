@@ -702,9 +702,13 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     after `Stopped`; in the 4 it beat, the carried-forward position was handed over, and in the 2 it lost, it
     landed during the open and was handed over instead (the estimate alone was 0.01 s and 0.14 s ahead). Every
     handoff was within 0.02 s of where the element stopped, read from the page's own report on return; with no
-    report for 20 s of play, the host read 19.89 s against the page's 19.85 s. ⚠ **Not a bound:** a report that
-    lands well before `Stopped` is carried on past the platform's pause until `Stopped` — up to ~0.7 s by the
-    2026-10-22 timings above (derived; no run here had the gap).
+    report for 20 s of play, the host read 19.89 s against the page's 19.85 s. ⚠ **Where the platform stopped the
+    element is HELD, not carried forward:** the hook reports the pause it drops as `Playing` at the element's stop
+    position with `hidden: true`. Carried forward, a position runs on past that pause until `Stopped`, and 1 of 14
+    runs on 2026-10-23 had `Stopped` 782 ms after the page's last report — handed over ~0.7 s ahead. A desktop
+    window plays on while hidden and drops no pause, so nothing there is held. Measured after (6 runs): the marked
+    report came 22–55 ms after the hidden-time report, once before `Stopped` (held) and five times during the
+    native open (handed over from it); each of the 5 readable handoffs was exactly where the element stopped.
   - 🔴 **TWO OWNERS OF ONE ELEMENT LOSE.** The page's own JS handoff also called `vid.pause()`, which
     destroyed the very state the host needed. Only one side may drive the element per transition — the page
     hands off, the HOST hands back.

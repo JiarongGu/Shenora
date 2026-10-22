@@ -99,10 +99,13 @@ at the first list and missed five more breaking changes.
   raised for the carried-forward position, and `PLAYER_STATUS` (which `useMediaTransport` asks on the desktop)
   answers it. A playing report that lands while the native player opens is handed over instead of the estimate;
   nothing waits for one. Measured on the emulator over 6 runs, with the report within 30 ms of `Window.Stopped` each
-  time: every handoff within 0.02 s of where the page's element stopped. ⚠ When the report lands well before
-  `Stopped`, the estimate runs on past the platform's pause of the hidden page until `Stopped`: by the same
-  emulator's earlier timings (`Stopped` 35 ms to 0.8 s after the page went hidden, the pause ~80 ms after) up to
-  ~0.7 s, so a film can skip that much forward. Derived, not measured.
+  time: every handoff within 0.02 s of where the page's element stopped. The platform pauses a hidden element ~80 ms
+  after hiding, a pause `useMediaPlayer` does not report as one; it now reports that moment as the `Playing` the host
+  holds, at where the element stopped, marked `hidden: true` on `PLAYER_REPORT`, and the host HOLDS that position
+  rather than carrying it forward — carried forward, a report 782 ms before `Stopped` was handed over ~0.7 s past
+  the pause. A hidden element that plays on (a desktop window) is never marked, so its position keeps moving.
+  Measured with it, 6 runs: every readable handoff exactly where the element stopped. **A page that reports by hand
+  should do the same**, or a film can skip forward by however long `Stopped` takes.
 - **A film left paused when the app comes back stays paused** (`@shenora/react`, `Shenora`). Chromium plays again a
   video it paused for a hidden page as soon as the page is shown, and the host's pause, reaching an element already
   paused, could not stop that: measured on an Android emulator, a film that finished natively while the app was

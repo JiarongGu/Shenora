@@ -519,7 +519,8 @@ window.Resumed += async (_, _) => { try { await transfer.ToForegroundAsync(); } 
 - **The position handed over is where the film has got to.** The page reports on transitions only, so
   `MediaPlayer.Status` carries a playing position forward between reports, and the hidden-time report corrects
   it — even when it lands after `Stopped`, while the native player opens. A page reporting by hand should send
-  that report too: the estimate runs on past the platform's pause.
+  that report too, and report the platform's pause it drops as the `Playing` the host holds, at where the element
+  stopped, with `hidden: true`: the host holds that position, where carried forward it runs on past the pause.
 - **A native player paused while you were away comes back paused** (`Paused`), if your app wired something
   to it (the lock screen's controls, say); the kit's native players never pause by themselves.
 - **A page left paused on return stays paused** (`Paused`, `Finished`). Chromium plays again a video it paused for

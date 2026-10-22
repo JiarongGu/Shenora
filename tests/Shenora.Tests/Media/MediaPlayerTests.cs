@@ -285,6 +285,27 @@ public class MediaPlayerTests
         Assert.Equal(TimeSpan.FromSeconds(9), only.Position);
     }
 
+    /// <summary>
+    /// 🔴 Where the platform STOPPED a hidden page's element is held, not carried forward: the page reports it as the
+    /// <c>Playing</c> the host holds, and carried forward it ran on until <c>Window.Stopped</c> — measured on
+    /// Android, ~0.7 s past the pause when Stopped came 782 ms after the page's last report.
+    /// </summary>
+    [Fact]
+    public async Task The_report_taken_as_the_page_hides_is_held_until_the_next_one()
+    {
+        var (player, clock) = Estimating();
+        player.ApplyReport(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(9) }, held: true);
+
+        clock.Advance(TimeSpan.FromSeconds(2));
+        await player.SetRateAsync(1.5);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        Assert.Equal(TimeSpan.FromSeconds(9), player.Status.Position);
+
+        player.Report(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(13) });
+        clock.Advance(TimeSpan.FromSeconds(2));
+        Assert.Equal(TimeSpan.FromSeconds(16), player.Status.Position);
+    }
+
     /// <summary>An absurd rate the page's route let through saturates; reading <see cref="MediaPlayer.Status"/>
     /// must not throw, because the background handoff and <c>PLAYER_STATUS</c> both read it.</summary>
     [Fact]

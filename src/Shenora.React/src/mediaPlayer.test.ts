@@ -149,7 +149,7 @@ describe('useMediaPlayer', () => {
       setPaused(element, true);
       element.dispatchEvent(new Event('pause'));
 
-      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing']);
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Playing']);
     });
 
     it('a page the user paused goes to the background paused', async () => {
@@ -176,7 +176,7 @@ describe('useMediaPlayer', () => {
       element.dispatchEvent(new Event('pause'));
       document.dispatchEvent(new Event('visibilitychange'));
 
-      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing']);
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Playing']);
     });
 
     /** A pause the HOST asked for — the lock screen, a media key, the app — is the user's, hidden or not. */
@@ -224,7 +224,7 @@ describe('useMediaPlayer', () => {
       setHidden(false);
       document.dispatchEvent(new Event('visibilitychange'));
 
-      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Paused']);
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Playing', 'Paused']);
     });
 
     /**
@@ -257,7 +257,7 @@ describe('useMediaPlayer', () => {
       setPaused(element, true);
       element.dispatchEvent(new Event('pause'));
 
-      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing']);
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Playing']);
     });
 
     /** Only the `pause` event is the platform's: a track that opens as the page hides still completes its open. */
@@ -284,6 +284,55 @@ describe('useMediaPlayer', () => {
       document.dispatchEvent(new Event('visibilitychange'));
 
       expect(reports(transport).map((r) => r.state)).toEqual(['Failed']);
+    });
+
+    /**
+     * 🔴 The pause it drops is said as the host's own `Playing`, at where the element STOPPED, marked `hidden` so
+     * the host holds that position: carried forward it ran ~0.7 s past the pause by `Window.Stopped` (Android).
+     */
+    it('says where the platform stopped a hidden element, marked so the host holds it', async () => {
+      const { transport, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      element.currentTime = 6.5;
+      setPaused(element, true);
+      element.dispatchEvent(new Event('pause'));
+
+      const last = reports(transport).at(-1);
+      expect(reports(transport).map((r) => r.hidden)).toEqual([undefined, undefined, true]);
+      expect(last?.state).toBe('Playing');
+      expect(last?.position).toBe(6.5);
+    });
+
+    /** Paused before the page heard it was hidden, the hidden-time report is past the pause too, and is held. */
+    it('marks the hidden-time report when the platform paused first', async () => {
+      const { transport, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+
+      setHidden(true);
+      setPaused(element, true);
+      element.dispatchEvent(new Event('pause'));
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(reports(transport).map((r) => r.hidden)).toEqual([undefined, true, true]);
+    });
+
+    /** A desktop window plays on while hidden — nothing pauses it — so its position must keep moving on the host. */
+    it('marks nothing for a hidden page whose film plays on', async () => {
+      const { transport, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(reports(transport).map((r) => r.hidden)).toEqual([undefined, undefined]);
     });
 
     /** A page going to the background with its film playing, which the platform then pauses. */
@@ -315,7 +364,7 @@ describe('useMediaPlayer', () => {
       expect(element.pause).toHaveBeenCalledTimes(2);
       setPaused(element, true);
       element.dispatchEvent(new Event('pause'));
-      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Paused', 'Paused']);
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Playing', 'Paused', 'Paused']);
     });
 
     it('undoes a resume that comes before the page hears it is shown', async () => {
@@ -327,7 +376,7 @@ describe('useMediaPlayer', () => {
       element.dispatchEvent(new Event('playing'));
 
       expect(element.pause).toHaveBeenCalledTimes(2);
-      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing']);
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Playing']);
     });
 
     /** No host pause: the film was playing when the app left, so the platform resuming it is what the user had. */
@@ -340,7 +389,7 @@ describe('useMediaPlayer', () => {
       element.dispatchEvent(new Event('play'));
 
       expect(element.pause).not.toHaveBeenCalled();
-      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Paused', 'Playing']);
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Playing', 'Paused', 'Playing']);
     });
 
     it('a play the host asks for after its pause is not undone', async () => {

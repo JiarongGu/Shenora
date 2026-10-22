@@ -82,6 +82,12 @@ export interface MediaPlayerReport {
   duration: number | null;
   /** A short reason when `state` is `Failed`; never the platform's raw text. */
   error?: string;
+  /**
+   * Set when the platform has STOPPED the element of a hidden page, a pause the hook does not report as one (the
+   * user's `Playing` stands). The host then holds this position rather than carrying it forward until the page
+   * reports again. Never set while a hidden element plays on — a desktop window — whose position must keep moving.
+   */
+  hidden?: boolean;
 }
 
 /** Inputs for {@link useMediaPlayer}. */
@@ -148,7 +154,7 @@ export function useMediaPlayer(
     const forgetHold = () => { pausedThisHide = false; resumeComing = false; holdPaused = false; };
 
     // The element is the clock: between reports the host only carries a playing position forward.
-    const report = (state: MediaPlayerReportState, error?: string) => {
+    const report = (state: MediaPlayerReportState, error?: string, asHidden = false) => {
       shown = state;
       const duration = Number.isFinite(element.duration) ? element.duration : null;
       const payload: MediaPlayerReport = {
@@ -156,6 +162,7 @@ export function useMediaPlayer(
         position: Number.isFinite(element.currentTime) ? element.currentTime : 0,
         duration,
         ...(error ? { error } : {}),
+        ...(asHidden ? { hidden: true } : {}),
       };
       link.post(module, MEDIA_PLAYER_REPORT, { payload });
     };
@@ -239,6 +246,9 @@ export function useMediaPlayer(
       if (!asked && document.visibilityState === 'hidden'
           && (!hidden || performance.now() - hiddenAt < PLATFORM_PAUSE_WINDOW_MS)) {
         pausedThisHide = true;
+        // Said as what the host already holds, at where the element STOPPED, and marked `hidden` so the host holds
+        // that position: it carries a playing one forward, and this pause is the one it will never hear.
+        if (shown === 'Playing' || shown === 'Buffering') report(shown, undefined, true);
         return;
       }
       report('Paused');
@@ -275,7 +285,9 @@ export function useMediaPlayer(
 
     // 🔴 REPORT WHEN THE PAGE IS ABOUT TO BE HIDDEN, or the position `BackgroundPlaybackTransfer` hands over is
     // only the host's estimate — carried forward from the last TRANSITION, and running on past the platform's
-    // pause of the hidden element. This gives it the element's own reading.
+    // pause of the hidden element. This gives it the element's own reading; the dropped pause (onPause) then says
+    // where the element STOPPED, marked `hidden` so the host holds it — carried forward, a position ran ~0.7 s past
+    // that pause when `Window.Stopped` came 782 ms later (measured on Android).
     //
     // ⚠ `visibilitychange` rather than `pagehide`: it fires while the document is still alive and the
     // bridge can still post, and both mobile shells raise it on the way to the background. ONE report
@@ -291,7 +303,9 @@ export function useMediaPlayer(
         hidden = true;
         hiddenAt = performance.now();
         resumeComing = false;
-        if (playback(shown)) report(shown!);
+        // Marked only when the platform paused the element first (a desktop window plays on while hidden, and
+        // its position must keep being carried forward).
+        if (playback(shown)) report(shown!, undefined, pausedThisHide);
       } else {
         hidden = false;
         shownAt = performance.now();

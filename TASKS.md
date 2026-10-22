@@ -250,11 +250,6 @@ Both are measured on Android only (`docs/design/mobile-shells.md`).
 
 `MediaPlayer.Status` carries a playing position forward from the page's last report (`docs/design/mobile-shells.md`).
 
-- [ ] **A report that lands well before `Window.Stopped` is carried on past the platform's pause** — up to ~0.7 s by
-  the 2026-10-22 timings, derived; the 6 runs on 2026-10-23 all had the report within 30 ms. Measure the gap on a
-  phone first. If it is real: the hook marks its hidden-time report (an optional field on `PLAYER_REPORT`) and the
-  host does not carry forward from it, and the hook reports again on being shown while still playing (a minimised
-  desktop window keeps playing).
 - [ ] **A rate the element changes by itself is not reported**: a speed picked from the element's own controls, or
   one Chromium refuses (outside 0.0625–16). The position is then carried forward at the rate the host asked for.
   The fix is the hook reporting `ratechange` with `element.playbackRate` (a new optional report field), the estimate

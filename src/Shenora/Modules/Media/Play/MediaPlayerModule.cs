@@ -22,7 +22,8 @@ namespace Shenora.Modules.Media;
 public sealed class MediaPlayerModule : ModuleBase
 {
     /// <summary>Route: the page describing what its element is doing. Payload
-    /// <c>{ state, position, duration, error? }</c>, positions in SECONDS.</summary>
+    /// <c>{ state, position, duration, error?, hidden? }</c>, positions in SECONDS; <c>hidden</c> says the platform has
+    /// stopped a hidden page's element, so the host holds that position rather than carrying it forward.</summary>
     public const string ReportType = "PLAYER_REPORT";
 
     /// <summary>Route: what is the host's player doing right now? No payload; answers like a drive
@@ -107,7 +108,7 @@ public sealed class MediaPlayerModule : ModuleBase
         // Ignored rather than thrown — the page is describing an element nothing is driving.
         if (_player is not MediaPlayer page) return Done();
 
-        page.Report(new MediaPlayerStatus
+        page.ApplyReport(new MediaPlayerStatus
         {
             State = ParseState(PayloadHelper.GetRequiredValue<string>(request.Payload, "state")),
             // SECONDS on the wire, guarded against a non-finite number — which `duration` legitimately is
@@ -115,7 +116,7 @@ public sealed class MediaPlayerModule : ModuleBase
             Position = Seconds(PayloadHelper.GetOptionalValue<double>(request.Payload, "position")) ?? TimeSpan.Zero,
             Duration = Seconds(PayloadHelper.GetOptionalValue<double?>(request.Payload, "duration")),
             Error = PayloadHelper.GetOptionalValue<string>(request.Payload, "error"),
-        });
+        }, held: PayloadHelper.GetOptionalValue<bool?>(request.Payload, "hidden") ?? false);
         return Done();
     }
 
