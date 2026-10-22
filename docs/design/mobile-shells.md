@@ -694,10 +694,17 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     Measured: a playing film `TookOver`; one the user paused answered `Nothing — the page player is Paused`
     (before, it was `TookOver` and played on natively). ⚠ iOS's order is unmeasured: should iOS pause the
     element before the page is hidden, a playing film would read as paused there and stay behind.
-  - ⚠ **The POSITION on the hook's path can be stale.** The hook reports on transitions only, so the playhead
-    the host hands over comes from the hidden-time report, and that report lost the race with `Window.Stopped`
-    in 3 of 5 runs with the sample in hook parity: handed over at 1.60 s after ~6 s of play, and at 0.00 s
-    after ~6 s and ~11 s. Open in `TASKS.md`.
+  - 🔴 **The hidden-time report RACES `Window.Stopped`, so the position cannot come from it alone.** The hook
+    reports on transitions only, and the report lost that race in 3 of 5 runs (2026-10-22, hook parity): handed
+    over at 1.60 s after ~6 s of play, and at 0.00 s after ~6 s and ~11 s. So `MediaPlayer.Status` carries a
+    playing position forward from the last report, and the transfer takes a playing report that lands while the
+    native player opens. **Measured 2026-10-23 (MuMu, API 32, 6 runs):** the report came 30 ms before to 11 ms
+    after `Stopped`; in the 4 it beat, the carried-forward position was handed over, and in the 2 it lost, it
+    landed during the open and was handed over instead (the estimate alone was 0.01 s and 0.14 s ahead). Every
+    handoff was within 0.02 s of where the element stopped, read from the page's own report on return; with no
+    report for 20 s of play, the host read 19.89 s against the page's 19.85 s. ⚠ **Not a bound:** a report that
+    lands well before `Stopped` is carried on past the platform's pause until `Stopped` — up to ~0.7 s by the
+    2026-10-22 timings above (derived; no run here had the gap).
   - 🔴 **TWO OWNERS OF ONE ELEMENT LOSE.** The page's own JS handoff also called `vid.pause()`, which
     destroyed the very state the host needed. Only one side may drive the element per transition — the page
     hands off, the HOST hands back.

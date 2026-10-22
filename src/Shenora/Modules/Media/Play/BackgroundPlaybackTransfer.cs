@@ -73,7 +73,9 @@ public sealed class BackgroundPlaybackOptions
 /// any host lifecycle hook, and the platform then pauses the hidden element itself, so by then the element
 /// reports "not playing" about something that was. Only a page reported <c>Playing</c> or <c>Buffering</c> is
 /// handed off, so a page must not report that platform pause as its own: <c>useMediaPlayer</c> drops a pause
-/// nobody asked for that comes as the page goes hidden, and a page reporting by hand must do the same.</item>
+/// nobody asked for that comes as the page goes hidden, and a page reporting by hand must do the same. The page's
+/// hidden-time report can land after <c>Window.Stopped</c>, so the position handed over is the page player's
+/// estimate (<see cref="MediaPlayer.Status"/>), or that report when it lands while the native player opens.</item>
 /// <item><b>ONE owner per transition.</b> The page hands off, the HOST hands back; both driving the element
 /// destroys the state the other needs.</item>
 /// <item><b>The native player needs a source it can OPEN</b>, which is not the page's URL — hence
@@ -119,14 +121,40 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
                 "the app resolved no native source");
         }
 
+        // The position is the page player's ESTIMATE when its hidden-time report has not landed yet — it can lose
+        // the race with `Window.Stopped` — so a report that lands while the native player opens is the page's own
+        // reading and wins. Only a playing one: the decision to hand off was made above. Nothing waits for it.
+        var position = status.Position;
+        MediaPlayerStatus? landed = null;
+        void OnPageReport(MediaPlayerStatus report)
+        {
+            if (report.State is MediaPlayerState.Playing or MediaPlayerState.Buffering) Volatile.Write(ref landed, report);
+        }
+
         try
         {
-            await _native.OpenAsync(new MediaSource { Uri = source }, cancellationToken).ConfigureAwait(false);
-            await _native.SeekAsync(status.Position, cancellationToken).ConfigureAwait(false);
+            _page.StateChanged += OnPageReport;
+            try
+            {
+                await _native.OpenAsync(new MediaSource { Uri = source }, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _page.StateChanged -= OnPageReport;
+            }
+
+            if (Volatile.Read(ref landed) is { } report)
+            {
+                Report(() => $"[Shenora] background handoff: the page reported {report.Position.TotalSeconds:F2}s "
+                           + $"while the native player opened (estimated {status.Position.TotalSeconds:F2}s)");
+                position = report.Position;
+            }
+
+            await _native.SeekAsync(position, cancellationToken).ConfigureAwait(false);
             await _native.PlayAsync(cancellationToken).ConfigureAwait(false);
             _nativeStarted = true;
-            Report(() => $"[Shenora] background handoff: {status.Position.TotalSeconds:F2}s -> native, state={_native.Status.State}");
-            return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.TookOver, status.Position);
+            Report(() => $"[Shenora] background handoff: {position.TotalSeconds:F2}s -> native, state={_native.Status.State}");
+            return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.TookOver, position);
         }
         catch (OperationCanceledException)
         {
@@ -136,7 +164,7 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
         {
             // The TYPE only — a source path must never travel into a log line.
             Report(() => "[Shenora] background handoff failed", ex);
-            return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Failed, status.Position, ex.GetType().Name);
+            return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Failed, position, ex.GetType().Name);
         }
     }
 

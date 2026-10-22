@@ -233,20 +233,28 @@ tried.
 - [ ] On a Mac, with an interactive session's window showing, close the main window from its title bar: it stays; and
   the app's own close (`ChromiumWindows.Close("main")`, the tray's Exit) still ends it.
 
-### 🟠 A background handoff can hand over a STALE position (measured on Android)
+### 🟡 The background handoff on iOS: its intent rule and its position
 
-With the page reporting as `useMediaPlayer` does (transitions only), the playhead `ToBackgroundAsync` hands over comes
-from the page's hidden-time report, and that report lost the race with `Window.Stopped` in 3 of 5 runs (2026-10-22,
-MuMu, the sample in hook parity): handed over at 1.60 s after ~6 s of play, and at 0.00 s after ~6 s and ~11 s, so
-the film restarts near its beginning. Both arrive on the UI thread; `Stopped` came 35 ms to 0.8 s after the page went hidden.
-**An owner call** among: wait briefly in `ToBackgroundAsync` for a report that arrives after it starts (delays the
-handoff), have the hook report the position periodically while playing (battery and IPC), or let the host ask the
-page for its position at handoff (a new message). Measure the chosen one over several runs.
+Both are measured on Android only (`docs/design/mobile-shells.md`).
 
-- [ ] 🅿️ **The same intent rule on iOS.** A user-paused film now stays behind because the page goes hidden BEFORE the
-  platform pauses it (measured on Android). On iOS that order is unmeasured: should iOS pause the element first, a
-  playing film would read as paused and not be handed off. Background a playing film and a paused one on the
-  simulator and read `HANDOFF`.
+- [ ] **The intent rule.** A user-paused film stays behind because the page goes hidden BEFORE the platform pauses
+  it. On iOS that order is unmeasured: should iOS pause the element first, a playing film would read as paused and
+  not be handed off. Background a playing film and a paused one on the simulator and read `HANDOFF`.
+- [ ] **The position.** Compare the handed-over position with where the element stopped, as on Android.
+
+### 🟡 What the page player's carried-forward position cannot see
+
+`MediaPlayer.Status` carries a playing position forward from the page's last report (`docs/design/mobile-shells.md`).
+
+- [ ] **A report that lands well before `Window.Stopped` is carried on past the platform's pause** — up to ~0.7 s by
+  the 2026-10-22 timings, derived; the 6 runs on 2026-10-23 all had the report within 30 ms. Measure the gap on a
+  phone first. If it is real: the hook marks its hidden-time report (an optional field on `PLAYER_REPORT`) and the
+  host does not carry forward from it, and the hook reports again on being shown while still playing (a minimised
+  desktop window keeps playing).
+- [ ] **A rate the element changes by itself is not reported**: a speed picked from the element's own controls, or
+  one Chromium refuses (outside 0.0625–16). The position is then carried forward at the rate the host asked for.
+  The fix is the hook reporting `ratechange` with `element.playbackRate` (a new optional report field), the estimate
+  running at that and `Status.Rate` staying the rate asked for.
 
 ### 📱 WHAT IS LEFT ON ANDROID NEEDS A PHONE'S ENCODER, NOT AN EMULATOR'S
 

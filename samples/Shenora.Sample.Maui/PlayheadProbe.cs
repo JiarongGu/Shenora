@@ -7,10 +7,10 @@ namespace Shenora.Sample.Maui;
 ///
 /// <para>
 /// <c>BackgroundPlaybackTransfer</c> hands the native player <c>IMediaPlayer.Status.Position</c>, and
-/// <c>useMediaPlayer</c> reports on TRANSITIONS ONLY — never <c>timeupdate</c>. So under the hook the host's
-/// position is whatever the last transition left, and it is refreshed at background time only if the
-/// platform's <c>pause</c> report crosses IPC before the process freezes. If it does not, a React adopter
-/// resumes from the moment playback STARTED.
+/// <c>useMediaPlayer</c> reports on TRANSITIONS ONLY — never <c>timeupdate</c>. So under the hook the host
+/// carries a playing position forward from the last transition, and the page's hidden-time report corrects it
+/// when that lands before <c>Window.Stopped</c> or while the native player opens. Were neither to hold, a React
+/// adopter would resume from the moment playback STARTED.
 /// </para>
 /// <para>
 /// ⚠ <b>The sample cannot ask this in its default shape</b>, because it also reports on <c>timeupdate</c>
@@ -75,14 +75,14 @@ internal static class PlayheadProbe
             .ConfigureAwait(false);
 
         // 🔴 The comparison the whole probe exists for, taken BEFORE anything backgrounds: what the PAGE is
-        // actually at, against what the HOST believes. Under hook parity the host's figure comes from the
-        // last transition, so a gap here is the defect in miniature — visible without leaving the app.
+        // actually at, against what the HOST believes. Under hook parity the host's figure is carried forward
+        // from the last transition, so a gap here is the defect in miniature — visible without leaving the app.
         var host = player?.Status.Position.TotalSeconds;
         log($"[PLAYHEAD] page={page} host={host?.ToString("F2") ?? "n/a"}s");
 
         return $"PLAYHEAD: ARMED — page {page}, host believes {host?.ToString("F2") ?? "n/a"}s. "
              + $"Background it now (`adb shell input keyevent KEYCODE_HOME`) and read HANDOFF: "
-             + $"≈{StartAt:F2}s means the position went STALE, ≈{StartAt + Drift.TotalSeconds:F2}s means the "
-             + "pause report crossed IPC in time.";
+             + $"≈{StartAt:F2}s means the position went STALE, ≈{StartAt + Drift.TotalSeconds:F2}s or later means "
+             + "it was carried forward.";
     }
 }

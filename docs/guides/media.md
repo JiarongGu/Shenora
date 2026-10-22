@@ -516,6 +516,10 @@ window.Resumed += async (_, _) => { try { await transfer.ToForegroundAsync(); } 
   `pause` event it did not ask for that comes while hidden and within about a second of `visibilitychange`,
   and send the playback state it last reported in its hidden-time report — or a playing film can read as
   paused and not be handed off. The MAUI sample's page is a worked example.
+- **The position handed over is where the film has got to.** The page reports on transitions only, so
+  `MediaPlayer.Status` carries a playing position forward between reports, and the hidden-time report corrects
+  it — even when it lands after `Stopped`, while the native player opens. A page reporting by hand should send
+  that report too: the estimate runs on past the platform's pause.
 - **A native player paused while you were away comes back paused** (`Paused`), if your app wired something
   to it (the lock screen's controls, say); the kit's native players never pause by themselves.
 - **The native player is resolved by its concrete type on purpose.** The shells do not register it as

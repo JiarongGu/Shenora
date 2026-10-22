@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Time.Testing;
+using Shenora.Core.Events;
 using Shenora.Modules.Media;
 
 namespace Shenora.Tests.Media;
@@ -28,10 +30,19 @@ public class BackgroundPlaybackTransferTests
         public event Action<MediaPlayerStatus>? StateChanged;
         public double Rate { get; set; } = 1.0;
 
+        /// <summary>Runs inside <see cref="OpenAsync"/> — what lands while a native player opens.</summary>
+        public Action? OnOpen { get; set; }
+
+        /// <summary>A report reaching this player, as the page's would.</summary>
+        public void Raise(MediaPlayerStatus status) => StateChanged?.Invoke(status);
+
+        public bool Watched => StateChanged is not null;
+
         public Task OpenAsync(MediaSource source, CancellationToken cancellationToken = default)
         {
             Calls.Add($"open:{source.Uri}");
             StateChanged?.Invoke(Status);
+            OnOpen?.Invoke();
             return Task.CompletedTask;
         }
 
@@ -110,6 +121,78 @@ public class BackgroundPlaybackTransferTests
 
         Assert.Equal(BackgroundPlaybackOutcome.TookOver, result.Outcome);
         Assert.Equal(["open:/library/film.mkv", "seek:7.00", "play"], native.Calls);
+    }
+
+    // ── the position: the page player's estimate, or the page's own report when it lands during the open ──
+
+    /// <summary>
+    /// 🔴 The defect, end to end with the kit's own page player: playing since 3 s, and no report for 20 s
+    /// because the page reports transitions only. Its hidden-time report lost the race with
+    /// <c>Window.Stopped</c> in 3 runs of 5 on Android, and the film restarted natively near where it began.
+    /// </summary>
+    [Fact]
+    public async Task Steady_playback_with_no_report_since_it_began_is_handed_over_where_it_has_got_to()
+    {
+        var clock = new FakeTimeProvider();
+        using var page = new MediaPlayer(new EventBus(), new MediaPlayerOptions(), clock);
+        page.Report(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(3) });
+        clock.Advance(TimeSpan.FromSeconds(20));
+        var native = new FakePlayer();
+        var handoff = new BackgroundPlaybackTransfer(page, native,
+            new BackgroundPlaybackOptions { ResolveNativeSource = () => "/library/film.mkv" });
+
+        var result = await handoff.ToBackgroundAsync();
+
+        Assert.Equal(BackgroundPlaybackOutcome.TookOver, result.Outcome);
+        Assert.Equal(["open:/library/film.mkv", "seek:23.00", "play"], native.Calls);
+    }
+
+    /// <summary>
+    /// The page's hidden-time report landing while the native player opens is the page's own reading, and wins
+    /// over the estimate taken at <c>Window.Stopped</c> — which runs on past the platform's pause of the hidden
+    /// page. Nothing waits for it.
+    /// </summary>
+    [Fact]
+    public async Task A_page_report_that_lands_while_the_native_player_opens_is_the_position_handed_over()
+    {
+        var (page, native, handoff) = Build(new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Playing,
+            Position = TimeSpan.FromSeconds(6.6),
+        });
+        native.OnOpen = () => page.Raise(new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Playing,
+            Position = TimeSpan.FromSeconds(6.2),
+        });
+
+        var result = await handoff.ToBackgroundAsync();
+
+        Assert.Equal(TimeSpan.FromSeconds(6.2), result.Position);
+        Assert.Equal(["open:/library/film.mkv", "seek:6.20", "play"], native.Calls);
+        Assert.False(page.Watched);
+    }
+
+    /// <summary>The decision was made at <c>Window.Stopped</c>: a report that is not playing — the platform's
+    /// pause of the hidden page is one — neither unmakes it nor moves the position.</summary>
+    [Fact]
+    public async Task A_report_during_the_open_that_is_not_playing_leaves_the_estimate()
+    {
+        var (page, native, handoff) = Build(new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Playing,
+            Position = TimeSpan.FromSeconds(6.6),
+        });
+        native.OnOpen = () => page.Raise(new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Paused,
+            Position = TimeSpan.FromSeconds(6.3),
+        });
+
+        var result = await handoff.ToBackgroundAsync();
+
+        Assert.Equal(BackgroundPlaybackOutcome.TookOver, result.Outcome);
+        Assert.Equal(["open:/library/film.mkv", "seek:6.60", "play"], native.Calls);
     }
 
     /// <summary>Neither a finished film nor one still opening is playing, so neither is handed over.</summary>

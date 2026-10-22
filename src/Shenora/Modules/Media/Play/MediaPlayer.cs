@@ -100,9 +100,12 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
 {
     private readonly IEventBus _events;
     private readonly MediaPlayerOptions _options;
+    private readonly TimeProvider _clock;
     private readonly object _gate = new();
 
     private MediaPlayerStatus _status = new() { State = MediaPlayerState.Empty };
+    // When `_status` was set: the anchor a playing position is carried forward from.
+    private long _statusAt;
     private TaskCompletionSource? _opening;
     private double _rate = 1.0;
     private bool _disposed;
@@ -110,14 +113,23 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     /// <param name="events">The bus the page listens on.</param>
     /// <param name="options">How to decide what the page loads.</param>
     public MediaPlayer(IEventBus events, MediaPlayerOptions options)
+        : this(events, options, TimeProvider.System)
+    {
+    }
+
+    /// <summary>The clock the playing position is carried forward on — a seam for tests.</summary>
+    internal MediaPlayer(IEventBus events, MediaPlayerOptions options, TimeProvider clock)
     {
         ArgumentNullException.ThrowIfNull(events);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(options.Access);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.Access.Module);
+        ArgumentNullException.ThrowIfNull(clock);
 
         _events = events;
         _options = options;
+        _clock = clock;
+        _statusAt = clock.GetTimestamp();
     }
 
     /// <inheritdoc />
@@ -130,8 +142,16 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     /// <c>_status</c> is built — one of those is the page's own report, and the page must not be able to
     /// name the engine any more than it can name the rate.
     /// </para>
+    /// <para>
+    /// While <see cref="MediaPlayerState.Playing"/>, <see cref="MediaPlayerStatus.Position"/> is the page's last
+    /// report carried forward at the rate asked for and held at the duration — an ESTIMATE, because the page
+    /// reports on transitions only, and its next report replaces it. <c>BackgroundPlaybackTransfer</c> reads it
+    /// at <c>Window.Stopped</c>, which can come before the page's hidden-time report. ⚠ A hidden page still reads
+    /// <c>Playing</c> after the platform pauses its element (<c>useMediaPlayer</c> keeps the user's intent), so its
+    /// position runs on until the page is shown again and reports.
+    /// </para>
     /// </summary>
-    public MediaPlayerStatus Status { get { lock (_gate) return _status with { Engine = EngineName }; } }
+    public MediaPlayerStatus Status { get { lock (_gate) return Current() with { Engine = EngineName }; } }
 
     /// <summary>What <see cref="MediaPlayerStatus.Engine"/> reports. The type name, as
     /// <see cref="MediaPlayerBase.EngineName"/> does — this class is not that one's subclass, and the two
@@ -141,9 +161,16 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     /// <inheritdoc />
     public Task SetRateAsync(double rate, CancellationToken cancellationToken = default)
     {
-        if (rate <= 0) throw new ArgumentOutOfRangeException(nameof(rate), "Rate must be greater than zero.");
+        if (!double.IsFinite(rate) || rate <= 0)
+            throw new ArgumentOutOfRangeException(nameof(rate), "Rate must be a finite number greater than zero.");
         cancellationToken.ThrowIfCancellationRequested();
-        lock (_gate) { _rate = rate; _status = _status with { Rate = rate }; }
+        lock (_gate)
+        {
+            // The time played so far ran at the OLD rate; carrying it forward at the new one would move the past.
+            var now = Current();
+            _rate = rate;
+            Set(now with { Rate = rate });
+        }
         Send(MediaPlayerEvents.Rate, new { rate });
         return Task.CompletedTask;
     }
@@ -156,12 +183,14 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
         if (string.IsNullOrWhiteSpace(source.Uri)) throw new MediaPlayerException("Media source URI is empty.");
 
         TaskCompletionSource opening = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        double rate;
         lock (_gate)
         {
             // A second Open supersedes the first: its waiter is cancelled rather than left hanging.
             _opening?.TrySetCanceled();
             _opening = opening;
-            _status = new MediaPlayerStatus { State = MediaPlayerState.Opening, Rate = _rate };
+            rate = _rate;
+            Set(new MediaPlayerStatus { State = MediaPlayerState.Opening, Rate = _rate });
         }
         Raise();
 
@@ -203,6 +232,8 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
         }
 
         Send(MediaPlayerEvents.Load, new { uri, startAt = source.StartAt.TotalSeconds });
+        // A load resets the element's playbackRate to its default, and the position is carried forward at this one.
+        if (rate != 1.0) Send(MediaPlayerEvents.Rate, new { rate });
 
         // The PAGE decides when it is ready. Bounded, so a missing PLAYER_REPORT route fails with a message
         // instead of hanging forever.
@@ -228,7 +259,7 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
             if (!superseded)
             {
                 Send(MediaPlayerEvents.Unload);
-                lock (_gate) _status = new MediaPlayerStatus { State = MediaPlayerState.Empty, Rate = _rate };
+                lock (_gate) Set(new MediaPlayerStatus { State = MediaPlayerState.Empty, Rate = _rate });
                 Raise();
             }
 
@@ -280,14 +311,14 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
         lock (_gate) { _opening?.TrySetCanceled(); _opening = null; }
 
         Send(MediaPlayerEvents.Unload);
-        lock (_gate) _status = new MediaPlayerStatus { State = MediaPlayerState.Empty, Rate = _rate };
+        lock (_gate) Set(new MediaPlayerStatus { State = MediaPlayerState.Empty, Rate = _rate });
         Raise();
         return Task.CompletedTask;
     }
 
     /// <summary>
     /// The page saying what its element is doing — called from the app's IPC route. Position and duration
-    /// come from HERE and nowhere else; nothing else has a clock.
+    /// come from HERE: between reports, a playing position is only carried forward (see <see cref="Status"/>).
     /// <para>
     /// ⚠ <b>Report on TRANSITIONS, not on a timer</b> — <c>loadedmetadata</c>, <c>canplay</c>, <c>play</c>,
     /// <c>pause</c>, <c>waiting</c>, <c>seeked</c>, <c>ended</c>, <c>error</c>, and no more.
@@ -302,7 +333,7 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
         {
             // ⚠ The rate stays the player's: taking the page's verbatim silently resets a configured 1.5x
             // on the first report from a page that does not carry one.
-            _status = status with { Rate = _rate };
+            Set(status with { Rate = _rate });
             opening = _opening;
 
             if (opening is not null && status.State is not MediaPlayerState.Opening) _opening = null;
@@ -335,15 +366,36 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
 
     private void Fail(string reason)
     {
-        lock (_gate) _status = new MediaPlayerStatus { State = MediaPlayerState.Failed, Error = reason, Rate = _rate };
+        lock (_gate) Set(new MediaPlayerStatus { State = MediaPlayerState.Failed, Error = reason, Rate = _rate });
         Raise();
+    }
+
+    /// <summary>Under <c>_gate</c>.</summary>
+    private void Set(MediaPlayerStatus status)
+    {
+        _status = status;
+        _statusAt = _clock.GetTimestamp();
+    }
+
+    /// <summary>The status now: a playing position carried forward from its anchor, held at a known duration
+    /// rather than run past it — the page reports <c>ended</c> itself. Under <c>_gate</c>.</summary>
+    private MediaPlayerStatus Current()
+    {
+        if (_status.State is not MediaPlayerState.Playing) return _status;
+        // In seconds, so an absurd rate saturates rather than overflowing TimeSpan inside a property getter.
+        var seconds = _status.Position.TotalSeconds + _clock.GetElapsedTime(_statusAt).TotalSeconds * _rate;
+        var position = seconds < TimeSpan.MaxValue.TotalSeconds ? TimeSpan.FromSeconds(seconds) : TimeSpan.MaxValue;
+        if (_status.Duration is { } duration && duration > TimeSpan.Zero && position > duration) position = duration;
+        return _status with { Position = position };
     }
 
     private void Raise()
     {
         var handler = StateChanged;
         if (handler is null) return;
-        var status = Status;
+        // The status AS SET, not carried forward: a handler hears the transition itself.
+        MediaPlayerStatus status;
+        lock (_gate) status = _status with { Engine = EngineName };
         AppCallback.Run(() => handler(status),
             ex => Log(() => "[Shenora.Modules.Media] A player state handler threw.", ex));
     }

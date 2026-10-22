@@ -90,6 +90,23 @@ at the first list and missed five more breaking changes.
   for (`PLAYER_PAUSE`) or a later one is reported. The hidden-time report repeats the playback state the host already
   holds (nothing for Opening, Failed or Empty), and a host still believing `Playing` hears the element's real state
   when the page is shown again.
+- **A background handoff hands over where the film has got to, not where it last changed state** (`Shenora`,
+  `MediaPlayer`, `BackgroundPlaybackTransfer`). The page reports on transitions only, so `MediaPlayer.Status` held
+  the position of the last one — for steady playback, the moment it began — and when the page's hidden-time report
+  lost the race with `Window.Stopped` (3 runs of 5 on an Android emulator), `ToBackgroundAsync` restarted the film
+  natively near its beginning. `MediaPlayer.Status` now carries a playing position forward from the last report at
+  the rate asked for, held at the duration: an estimate the page's next report replaces. `StateChanged` is never
+  raised for the carried-forward position, and `PLAYER_STATUS` (which `useMediaTransport` asks on the desktop)
+  answers it. A playing report that lands while the native player opens is handed over instead of the estimate;
+  nothing waits for one. Measured on the emulator over 6 runs, with the report within 30 ms of `Window.Stopped` each
+  time: every handoff within 0.02 s of where the page's element stopped. ⚠ When the report lands well before
+  `Stopped`, the estimate runs on past the platform's pause of the hidden page until `Stopped`: by the same
+  emulator's earlier timings (`Stopped` 35 ms to 0.8 s after the page went hidden, the pause ~80 ms after) up to
+  ~0.7 s, so a film can skip that much forward. Derived, not measured.
+- **A rate set on `MediaPlayer` survives the next open, and no player takes a NaN or infinite rate** (`Shenora`).
+  A load resets the element's `playbackRate`, so the next track played at 1x while the host still reported the
+  rate it had set; `OpenAsync` now sends that rate after the load. `SetRateAsync` refuses a NaN or infinite rate
+  (`ArgumentOutOfRangeException`, as for zero), on `MediaPlayer` and on every native player.
 - **A conversion behind `app.UseMediaPlayer()` now runs on the kit's own scheduler.** The conversion claims its
   source path, and the scheduler the kit registers listed no path scope, so every submit threw, the failure was
   logged to nowhere, and the page was answered `503` forever. That scheduler now adds `PathClaims.Scope` when the

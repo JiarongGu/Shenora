@@ -804,8 +804,10 @@ docs cite them — so the number is the column to scan.
   - **Named `MediaPlayer`, NOT `WebMediaPlayer`.** A `Web` prefix frames rendering-through-the-page as a
     variant of some purer thing; in a hybrid framework it is the NORMAL case.
   - 🔴 **An `IMediaRenderTarget` seam was drafted and cut as over-engineering** — one implementation plus a
-    fake, where `IMediaPlayer` was already the seam. **The page is the only clock:** position comes from
-    `MediaPlayer.Report`, the element being what advances.
+    fake, where `IMediaPlayer` was already the seam. **The page is the clock:** position comes from
+    `MediaPlayer.Report`, the element being what advances. Between reports `Status` carries a playing position
+    forward at the rate asked for, so it answers "right now" as `IMediaPlayer` promises; the page still reports
+    on transitions only.
 
 - **D59 — the converter's job, stated exactly: it bridges what the PIPELINE can decode — the device's
   hardware, plus whatever an adopter hooks in — to what that device's WEBVIEW will accept.** An adopter app

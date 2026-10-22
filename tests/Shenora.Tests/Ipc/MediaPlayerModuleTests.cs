@@ -3,6 +3,7 @@ using Shenora;
 using Shenora.Modules.Media;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Shenora.Tests.Ipc;
 
@@ -52,12 +53,32 @@ public class MediaPlayerModuleTests
     public async Task Seconds_on_the_wire_become_a_TimeSpan_on_the_host()
     {
         var options = new MediaPlayerOptions();
-        using var player = new MediaPlayer(new RecordingBus(), options);
+        // A stopped clock: a real one carries a playing position forward by the microseconds the asserts take.
+        using var player = new MediaPlayer(new RecordingBus(), options, new FakeTimeProvider());
 
         await DispatchAsync(player, options, new { state = "Playing", position = 90.5, duration = 245.25 });
 
         Assert.Equal(TimeSpan.FromSeconds(90.5), player.Status.Position);
         Assert.Equal(TimeSpan.FromSeconds(245.25), player.Status.Duration);
+    }
+
+    /// <summary>The page reports on transitions only, so a page asking where a playing film has got to — the
+    /// desktop's <c>useMediaTransport</c> does, where this player is the host's — hears the position carried
+    /// forward, not the moment it started.</summary>
+    [Fact]
+    public async Task Asking_for_the_status_of_a_playing_page_answers_where_it_has_got_to()
+    {
+        var options = new MediaPlayerOptions();
+        var clock = new FakeTimeProvider();
+        using var player = new MediaPlayer(new RecordingBus(), options, clock);
+        await DispatchAsync(player, options, new { state = "Playing", position = 10.0, duration = 245.25 });
+
+        clock.Advance(TimeSpan.FromSeconds(4));
+        var response = await DispatchAsync(player, options, payload: null, MediaPlayerModule.StatusType);
+
+        Assert.True(response.Success, response.Error?.Code);
+        var answer = JsonSerializer.SerializeToElement(response.Data, IpcJson.Options);
+        Assert.Equal(14.0, answer.GetProperty("position").GetDouble());
     }
 
     /// <summary>
@@ -75,7 +96,7 @@ public class MediaPlayerModuleTests
     public async Task A_live_stream_reports_a_null_duration_rather_than_a_zero_one()
     {
         var options = new MediaPlayerOptions();
-        using var player = new MediaPlayer(new RecordingBus(), options);
+        using var player = new MediaPlayer(new RecordingBus(), options, new FakeTimeProvider());
 
         var response = await DispatchAsync(player, options,
             new { state = "Playing", position = 3.0, duration = (double?)null });
@@ -117,7 +138,8 @@ public class MediaPlayerModuleTests
         Assert.Equal(options.Access.Module, new MediaPlayerModule(player, options).ModuleName);
     }
 
-    private static async Task<IpcResponse> DispatchAsync(IMediaPlayer player, MediaPlayerOptions options, object payload)
+    private static async Task<IpcResponse> DispatchAsync(IMediaPlayer player, MediaPlayerOptions options, object? payload,
+        string type = MediaPlayerModule.ReportType)
     {
         var dispatcher = new MessageDispatcher();
         dispatcher.MapModule(new MediaPlayerModule(player, options));
@@ -125,8 +147,10 @@ public class MediaPlayerModuleTests
         {
             Id = "r1",
             Module = options.Access.Module,
-            Type = MediaPlayerModule.ReportType,
-            Payload = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(payload, IpcJson.Options)),
+            Type = type,
+            Payload = payload is null
+                ? default
+                : JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(payload, IpcJson.Options)),
         }, CancellationToken.None);
     }
 

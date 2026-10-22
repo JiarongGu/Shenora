@@ -627,10 +627,10 @@ vid.addEventListener('pause', () => {
 vid.addEventListener('ended', () => reportPlayer('Ended'));
 vid.addEventListener('error', () => reportPlayer('Failed'));
 // 🔴 HOOK PARITY, and it is what makes the background-handoff question ASKABLE here at all.
-// `useMediaPlayer` reports on TRANSITIONS ONLY — never `timeupdate` — so the host's last known position
-// under the hook is whatever the last transition left. This sample reports ~4x a second, which keeps the
-// position fresh and therefore HIDES whether the `pause` fired at background time crosses IPC before the
-// process freezes. With the flag on, the sample behaves as the hook does and the question is live.
+// `useMediaPlayer` reports on TRANSITIONS ONLY — never `timeupdate` — so under the hook the host carries a
+// playing position forward from the last transition. This sample reports ~4x a second, which keeps the
+// position fresh and therefore HIDES what the host would hand over at background time. With the flag on,
+// the sample behaves as the hook does and the question is live.
 let hookParity = false;
 window.__shenoraSetHookParity = (on) => { hookParity = !!on; return String(hookParity); };
 vid.addEventListener('timeupdate', () => {
@@ -638,10 +638,11 @@ vid.addEventListener('timeupdate', () => {
   if (!vid.paused && !vid.ended) reportPlayer('Playing');
 });
 
-// 🔴 THE SAME `visibilitychange` REPORT THE HOOK SHIPS, and the sample carries it for the same reason:
-// with transition-only reporting the host's position is the moment playback STARTED. Measured here on an
-// Android emulator — page 19.79 s, host 0.01 s, `HANDOFF: TookOver at 0.01s`. This is the fix under test,
-// so hook parity deliberately does NOT silence it: parity means "report like the hook", and the hook does.
+// 🔴 THE SAME `visibilitychange` REPORT THE HOOK SHIPS, and the sample carries it for the same reason: with
+// transition-only reporting the host's position is an estimate carried forward from the last transition, which
+// runs on past the platform's pause of the hidden element, and this gives it the element's own reading. It is
+// part of what is under test, so hook parity deliberately does NOT silence it: parity means "report like the
+// hook", and the hook does.
 document.addEventListener('visibilitychange', () => {
   pageHidden = document.visibilityState === 'hidden';
   if (pageHidden) {

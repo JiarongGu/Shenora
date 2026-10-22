@@ -95,7 +95,8 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     /// <inheritdoc />
     public Task SetRateAsync(double rate, CancellationToken cancellationToken = default)
     {
-        if (rate <= 0) throw new ArgumentOutOfRangeException(nameof(rate), "Rate must be greater than zero.");
+        if (!double.IsFinite(rate) || rate <= 0)
+            throw new ArgumentOutOfRangeException(nameof(rate), "Rate must be a finite number greater than zero.");
         cancellationToken.ThrowIfCancellationRequested();
         bool playing;
         lock (_gate)

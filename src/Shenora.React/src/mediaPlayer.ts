@@ -137,7 +137,7 @@ export function useMediaPlayer(
     let hiddenAt = 0;
     let pauseRequested = false;
 
-    // The element is the only clock: the host tracks no position of its own.
+    // The element is the clock: between reports the host only carries a playing position forward.
     const report = (state: MediaPlayerReportState, error?: string) => {
       shown = state;
       const duration = Number.isFinite(element.duration) ? element.duration : null;
@@ -239,9 +239,9 @@ export function useMediaPlayer(
     ];
     for (const [event, handler] of listeners) element.addEventListener(event, handler);
 
-    // 🔴 REPORT WHEN THE PAGE IS ABOUT TO BE HIDDEN, or the host's position is whatever the last
-    // TRANSITION left — for steady playback, the moment it started. The user then backgrounds mid-film
-    // and `BackgroundPlaybackTransfer` resumes from the beginning.
+    // 🔴 REPORT WHEN THE PAGE IS ABOUT TO BE HIDDEN, or the position `BackgroundPlaybackTransfer` hands over is
+    // only the host's estimate — carried forward from the last TRANSITION, and running on past the platform's
+    // pause of the hidden element. This gives it the element's own reading.
     //
     // ⚠ `visibilitychange` rather than `pagehide`: it fires while the document is still alive and the
     // bridge can still post, and both mobile shells raise it on the way to the background. ONE report

@@ -484,6 +484,8 @@ public class MediaPlayerBaseTests
         // caller bug, not a platform outcome, so it should surface without an await.
         Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(0); });
         Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(-1); });
+        Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(double.NaN); });
+        Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(double.PositiveInfinity); });
     }
 
     /// <summary>A throwing StateChanged handler is caught — it runs inside a platform callback.</summary>

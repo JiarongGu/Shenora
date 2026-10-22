@@ -3,6 +3,7 @@ using Shenora.Modules.Platform;
 using Shenora.Modules.Media;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Shenora.Tests.Media;
 
@@ -172,7 +173,8 @@ public class MediaPlayerTests
     public async Task Position_and_duration_come_from_the_page()
     {
         var bus = new RecordingBus();
-        using var player = new MediaPlayer(bus, new MediaPlayerOptions { ResolveUri = (s, _) => s });
+        // A stopped clock: a real one carries the playing position forward by the microseconds the asserts take.
+        using var player = new MediaPlayer(bus, new MediaPlayerOptions { ResolveUri = (s, _) => s }, new FakeTimeProvider());
         await OpenAndSettle(player, bus, "a.m4a");
 
         player.Report(new MediaPlayerStatus
@@ -184,6 +186,154 @@ public class MediaPlayerTests
 
         Assert.Equal(TimeSpan.FromSeconds(42), player.Status.Position);
         Assert.Equal(TimeSpan.FromMinutes(4), player.Status.Duration);
+    }
+
+    // ── between reports: the page reports on transitions only, and Status answers "right now" ─────────
+
+    /// <summary>
+    /// 🔴 <b>A playing position moves between reports.</b> The page reports on transitions only, so a film
+    /// playing steadily for a minute was still at the moment it STARTED — and the background handoff, reading
+    /// <see cref="MediaPlayer.Status"/> at <c>Window.Stopped</c> before the page's hidden-time report landed,
+    /// restarted it natively near its beginning (measured on Android, 3 runs in 5).
+    /// </summary>
+    [Fact]
+    public void A_playing_position_is_carried_forward_between_reports()
+    {
+        var (player, clock) = Estimating();
+        player.Report(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(9) });
+
+        clock.Advance(TimeSpan.FromSeconds(2.5));
+
+        Assert.Equal(TimeSpan.FromSeconds(11.5), player.Status.Position);
+        Assert.Equal(MediaPlayerState.Playing, player.Status.State);
+    }
+
+    /// <summary>Buffering is "had a position and it stopped moving" — carrying it forward is exactly the
+    /// extrapolation that state exists to prevent.</summary>
+    [Theory]
+    [InlineData(MediaPlayerState.Paused)]
+    [InlineData(MediaPlayerState.Buffering)]
+    [InlineData(MediaPlayerState.Ended)]
+    public void Only_a_PLAYING_position_moves(MediaPlayerState state)
+    {
+        var (player, clock) = Estimating();
+        player.Report(new MediaPlayerStatus { State = state, Position = TimeSpan.FromSeconds(9) });
+
+        clock.Advance(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(TimeSpan.FromSeconds(9), player.Status.Position);
+    }
+
+    [Fact]
+    public async Task It_moves_at_the_rate_asked_for_and_a_change_does_not_move_the_time_already_played()
+    {
+        var (player, clock) = Estimating();
+        player.Report(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(10) });
+
+        clock.Advance(TimeSpan.FromSeconds(2));          // 12 s, at 1x
+        await player.SetRateAsync(2.0);
+        clock.Advance(TimeSpan.FromSeconds(1));          // +2 s, at 2x
+
+        Assert.Equal(TimeSpan.FromSeconds(14), player.Status.Position);
+    }
+
+    /// <summary>The page reports <c>ended</c> itself; the estimate only stops at the duration, so a reader
+    /// never sees a position past the end and never hears an end that did not happen.</summary>
+    [Fact]
+    public void The_estimate_holds_at_the_duration_without_inventing_an_end()
+    {
+        var (player, clock) = Estimating();
+        player.Report(new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(59), Duration = TimeSpan.FromSeconds(60),
+        });
+
+        clock.Advance(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(TimeSpan.FromSeconds(60), player.Status.Position);
+        Assert.Equal(MediaPlayerState.Playing, player.Status.State);
+    }
+
+    [Fact]
+    public void Every_report_replaces_the_estimate_even_one_going_backwards()
+    {
+        var (player, clock) = Estimating();
+        player.Report(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(30) });
+        clock.Advance(TimeSpan.FromSeconds(5));
+
+        player.Report(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(10) });
+        Assert.Equal(TimeSpan.FromSeconds(10), player.Status.Position);
+
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(TimeSpan.FromSeconds(11), player.Status.Position);
+    }
+
+    /// <summary><see cref="IMediaPlayer.StateChanged"/> stays transitions-only, and a handler hears the report
+    /// as reported — a lock-screen session advances its own clock from it.</summary>
+    [Fact]
+    public void Carrying_the_position_forward_raises_nothing()
+    {
+        var (player, clock) = Estimating();
+        var heard = new List<MediaPlayerStatus>();
+        player.StateChanged += heard.Add;
+
+        player.Report(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(9) });
+        clock.Advance(TimeSpan.FromSeconds(10));
+        _ = player.Status;
+
+        var only = Assert.Single(heard);
+        Assert.Equal(TimeSpan.FromSeconds(9), only.Position);
+    }
+
+    /// <summary>An absurd rate the page's route let through saturates; reading <see cref="MediaPlayer.Status"/>
+    /// must not throw, because the background handoff and <c>PLAYER_STATUS</c> both read it.</summary>
+    [Fact]
+    public async Task An_absurd_rate_saturates_rather_than_throwing()
+    {
+        var (player, clock) = Estimating();
+        await player.SetRateAsync(1e300);
+        player.Report(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(1) });
+
+        clock.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(TimeSpan.MaxValue, player.Status.Position);
+    }
+
+    /// <summary>
+    /// A load resets the element's <c>playbackRate</c> to its default, so a rate the host still holds is sent
+    /// again after it — or the next track plays at 1x while its position is carried forward at the old rate.
+    /// </summary>
+    [Fact]
+    public async Task A_rate_set_before_an_open_reaches_the_element_after_its_load()
+    {
+        var bus = new RecordingBus();
+        using var player = new MediaPlayer(bus, new MediaPlayerOptions { ResolveUri = (s, _) => s });
+        await player.SetRateAsync(1.5);
+        bus.Sent.Clear();
+
+        await OpenAndSettle(player, bus, "a.m4a");
+
+        Assert.Equal([MediaPlayerEvents.Load, MediaPlayerEvents.Rate], bus.Sent.Select(e => e.Type));
+        Assert.Equal(1.5, Read(bus.Sent[1].Payload, "rate"));
+    }
+
+    [Fact]
+    public async Task A_closed_player_has_no_position_to_carry()
+    {
+        var (player, clock) = Estimating();
+        player.Report(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(30) });
+
+        await player.CloseAsync();
+        clock.Advance(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(MediaPlayerState.Empty, player.Status.State);
+        Assert.Equal(TimeSpan.Zero, player.Status.Position);
+    }
+
+    private static (MediaPlayer Player, FakeTimeProvider Clock) Estimating()
+    {
+        var clock = new FakeTimeProvider();
+        return (new MediaPlayer(new RecordingBus(), new MediaPlayerOptions { ResolveUri = (s, _) => s }, clock), clock);
     }
 
     /// <summary>
@@ -321,6 +471,9 @@ public class MediaPlayerTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(0); });
         Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(-1); });
+        // The position is carried forward at this rate, and a NaN one would make reading Status throw.
+        Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(double.NaN); });
+        Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(double.PositiveInfinity); });
     }
 
     /// <summary>
