@@ -31,8 +31,9 @@ export const MEDIA_PLAYER_REPORT = 'PLAYER_REPORT';
 export const MEDIA_PLAYER_STATUS = 'PLAYER_STATUS';
 
 /**
- * How long after the page goes hidden an unasked-for pause is taken for the platform's own. Measured on Android:
- * ~80 ms; the margin is wide because a person cannot press a media key in that time after leaving the app.
+ * How long after the page goes hidden an unasked-for pause is taken for the platform's own, and after it is shown
+ * again an unasked-for play. Measured on Android: the pause ~80 ms after hiding, the resume ~10 ms after showing;
+ * the margin is wide because a person cannot press a media key or a play button in that time.
  */
 const PLATFORM_PAUSE_WINDOW_MS = 1000;
 
@@ -136,6 +137,15 @@ export function useMediaPlayer(
     let hidden = false;
     let hiddenAt = 0;
     let pauseRequested = false;
+    // Chromium RESUMES a video it paused for a hidden page as soon as the page is shown (measured on Android), and a
+    // pause sent while the element was already paused cannot cancel that. So the platform's pause on the way out is
+    // noted (`pausedThisHide`) and carried into the next show (`resumeComing`), and that resume is undone when the
+    // host's last word since was pause (`holdPaused`, onPlay).
+    let pausedThisHide = false;
+    let resumeComing = false;
+    let holdPaused = false;
+    let shownAt = Number.NEGATIVE_INFINITY;
+    const forgetHold = () => { pausedThisHide = false; resumeComing = false; holdPaused = false; };
 
     // The element is the clock: between reports the host only carries a playing position forward.
     const report = (state: MediaPlayerReportState, error?: string) => {
@@ -165,6 +175,7 @@ export function useMediaPlayer(
       eventBus.subscribe<{ uri: string; startAt: number }>(module, MediaPlayerCommands.load, (message) => {
         const { uri, startAt } = message.payload ?? { uri: '', startAt: 0 };
         shown = undefined;   // load() pauses with no `pause` event: the previous track's state is not this one's
+        forgetHold();
         element.src = uri;
         // load() rather than trusting the src assignment: a second load on the same element keeps the
         // previous buffer otherwise, and a seek then lands in the OLD media.
@@ -183,6 +194,7 @@ export function useMediaPlayer(
         // ⚠ Read `.name` STRUCTURALLY, never via `instanceof Error`: browsers reject with a
         // DOMException, which is not an Error subclass everywhere (jsdom's is not). `NotAllowedError`
         // is what an autoplay block says, and the name an adopter branches on.
+        holdPaused = false;
         void element.play().catch((cause: unknown) => {
           const name = (cause as { name?: unknown } | null)?.name;
           report('Failed', typeof name === 'string' && name ? name : 'PlayRejected');
@@ -193,6 +205,7 @@ export function useMediaPlayer(
         // Only when the element is playing: pausing a paused one fires nothing, and the flag would then pass a
         // later platform pause through.
         pauseRequested = !element.paused;
+        holdPaused = true;
         element.pause();
       }),
       eventBus.subscribe<{ position: number }>(module, MediaPlayerCommands.seek, (message) => {
@@ -202,6 +215,7 @@ export function useMediaPlayer(
         element.playbackRate = message.payload?.rate ?? 1;
       }),
       eventBus.subscribe(module, MediaPlayerCommands.unload, () => {
+        forgetHold();
         element.pause();
         element.removeAttribute('src');
         // ⚠ load() after clearing src is what actually FREES the buffer. Without it the element keeps the
@@ -223,14 +237,34 @@ export function useMediaPlayer(
       pauseRequested = false;
       if (element.ended) { report('Ended'); return; }
       if (!asked && document.visibilityState === 'hidden'
-          && (!hidden || performance.now() - hiddenAt < PLATFORM_PAUSE_WINDOW_MS)) return;
+          && (!hidden || performance.now() - hiddenAt < PLATFORM_PAUSE_WINDOW_MS)) {
+        pausedThisHide = true;
+        return;
+      }
       report('Paused');
+    };
+    // And the platform RESUMING what it paused, as the page is shown again, after the host said pause — a film the
+    // user paused natively, or one that finished while the app was away: paused again, and reported as the pause it
+    // is. Any other play — a media key while hidden, the user's own tap, the host's — is reported, and lifts the hold.
+    const onPlay = () => {
+      const platformResume = hidden
+        ? document.visibilityState !== 'hidden' && pausedThisHide   // shown, before the handler has heard it
+        : resumeComing && performance.now() - shownAt < PLATFORM_PAUSE_WINDOW_MS;
+      if (holdPaused && platformResume) {
+        if (!element.paused) {
+          pauseRequested = true;
+          element.pause();
+        }
+        return;
+      }
+      holdPaused = false;
+      report('Playing');
     };
     const listeners: Array<[keyof HTMLMediaElementEventMap, () => void]> = [
       ['loadedmetadata', () => report('Paused')],
       ['canplay', () => report(element.paused ? 'Paused' : 'Playing')],
-      ['play', () => report('Playing')],
-      ['playing', () => report('Playing')],
+      ['play', onPlay],
+      ['playing', onPlay],
       ['pause', onPause],
       ['waiting', () => report('Buffering')],
       ['seeked', () => report(element.paused ? 'Paused' : 'Playing')],
@@ -256,9 +290,13 @@ export function useMediaPlayer(
       if (document.visibilityState === 'hidden') {
         hidden = true;
         hiddenAt = performance.now();
+        resumeComing = false;
         if (playback(shown)) report(shown!);
       } else {
         hidden = false;
+        shownAt = performance.now();
+        resumeComing = pausedThisHide;
+        pausedThisHide = false;
         if ((shown === 'Playing' || shown === 'Buffering') && element.paused) {
           report(element.ended ? 'Ended' : 'Paused');
         }

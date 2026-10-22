@@ -285,6 +285,158 @@ describe('useMediaPlayer', () => {
 
       expect(reports(transport).map((r) => r.state)).toEqual(['Failed']);
     });
+
+    /** A page going to the background with its film playing, which the platform then pauses. */
+    const playingThenHidden = () => {
+      const fixture = createFixture();
+      setPaused(fixture.element, false);
+      fixture.element.dispatchEvent(new Event('playing'));
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setPaused(fixture.element, true);
+      fixture.element.dispatchEvent(new Event('pause'));
+      return fixture;
+    };
+
+    /**
+     * 🔴 Chromium RESUMES a video it paused for a hidden page once the page is shown (measured on Android: ~10 ms
+     * after), and the host's pause, arriving while the element was already paused, cannot cancel it. A film that
+     * finished natively while the app was away played on from where the page had stopped.
+     */
+    it('undoes the platform resuming a page the host paused while it was hidden', async () => {
+      const { transport, bus, element } = playingThenHidden();
+      await send(bus, MediaPlayerCommands.pause);
+
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setPaused(element, false);
+      element.dispatchEvent(new Event('play'));
+
+      expect(element.pause).toHaveBeenCalledTimes(2);
+      setPaused(element, true);
+      element.dispatchEvent(new Event('pause'));
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Paused', 'Paused']);
+    });
+
+    it('undoes a resume that comes before the page hears it is shown', async () => {
+      const { transport, bus, element } = playingThenHidden();
+      await send(bus, MediaPlayerCommands.pause);
+
+      setHidden(false);
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+
+      expect(element.pause).toHaveBeenCalledTimes(2);
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing']);
+    });
+
+    /** No host pause: the film was playing when the app left, so the platform resuming it is what the user had. */
+    it("reports the platform's resume when the host said nothing", async () => {
+      const { transport, element } = playingThenHidden();
+
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setPaused(element, false);
+      element.dispatchEvent(new Event('play'));
+
+      expect(element.pause).not.toHaveBeenCalled();
+      expect(reports(transport).map((r) => r.state)).toEqual(['Playing', 'Playing', 'Paused', 'Playing']);
+    });
+
+    it('a play the host asks for after its pause is not undone', async () => {
+      const { transport, bus, element } = playingThenHidden();
+      await send(bus, MediaPlayerCommands.pause);
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      await send(bus, MediaPlayerCommands.play);
+      setPaused(element, false);
+      element.dispatchEvent(new Event('play'));
+
+      expect(element.pause).toHaveBeenCalledTimes(1);
+      expect(reports(transport).at(-1)?.state).toBe('Playing');
+    });
+
+    /** A media key with the window in the tray plays while the page is still hidden: the user's, not a resume. */
+    it('a play while the page is still hidden is not undone', async () => {
+      const { transport, bus, element } = playingThenHidden();
+      await send(bus, MediaPlayerCommands.pause);
+
+      setPaused(element, false);
+      element.dispatchEvent(new Event('play'));
+
+      expect(element.pause).toHaveBeenCalledTimes(1);
+      expect(reports(transport).at(-1)?.state).toBe('Playing');
+    });
+
+    /** The host paused a playing film itself, so nothing paused it for hiding and nothing will resume it. */
+    it('a play right after showing is not undone when the platform paused nothing', async () => {
+      const { transport, bus, element } = createFixture();
+      setPaused(element, false);
+      element.dispatchEvent(new Event('playing'));
+      await send(bus, MediaPlayerCommands.pause);
+      setPaused(element, true);
+      element.dispatchEvent(new Event('pause'));
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setPaused(element, false);
+      element.dispatchEvent(new Event('play'));
+
+      expect(element.pause).toHaveBeenCalledTimes(1);
+      expect(reports(transport).at(-1)?.state).toBe('Playing');
+    });
+
+    /** The platform's pause belongs to ONE hide: shown, hidden again with nothing playing, shown — no resume. */
+    it('a pause from an earlier hide does not undo a play after a later one', async () => {
+      const { transport, bus, element } = playingThenHidden();
+      await send(bus, MediaPlayerCommands.pause);
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setPaused(element, false);
+      element.dispatchEvent(new Event('play'));
+
+      expect(element.pause).toHaveBeenCalledTimes(1);
+      expect(reports(transport).at(-1)?.state).toBe('Playing');
+    });
+
+    it('a new load lifts the hold', async () => {
+      const { transport, bus, element } = playingThenHidden();
+      await send(bus, MediaPlayerCommands.pause);
+      await send(bus, MediaPlayerCommands.load, { uri: 'next.mp4', startAt: 0 });
+
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+      setPaused(element, false);
+      element.dispatchEvent(new Event('play'));
+
+      expect(element.pause).toHaveBeenCalledTimes(1);
+      expect(reports(transport).at(-1)?.state).toBe('Playing');
+    });
+
+    /** Long after the page is shown, a play nobody asked for is the user's own, on the element's controls. */
+    it('a play long after the page was shown is reported', async () => {
+      const { transport, bus, element } = playingThenHidden();
+      await send(bus, MediaPlayerCommands.pause);
+      const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      now.mockReturnValue(10_000);
+      setPaused(element, false);
+      element.dispatchEvent(new Event('play'));
+      now.mockRestore();
+
+      expect(element.pause).toHaveBeenCalledTimes(1);
+      expect(reports(transport).at(-1)?.state).toBe('Playing');
+    });
   });
 
   /**

@@ -103,6 +103,17 @@ at the first list and missed five more breaking changes.
   `Stopped`, the estimate runs on past the platform's pause of the hidden page until `Stopped`: by the same
   emulator's earlier timings (`Stopped` 35 ms to 0.8 s after the page went hidden, the pause ~80 ms after) up to
   ~0.7 s, so a film can skip that much forward. Derived, not measured.
+- **A film left paused when the app comes back stays paused** (`@shenora/react`, `Shenora`). Chromium plays again a
+  video it paused for a hidden page as soon as the page is shown, and the host's pause, reaching an element already
+  paused, could not stop that: measured on an Android emulator, a film that finished natively while the app was
+  away (`Finished`) played on in the page from where it had stopped, 10 ms after the page was shown. `useMediaPlayer`
+  now pauses again a play nobody asked for within a second of the page being shown, when the platform had paused
+  the element for hiding and the host's last word since was pause; a play while the page is still hidden (a media
+  key) and one the platform did not pause first are left alone. `ToForegroundAsync` now says pause for `Paused` as
+  it does for `Finished` (it only sought). Measured after, 4 `Finished` runs: parked and still paused every time
+  (in one the resume came before the host's pause and played ~60 ms); `Paused` is unit-tested only (the sample
+  wires no control to its native player). **A page that reports
+  `PLAYER_REPORT` by hand must do the same**; the MAUI sample's page does.
 - **A rate set on `MediaPlayer` survives the next open, and no player takes a NaN or infinite rate** (`Shenora`).
   A load resets the element's `playbackRate`, so the next track played at 1x while the host still reported the
   rate it had set; `OpenAsync` now sends that rate after the load. `SetRateAsync` refuses a NaN or infinite rate

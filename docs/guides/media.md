@@ -522,6 +522,12 @@ window.Resumed += async (_, _) => { try { await transfer.ToForegroundAsync(); } 
   that report too: the estimate runs on past the platform's pause.
 - **A native player paused while you were away comes back paused** (`Paused`), if your app wired something
   to it (the lock screen's controls, say); the kit's native players never pause by themselves.
+- **A page left paused on return stays paused** (`Paused`, `Finished`). Chromium plays again a video it paused for
+  a hidden page as soon as the page is shown, and a pause sent to an element already paused cannot stop that, so
+  `useMediaPlayer` pauses again a play nobody asked for within a second of the page being shown, when the platform
+  paused the element for hiding and the host's last word since was pause. **A page that reports by hand must do the
+  same**, or a film that finished while the app was away plays on from where the page stopped; the MAUI sample's
+  page does.
 - **The native player is resolved by its concrete type on purpose.** The shells do not register it as
   `IMediaPlayer`, because the default one must stay the page-backed player or `useMediaPlayer(ref)`
   silently drives the wrong thing.

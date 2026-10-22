@@ -594,6 +594,11 @@ let handedOff = false;
 // HOOK PARITY for the background handoff, which hands over only a page that was playing: the state last reported
 // (what the host believes), when the page went hidden, and whether the host's own pause is on its way.
 let shownState, pageHidden = false, hiddenAt = 0, pauseRequested = false;
+// And the platform's pause on the way out, carried into the next show, and whether the host's last word since was
+// pause: Chromium RESUMES a video it paused for a hidden page once the page is shown, which a pause sent to an
+// already-paused element cannot cancel (hook parity).
+let pausedThisHide = false, resumeComing = false, holdPaused = false, shownAt = -Infinity;
+const forgetHold = () => { pausedThisHide = false; resumeComing = false; holdPaused = false; };
 const reportPlayer = (state, error) => {
   shownState = state;
   try {
@@ -614,14 +619,28 @@ const reportPlayer = (state, error) => {
 };
 
 vid.addEventListener('loadedmetadata', () => reportPlayer('Opening'));
-vid.addEventListener('playing', () => reportPlayer('Playing'));
+// The platform resuming what it paused, as the page is shown, after the host said pause: paused again. Any other
+// play — a media key while hidden, the user's tap, the host's — is reported and lifts the hold (hook parity).
+const onPagePlay = () => {
+  const platformResume = pageHidden
+    ? document.visibilityState !== 'hidden' && pausedThisHide   // shown, before the handler has heard it
+    : resumeComing && performance.now() - shownAt < 1000;
+  if (holdPaused && platformResume) {
+    if (!vid.paused) { pauseRequested = true; vid.pause(); }
+    return;
+  }
+  holdPaused = false;
+  reportPlayer('Playing');
+};
+vid.addEventListener('play', onPagePlay);
+vid.addEventListener('playing', onPagePlay);
 // A pause nobody asked for, as the page goes hidden, is the PLATFORM's (hook parity). Measured here on an Android
 // emulator: the page goes hidden with the video still playing, and its `pause` follows ~80 ms later.
 vid.addEventListener('pause', () => {
   const asked = pauseRequested;
   pauseRequested = false;
   if (!vid.ended && !asked && document.visibilityState === 'hidden'
-      && (!pageHidden || performance.now() - hiddenAt < 1000)) return;
+      && (!pageHidden || performance.now() - hiddenAt < 1000)) { pausedThisHide = true; return; }
   reportPlayer(vid.ended ? 'Ended' : 'Paused');
 });
 vid.addEventListener('ended', () => reportPlayer('Ended'));
@@ -647,10 +666,16 @@ document.addEventListener('visibilitychange', () => {
   pageHidden = document.visibilityState === 'hidden';
   if (pageHidden) {
     hiddenAt = performance.now();
+    resumeComing = false;
     // The playback state the host already holds, at the current position; nothing for Opening, Failed or Empty.
     if (['Playing', 'Buffering', 'Paused', 'Ended'].includes(shownState)) reportPlayer(shownState);
-  } else if ((shownState === 'Playing' || shownState === 'Buffering') && vid.paused) {
-    reportPlayer(vid.ended ? 'Ended' : 'Paused');   // shown again: correct a host still believing it plays
+  } else {
+    shownAt = performance.now();
+    resumeComing = pausedThisHide;
+    pausedThisHide = false;
+    if ((shownState === 'Playing' || shownState === 'Buffering') && vid.paused) {
+      reportPlayer(vid.ended ? 'Ended' : 'Paused');   // shown again: correct a host still believing it plays
+    }
   }
 });
 
@@ -669,6 +694,7 @@ playerCommand = (n) => {
   switch (n.type) {
     case 'PLAYER_LOAD':
       shownState = undefined;   // load() pauses with no `pause` event
+      forgetHold();
       vid.src = p.uri ?? '';
       // load() rather than trusting the src assignment: a second load on the same element keeps the
       // previous buffer, and a seek then lands in the OLD media.
@@ -682,15 +708,17 @@ playerCommand = (n) => {
     // ⚠ A refusal is REPORTED, never swallowed: returning to the foreground is not a user gesture, and if
     // the element has lost its activation the host must hear `Failed` rather than believe playback resumed.
     case 'PLAYER_PLAY':
+      holdPaused = false;
       vid.play().catch(err => {
         log('err', `PLAYER_PLAY refused: ${err}`);
         reportPlayer('Failed', (err && err.name) ? err.name : 'PlayRejected');
       });
       break;
-    case 'PLAYER_PAUSE': pauseRequested = !vid.paused; vid.pause(); break;
+    case 'PLAYER_PAUSE': pauseRequested = !vid.paused; holdPaused = true; vid.pause(); break;
     case 'PLAYER_SEEK': vid.currentTime = p.position ?? 0; break;
     case 'PLAYER_RATE': vid.playbackRate = p.rate ?? 1; break;
     case 'PLAYER_UNLOAD':
+      forgetHold();
       vid.pause();
       vid.removeAttribute('src');
       // load() after clearing src is what actually FREES the decoded buffer — on a phone that is the

@@ -286,7 +286,9 @@ public class BackgroundPlaybackTransferTests
         var result = await handoff.ToForegroundAsync();
 
         Assert.Equal(BackgroundPlaybackOutcome.Paused, result.Outcome);
-        Assert.Equal(["seek:21.50"], page.Calls);
+        // The pause is SAID: Chromium resumes the element it paused for the hidden page once the page is shown,
+        // and the hook undoes that only after the host's pause.
+        Assert.Equal(["seek:21.50", "pause"], page.Calls);
     }
 
     /// <summary>

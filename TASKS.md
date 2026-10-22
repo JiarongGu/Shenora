@@ -241,6 +241,10 @@ Both are measured on Android only (`docs/design/mobile-shells.md`).
   it. On iOS that order is unmeasured: should iOS pause the element first, a playing film would read as paused and
   not be handed off. Background a playing film and a paused one on the simulator and read `HANDOFF`.
 - [ ] **The position.** Compare the handed-over position with where the element stopped, as on Android.
+- [ ] **The resume on return.** Android's WebView plays a video it paused for hiding again when the page is shown,
+  and `useMediaPlayer` undoes that after a host pause, within a second of the show. Whether WebKit resumes at all,
+  and when (the native player's audio session may be what releases it), is unmeasured: a `Finished` handback whose
+  page plays on would show it.
 
 ### 🟡 What the page player's carried-forward position cannot see
 

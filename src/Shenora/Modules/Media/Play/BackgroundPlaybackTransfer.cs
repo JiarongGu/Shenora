@@ -212,6 +212,9 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
             await _page.SeekAsync(at, cancellationToken).ConfigureAwait(false);
             if (status.State is MediaPlayerState.Paused && started)
             {
+                // SAID, though the element is already paused: Chromium resumes a video it paused for a hidden page as
+                // soon as the page is shown, and `useMediaPlayer` undoes that only when the host's last word was pause.
+                await _page.PauseAsync(cancellationToken).ConfigureAwait(false);
                 Report(() => $"[Shenora] background handback: native was PAUSED at {at.TotalSeconds:F2}s — the page stays paused");
                 return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Paused, at);
             }

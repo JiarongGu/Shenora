@@ -730,6 +730,16 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     the opening. Coming back to the credits is a worse bug than losing the audio. So a finished playback
     must hand back a FINISHED page: park just before the end, do not play, and say so. Detect it with
     `State is Ended` OR `Position >= Duration - 500ms`, because the position can report just under.
+  - 🔴 **A PARKED PAGE RESUMES BY ITSELF: Chromium plays again a video it paused for a hidden page as soon as
+    the page is shown** (2026-10-23, MuMu, API 32). After `HANDBACK: Finished at 60.00s` the page reported
+    `Paused 45.98s` as it was shown and `Playing 46.04s` 10 ms later, then played to its end. The host's pause
+    reached an element already paused, which cancels nothing. So `useMediaPlayer` pauses again a play nobody asked
+    for within a second of the page being shown, when the platform paused the element for hiding and the host's last
+    word since was pause; `ToForegroundAsync` says pause for `Paused` as for `Finished`. Measured after, 4
+    `Finished` runs: parked and still paused every time. The host's pause and the resume come in EITHER order — in
+    3 the pause came first and the resume was undone with no play reported; in 1 the resume came first and played
+    ~60 ms before the pause, now reaching a playing element, stopped it. A `Resumed` handback still plays.
+    ⚠ `Paused` itself was not run (the sample wires no control to its native player).
 - ✅ **AND THE NATIVE PLAYER SURVIVES WHERE THE PAGE DIES — a clean A/B, same device, same HOME press**
   (2026-08-12, API 36). `IMediaPlayer` sampled every 5 s ran **45 s while hidden**, `state=Playing`, position
   advancing 1:1 with the wall clock; `document.visibilityState` confirmed `hidden` throughout. The page's
