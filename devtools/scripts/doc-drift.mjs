@@ -856,7 +856,8 @@ const decode = (s) => { try { return decodeURIComponent(s); } catch { return nul
 /** GitHub's id for a heading: github-slugger over its rendered text, where a code span keeps its text verbatim. */
 function headingSlug(text) {
   const rendered = text.split(/(`+[^`]*`+)/).map((part, i) => (i % 2 === 1 ? part.replace(/`/g, '') : part
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')            // an image's alt is not the heading's text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/<[^>]+>/g, '')
     .replace(/\*/g, '')
     .replace(/(^|[^\p{L}\p{N}_])_+|_+(?=[^\p{L}\p{N}_]|$)/gu, '$1'))).join('');

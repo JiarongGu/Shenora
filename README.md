@@ -1,6 +1,4 @@
-![Shenora](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/assets/shenora-icon.png)
-
-# Shenora (神阙)
+# ![logo](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/assets/shenora-logo.svg) Shenora (神阙)
 
 [![NuGet](https://img.shields.io/nuget/v/Shenora.svg?label=nuget)](https://www.nuget.org/packages/Shenora)
 [![npm](https://img.shields.io/npm/v/@shenora/react.svg?label=npm)](https://www.npmjs.com/package/@shenora/react)
