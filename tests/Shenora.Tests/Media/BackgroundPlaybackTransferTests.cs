@@ -173,10 +173,13 @@ public class BackgroundPlaybackTransferTests
         Assert.False(page.Watched);
     }
 
-    /// <summary>The decision was made at <c>Window.Stopped</c>: a report that is not playing — the platform's
-    /// pause of the hidden page is one — neither unmakes it nor moves the position.</summary>
+    /// <summary>
+    /// The decision was made at <c>Window.Stopped</c>, so a PAUSED report landing during the open does not unmake it
+    /// — but it says where the element stopped. iOS pauses the element before the page hides, and the estimate alone
+    /// ran 0.22–0.30 s past that (measured on the simulator).
+    /// </summary>
     [Fact]
-    public async Task A_report_during_the_open_that_is_not_playing_leaves_the_estimate()
+    public async Task A_paused_report_during_the_open_gives_its_position_but_not_its_state()
     {
         var (page, native, handoff) = Build(new MediaPlayerStatus
         {
@@ -192,7 +195,27 @@ public class BackgroundPlaybackTransferTests
         var result = await handoff.ToBackgroundAsync();
 
         Assert.Equal(BackgroundPlaybackOutcome.TookOver, result.Outcome);
-        Assert.Equal(["open:/library/film.mkv", "seek:6.60", "play"], native.Calls);
+        Assert.Equal(["open:/library/film.mkv", "seek:6.30", "play"], native.Calls);
+    }
+
+    /// <summary>An END landing during the open is not a position to continue from — the duration rewinds.</summary>
+    [Fact]
+    public async Task An_ended_report_during_the_open_leaves_the_estimate()
+    {
+        var (page, native, handoff) = Build(new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Playing,
+            Position = TimeSpan.FromSeconds(59.6),
+        });
+        native.OnOpen = () => page.Raise(new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Ended,
+            Position = TimeSpan.FromSeconds(60),
+        });
+
+        await handoff.ToBackgroundAsync();
+
+        Assert.Equal(["open:/library/film.mkv", "seek:59.60", "play"], native.Calls);
     }
 
     /// <summary>Neither a finished film nor one still opening is playing, so neither is handed over.</summary>

@@ -97,8 +97,9 @@ at the first list and missed five more breaking changes.
   natively near its beginning. `MediaPlayer.Status` now carries a playing position forward from the last report at
   the rate asked for, held at the duration: an estimate the page's next report replaces. `StateChanged` is never
   raised for the carried-forward position, and `PLAYER_STATUS` (which `useMediaTransport` asks on the desktop)
-  answers it. A playing report that lands while the native player opens is handed over instead of the estimate;
-  nothing waits for one. Measured on the emulator over 6 runs, with the report within 30 ms of `Window.Stopped` each
+  answers it. A report that lands while the native player opens gives the position handed over instead of the
+  estimate (playing, or paused: iOS pauses the element before the page hides, and the estimate alone ran 0.22–0.30 s
+  past where it stopped on the simulator); nothing waits for one. Measured on the emulator over 6 runs, with the report within 30 ms of `Window.Stopped` each
   time: every handoff within 0.02 s of where the page's element stopped. The platform pauses a hidden element ~80 ms
   after hiding, a pause `useMediaPlayer` does not report as one; it now reports that moment as the `Playing` the host
   holds, at where the element stopped, marked `hidden: true` on `PLAYER_REPORT`, and the host HOLDS that position

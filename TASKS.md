@@ -233,18 +233,17 @@ tried.
 - [ ] On a Mac, with an interactive session's window showing, close the main window from its title bar: it stays; and
   the app's own close (`ChromiumWindows.Close("main")`, the tray's Exit) still ends it.
 
-### 🟡 The background handoff on iOS: its intent rule and its position
+### 🟡 On iOS a playing film is handed off by the page's reports arriving LATE
 
-Both are measured on Android only (`docs/design/mobile-shells.md`).
+iOS pauses the element about a second before the page hides, while it is still visible, so `useMediaPlayer` reports
+that pause as the user's; the handoff took over in all 8 simulator runs only because those reports reached the host
+after `Window.Stopped` (`docs/design/mobile-shells.md`).
 
-- [ ] **The intent rule.** A user-paused film stays behind because the page goes hidden BEFORE the platform pauses
-  it. On iOS that order is unmeasured: should iOS pause the element first, a playing film would read as paused and
-  not be handed off. Background a playing film and a paused one on the simulator and read `HANDOFF`.
-- [ ] **The position.** Compare the handed-over position with where the element stopped, as on Android.
-- [ ] **The resume on return.** Android's WebView plays a video it paused for hiding again when the page is shown,
-  and `useMediaPlayer` undoes that after a host pause, within a second of the show. Whether WebKit resumes at all,
-  and when (the native player's audio session may be what releases it), is unmeasured: a `Finished` handback whose
-  page plays on would show it.
+- [ ] **Measure the order on an iPhone** (`dev.mjs mac device`; log the page's report and `Stopped` times). If the
+  `Paused` report can precede `Stopped`, a playing film is left behind. The two fixes considered, each with its
+  cost: take the pause back when the page hides within ~2 s (built, not kept — on Android and the desktop it only
+  ever catches the user's own pause, and a host pause in between must cancel it); or hold an unasked visible pause's
+  report until the page has stayed visible for that long (the lock screen then hears a user's pause late).
 
 ### 🟡 What the page player's carried-forward position cannot see
 

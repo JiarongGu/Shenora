@@ -651,6 +651,9 @@ vid.addEventListener('pause', () => {
   reportPlayer(vid.ended ? 'Ended' : 'Paused');
 });
 vid.addEventListener('ended', () => reportPlayer('Ended'));
+// A seek moves the position the host carries forward, so it is a transition (hook parity). Without it, the host
+// carried a handback's position forward from the moment BEFORE its seek (measured on the iOS simulator: 6 s off).
+vid.addEventListener('seeked', () => reportPlayer(vid.paused ? 'Paused' : 'Playing'));
 vid.addEventListener('error', () => reportPlayer('Failed'));
 // 🔴 HOOK PARITY, and it is what makes the background-handoff question ASKABLE here at all.
 // `useMediaPlayer` reports on TRANSITIONS ONLY — never `timeupdate` — so under the hook the host carries a

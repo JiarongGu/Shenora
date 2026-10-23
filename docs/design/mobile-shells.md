@@ -692,8 +692,17 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     media key with a desktop window in the tray — is reported), and `ToBackgroundAsync` hands off only a page
     reported `Playing` or `Buffering`.
     Measured: a playing film `TookOver`; one the user paused answered `Nothing — the page player is Paused`
-    (before, it was `TookOver` and played on natively). ⚠ iOS's order is unmeasured: should iOS pause the
-    element before the page is hidden, a playing film would read as paused there and stay behind.
+    (before, it was `TookOver` and played on natively).
+  - 🔴 **iOS's order is the OPPOSITE: the platform pauses the element while the page is still visible**, 0.93–1.04 s
+    before `visibilitychange` (2026-10-23, iPhone 16 Pro simulator, iOS 26.3, 4 page-timed runs), so `useMediaPlayer`
+    reports that pause as the user's `Paused`. A playing film is handed off only because those reports reached the
+    host 0.76–1.15 s AFTER `Window.Stopped`, in all 8 runs; a device delivering them before `Stopped` would leave the
+    film behind (open in `TASKS.md`). Taking such a pause back as the platform's — an unasked pause the page going
+    hidden follows within ~2 s — was built and not kept: on Android and the desktop that rule can only ever catch
+    a user's own pause, and here the reports' lateness had already decided every run. That `Paused` report does say
+    where the element stopped, and it lands during the native open, so the handoff takes its position: the estimate
+    alone ran 0.22–0.30 s past the stop; with it, handed over exactly at the stop (27.90 s, 59.81 s). A film left
+    paused answered `Nothing`.
   - 🔴 **The hidden-time report RACES `Window.Stopped`, so the position cannot come from it alone.** The hook
     reports on transitions only, and the report lost that race in 3 of 5 runs (2026-10-22, hook parity): handed
     over at 1.60 s after ~6 s of play, and at 0.00 s after ~6 s and ~11 s. So `MediaPlayer.Status` carries a
@@ -747,6 +756,8 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     3 the pause came first and the resume was undone with no play reported; in 1 the resume came first and played
     ~60 ms before the pause, now reaching a playing element, stopped it. A `Resumed` handback still plays.
     ⚠ `Paused` itself was not run (the sample wires no control to its native player).
+    **iOS does the same**, and earlier: the element was already playing when the page heard it was shown (simulator,
+    3 runs). After `Finished` the host's seek and pause landed ~40 ms later and parked it at 59.50 s, paused.
 - ✅ **AND THE NATIVE PLAYER SURVIVES WHERE THE PAGE DIES — a clean A/B, same device, same HOME press**
   (2026-08-12, API 36). `IMediaPlayer` sampled every 5 s ran **45 s while hidden**, `state=Playing`, position
   advancing 1:1 with the wall clock; `document.visibilityState` confirmed `hidden` throughout. The page's

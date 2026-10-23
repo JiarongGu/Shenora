@@ -76,7 +76,9 @@ public sealed class BackgroundPlaybackOptions
 /// handed off, so a page must not report that platform pause as its own: <c>useMediaPlayer</c> drops a pause
 /// nobody asked for that comes as the page goes hidden, and a page reporting by hand must do the same. The page's
 /// hidden-time report can land after <c>Window.Stopped</c>, so the position handed over is the page player's
-/// estimate (<see cref="MediaPlayer.Status"/>), or that report when it lands while the native player opens.</item>
+/// estimate (<see cref="MediaPlayer.Status"/>), or a report that lands while the native player opens. ⚠ iOS pauses the
+/// element about a second BEFORE the page hides, so that pause reads as the user's: a playing film is handed off
+/// there because those reports reach the host after <c>Window.Stopped</c> (measured on the simulator).</item>
 /// <item><b>ONE owner per transition.</b> The page hands off, the HOST hands back; both driving the element
 /// destroys the state the other needs.</item>
 /// <item><b>The native player needs a source it can OPEN</b>, which is not the page's URL — hence
@@ -124,12 +126,15 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
 
         // The position is the page player's ESTIMATE when its hidden-time report has not landed yet — it can lose
         // the race with `Window.Stopped` — so a report that lands while the native player opens is the page's own
-        // reading and wins. Only a playing one: the decision to hand off was made above. Nothing waits for it.
+        // reading and wins: its POSITION, not its state, the decision to hand off having been made above. A Paused
+        // one counts — iOS pauses the element before the page hides, and that report says exactly where it stopped
+        // (measured on the simulator: the estimate alone ran 0.22–0.30 s past it). Nothing waits for one.
         var position = status.Position;
         MediaPlayerStatus? landed = null;
         void OnPageReport(MediaPlayerStatus report)
         {
-            if (report.State is MediaPlayerState.Playing or MediaPlayerState.Buffering) Volatile.Write(ref landed, report);
+            if (report.State is MediaPlayerState.Playing or MediaPlayerState.Buffering or MediaPlayerState.Paused)
+                Volatile.Write(ref landed, report);
         }
 
         try

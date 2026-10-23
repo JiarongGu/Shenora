@@ -515,7 +515,10 @@ window.Resumed += async (_, _) => { try { await transfer.ToForegroundAsync(); } 
   report that pause, so `Paused` means the user's. **A page that reports by hand must do the same** — drop a
   `pause` event it did not ask for that comes while hidden and within about a second of `visibilitychange`,
   and send the playback state it last reported in its hidden-time report — or a playing film can read as
-  paused and not be handed off. The MAUI sample's page is a worked example.
+  paused and not be handed off. The MAUI sample's page is a worked example. ⚠ **iOS pauses BEFORE the page
+  hides** (about a second, while still visible), so that pause goes out as the user's; a playing film is handed off
+  there because the page's reports reach the host after `Window.Stopped` — measured on the simulator, not yet on
+  an iPhone.
 - **The position handed over is where the film has got to.** The page reports on transitions only, so
   `MediaPlayer.Status` carries a playing position forward between reports, and the hidden-time report corrects
   it — even when it lands after `Stopped`, while the native player opens. A page reporting by hand should send
