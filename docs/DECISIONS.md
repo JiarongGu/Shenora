@@ -39,8 +39,8 @@ that landed it, not here.
 > at RUN TIME?"* — not *"is it separate?"*, which is why `@shenora/cli` is not an exception (D67).
 >
 > **The LAYER is the namespace** (D65), and these are namespaces, never package ids:
-> `Shenora.Core.*` (Events · Ipc · Shell · WebView) · `Shenora.Engine.*` (Files · Missions) ·
-> `Shenora.Modules.*` (Media · FileDialog · Platform · Requests · Update · Update.Compression).
+> `Shenora.Core.*` (Events · Ipc · Sessions · Shell · WebView) · `Shenora.Engine.*` (Compression · Files · Missions ·
+> Update) · `Shenora.Modules.*` (Clipboard · FileDialog · Media · Platform · Requests).
 > `Shenora.Media`, `Shenora.IO`, `Shenora.IO.Compression` and `Shenora.Ipc` are retired as **both**
 > (D53, D55, D65) and are registered in `devtools/retired-names.txt`.
 >
