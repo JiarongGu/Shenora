@@ -246,9 +246,3 @@ mpeg4.
   writer fail-closes on a backwards presentation time and drops the frame. The phone measured 60/60, so
   this is per-encoder, not settled. Dropping is safe and lossy; buffering and sorting is neither. **An
   owner call**, and it needs the phone number re-measured first.
-
-### 📣 After the next release: read the package pages the README now feeds (D98)
-
-- [ ] **nuget.org**: each package page shows the icon, and the README renders with the logo, the badges and links
-  that go somewhere (a relative link or an in-page anchor would render with no target). The tags and the
-  description lead-ins appear. **npm**: `@shenora/react` and `@shenora/cli` show the new keywords.
