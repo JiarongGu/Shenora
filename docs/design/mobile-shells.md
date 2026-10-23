@@ -702,7 +702,11 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     a user's own pause, and here the reports' lateness had already decided every run. That `Paused` report does say
     where the element stopped, and it lands during the native open, so the handoff takes its position: the estimate
     alone ran 0.22–0.30 s past the stop; with it, handed over exactly at the stop (27.90 s, 59.81 s). A film left
-    paused answered `Nothing`.
+    paused answered `Nothing`. **The same on an iPhone 17 Pro** (iOS 26.6.1): the pause came 24–243 ms before the
+    page hid (4 runs), and its report reached the host 0.13–1.33 s after `Stopped` in all 6 runs that logged both, so
+    a playing film was handed off every time. Were a device ever to deliver it first, the other fix considered was
+    holding an unasked visible pause's report until the page has stayed visible ~2 s (the lock screen then hears a
+    user's pause that late).
   - 🔴 **The hidden-time report RACES `Window.Stopped`, so the position cannot come from it alone.** The hook
     reports on transitions only, and the report lost that race in 3 of 5 runs (2026-10-22, hook parity): handed
     over at 1.60 s after ~6 s of play, and at 0.00 s after ~6 s and ~11 s. So `MediaPlayer.Status` carries a
@@ -736,7 +740,8 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     `simctl launch booted com.apple.springboard` → `HANDBACK: resumed t=53.31`: **43 s of native playback
     while hidden**, and a longer run completed the whole 60 s clip. The prerequisites are the documented
     pair and the sample has both: `UIBackgroundModes: [audio]` in Info.plist and an active
-    `AVAudioSession(.Playback)`, which the APP sets (`IosMediaPlayer` does not touch the session).
+    `AVAudioSession(.Playback)`, which the APP sets (`IosMediaPlayer` only makes it mixable for a start in the
+    background — below).
   - 🔴 **ON AN IPHONE THE SESSION MUST BE MIXABLE WHEN THE NATIVE PLAYER STARTS** (2026-10-23, iPhone 17 Pro,
     iOS 26.6.1; the simulator enforces none of this). The handoff starts the native player at `Window.Stopped`,
     already in the background, and a backgrounded app may not START non-mixable audio: under a non-mixable
@@ -744,9 +749,11 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     app suspended — with or without an `AVPlayerLayer`, with `audiovisualBackgroundPlaybackPolicy =
     continuesIfPossible`, and with `setActive(true)` just before playing (which a WebKit `<audio>` still playing
     made FAIL: its out-of-process audio had interrupted the session). Under `MixWithOthers` it played on, and
-    switching to non-mixable once it was playing kept it playing (24 s to the clip's end). ⚠ Not measured yet:
-    the lock screen. With no `IPlaybackSession` reporting the native player, Control Center showed stale state and
-    its play/pause did not track the film.
+    switching to non-mixable once it was playing kept it playing (24 s to the clip's end). So `IosMediaPlayer` does
+    exactly that for a start in the background, and the app keeps its ordinary non-mixable session: measured after,
+    with the sample's page `<audio>` still playing, the native player played 22 s in the background (33.79 →
+    55.79 s) and the handback resumed the page at 56.82 s. ⚠ Not solved: the lock screen. With no `IPlaybackSession`
+    reporting the native player, Control Center showed stale state and its play/pause did not track the film.
   - 🔴 **IF IT FINISHES WHILE YOU ARE AWAY, HANDING THE POSITION BACK RESTARTS THE FILM.** Found on iOS:
     the clip ended in the background, the handback set `currentTime = 60.00` on a 60 s element, and the page
     reported **`resumed t=0.00`** — seeking to the very end REWINDS, and `play()` then started the film from

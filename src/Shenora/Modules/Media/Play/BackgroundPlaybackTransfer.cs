@@ -64,12 +64,12 @@ public sealed class BackgroundPlaybackOptions
 /// own and back.
 /// <para>
 /// <b>Prerequisites are the app's:</b> iOS needs <c>UIBackgroundModes: [audio]</c> and a <c>Playback</c>
-/// <c>AVAudioSession</c> that is MIXABLE (<c>MixWithOthers</c>) when the handoff plays — neither this class nor the
-/// shell's native player configures it. Measured on an iPhone: a backgrounded app may not START non-mixable audio, so
-/// under a non-mixable session the native player was paused at once (rate 0) and the app suspended; under a mixable
-/// one it played on, and switching to non-mixable once it was playing kept it playing. The simulator enforces none of
-/// this. A backgrounded page player is suspended within seconds on both platforms and cannot START audio at all
-/// (<c>NotAllowedError</c> — pressing HOME is not a user gesture). Measurements: <c>docs/design/mobile-shells.md</c>.
+/// <c>AVAudioSession</c>, which this class does not configure. A backgrounded app may not START non-mixable audio, and
+/// this hands off at <c>Window.Stopped</c>, already in the background: the shell's <c>IosMediaPlayer</c> therefore
+/// makes that session mixable until it is playing, then puts it back (measured on an iPhone; without it the native
+/// player was paused at once and the app suspended). A backgrounded page player is suspended within seconds on both
+/// platforms and cannot START audio at all (<c>NotAllowedError</c> — pressing HOME is not a user gesture).
+/// Measurements: <c>docs/design/mobile-shells.md</c>.
 /// </para>
 /// <para>⚠ <b>Four traps:</b></para>
 /// <list type="number">
@@ -89,8 +89,9 @@ public sealed class BackgroundPlaybackOptions
 /// <item>🔴 <b>Playback may FINISH while you are away, and handing that position back RESTARTS the film</b>
 /// — seeking a 60 s element to 60.00 rewinds it. A finished playback parks the page just short of the end.</item>
 /// </list>
-/// <para>⚠ <b>Opening the native player PAUSES the page by itself</b> on both mobile platforms, because it
-/// takes the audio session — so this does not pause the page.</para>
+/// <para>⚠ <b>This does not pause the page.</b> The platforms do: Android's native player takes audio focus, and iOS
+/// pauses the page's video itself as the app leaves (measured). The native player starts under a MIXABLE session on
+/// iOS, so a page's <c>&lt;audio&gt;</c> still playing is not interrupted by it until the session is put back.</para>
 /// </summary>
 /// <param name="page">The page-backed player — what <c>UseMediaPlayer</c> registers as <see cref="IMediaPlayer"/>.</param>
 /// <param name="native">The shell's own player, resolved BY ITS TYPE (<c>AndroidMediaPlayer</c>, <c>IosMediaPlayer</c>).</param>

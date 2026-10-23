@@ -221,17 +221,18 @@ tried.
 - [ ] On a Mac, with an interactive session's window showing, close the main window from its title bar: it stays; and
   the app's own close (`ChromiumWindows.Close("main")`, the tray's Exit) still ends it.
 
-### 🟡 On iOS a playing film is handed off by the page's reports arriving LATE
+### 🟡 The iOS background handoff: the lock screen, and a pause the player never reports
 
-iOS pauses the element about a second before the page hides, while it is still visible, so `useMediaPlayer` reports
-that pause as the user's; the handoff took over in all 8 simulator runs only because those reports reached the host
-after `Window.Stopped` (`docs/design/mobile-shells.md`).
+Measured on an iPhone 17 Pro on 2026-10-23 (`docs/design/mobile-shells.md`); the native player now plays in the
+background there.
 
-- [ ] **Measure the order on an iPhone** (`dev.mjs mac device`; log the page's report and `Stopped` times). If the
-  `Paused` report can precede `Stopped`, a playing film is left behind. The two fixes considered, each with its
-  cost: take the pause back when the page hides within ~2 s (built, not kept — on Android and the desktop it only
-  ever catches the user's own pause, and a host pause in between must cancel it); or hold an unasked visible pause's
-  report until the page has stayed visible for that long (the lock screen then hears a user's pause late).
+- [ ] **Control Center during the handoff.** Nothing reports the native player to `IPlaybackSession`, so Control
+  Center showed stale state and its play/pause did not track the film (the owner's reading; a remote play earlier
+  resumed the page's muted `<video>` instead). Report the native player to the session for the time it plays —
+  the sample's wiring, or an option on the transfer — and read Control Center on the phone.
+- [ ] **`IosMediaPlayer` does not notice the system pausing it.** iOS set the player's rate to 0 while its `Status`
+  still read `Playing`, so the handback said `Resumed` at a frozen position. Observe `timeControlStatus` and report
+  the pause (or the wait) as the state it is.
 
 ### 🟡 What the page player's carried-forward position cannot see
 

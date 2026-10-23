@@ -121,8 +121,12 @@ internal static class PlaybackSessionProbe
     /// there. On Android the equivalent is a foreground service plus audio focus, which the sample does not
     /// need because it is not the platform under test here; the call is a no-op off iOS.
     /// </para>
+    /// <para>
+    /// Also the background handoff's prerequisite, so <c>MainPage</c> calls it when it wires one — a run whose
+    /// Live Activity takes the Island skips this probe, and the handoff then had no session at all.
+    /// </para>
     /// </summary>
-    private static void ConfigureAudioSession(Action<string> log)
+    internal static void ConfigureAudioSession(Action<string> log)
     {
 #if IOS || MACCATALYST
         try

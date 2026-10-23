@@ -5,6 +5,7 @@ using AVFoundation;
 using CoreMedia;
 using Foundation;
 using Shenora;
+using UIKit;
 
 namespace Shenora.iOS;
 
@@ -16,6 +17,12 @@ namespace Shenora.iOS;
 /// ⚠ <b>Background playback additionally needs two things this class does not do</b>, because both are the
 /// APP's policy: an <c>AVAudioSession</c> activated with a playback category, and
 /// <c>UIBackgroundModes: [audio]</c> in the app's <c>Info.plist</c>.
+/// </para>
+/// <para>
+/// 🔴 <b>Started while the app is in the background, it makes that session MIXABLE until it is playing</b>, then
+/// puts the app's session back: a backgrounded app may not START non-mixable audio, and on an iPhone the player was
+/// paused at once, silently, with the app suspended — which is when <c>BackgroundPlaybackTransfer</c> starts it. A
+/// session that is not <c>Playback</c> is logged as a warning instead. The simulator enforces none of this.
 /// </para>
 /// </summary>
 public sealed class IosMediaPlayer : MediaPlayerBase
@@ -31,10 +38,45 @@ public sealed class IosMediaPlayer : MediaPlayerBase
     private IDisposable? _bufferEmptyObserver;
     private IDisposable? _likelyToKeepUpObserver;
 
+    /// <summary>The app's own audio session, put back once a start in the background is playing.</summary>
+    private PendingRestore? _sessionRestore;
+    private readonly ILogger? _log;
+
+    /// <summary>The app's own session options, put back once a start in the background plays — or when that player
+    /// goes first. Made before the observer exists, because its first callback can come from inside
+    /// <c>AddObserver</c> or from the main thread before this one has stored anything.</summary>
+    private sealed class PendingRestore(AVAudioSessionMode mode, AVAudioSessionCategoryOptions options)
+    {
+        public readonly AVAudioSessionMode Mode = mode;
+        public readonly AVAudioSessionCategoryOptions Options = options;
+        public IDisposable? Observer;
+        public int Done;
+    }
+
+    // Whether the app is in the background, kept from UIKit's notifications — `ApplicationState` may only be read on
+    // the main thread, and PlayCore is called from wherever the caller's await resumed — and seeded from that state,
+    // because a player first built while the app is already away (resolved in a Stopped handler, a background
+    // launch) would otherwise start as if in the foreground and be paused at once.
+    private static volatile bool s_inBackground;
+    private static readonly NSObject s_backgroundObserver =
+        UIApplication.Notifications.ObserveDidEnterBackground((_, _) => s_inBackground = true);
+    private static readonly NSObject s_foregroundObserver =
+        UIApplication.Notifications.ObserveWillEnterForeground((_, _) => s_inBackground = false);
+
+    static IosMediaPlayer()
+    {
+        void Seed() => s_inBackground = UIApplication.SharedApplication.ApplicationState == UIApplicationState.Background;
+        if (NSThread.IsMain) Seed();
+        else NSRunLoop.Main.BeginInvokeOnMainThread(Seed);
+    }
+
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into an AVFoundation callback.</param>
     public IosMediaPlayer(ILogger? log = null)
         : base(log)
     {
+        _log = log;
+        GC.KeepAlive(s_backgroundObserver);
+        GC.KeepAlive(s_foregroundObserver);
     }
 
     /// <summary>
@@ -142,7 +184,88 @@ public sealed class IosMediaPlayer : MediaPlayerBase
     /// </remarks>
     protected override void PlayCore(double rate)
     {
-        if (_player is { } player) player.Rate = (float)rate;
+        if (_player is not { } player) return;
+        if (s_inBackground) StartInBackground(player, (float)rate);
+        else player.Rate = (float)rate;
+    }
+
+    /// <summary>
+    /// 🔴 <b>A backgrounded app may not START non-mixable audio</b> — measured on an iPhone: the player's rate drops
+    /// to 0 at once, nothing reports it, and the app is suspended — and <c>BackgroundPlaybackTransfer</c> starts this
+    /// player exactly then, at <c>Window.Stopped</c>. So a start in the background runs under the app's own
+    /// <c>Playback</c> session made mixable for the moment, and the session is put back as soon as the player is
+    /// actually playing; measured to keep playing. The simulator enforces none of this.
+    /// </summary>
+    private void StartInBackground(AVPlayer player, float rate)
+    {
+        var session = AVAudioSession.SharedInstance();
+        if (session.Category != AVAudioSessionCategory.Playback.GetConstant()?.ToString())
+        {
+            AppCallback.Log(_log, () => "[Shenora.iOS] the media player was asked to play in the background, which "
+                + $"needs a Playback audio session (and UIBackgroundModes: audio); this app's is {session.Category}.",
+                LogLevel.Warning);
+            player.Rate = rate;
+            return;
+        }
+
+        var options = session.CategoryOptions;
+        if (options.HasFlag(AVAudioSessionCategoryOptions.MixWithOthers))
+        {
+            player.Rate = rate;
+            return;
+        }
+
+        PendingRestore pending;
+        try
+        {
+            pending = new PendingRestore(AVAudioSessionModeExtensions.GetValue(new NSString(session.Mode)), options);
+            var mixable = session.SetCategory(AVAudioSessionCategory.Playback, pending.Mode,
+                options | AVAudioSessionCategoryOptions.MixWithOthers) ?? session.SetActive(true);
+            if (mixable is not null)
+            {
+                AppCallback.Log(_log, () => "[Shenora.iOS] background start: the session could not be made mixable "
+                    + $"({mixable.LocalizedDescription}).", LogLevel.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            // An audio-session mode this binding does not know: start anyway rather than leave a silent `Playing`.
+            AppCallback.Log(_log, () => "[Shenora.iOS] background start: the session could not be made mixable.",
+                LogLevel.Warning, ex);
+            player.Rate = rate;
+            return;
+        }
+
+        // An earlier one still pending is retired, not run: this one restores the same options, and running it now would
+        // make the session non-mixable again just before the start that needs it mixable.
+        if (Interlocked.Exchange(ref _sessionRestore, pending) is { } earlier)
+        {
+            Interlocked.Exchange(ref earlier.Done, 1);
+            earlier.Observer?.Dispose();
+        }
+        player.Rate = rate;
+        pending.Observer = player.AddObserver("timeControlStatus",
+            NSKeyValueObservingOptions.Initial | NSKeyValueObservingOptions.New, _ =>
+            {
+                if (player.TimeControlStatus == AVPlayerTimeControlStatus.Playing) RestoreSession(pending);
+            });
+        // Restored from inside AddObserver (Initial) or by the main thread before the line above stored the observer.
+        if (Volatile.Read(ref pending.Done) == 1) pending.Observer.Dispose();
+    }
+
+    /// <summary>Put the app's own session back — non-mixable again, which keeps a playing player playing and lets the
+    /// app be the one the lock screen shows. Once per pending restore, whichever of playing or teardown comes first.</summary>
+    private void RestoreSession(PendingRestore? pending)
+    {
+        if (pending is null || Interlocked.Exchange(ref pending.Done, 1) == 1) return;
+        Interlocked.CompareExchange(ref _sessionRestore, null, pending);
+        pending.Observer?.Dispose();
+        var session = AVAudioSession.SharedInstance();
+        var error = session.SetCategory(AVAudioSessionCategory.Playback, pending.Mode, pending.Options) ?? session.SetActive(true);
+        AppCallback.Log(_log, () => error is null
+            ? "[Shenora.iOS] background start: the app's audio session is back"
+            : $"[Shenora.iOS] background start: the app's audio session could not be put back ({error.LocalizedDescription}).",
+            error is null ? LogLevel.Debug : LogLevel.Warning);
     }
 
     /// <inheritdoc />
@@ -173,6 +296,9 @@ public sealed class IosMediaPlayer : MediaPlayerBase
     /// </remarks>
     protected override void TeardownCore()
     {
+        // A background start torn down before it played: the app's session goes back now, or nothing ever restores it
+        // — a later start finds MixWithOthers and takes it for the app's own choice.
+        RestoreSession(Interlocked.Exchange(ref _sessionRestore, null));
         _statusObserver?.Dispose();
         _bufferEmptyObserver?.Dispose();
         _likelyToKeepUpObserver?.Dispose();

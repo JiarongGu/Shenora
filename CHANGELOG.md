@@ -128,9 +128,16 @@ at the first list and missed five more breaking changes.
   A return now cancels a handoff still in flight: the native player is closed, the page carries on from where it
   stopped (`Resumed`, without a seek), and the abandoned handoff answers `Nothing`. Unit-tested; not re-run on the
   phone.
-- **`BackgroundPlaybackTransfer`'s docs said the shell's native player takes the audio session; it does not**, and
-  on an iPhone the session must also be MIXABLE when the native player starts, or it is paused at once (measured;
-  the simulator does not enforce it). The remarks now say so.
+- **On an iPhone, the background handoff's native player now actually plays** (`Shenora.iOS`, `IosMediaPlayer`).
+  The handoff starts it at `Window.Stopped`, already in the background, and a backgrounded app may not START
+  non-mixable audio: measured on an iPhone 17 Pro, it was paused at once (`timeControlStatus` Paused, rate 0, no
+  error) while the kit's state still read `Playing`, and the app was suspended — with or without an
+  `AVPlayerLayer`, under `continuesIfPossible`, and with the session re-activated just before playing. A start in
+  the background now runs under the app's `Playback` session made mixable, and puts the app's session back once the
+  player is playing — or as soon as that player is closed first — and a session that is not `Playback` is logged as
+  a warning. Measured after, with the app's ordinary session: 22 s of background playback, and in a second build
+  14 s with the session already back to non-mixable a second after leaving. The simulator enforces none of this. `BackgroundPlaybackTransfer`'s
+  remarks, which said the native player takes the audio session, say what it does instead.
 - **A film that finished while the app was away comes back at its end, not where the page stopped** (`Shenora`,
   `BackgroundPlaybackTransfer`). `Finished` only paused the page, which stays where it was hidden — back at 52.04 s
   of a 60 s film that had finished natively, so pressing play replayed what was heard while away (the docs said it

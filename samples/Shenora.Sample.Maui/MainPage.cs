@@ -309,6 +309,9 @@ public sealed class MainPage : ContentPage
 		// The page-side handoff had to fire before the app hid, and that is precisely why it could not work.
 		if (Window is { } window && NativePlayer(services) is { } nativePlayer)
 		{
+			// The handoff's own prerequisite on iOS — a Playback session, the app's ordinary non-mixable one —
+			// set here as well, because a run whose Live Activity takes the Island skips PlaybackSessionProbe.
+			PlaybackSessionProbe.ConfigureAudioSession(MauiProgram.Log);
 			var transfer = new BackgroundPlaybackTransfer(
 				// The PAGE-BACKED player, which is what plain `IMediaPlayer` resolves to (the shells register
 				// their own by type). It knows the playhead because index.html posts PLAYER_REPORT.
