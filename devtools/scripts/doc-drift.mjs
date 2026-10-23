@@ -969,10 +969,11 @@ function checkLinksResolve() {
 // nuget.org renders README.md inside every nupkg and keeps a link only when its URL is absolute — a relative
 // one, an in-page `#anchor` included, is rendered with no target (NuGetGallery's `MarkdownService` and
 // `PackageHelper.TryPrepareUrlForRendering`). It also shows raw HTML as text and strips every `<!-- -->`
-// before parsing, inside code fences too. npm renders each npm package's README away from the repository,
-// where an in-page `#anchor` still works. So in any of them a relative link is a dead link on the page an
-// adopter reads first, and in the root README so is an anchor, an HTML element or a commented code line
-// (D98). A comment outside a fence just disappears.
+// before parsing, inside code fences too. npm renders each npm package's README away from the repository.
+// So in any of them a relative link is a dead link on the page an adopter reads first, and in the root
+// README so is an HTML element or a commented code line (D98). An in-page `#anchor` is allowed: GitHub,
+// where the README is read first, follows it, and on nuget.org it is merely inert. A comment outside a
+// fence just disappears.
 
 function checkShippedReadmesReadRight() {
   for (const rel of SHIPPED_READMES) {
@@ -985,8 +986,7 @@ function checkShippedReadmesReadRight() {
       const hrefs = [...line.matchAll(MD_LINK)].map((m) => m[1])
         .concat([...line.matchAll(/\b(?:src|href)="([^"]+)"/g)].map((m) => m[1]));
       for (const href of hrefs) {
-        if (/^[a-z][a-z0-9+.-]*:/i.test(href)) continue;
-        if (href.startsWith('#') && rel !== 'README.md') continue;
+        if (/^([a-z][a-z0-9+.-]*:|#)/i.test(href)) continue;
         problems.push(`${rel}:${i + 1}: links "${href}" relatively, and a package's README is read on its registry's ` +
           'page, where only an absolute link has a target. Write the absolute ' +
           'https://github.com/JiarongGu/Shenora/blob/main/… URL (D98).');

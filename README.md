@@ -17,6 +17,10 @@ and its screens, and nothing else.
 framework, not a media library or a file library: those are capabilities it carries. Its sibling
 [Lyntai](https://github.com/JiarongGu/Lyntai) (灵台) is the AI brain, and the two never depend on each other.
 
+**Contents:** [Why Shenora](#why-shenora) · [Quickstart](#quickstart) · [What's in the box](#whats-in-the-box) ·
+[Packages](#packages) · [Status](#status) · [Documentation](#documentation) ·
+[For AI coding agents](#for-ai-coding-agents) · [Contributing](#contributing) · [License](#license)
+
 ## Why Shenora
 
 - **Native .NET, not a JavaScript bridge.** Capacitor and Electron give you a webview and a bridge, so their

@@ -48,3 +48,4 @@ local/
 # and the obvious fix is to edit files that are about to be deleted. The scanners now skip any directory
 # that is itself a checkout; this line is the other half, so the mistake cannot be committed either.
 .claude/worktrees/
+.vscode/settings.local.json

@@ -1380,7 +1380,8 @@ docs cite them — so the number is the column to scan.
   `README.md` is what nuget.org renders for every package, what GitHub and a search engine show first, and what a
   coding agent reads when it has only the package. It holds the pitch (D54), a quickstart, what's in the box, the
   package table, the status and the agent rules, and links ABSOLUTELY, because nuget.org renders a link only when
-  its URL is absolute: a relative one, an in-page `#anchor` included, has no target there. How the set is shaped and each package's basics are `docs/packages.md`; a new capability's
+  its URL is absolute: a relative one has no target there. An in-page `#anchor`, inert on nuget.org, is kept for
+  GitHub, where the README is read first. How the set is shaped and each package's basics are `docs/packages.md`; a new capability's
   documentation goes in a guide or there, and the README gains at most a row.
   - **`llms.txt` (llmstxt.org) and `context7.json` (the Context7 index's configuration) are for coding agents** and
     are in the prose gates by name, since neither is `.md`. README's `agent-rules` block is canonical: `llms.txt`
