@@ -71,8 +71,11 @@ at the first list and missed five more breaking changes.
   panel could reuse a `ChromiumBrowserProcess` sign-in by naming its folder, which it cannot (that profile is the
   `Default` folder, which no panel may name). `Browser`'s docs now say how to reach the UI thread its members need.
 - **The iOS export picker now also handles a swipe-down dismissal** (`Shenora.iOS`): its presentation controller's
-  dismissal answers as cancelled, beside the picker's own cancel callback, as MAUI Essentials' picker does. Whether
-  the cancel callback alone already covered a swipe is unmeasured; built, not yet run on a simulator.
+  dismissal answers as cancelled, beside the picker's own cancel callback, as MAUI Essentials' picker does. Run on
+  the iOS 26.3 simulator, a swipe-down does not dismiss this picker at all: it shrinks to the bottom edge, stays up,
+  and the request stays open until the user acts. Its close button answers cancelled through the picker's own
+  callback, and a save answers success; the dismissal callback fired in none of these, so it covers an iOS whose
+  swipe does dismiss the picker, which was not run.
 
 ### Fixed
 
