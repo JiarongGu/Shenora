@@ -50,6 +50,10 @@ public sealed class MainPage : ContentPage
 	private EventHandler? _onWindowStopped;
 	private EventHandler? _onWindowResumed;
 
+	/// <summary>The transfer itself, disposed with those hooks: it pairs the playback session with a player, and a page
+	/// that loads again must not leave two transfers obeying every lock-screen command.</summary>
+	private BackgroundPlaybackTransfer? _transfer;
+
 	/// <summary>
 	/// The CONTROL for the window's foreground events — they log and do nothing else. Same fields-and-unhook
 	/// discipline as the pair above, for the same process-scoped-Window reason.
@@ -312,7 +316,7 @@ public sealed class MainPage : ContentPage
 			// The handoff's own prerequisite on iOS — a Playback session, the app's ordinary non-mixable one —
 			// set here as well, because a run whose Live Activity takes the Island skips PlaybackSessionProbe.
 			PlaybackSessionProbe.ConfigureAudioSession(MauiProgram.Log);
-			var transfer = new BackgroundPlaybackTransfer(
+			var transfer = _transfer = new BackgroundPlaybackTransfer(
 				// The PAGE-BACKED player, which is what plain `IMediaPlayer` resolves to (the shells register
 				// their own by type). It knows the playhead because index.html posts PLAYER_REPORT.
 				services.GetRequiredService<IMediaPlayer>(),
@@ -325,6 +329,9 @@ public sealed class MainPage : ContentPage
 					// ⚠ A field read — it is asked at background time and must not block.
 					ResolveNativeSource = () => _media.LastServedFile,
 					Log = AppCallback.Logger(MauiProgram.Log),
+					// The lock screen and Control Center follow whichever player holds the playhead — but only when
+					// this run claims the Island with Now Playing; a Live Activity run publishes no session at all.
+					Session = IslandClaimant == IslandSurface.NowPlaying ? services.GetService<IPlaybackSession>() : null,
 				});
 
 			// ⚠ KEPT IN FIELDS AND REMOVED ON UNLOAD, which is not tidiness. `OnLoaded` re-runs after an
@@ -1046,6 +1053,8 @@ public sealed class MainPage : ContentPage
 		}
 		_onWindowStopped = null;
 		_onWindowResumed = null;
+		_transfer?.Dispose();
+		_transfer = null;
 		_onWindowStoppedSeen = null;
 		_onWindowResumedSeen = null;
 

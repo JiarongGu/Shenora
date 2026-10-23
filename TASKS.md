@@ -221,19 +221,6 @@ tried.
 - [ ] On a Mac, with an interactive session's window showing, close the main window from its title bar: it stays; and
   the app's own close (`ChromiumWindows.Close("main")`, the tray's Exit) still ends it.
 
-### 🟡 The iOS background handoff: the lock screen, and a pause the player never reports
-
-Measured on an iPhone 17 Pro on 2026-10-23 (`docs/design/mobile-shells.md`); the native player now plays in the
-background there.
-
-- [ ] **Control Center during the handoff.** Nothing reports the native player to `IPlaybackSession`, so Control
-  Center showed stale state and its play/pause did not track the film (the owner's reading; a remote play earlier
-  resumed the page's muted `<video>` instead). Report the native player to the session for the time it plays —
-  the sample's wiring, or an option on the transfer — and read Control Center on the phone.
-- [ ] **`IosMediaPlayer` does not notice the system pausing it.** iOS set the player's rate to 0 while its `Status`
-  still read `Playing`, so the handback said `Resumed` at a frozen position. Observe `timeControlStatus` and report
-  the pause (or the wait) as the state it is.
-
 ### 🟡 What the page player's carried-forward position cannot see
 
 `MediaPlayer.Status` carries a playing position forward from the page's last report (`docs/design/mobile-shells.md`).

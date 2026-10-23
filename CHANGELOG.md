@@ -51,11 +51,20 @@ at the first list and missed five more breaking changes.
 ### Added
 
 - **`BackgroundPlaybackOutcome.Paused`: coming back to a native player that was paused while away leaves the page
-  paused.** `ToForegroundAsync` seeked and PLAYED the page whatever the native player was doing, so a film the app
-  had paused natively — from the lock screen's controls it wired to that player, say — started again the moment the
-  app returned. It now seeks the page and answers `Paused`, once the handoff has played the native player (before
-  that, a just-opened player reads Paused and the page resumes as before). The kit's native players never pause by
-  themselves. Unit-tested; not run on a device (the sample wires no control to its native player).
+  paused.** `ToForegroundAsync` seeked and PLAYED the page whatever the native player was doing, so a film paused
+  natively — from the lock screen's controls, or by the system for a call or another app's audio (below) — started
+  again the moment the app returned. It now seeks the page and answers `Paused`, once the handoff has played the
+  native player (before that, a just-opened player reads Paused and the page resumes as before). Unit-tested.
+- **The lock screen and Control Center follow a background handoff** (`Shenora`, `BackgroundPlaybackOptions.Session`,
+  `MediaPlayerExtensions.ObeyCommandsFrom`). Given the app's `IPlaybackSession`, `BackgroundPlaybackTransfer` pairs it
+  with the page's player, moves it to the native player when the handoff plays that, and back at the handback; the
+  player it moves to reports where it is at once. A pairing is `ReportTo` plus the new `ObeyCommandsFrom`: play,
+  pause, the toggle, seek and the skips go to the player, stop pauses, play on a finished item starts it again, and
+  next/previous are left to the app. The transfer is now `IDisposable`: dispose one the page replaces, or two of
+  them obey every command. Without a session nothing changes. Measured on an iPhone 17 Pro without it, Control
+  Center showed stale state and its play resumed the page's muted `<video>` behind the native player; with it, its
+  pause and play drove the native player (read by eye on the phone), and its play after the clip had ended started
+  it again.
 
 ### Changed
 
@@ -138,6 +147,13 @@ at the first list and missed five more breaking changes.
   a warning. Measured after, with the app's ordinary session: 22 s of background playback, and in a second build
   14 s with the session already back to non-mixable a second after leaving. The simulator enforces none of this. `BackgroundPlaybackTransfer`'s
   remarks, which said the native player takes the audio session, say what it does instead.
+- **`IosMediaPlayer` reports a pause it did not make** (`Shenora.iOS`). iOS stopping the player — the refused start
+  above, an interruption for a call or another app's audio — drops its rate to 0 and nothing else, so `Status`
+  still read `Playing` and a handback resumed at a frozen position. The player now observes its rate and reports
+  `Paused`, and `Playing` when the system resumes it; reaching the end still reports `Ended`. A start iOS refuses —
+  an app without an active `Playback` session — therefore now hands back `Paused`, so the page comes back paused
+  where it was handed over instead of playing on. Not covered by a test (it is AVFoundation's); on the iPhone, read
+  by eye only.
 - **A film that finished while the app was away comes back at its end, not where the page stopped** (`Shenora`,
   `BackgroundPlaybackTransfer`). `Finished` only paused the page, which stays where it was hidden — back at 52.04 s
   of a 60 s film that had finished natively, so pressing play replayed what was heard while away (the docs said it

@@ -37,6 +37,7 @@ public sealed class IosMediaPlayer : MediaPlayerBase
     private IDisposable? _statusObserver;
     private IDisposable? _bufferEmptyObserver;
     private IDisposable? _likelyToKeepUpObserver;
+    private IDisposable? _rateObserver;
 
     /// <summary>The app's own audio session, put back once a start in the background is playing.</summary>
     private PendingRestore? _sessionRestore;
@@ -146,6 +147,33 @@ public sealed class IosMediaPlayer : MediaPlayerBase
 
         _endObserver = NSNotificationCenter.DefaultCenter.AddObserver(
             AVPlayerItem.DidPlayToEndTimeNotification, _ => OnEnded(), item);
+
+        var player = _player;
+        _rateObserver = player.AddObserver("rate", NSKeyValueObservingOptions.New, _ => OnRateChanged(player));
+    }
+
+    /// <summary>
+    /// 🔴 <b>The system pausing the player is a transition nothing else reports</b> — measured on an iPhone: a start the
+    /// system refused left the rate at 0 while <see cref="IMediaPlayer.Status"/> read Playing, and the background
+    /// handback took that frozen position for a playing one. So a pause or a resume from OUTSIDE — an interruption, a
+    /// refused start — is reported as the state it is. The kit's own pause and play set the state before they touch
+    /// the rate, so they read as no change here.
+    /// </summary>
+    private void OnRateChanged(AVPlayer player)
+    {
+        if (!ReferenceEquals(player, _player)) return;
+        if (player.Rate == 0)
+        {
+            if (State is not (MediaPlayerState.Playing or MediaPlayerState.Buffering)) return;
+            // Reaching the end stops the rate too, and the end notification says Ended.
+            if (_item is { } item && !item.Duration.IsIndefinite && !item.Duration.IsInvalid
+                && player.CurrentTime.Seconds >= item.Duration.Seconds - 0.25) return;
+            OnPlatformState(MediaPlayerState.Paused);
+        }
+        else if (State == MediaPlayerState.Paused)
+        {
+            OnPlatformState(MediaPlayerState.Playing);
+        }
     }
 
     private void OnStatus(AVPlayerItem item)
@@ -302,11 +330,13 @@ public sealed class IosMediaPlayer : MediaPlayerBase
         _statusObserver?.Dispose();
         _bufferEmptyObserver?.Dispose();
         _likelyToKeepUpObserver?.Dispose();
+        _rateObserver?.Dispose();
         if (_endObserver is not null) NSNotificationCenter.DefaultCenter.RemoveObserver(_endObserver);
 
         _statusObserver = null;
         _bufferEmptyObserver = null;
         _likelyToKeepUpObserver = null;
+        _rateObserver = null;
         _endObserver = null;
 
         _player?.Pause();

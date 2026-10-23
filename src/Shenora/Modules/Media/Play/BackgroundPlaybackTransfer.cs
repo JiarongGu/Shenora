@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Shenora.Modules.Platform;
 
 namespace Shenora.Modules.Media;
 
@@ -25,8 +26,10 @@ public enum BackgroundPlaybackOutcome
     Failed,
 
     /// <summary>The page took the playhead back and stays PAUSED: the native player the handoff started was paused
-    /// while the app was away — by whatever the app wired to it, the lock screen's controls for one — so playing on
-    /// would undo that. The kit's native players never pause by themselves.</summary>
+    /// while the app was away — by the lock screen's controls (<see cref="BackgroundPlaybackOptions.Session"/>), or by
+    /// the system: a call or another app's audio interrupting it, which <c>IosMediaPlayer</c> reports — so playing on
+    /// would undo that. ⚠ A start iOS REFUSED in the background reads the same, the rate alone not telling the two
+    /// apart: an app without an active <c>Playback</c> session gets its page back paused where it was handed over.</summary>
     Paused,
 }
 
@@ -57,6 +60,20 @@ public sealed class BackgroundPlaybackOptions
 
     /// <summary>Diagnostics. The host's own sink, never the page's.</summary>
     public ILogger? Log { get; init; }
+
+    /// <summary>
+    /// The OS's transport surface — the lock screen, Control Center, headphone keys — kept on whichever player holds
+    /// the playhead: the page's, then the native one from <see cref="BackgroundPlaybackOutcome.TookOver"/> until the
+    /// handback. Each in turn reports to it (<see cref="MediaPlayerExtensions.ReportTo"/>) and takes its commands
+    /// (<see cref="MediaPlayerExtensions.ObeyCommandsFrom"/>). Null leaves the session alone — an app that claims the
+    /// Dynamic Island with a Live Activity instead, or pairs players itself.
+    /// <para>
+    /// ⚠ Measured on an iPhone without it: Control Center showed stale state, and its play resumed the page's muted
+    /// <c>&lt;video&gt;</c> in the background while the native player played. Metadata — title, artwork — stays the
+    /// app's to <see cref="IPlaybackSession.Publish"/>.
+    /// </para>
+    /// </summary>
+    public IPlaybackSession? Session { get; init; }
 }
 
 /// <summary>
@@ -97,6 +114,7 @@ public sealed class BackgroundPlaybackOptions
 /// <param name="native">The shell's own player, resolved BY ITS TYPE (<c>AndroidMediaPlayer</c>, <c>IosMediaPlayer</c>).</param>
 /// <param name="options">The app's half.</param>
 public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer native, BackgroundPlaybackOptions options)
+    : IDisposable
 {
     private readonly IMediaPlayer _page = page ?? throw new ArgumentNullException(nameof(page));
     private readonly IMediaPlayer _native = native ?? throw new ArgumentNullException(nameof(native));
@@ -108,6 +126,13 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
 
     // The handoff still in flight, which a return cancels.
     private CancellationTokenSource? _handoff;
+
+    // The player the session follows (BackgroundPlaybackOptions.Session) — the page's until a handoff takes over.
+    // Moved only under _gate, which the handoff's last step and the handback's first share: whichever is second sees
+    // the first, so a handoff the return overtook can never move the session onto the player being closed.
+    private readonly object _gate = new();
+    private IDisposable? _pairing = options?.Session is { } session ? Pair(page, session, options.Log) : null;
+    private bool _disposed;
 
     /// <summary>The app is going away: take the playhead off the page and give it to the platform. Call from
     /// the host's own "stopped" lifecycle hook — <c>Window.Stopped</c> under MAUI, i.e. <c>onStop</c> /
@@ -172,7 +197,15 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
             await _native.SeekAsync(position, token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             await _native.PlayAsync(token).ConfigureAwait(false);
-            _nativeStarted = true;
+            lock (_gate)
+            {
+                // A return that got here first cancelled this under the gate and put the session back on the page. The
+                // caller's own cancellation, once the native player plays, is too late to undo anything: it took over.
+                if (token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    throw new OperationCanceledException(token);
+                _nativeStarted = true;
+                MoveSessionTo(_native);
+            }
             Report(() => $"[Shenora] background handoff: {position.TotalSeconds:F2}s -> native, state={_native.Status.State}");
             return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.TookOver, position);
         }
@@ -208,15 +241,21 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
     /// </summary>
     public async Task<BackgroundPlaybackResult> ToForegroundAsync(CancellationToken cancellationToken = default)
     {
-        var inFlight = Interlocked.Exchange(ref _handoff, null);
-        var started = _nativeStarted;
-        _nativeStarted = false;
+        CancellationTokenSource? inFlight;
+        bool started;
+        lock (_gate)
+        {
+            inFlight = Interlocked.Exchange(ref _handoff, null);
+            started = _nativeStarted;
+            _nativeStarted = false;
+            if (inFlight is not null && !started) CancelQuietly(inFlight);
+            MoveSessionTo(_page);
+        }
         if (inFlight is not null && !started)
         {
             // Back before the handoff played the native player — a swipe up and straight back. The page never stopped
             // being the player of record, so it carries on from where IT stopped: the native player's position is a
             // half-opened one (0.00 on an iPhone, where handing it back restarted the film).
-            CancelQuietly(inFlight);
             await CloseNativeQuietlyAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -284,6 +323,42 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
         {
             Report(() => "[Shenora] background handback failed", ex);
             return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Failed, at, ex.GetType().Name);
+        }
+    }
+
+    /// <summary>Stop pairing the session (<see cref="BackgroundPlaybackOptions.Session"/>) with either player. A transfer
+    /// that is replaced — a page that loads again — must be disposed, or two of them obey every command.</summary>
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            _disposed = true;
+            _pairing?.Dispose();
+            _pairing = null;
+        }
+    }
+
+    /// <summary>One player at a time reports to the session and takes its commands; the new one says where it is at
+    /// once, or the session shows the last player's state until this one's next transition. Called under
+    /// <see cref="_gate"/>.</summary>
+    private void MoveSessionTo(IMediaPlayer player)
+    {
+        if (_options.Session is not { } session || _disposed) return;
+        _pairing?.Dispose();
+        _pairing = Pair(player, session, _options.Log);
+        AppCallback.Run(() => MediaPlayerExtensions.ReportNow(player, session),
+            ex => Report(() => "[Shenora] background playback: the session refused a report", ex));
+    }
+
+    private static IDisposable Pair(IMediaPlayer player, IPlaybackSession session, ILogger? log) =>
+        new Pairing(player.ReportTo(session), player.ObeyCommandsFrom(session, log));
+
+    private sealed class Pairing(IDisposable reporting, IDisposable obeying) : IDisposable
+    {
+        public void Dispose()
+        {
+            reporting.Dispose();
+            obeying.Dispose();
         }
     }
 

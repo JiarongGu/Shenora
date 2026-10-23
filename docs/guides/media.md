@@ -524,8 +524,16 @@ window.Resumed += async (_, _) => { try { await transfer.ToForegroundAsync(); } 
   it — even when it lands after `Stopped`, while the native player opens. A page reporting by hand should send
   that report too, and report the platform's pause it drops as the `Playing` the host holds, at where the element
   stopped, with `hidden: true`: the host holds that position, where carried forward it runs on past the pause.
-- **A native player paused while you were away comes back paused** (`Paused`), if your app wired something
-  to it (the lock screen's controls, say); the kit's native players never pause by themselves.
+- **A native player paused while you were away comes back paused** (`Paused`) — from the lock screen's controls,
+  or by the system (a call, another app's audio), which the iOS player reports as the pause it is.
+- **The lock screen and Control Center follow the playhead when you pass the session**
+  (`BackgroundPlaybackOptions.Session = services.GetService<IPlaybackSession>()`): the page's player reports to it
+  and takes its commands, then the native player from the handoff until the handback. Without it they show stale
+  state, and their play can resume the page's muted video behind the native player. Publish the title and artwork
+  yourself (`IPlaybackSession.Publish`); dispose the transfer when the page that made it goes, or two of them obey
+  every command. Outside a handoff the same pairing is `player.ReportTo(session)` plus
+  `player.ObeyCommandsFrom(session)`. ⚠ On iOS, Now Playing and a Live Activity compete for the Dynamic Island:
+  an app claiming it with a Live Activity passes no session.
 - **A page left paused on return stays paused** (`Paused`, `Finished`). Chromium plays again a video it paused for
   a hidden page as soon as the page is shown, and a pause sent to an element already paused cannot stop that, so
   `useMediaPlayer` pauses again a play nobody asked for within a second of the page being shown, when the platform

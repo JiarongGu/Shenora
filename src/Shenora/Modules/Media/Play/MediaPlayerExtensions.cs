@@ -236,6 +236,99 @@ public static class MediaPlayerExtensions
     }
 
     /// <summary>
+    /// Do what the OS's transport controls ask — the other half of <see cref="ReportTo"/>. Play, pause and their
+    /// toggle, seek and the two skips go to <paramref name="player"/>; play on a finished item starts it again from
+    /// the beginning; <see cref="PlaybackCommand.Stop"/> pauses,
+    /// because closing would throw the source away. <see cref="PlaybackCommand.Next"/> and
+    /// <see cref="PlaybackCommand.Previous"/> belong to a queue, which a player does not have, and are left to the app.
+    /// <para>
+    /// ⚠ <b>One player per session at a time.</b> Two obeying the same session both act on every command — a toggle
+    /// then plays one and pauses the other. Dispose one pairing before making the next.
+    /// </para>
+    /// </summary>
+    /// <param name="player">The player to drive.</param>
+    /// <param name="session">The transport surface whose commands it takes.</param>
+    /// <param name="log">Where a command the player refused is reported. Commands arrive on the platform's
+    /// thread, so nothing is rethrown into it.</param>
+    /// <returns>A handle that stops obeying. Dispose it when the pairing ends.</returns>
+    public static IDisposable ObeyCommandsFrom(this IMediaPlayer player, IPlaybackSession session, ILogger? log = null)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentNullException.ThrowIfNull(session);
+
+        void OnCommand(PlaybackCommandRequest request) => _ = ObeyAsync(player, session, request, log);
+
+        session.CommandReceived += OnCommand;
+        return new Unsubscriber(() => session.CommandReceived -= OnCommand);
+    }
+
+    private static async Task ObeyAsync(IMediaPlayer player, IPlaybackSession session, PlaybackCommandRequest request,
+                                        ILogger? log)
+    {
+        try
+        {
+            var status = player.Status;
+            var skip = request.Interval ?? session.SkipInterval;
+            // Play on a FINISHED item starts it again, as a lock screen's play does everywhere else. Measured on an
+            // iPhone without it: the player went to Playing at its end and played nothing.
+            if (status.State == MediaPlayerState.Ended
+                && request.Command is PlaybackCommand.Play or PlaybackCommand.TogglePlayPause)
+            {
+                await player.SeekAsync(TimeSpan.Zero).ConfigureAwait(false);
+                await player.PlayAsync().ConfigureAwait(false);
+                return;
+            }
+
+            switch (request.Command)
+            {
+                case PlaybackCommand.Play:
+                    await player.PlayAsync().ConfigureAwait(false);
+                    break;
+                case PlaybackCommand.Pause or PlaybackCommand.Stop:
+                    await player.PauseAsync().ConfigureAwait(false);
+                    break;
+                case PlaybackCommand.TogglePlayPause when status.State is MediaPlayerState.Playing or MediaPlayerState.Buffering:
+                    await player.PauseAsync().ConfigureAwait(false);
+                    break;
+                case PlaybackCommand.TogglePlayPause:
+                    await player.PlayAsync().ConfigureAwait(false);
+                    break;
+                case PlaybackCommand.Seek when request.Position is { } at:
+                    await player.SeekAsync(at).ConfigureAwait(false);
+                    break;
+                case PlaybackCommand.SkipForward:
+                    await player.SeekAsync(status.Position + skip).ConfigureAwait(false);
+                    break;
+                case PlaybackCommand.SkipBackward:
+                    await player.SeekAsync(status.Position > skip ? status.Position - skip : TimeSpan.Zero).ConfigureAwait(false);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            AppCallback.Log(log, () => $"[Shenora.Modules.Media] the player refused the {request.Command} command.",
+                LogLevel.Warning, ex);
+        }
+    }
+
+    /// <summary>One <see cref="ReportTo"/>-shaped report of where <paramref name="player"/> is NOW — for a session
+    /// moving to it, which would otherwise show the last player's state until this one's next transition. Nothing for
+    /// an empty player: that would clear what the app published.</summary>
+    internal static void ReportNow(IMediaPlayer player, IPlaybackSession session)
+    {
+        var status = player.Status;
+        if (status.State == MediaPlayerState.Empty) return;
+        session.Report(Progress(status));
+        // A transition between the read and the report reached the session first, through ReportTo, and this older
+        // report would then stand until the next one — so the newer state is said again.
+        var now = player.Status;
+        if (now.State != status.State && now.State != MediaPlayerState.Empty) session.Report(Progress(now));
+
+        static PlaybackProgress Progress(MediaPlayerStatus s) =>
+            new() { State = ToPlaybackState(s.State), Position = s.Position, Rate = s.Rate };
+    }
+
+    /// <summary>
     /// The player's state in the vocabulary the OS renders. ⚠ <see cref="MediaPlayerState.Ended"/> and
     /// <see cref="MediaPlayerState.Failed"/> both become <see cref="PlaybackState.Stopped"/> — a transport
     /// surface has no "it broke" state to render, so telling the user WHY stays the app's job.

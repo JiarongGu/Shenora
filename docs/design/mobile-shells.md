@@ -752,8 +752,15 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     switching to non-mixable once it was playing kept it playing (24 s to the clip's end). So `IosMediaPlayer` does
     exactly that for a start in the background, and the app keeps its ordinary non-mixable session: measured after,
     with the sample's page `<audio>` still playing, the native player played 22 s in the background (33.79 →
-    55.79 s) and the handback resumed the page at 56.82 s. ⚠ Not solved: the lock screen. With no `IPlaybackSession`
-    reporting the native player, Control Center showed stale state and its play/pause did not track the film.
+    55.79 s) and the handback resumed the page at 56.82 s. With no `IPlaybackSession` following the native player,
+    Control Center showed stale state and its play resumed the page's muted `<video>`; with
+    `BackgroundPlaybackOptions.Session` its pause and play drove the native player (the owner's reading on the
+    phone), and its play after the clip ended started it again. ⚠ To run that again, the sample's `MainPage`
+    `IslandClaimant` must be `NowPlaying`: it ships `LiveActivity`, which passes no session. No gate covers it.
+    And the refused start above stopped the player
+    with nothing in its own notifications to say so — `Status` still read `Playing`, so a handback took the frozen
+    position for a playing one. `IosMediaPlayer` now observes the rate and reports a pause it did not make (that
+    one, or an interruption's) as `Paused`.
   - 🔴 **IF IT FINISHES WHILE YOU ARE AWAY, HANDING THE POSITION BACK RESTARTS THE FILM.** Found on iOS:
     the clip ended in the background, the handback set `currentTime = 60.00` on a 60 s element, and the page
     reported **`resumed t=0.00`** — seeking to the very end REWINDS, and `play()` then started the film from
