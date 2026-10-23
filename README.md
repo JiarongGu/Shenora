@@ -61,7 +61,7 @@ and `UseWindows` give you the same window in WinForms and WebView2
   <RuntimeIdentifier>win-x64</RuntimeIdentifier>
 </PropertyGroup>
 <ItemGroup>
-  <PackageReference Include="Shenora.Chromium" Version="0.23.2" />
+  <PackageReference Include="Shenora.Chromium" Version="0.24.0" />
   <EmbeddedResource Include="wwwroot\**" WithCulture="false" />
 </ItemGroup>
 ```
@@ -170,7 +170,7 @@ shaped and enough of each to get it working.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.23.2 — pre-release, stabilising toward 1.0.** Every public and protected member is documented and gated by
+**v0.24.0 — pre-release, stabilising toward 1.0.** Every public and protected member is documented and gated by
 API-surface baselines. The WinForms shell, WebView2 hosting, the IPC stack, the native desktop services and the
 extra browsers are extracted from in-house applications that had already shipped them; the Chromium shell, the
 mobile shells and the segment media tier were built in this repository.
