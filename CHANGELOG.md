@@ -121,6 +121,16 @@ at the first list and missed five more breaking changes.
   (in one the resume came before the host's pause and played ~60 ms); `Paused` is unit-tested only (the sample
   wires no control to its native player). **A page that reports
   `PLAYER_REPORT` by hand must do the same**; the MAUI sample's page does.
+- **Coming back while the native player is still opening no longer restarts the film** (`Shenora`,
+  `BackgroundPlaybackTransfer`). Measured on an iPhone: a swipe up and straight back returned 148 ms after
+  `Window.Stopped`, while the handoff was still opening the native player, and `ToForegroundAsync` handed back that
+  half-opened player's position, 0.00 s — the page was sought to the start and played, and the handoff then failed.
+  A return now cancels a handoff still in flight: the native player is closed, the page carries on from where it
+  stopped (`Resumed`, without a seek), and the abandoned handoff answers `Nothing`. Unit-tested; not re-run on the
+  phone.
+- **`BackgroundPlaybackTransfer`'s docs said the shell's native player takes the audio session; it does not**, and
+  on an iPhone the session must also be MIXABLE when the native player starts, or it is paused at once (measured;
+  the simulator does not enforce it). The remarks now say so.
 - **A film that finished while the app was away comes back at its end, not where the page stopped** (`Shenora`,
   `BackgroundPlaybackTransfer`). `Finished` only paused the page, which stays where it was hidden — back at 52.04 s
   of a 60 s film that had finished natively, so pressing play replayed what was heard while away (the docs said it

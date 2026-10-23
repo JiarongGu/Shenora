@@ -38,12 +38,15 @@ public class BackgroundPlaybackTransferTests
 
         public bool Watched => StateChanged is not null;
 
-        public Task OpenAsync(MediaSource source, CancellationToken cancellationToken = default)
+        /// <summary>Holds <see cref="OpenAsync"/> open until completed or cancelled — an open still in flight.</summary>
+        public TaskCompletionSource? OpenGate { get; set; }
+
+        public async Task OpenAsync(MediaSource source, CancellationToken cancellationToken = default)
         {
             Calls.Add($"open:{source.Uri}");
             StateChanged?.Invoke(Status);
             OnOpen?.Invoke();
-            return Task.CompletedTask;
+            if (OpenGate is { } gate) await gate.Task.WaitAsync(cancellationToken);
         }
 
         public Task PlayAsync(CancellationToken cancellationToken = default) { Calls.Add("play"); return Task.CompletedTask; }
@@ -196,6 +199,50 @@ public class BackgroundPlaybackTransferTests
 
         Assert.Equal(BackgroundPlaybackOutcome.TookOver, result.Outcome);
         Assert.Equal(["open:/library/film.mkv", "seek:6.30", "play"], native.Calls);
+    }
+
+    /// <summary>
+    /// 🔴 Back while the native player is still OPENING — a swipe up and straight back, 148 ms on an iPhone. Its
+    /// position then is a half-opened one (0.00 there), and handing that back restarted the film; the page carries
+    /// on from where it stopped instead, and the handoff ends having moved nothing.
+    /// </summary>
+    [Fact]
+    public async Task Coming_back_while_the_native_player_opens_lets_the_page_carry_on()
+    {
+        var (page, native, handoff) = Build(new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Playing,
+            Position = TimeSpan.FromSeconds(5.46),
+        });
+        native.Status = new MediaPlayerStatus { State = MediaPlayerState.Opening };
+        native.OpenGate = new TaskCompletionSource();
+        var leaving = handoff.ToBackgroundAsync();
+
+        var back = await handoff.ToForegroundAsync();
+        var left = await leaving.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(BackgroundPlaybackOutcome.Resumed, back.Outcome);
+        Assert.Equal(["play"], page.Calls);
+        Assert.Equal(["open:/library/film.mkv", "close"], native.Calls);
+        Assert.Equal(BackgroundPlaybackOutcome.Nothing, left.Outcome);
+    }
+
+    /// <summary>The handoff's own caller cancelling is still a cancellation, not "the app came back".</summary>
+    [Fact]
+    public async Task The_callers_cancellation_still_throws()
+    {
+        var (_, native, handoff) = Build(new MediaPlayerStatus
+        {
+            State = MediaPlayerState.Playing,
+            Position = TimeSpan.FromSeconds(5),
+        });
+        native.OpenGate = new TaskCompletionSource();
+        using var cancel = new CancellationTokenSource();
+        var leaving = handoff.ToBackgroundAsync(cancel.Token);
+
+        cancel.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => leaving);
     }
 
     /// <summary>An END landing during the open is not a position to continue from — the duration rewinds.</summary>

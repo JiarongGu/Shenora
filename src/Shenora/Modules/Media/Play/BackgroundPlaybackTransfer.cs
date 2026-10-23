@@ -63,10 +63,13 @@ public sealed class BackgroundPlaybackOptions
 /// <b>Keep playing when the app goes away</b> — move the playhead from the PAGE's player to the platform's
 /// own and back.
 /// <para>
-/// <b>Prerequisites are the app's:</b> iOS needs <c>UIBackgroundModes: [audio]</c> and an active
-/// <c>AVAudioSession</c>, which the shell's native player takes when it opens. A backgrounded page player
-/// is suspended within seconds on both platforms and cannot START audio at all (<c>NotAllowedError</c> —
-/// pressing HOME is not a user gesture). Measurements: <c>docs/design/mobile-shells.md</c>.
+/// <b>Prerequisites are the app's:</b> iOS needs <c>UIBackgroundModes: [audio]</c> and a <c>Playback</c>
+/// <c>AVAudioSession</c> that is MIXABLE (<c>MixWithOthers</c>) when the handoff plays — neither this class nor the
+/// shell's native player configures it. Measured on an iPhone: a backgrounded app may not START non-mixable audio, so
+/// under a non-mixable session the native player was paused at once (rate 0) and the app suspended; under a mixable
+/// one it played on, and switching to non-mixable once it was playing kept it playing. The simulator enforces none of
+/// this. A backgrounded page player is suspended within seconds on both platforms and cannot START audio at all
+/// (<c>NotAllowedError</c> — pressing HOME is not a user gesture). Measurements: <c>docs/design/mobile-shells.md</c>.
 /// </para>
 /// <para>⚠ <b>Four traps:</b></para>
 /// <list type="number">
@@ -101,6 +104,9 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
     // The last handoff got as far as PLAYING the native player. Until it has, the player reads Paused because it
     // has only just opened, not because anyone paused it.
     private volatile bool _nativeStarted;
+
+    // The handoff still in flight, which a return cancels.
+    private CancellationTokenSource? _handoff;
 
     /// <summary>The app is going away: take the playhead off the page and give it to the platform. Call from
     /// the host's own "stopped" lifecycle hook — <c>Window.Stopped</c> under MAUI, i.e. <c>onStop</c> /
@@ -137,12 +143,18 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
                 Volatile.Write(ref landed, report);
         }
 
+        // The app can come back while the native player is still opening — a swipe up and straight back, 148 ms on an
+        // iPhone — and `ToForegroundAsync` then cancels this through `_handoff` rather than handing back a native
+        // position that never played.
+        using var handoff = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        CancelQuietly(Interlocked.Exchange(ref _handoff, handoff));
+        var token = handoff.Token;
         try
         {
             _page.StateChanged += OnPageReport;
             try
             {
-                await _native.OpenAsync(new MediaSource { Uri = source }, cancellationToken).ConfigureAwait(false);
+                await _native.OpenAsync(new MediaSource { Uri = source }, token).ConfigureAwait(false);
             }
             finally
             {
@@ -156,11 +168,20 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
                 position = report.Position;
             }
 
-            await _native.SeekAsync(position, cancellationToken).ConfigureAwait(false);
-            await _native.PlayAsync(cancellationToken).ConfigureAwait(false);
+            await _native.SeekAsync(position, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            await _native.PlayAsync(token).ConfigureAwait(false);
             _nativeStarted = true;
             Report(() => $"[Shenora] background handoff: {position.TotalSeconds:F2}s -> native, state={_native.Status.State}");
             return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.TookOver, position);
+        }
+        catch (Exception ex) when (token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            // The app came back first. Whatever the native player threw on its way down — a cancellation, or the
+            // open failing because the return closed it — nothing moved.
+            Report(() => "[Shenora] background handoff: the app came back before the native player played");
+            return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Nothing, position,
+                $"the app came back before the native player played ({ex.GetType().Name})");
         }
         catch (OperationCanceledException)
         {
@@ -172,6 +193,10 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
             Report(() => "[Shenora] background handoff failed", ex);
             return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Failed, position, ex.GetType().Name);
         }
+        finally
+        {
+            Interlocked.CompareExchange(ref _handoff, null, handoff);
+        }
     }
 
     /// <summary>
@@ -182,9 +207,35 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
     /// </summary>
     public async Task<BackgroundPlaybackResult> ToForegroundAsync(CancellationToken cancellationToken = default)
     {
-        var status = _native.Status;
+        var inFlight = Interlocked.Exchange(ref _handoff, null);
         var started = _nativeStarted;
         _nativeStarted = false;
+        if (inFlight is not null && !started)
+        {
+            // Back before the handoff played the native player — a swipe up and straight back. The page never stopped
+            // being the player of record, so it carries on from where IT stopped: the native player's position is a
+            // half-opened one (0.00 on an iPhone, where handing it back restarted the film).
+            CancelQuietly(inFlight);
+            await CloseNativeQuietlyAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _page.PlayAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Report(() => "[Shenora] background handback failed", ex);
+                return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Failed, _page.Status.Position, ex.GetType().Name);
+            }
+            Report(() => "[Shenora] background handback: back before the native player played — the page carries on");
+            return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Resumed, _page.Status.Position,
+                "back before the native player played");
+        }
+
+        var status = _native.Status;
         if (status.State is MediaPlayerState.Empty)
         {
             return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Nothing, default, "nothing to give back");
@@ -195,15 +246,7 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
         var finished = status.State is MediaPlayerState.Ended
             || (status.Duration is { } duration && duration > TimeSpan.Zero && at >= duration - _options.EndTolerance);
 
-        try
-        {
-            await _native.CloseAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            // A native player that will not close must not cost the page its playhead.
-            Report(() => "[Shenora] background handback: native close threw — continuing", ex);
-        }
+        await CloseNativeQuietlyAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -241,6 +284,26 @@ public sealed class BackgroundPlaybackTransfer(IMediaPlayer page, IMediaPlayer n
             Report(() => "[Shenora] background handback failed", ex);
             return new BackgroundPlaybackResult(BackgroundPlaybackOutcome.Failed, at, ex.GetType().Name);
         }
+    }
+
+    /// <summary>A native player that will not close must not cost the page its playhead.</summary>
+    private async Task CloseNativeQuietlyAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _native.CloseAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Report(() => "[Shenora] background handback: native close threw — continuing", ex);
+        }
+    }
+
+    /// <summary>The handoff may have finished and disposed its source between being read and being cancelled.</summary>
+    private static void CancelQuietly(CancellationTokenSource? source)
+    {
+        try { source?.Cancel(); }
+        catch (ObjectDisposedException) { }
     }
 
     /// <summary>An app-supplied resolver must not become this feature's failure.</summary>
