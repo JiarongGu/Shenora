@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- The Shenora mark: 阙, the pair of towers that flank a gate, with 神 (the spirit, an orb) in the gate
+       between them. shenora-icon.png is this file rendered by headless Edge in a 256x256 window with a
+       transparent default background (XML forbids a double hyphen here, so the flags are not spelled out). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0F766E"/>
+      <stop offset="1" stop-color="#0B1120"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FCD34D" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#FCD34D" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="orb" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#FFFBEB"/>
+      <stop offset="0.5" stop-color="#FBBF24"/>
+      <stop offset="1" stop-color="#D97706"/>
+    </radialGradient>
+    <linearGradient id="roof" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F0FDFA"/>
+      <stop offset="1" stop-color="#99F6E4"/>
+    </linearGradient>
+    <linearGradient id="tower" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#CCFBF1"/>
+      <stop offset="1" stop-color="#2DD4BF"/>
+    </linearGradient>
+    <g id="que">
+      <path d="M38 56 Q46 64 54 66 L82 66 Q90 64 98 56 Q88 52 80 44 L56 44 Q48 52 38 56 Z" fill="url(#roof)"/>
+      <rect x="57" y="66" width="22" height="12" fill="url(#tower)" opacity="0.85"/>
+      <path d="M24 90 Q36 100 46 102 L90 102 Q100 100 112 90 Q98 86 86 78 L50 78 Q38 86 24 90 Z" fill="url(#roof)"/>
+      <rect x="48" y="102" width="40" height="104" rx="2" fill="url(#tower)"/>
+    </g>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <circle cx="128" cy="150" r="60" fill="url(#halo)"/>
+  <use href="#que"/>
+  <use href="#que" transform="translate(256 0) scale(-1 1)"/>
+  <circle cx="128" cy="150" r="22" fill="url(#orb)"/>
+  <rect x="26" y="206" width="204" height="16" rx="5" fill="url(#roof)" opacity="0.8"/>
+</svg>

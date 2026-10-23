@@ -1,0 +1,49 @@
+# Shenora
+
+> Shenora (神阙) is a hybrid app framework for .NET 10 + React, on Windows, macOS, Linux, Android and iOS (NuGet: `Shenora` plus one shell package; npm: `@shenora/react`). The interface is a React page and the app's logic is .NET; Shenora is the shell that hosts the page, typed IPC between them, windows, native services, and modules for what .NET can do and the web platform cannot: media the webview cannot decode, background work, safe file changes and self-update, extra browsers. It is a framework an app is built on, not a server and not a UI component library.
+
+A desktop app references `Shenora.Windows` (WinForms + WebView2, Windows only) or `Shenora.Chromium` (the kit's own Chromium shell through CEF, on Windows, macOS and Linux; the app's build fetches CEF). A phone app references `Shenora.Android` or `Shenora.iOS`, both over MAUI's `HybridWebView`. Each shell brings `Shenora`, which carries everything else. The page imports `@shenora/react`; `@shenora/cli` is a build-time devDependency that takes an app onto a simulator, an iPhone or an Android device. `Shenora.Launcher` is a native launcher that applies a staged update before a framework-dependent app starts.
+
+Rules for writing an app on Shenora:
+
+<!-- agent-rules:begin — a copy of README.md's block; doc-drift holds the two equal (D98) -->
+- Reference ONE shell package and it brings `Shenora`: `Shenora.Windows` (WinForms + WebView2, Windows only), `Shenora.Chromium` (the kit's Chromium shell, `UseChromium`, on Windows, macOS and Linux), `Shenora.Android` or `Shenora.iOS`. The page side is the npm package `@shenora/react`.
+- Media, files, missions, updates and archives are namespaces inside `Shenora` (`Shenora.Modules.Media`, `Shenora.Engine.Files`, `Shenora.Engine.Missions`, `Shenora.Engine.Update`, `Shenora.Engine.Compression`), never packages of their own. `Shenora.Core`, `Shenora.Ipc`, `Shenora.Media`, `Shenora.IO`, `Shenora.IO.Compression`, `Shenora.WinForms`, `Shenora.WebView2` and `Shenora.WebView2.Sessions` are retired package ids; the IPC types are in namespace `Shenora.Core.Ipc`, inside the `Shenora` package.
+- Compose with `ShenoraApplication.CreateBuilder(…)`, one shell call (`UseWindows`, `UseChromium`, `UseAndroid` or `UseIOS`), then `Build()`. `Build()` registers the framework itself (the dispatcher, the event bus, the kit's modules, the mission scheduler); the engine's `Use…` calls, such as `UseMissions`, change what it registers rather than enable it. A desktop app calls `Run()` from an `[STAThread]` `Main`; a phone app calls `Start()` and `Stop()` from its own lifecycle.
+- A host route is a class derived from `ModuleBase` that names its `ModuleName` and switches on `request.Type`, registered with `services.AddIpcModule<T>()`. The page calls it with `getBridge().invoke(module, type, { payload })`; the payload goes in the options object, and the module and type strings must match exactly on both sides.
+- For an error the page should show, throw `ShenoraException` with the app's own code and parameters: its code, parameters and message cross to the page verbatim, so never build one from `ex.Message`. Any other exception arrives as `UNKNOWN_ERROR` with only its type name, and a cancellation as `OPERATION_CANCELLED`.
+- Keep `invoke` for quick calls: a route's synchronous part runs on the shell's UI thread. Start slow work with `post`, report progress with `context.Report(…)` and results with `context.Publish(…)`, and read them on the page with `useShenoraEvent` or `useShenoraRequests()`.
+- Call `getBridge().notifyReady()` once when the page starts: the host holds its events until then, and it resolves to the `ShellInfo` the app declared (the `Shell` option of its shell or IPC bridge), or `undefined` when it declared none. Show a feature when `capabilities` names it, never by sniffing the OS or the user agent.
+- App logic meant for every shell goes in a plain `net10.0` project that references only `Shenora` and injects the contracts (`IUiDispatcher`, `IFileDialogs`, `IClipboardService`, `IUrlLauncher`); a WinForms, WebView2 or MAUI type there breaks the other shells.
+<!-- agent-rules:end -->
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/JiarongGu/Shenora/main/README.md): what Shenora is, a quickstart, the package table and the status
+- [Getting started](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/getting-started.md): a new app from nothing to a window with a typed IPC round trip, on WinForms + WebView2 or on the Chromium shell, then onto a phone
+- [The packages, one by one](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/packages.md): how the package set is shaped, and the basics of each package: the host, the IPC stack, the Windows shell, the Chromium shell, the React client, building the page's bundle
+- [Mobile](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/guides/mobile.md): the MAUI shells for Android and iOS, what transfers from the desktop and what does not
+- [Media](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/guides/media.md): serving, probing, remuxing and converting media, the shell drawing the picture under the page, background playback
+- [Missions](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/guides/missions.md): the mission scheduler, with claims, lanes and a durable queue
+- [File updates](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/guides/file-updates.md): the journalled file-update queue, path locks and the staged self-updater
+- [Sessions](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/guides/sessions.md): extra browsers, off-screen, interactive and streamed
+- [Adoption](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/ADOPTION.md): bringing an existing WinForms + WebView2 app onto the kit in stages
+
+## Reference
+
+- [The wire reference](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/reference/wire.md): the module names, routes, event types, error codes and capability names a page types, generated from the source
+- [@shenora/react](https://raw.githubusercontent.com/JiarongGu/Shenora/main/src/Shenora.React/README.md): the React client, its bridge, stores and hooks
+- [@shenora/cli](https://raw.githubusercontent.com/JiarongGu/Shenora/main/src/Shenora.Cli/README.md): the device loop, `shenora ios deploy` and `shenora android deploy`
+
+## Examples
+
+- [The Chromium sample](https://raw.githubusercontent.com/JiarongGu/Shenora/main/samples/Shenora.Sample.Chromium/Program.cs): a whole `UseChromium` app for Windows, macOS and Linux
+- [The WinForms sample](https://raw.githubusercontent.com/JiarongGu/Shenora/main/samples/Shenora.Sample.Desktop/Program.cs): the Windows shell with WebView2
+- [The MAUI sample](https://raw.githubusercontent.com/JiarongGu/Shenora/main/samples/Shenora.Sample.Maui/MauiProgram.cs): the same logic on Android and iOS
+- [The portable module](https://raw.githubusercontent.com/JiarongGu/Shenora/main/samples/Shenora.Sample.Logic/PortableSampleModule.cs): app logic in a plain `net10.0` project that all three run
+- [The sample page](https://raw.githubusercontent.com/JiarongGu/Shenora/main/samples/Shenora.Sample.Web/src/App.tsx): the React side, through `@shenora/react`
+
+## Optional
+
+- [Changelog](https://raw.githubusercontent.com/JiarongGu/Shenora/main/CHANGELOG.md): per-release changes, breaking changes called out
+- [Decisions](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/DECISIONS.md): why the kit is shaped as it is

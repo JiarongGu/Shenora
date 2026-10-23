@@ -119,7 +119,8 @@ const findDocs = (dir) => {
   }
 };
 for (const root of ['docs', '.claude']) findDocs(path.join(repo, root));
-for (const f of ['CLAUDE.md', 'README.md', 'TASKS.md']) {
+// `llms.txt` and `context7.json` are prose for coding agents, and not `.md`, so they are named (D98).
+for (const f of ['CLAUDE.md', 'README.md', 'TASKS.md', 'llms.txt', 'context7.json']) {
   if (fs.existsSync(path.join(repo, f))) docs.push(f);
 }
 

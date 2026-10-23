@@ -154,6 +154,7 @@ docs cite them — so the number is the column to scan.
 | **D95** | ONE BUNDLE PROVIDER FOR BOTH DESKTOP SHELLS, AND A PAGE FOR A PAGE THAT IS NOT THERE. |
 | **D96** | A WINDOWS CHROMIUM APP CAN PUBLISH AS THREE FILES AND TWO FOLDERS, AS AN OPTION. |
 | **D97** | THE CHROMIUM SHELL EMBEDS A WEB PANEL: A CHILD BROWSER IN A SHELL WINDOW, IN A CHOSEN PROFILE. |
+| **D98** | THE README IS THE LANDING PAGE EVERY PACKAGE SHIPS, AND THE FILES WRITTEN FOR CODING AGENTS ARE KEPT AS STATE, NOT AS COPIES. |
 
 <!-- decisions-index:end -->
 
@@ -1373,6 +1374,24 @@ docs cite them — so the number is the column to scan.
   - 🔴 **A Views OVERLAY, never a raw child HWND:** a Views `CefWindow` presents and routes input only to views in its
     own widget, so the panel is a `CefBrowserView` added as a CUSTOM overlay (ALLOY, to match the window). `SetBounds`
     takes client pixels; `WindowHandle` is 0. Seen working on Windows: `docs/design/shells.md`.
+
+- **D98 — THE README IS THE LANDING PAGE EVERY PACKAGE SHIPS, AND THE FILES WRITTEN FOR CODING AGENTS ARE KEPT AS
+  STATE, NOT AS COPIES.**
+  `README.md` is what nuget.org renders for every package, what GitHub and a search engine show first, and what a
+  coding agent reads when it has only the package. It holds the pitch (D54), a quickstart, what's in the box, the
+  package table, the status and the agent rules, and links ABSOLUTELY, because nuget.org renders a link only when
+  its URL is absolute: a relative one, an in-page `#anchor` included, has no target there. How the set is shaped and each package's basics are `docs/packages.md`; a new capability's
+  documentation goes in a guide or there, and the README gains at most a row.
+  - **`llms.txt` (llmstxt.org) and `context7.json` (the Context7 index's configuration) are for coding agents** and
+    are in the prose gates by name, since neither is `.md`. README's `agent-rules` block is canonical: `llms.txt`
+    repeats it, `context7.json` carries it as `rules`, and `doc-drift` fails while the three disagree, since an
+    agent trusts whichever file it was handed.
+  - **Every link resolves**: `doc-drift` reads absolute links into this repository and relative ones alike, and
+    their `#anchor` by GitHub's slug rule. A README a package ships (the root one and each npm package's) links
+    absolutely, and the root one carries no raw HTML and no comment inside a code block, because nuget.org shows
+    the first as text and strips the second.
+  - **Rejected:** a short README that only links out. The packaged README is the one document an adopter without
+    the repository can read, so it keeps the rules and the package table rather than pointing at them.
 
 ## Anti-goals — deliberately NOT built
 

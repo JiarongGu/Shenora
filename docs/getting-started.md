@@ -70,7 +70,7 @@ private static void Main(string[] args)
   enable (D64).
 - The window's own capabilities — frameless chrome, tray, window-state restore, single instance,
   secondary windows — are `WindowsHostOptions` and are covered in
-  [the root README](../README.md#shenorawindows--the-shell-the-page-host-and-extra-browsers).
+  [the packages page](packages.md#shenorawindows--the-shell-the-page-host-and-extra-browsers).
 
 ---
 
@@ -198,7 +198,7 @@ where it may not write, such as a Linux one under `/opt`, names its own with `Sh
 app's to ship; its pages play no H.264, AAC or HEVC; and `ShenoraChromiumLocales` trims the locales it lays out.
 [ADOPTION's Stage 2 on Chromium](ADOPTION.md#stage-2-on-chromium--when-the-app-ships-its-own-engine) has the
 sizes and the files. The rest of `Shenora.Chromium` is in
-[the root README](../README.md#shenorachromium--chromium-instead-of-webview2).
+[the packages page](packages.md#shenorachromium--chromium-instead-of-webview2).
 
 ---
 

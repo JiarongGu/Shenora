@@ -65,8 +65,25 @@ at the first list and missed five more breaking changes.
   Center showed stale state and its play resumed the page's muted `<video>` behind the native player; with it, its
   pause and play drove the native player (read by eye on the phone), and its play after the clip had ended started
   it again.
+- **Every package carries an icon, the changelog as its release notes, and tags for what it serves** (all six NuGet
+  packages): a shared set (`hybrid-app`, `cross-platform`, `react`, `ipc`…) plus each package's own (`chromium`,
+  `cef`, `maui`, `webview2`…), where the tags used to describe the Windows-only kit. Each shell's and the launcher's
+  description opens on what Shenora is, so a package found on its own says what it belongs to; `Shenora`'s places
+  the self-updater and the resource packs in the Engine layer, where their namespaces are. The npm packages'
+  keywords add the desktop OSes and `hybrid-app`.
+- **`llms.txt` and `context7.json` for coding agents** (D98): an index of the adopter docs written for language
+  models, and the Context7 index's configuration, with the adopter docs in and the internal records out. Both carry
+  the README's rules for writing an app on the kit, and `doc-drift` fails while the three copies disagree.
 
 ### Changed
+
+- **The README is a landing page** (D98): what Shenora is and why, a quickstart that runs on all three desktop OSes,
+  what's in the box, the package table, the status and the agent rules, every link absolute so it resolves on
+  nuget.org. The per-package material it carried (how the set is shaped, each package's basics, building the
+  frontend bundle) moved unchanged to `docs/packages.md`. `doc-drift` now resolves every link in the docs, absolute
+  into this repository or relative, with its `#anchor`, and fails on a README a package ships that would read
+  wrong on its registry: a relative link, or in the root one an in-page anchor, raw HTML or a comment inside a code
+  block, none of which nuget.org renders.
 
 - **A self-contained Windows Chromium build or publish fails with the kit's own message** (`Shenora.Chromium`):
   CEF's launcher is the app's exe, so the kit turns the .NET apphost off, and the SDK then refused with a bare

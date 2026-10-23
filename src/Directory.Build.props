@@ -31,7 +31,10 @@
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageTags>desktop;winforms;webview2;react;ipc;hosting;framework;windows</PackageTags>
+    <PackageIcon>shenora-icon.png</PackageIcon>
+    <PackageReleaseNotes>https://github.com/JiarongGu/Shenora/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <!-- Shared by every package; a package APPENDS its own (`$(PackageTags);…`) for what only it serves. -->
+    <PackageTags>shenora;dotnet;react;hybrid-app;app-framework;cross-platform;webview;ipc;native</PackageTags>
   </PropertyGroup>
 
   <!-- Docs, symbols, SourceLink. SourceLink needs NO package reference on modern SDKs
@@ -57,9 +60,10 @@
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
-  <!-- The repo README ships inside every package (PackageReadmeFile above points at it). -->
+  <!-- The repo README and the icon ship inside every package (PackageReadmeFile / PackageIcon above). -->
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
     <None Include="$(MSBuildThisFileDirectory)..\README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)..\docs\assets\shenora-icon.png" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 
   <!-- The single test project sees internals of every src assembly. -->

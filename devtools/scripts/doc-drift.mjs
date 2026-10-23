@@ -31,6 +31,7 @@
 //      the name either appears or it does not, which is the bar the header above sets.
 //
 // Usage: node devtools/scripts/doc-drift.mjs [--list]
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +40,11 @@ import { citedOutOfScope, outOfScope, scopeViaGit } from './git-scope.mjs';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const listOnly = process.argv.includes('--list');
 const problems = [];
+
+// Written for coding agents and not `.md`, so every check that reads prose names them (D98).
+const AGENT_FILES = ['llms.txt', 'context7.json'];
+// The READMEs a registry renders: the root one inside every nupkg, and each npm package's own.
+const SHIPPED_READMES = ['README.md', 'src/Shenora.React/README.md', 'src/Shenora.Cli/README.md'];
 
 // ── 1. The documented dependency graph vs the csproj files ────────────────────────────────────────
 
@@ -80,7 +86,7 @@ function documentedEdges(text) {
 function checkDependencyGraph() {
   const actual = actualGraph();
   const known = new Set(actual.keys());
-  for (const rel of ['README.md', path.join('docs', 'ADOPTION.md')]) {
+  for (const rel of ['README.md', path.join('docs', 'ADOPTION.md'), path.join('docs', 'packages.md')]) {
     const file = path.join(repo, rel);
     if (!fs.existsSync(file)) continue;
     const text = fs.readFileSync(file, 'utf8');
@@ -235,6 +241,7 @@ function walk(dir, out = []) {
     if (entry.isDirectory() && isNestedCheckout(full)) continue;
     if (entry.isDirectory()) walk(full, out);
     else if (/\.(md|cs|ts|tsx|csproj|props|targets)$/.test(entry.name) && !entry.name.endsWith('.actual')) out.push(full);
+    else if (dir === repo && AGENT_FILES.includes(entry.name)) out.push(full);
   }
   return out;
 }
@@ -760,6 +767,240 @@ function checkDoubledSummaries() {
   }
 }
 
+// ── 10. The agent rules are one text in three files (D98) ─────────────────────────────────────────
+//
+// README's `agent-rules` block is canonical; `llms.txt` repeats it and `context7.json` carries it as
+// `rules`, because an agent reads whichever one it was handed. Fails closed: a copy this cannot find is
+// a copy nothing keeps equal, and a rule wrapped onto a second line is a line nothing compares.
+
+function agentRulesBlock(rel) {
+  const file = path.join(repo, rel);
+  if (!fs.existsSync(file)) { problems.push(`${rel} does not exist, so its copy of the agent rules cannot be checked (D98).`); return null; }
+  const text = fs.readFileSync(file, 'utf8');
+  if (rel.endsWith('.json')) {
+    let rules;
+    try { rules = JSON.parse(text).rules; } catch (e) { problems.push(`${rel}: not valid JSON (${e.message}).`); return null; }
+    if (!Array.isArray(rules)) { problems.push(`${rel}: has no "rules" array, so it carries no copy of the agent rules (D98).`); return null; }
+    return rules;
+  }
+  const block = text.match(/<!-- agent-rules:begin[^\n]*\n([\s\S]*?)<!-- agent-rules:end -->/);
+  if (!block) { problems.push(`${rel}: no <!-- agent-rules:begin --> … <!-- agent-rules:end --> block (D98).`); return null; }
+  const lines = block[1].split(/\r?\n/).filter((l) => l.trim() !== '');
+  const stray = lines.find((l) => !l.startsWith('- '));
+  if (stray) {
+    problems.push(`${rel}: a line in the agent-rules block is not a "- " rule, so no copy is compared against it (D98).\n` +
+      `      ${stray.trim().slice(0, 110)}\n      Keep each rule on ONE line.`);
+  }
+  return lines.filter((l) => l.startsWith('- ')).map((l) => l.slice(2));
+}
+
+function checkAgentRulesAgree() {
+  const canonical = agentRulesBlock('README.md');
+  if (!canonical) return;
+  if (canonical.length === 0) { problems.push('README.md: the agent-rules block holds no "- " rule (D98).'); return; }
+  for (const rel of AGENT_FILES) {
+    const copy = agentRulesBlock(rel);
+    if (!copy) continue;
+    const at = canonical.findIndex((rule, i) => copy[i] !== rule);
+    if (at < 0 && copy.length === canonical.length) continue;
+    const i = at < 0 ? canonical.length : at;
+    problems.push(`${rel}: its agent rules differ from README.md's at rule ${i + 1} (D98).\n` +
+      `      README.md: ${(canonical[i] ?? '(none)').slice(0, 110)}\n` +
+      `      ${rel}: ${(copy[i] ?? '(none)').slice(0, 110)}\n` +
+      '      Edit README.md\'s block, then copy it: an agent trusts whichever file it was handed.');
+  }
+}
+
+// ── 11. Every link a reader is handed resolves: the path, and the #anchor by GitHub's slug rule ────
+//
+// A link into this repository written ABSOLUTELY (README, `llms.txt`, the npm READMEs) is a URL, so
+// check 3 never reads it; a relative link's `#anchor` is read by nothing either. Both are exact: the
+// path is in a clone or it is not — asked of GIT, which is case-exact where NTFS is not, so a link
+// GitHub would 404 on does not pass here — and the heading's slug is there or it is not.
+
+const REPO_URL = /https:\/\/(github\.com\/JiarongGu\/Shenora\/(?:blob|tree)|raw\.githubusercontent\.com\/JiarongGu\/Shenora)\/([^/\s)]+)\/([^\s)"'`<>#?]+)(?:\?[^\s)"'`<>#]*)?(?:#([^\s)"'`<>]*))?/g;
+const MD_LINK = /!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
+const LINK_DEFINITION = /^ {0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?/;
+const LINE_ANCHOR = /^L\d+(C\d+)?(-L\d+(C\d+)?)?$/;
+const anchorCache = new Map();
+const linksRead = { absolute: 0, relative: 0, anchors: 0 };
+let clone = null;
+
+/** The files and directories a clone has (tracked, or new and not ignored), or null when git cannot say. */
+function clonePaths() {
+  if (clone !== null) return clone || null;
+  try {
+    const out = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+      { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    clone = { files: new Set(), dirs: new Set(['.']) };
+    for (const f of out.split('\0').filter(Boolean)) {
+      clone.files.add(f);
+      for (let d = path.posix.dirname(f); d !== '.'; d = path.posix.dirname(d)) clone.dirs.add(d);
+    }
+  } catch (e) {
+    clone = false;
+    console.error(`  !!  doc-drift: git could not list the clone's paths (${e.code ?? e.message}); links are resolved `
+      + 'against the filesystem instead, which on Windows does not see a wrong letter case.');
+  }
+  return clone || null;
+}
+
+const decode = (s) => { try { return decodeURIComponent(s); } catch { return null; } };
+
+/** GitHub's id for a heading: github-slugger over its rendered text, where a code span keeps its text verbatim. */
+function headingSlug(text) {
+  const rendered = text.split(/(`+[^`]*`+)/).map((part, i) => (i % 2 === 1 ? part.replace(/`/g, '') : part
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\*/g, '')
+    .replace(/(^|[^\p{L}\p{N}_])_+|_+(?=[^\p{L}\p{N}_]|$)/gu, '$1'))).join('');
+  return rendered.toLowerCase().replace(/[^\p{L}\p{N}\p{M} _-]/gu, '').replace(/ /g, '-');
+}
+
+/** Every heading id in a markdown file, with GitHub's `-1`, `-2` for a repeated heading. */
+function anchorsOf(file) {
+  if (anchorCache.has(file)) return anchorCache.get(file);
+  const ids = new Set();
+  const seen = new Map();
+  const add = (heading) => {
+    const base = headingSlug(heading);
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    ids.add(n === 0 ? base : `${base}-${n}`);
+  };
+  let fence = null;
+  let previous = '';
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const f = line.match(/^\s*(`{3,}|~{3,})/);
+    if (f) { if (!fence) fence = f[1][0]; else if (f[1][0] === fence) fence = null; previous = ''; continue; }
+    if (fence) continue;
+    for (const m of line.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) ids.add(m[1]);
+    const atx = line.match(/^ {0,3}(?:>\s*)*#{1,6}(?:\s+(.*?))?\s*#*\s*$/);
+    if (atx) { add(atx[1] ?? ''); previous = ''; continue; }
+    // A setext heading: a paragraph line underlined with = or -.
+    if (/^ {0,3}(=+|-+)\s*$/.test(line) && previous.trim() !== '' && !/^\s*([|>#*+-]|\d+\.)/.test(previous)) {
+      add(previous.trim());
+      previous = '';
+      continue;
+    }
+    previous = line;
+  }
+  anchorCache.set(file, ids);
+  return ids;
+}
+
+/** Why a link to `target` (a repo path) with `anchor` does not resolve, or null when it does. */
+function unresolved(target, anchor, { raw = false } = {}) {
+  const known = clonePaths();
+  const isFile = known ? known.files.has(target) : fs.existsSync(path.join(repo, target)) && !outOfScope(target);
+  const isDir = known ? known.dirs.has(target) : false;
+  if (!isFile && !isDir) return `"${target}" is not in a clone of this repository (or not in that letter case)`;
+  if (raw && !isFile) return `"${target}" is a directory, and raw.githubusercontent.com serves files only`;
+  if (!anchor || LINE_ANCHOR.test(anchor)) return null;
+  linksRead.anchors++;
+  if (!target.endsWith('.md')) return `"#${anchor}" points into "${target}", which has no headings`;
+  const id = decode(anchor);
+  if (id === null) return `"#${anchor}" is not valid percent-encoding`;
+  return anchorsOf(path.join(repo, target)).has(id) ? null : `"${target}" has no heading "#${anchor}"`;
+}
+
+/** Each line with inline code spans blanked, and fenced code blocks dropped: neither holds a link. */
+function proseLines(text) {
+  let fence = null;
+  return text.split(/\r?\n/).map((line) => {
+    const f = line.match(/^\s*(`{3,}|~{3,})/);
+    if (f) { if (!fence) fence = f[1][0]; else if (f[1][0] === fence) fence = null; return ''; }
+    return fence ? '' : line.replace(/`[^`]*`/g, (s) => ' '.repeat(s.length));
+  });
+}
+
+function checkLinksResolve() {
+  for (const file of walk(repo)) {
+    const rel = path.relative(repo, file).replace(/\\/g, '/');
+    if (!rel.endsWith('.md') && !AGENT_FILES.includes(rel)) continue;
+    if (HISTORY_BY_DEFINITION.test(rel)) continue;
+    const text = fs.readFileSync(file, 'utf8');
+    const say = (i, why, line) => problems.push(`${rel}:${i + 1}: a link does not resolve: ${why}.\n` +
+      `      ${line.trim().slice(0, 110)}`);
+    // Absolute links: read from the raw text, since a URL in a code span is still one a reader follows.
+    text.split(/\r?\n/).forEach((line, i) => {
+      for (const m of line.matchAll(REPO_URL)) {
+        linksRead.absolute++;
+        const [, host, branch, p, anchor] = m;
+        if (/^([0-9a-f]{7,40}|v\d.*)$/.test(branch)) continue;      // pinned to a commit or a tag: history
+        if (branch !== 'main') { say(i, `it names the branch "${branch}", and this repository's is main`, line); continue; }
+        const target = decode(p);
+        if (target === null) { say(i, `"${p}" is not valid percent-encoding`, line); continue; }
+        const why = unresolved(target.replace(/\/$/, ''), anchor, { raw: host.startsWith('raw.') });
+        if (why) say(i, why, line);
+      }
+    });
+    if (!rel.endsWith('.md')) continue;
+    // Relative links and reference definitions, and in-document #anchors.
+    proseLines(text).forEach((line, i) => {
+      const hrefs = [...line.matchAll(MD_LINK)].map((m) => m[1]);
+      const definition = line.match(LINK_DEFINITION);
+      if (definition) hrefs.push(definition[1]);
+      for (const href of hrefs) {
+        if (/^[a-z][a-z0-9+.-]*:/i.test(href)) continue;          // http:, https:, mailto:
+        linksRead.relative++;
+        const [p, anchor] = href.split('#');
+        const local = decode(p);
+        if (local === null) { say(i, `"${p}" is not valid percent-encoding`, line); continue; }
+        const target = local === '' ? rel
+          : path.relative(repo, path.resolve(path.dirname(file), local)).replace(/\\/g, '/');
+        if (target.startsWith('local/') && !fs.existsSync(path.join(repo, 'local'))) continue;   // see check 3
+        const why = unresolved(target.replace(/\/$/, '') || '.', anchor);
+        if (why) say(i, why, line);
+      }
+    });
+  }
+}
+
+// ── 12. A README that ships in a package reads right on its registry ───────────────────────────────
+//
+// nuget.org renders README.md inside every nupkg and keeps a link only when its URL is absolute — a relative
+// one, an in-page `#anchor` included, is rendered with no target (NuGetGallery's `MarkdownService` and
+// `PackageHelper.TryPrepareUrlForRendering`). It also shows raw HTML as text and strips every `<!-- -->`
+// before parsing, inside code fences too. npm renders each npm package's README away from the repository,
+// where an in-page `#anchor` still works. So in any of them a relative link is a dead link on the page an
+// adopter reads first, and in the root README so is an anchor, an HTML element or a commented code line
+// (D98). A comment outside a fence just disappears.
+
+function checkShippedReadmesReadRight() {
+  for (const rel of SHIPPED_READMES) {
+    const file = path.join(repo, rel);
+    if (!fs.existsSync(file)) { problems.push(`${rel} does not exist, but it is a README a package ships.`); continue; }
+    const text = fs.readFileSync(file, 'utf8');
+    // A comment outside a fence is stripped, not shown, so what it says is never read (its newlines kept).
+    const shown = text.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, ' '));
+    proseLines(shown).forEach((line, i) => {
+      const hrefs = [...line.matchAll(MD_LINK)].map((m) => m[1])
+        .concat([...line.matchAll(/\b(?:src|href)="([^"]+)"/g)].map((m) => m[1]));
+      for (const href of hrefs) {
+        if (/^[a-z][a-z0-9+.-]*:/i.test(href)) continue;
+        if (href.startsWith('#') && rel !== 'README.md') continue;
+        problems.push(`${rel}:${i + 1}: links "${href}" relatively, and a package's README is read on its registry's ` +
+          'page, where only an absolute link has a target. Write the absolute ' +
+          'https://github.com/JiarongGu/Shenora/blob/main/… URL (D98).');
+      }
+      if (rel === 'README.md' && /<\/?[A-Za-z][A-Za-z0-9-]*(\s[^>]*)?\/?>/.test(line)) {
+        problems.push(`${rel}:${i + 1}: raw HTML, which nuget.org shows as literal text on every package page. ` +
+          `Write it as markdown (D98).\n      ${line.trim().slice(0, 110)}`);
+      }
+    });
+    if (rel !== 'README.md') continue;
+    let fence = false;
+    text.split(/\r?\n/).forEach((line, i) => {
+      if (/^\s*(`{3,}|~{3,})/.test(line)) { fence = !fence; return; }
+      if (fence && line.includes('<!--')) {
+        problems.push(`${rel}:${i + 1}: an HTML comment inside a code block, which nuget.org strips before ` +
+          `rendering, so the line shows without it there. Say it in the prose around the block (D98).\n      ${line.trim().slice(0, 110)}`);
+      }
+    });
+  }
+}
+
 checkDependencyGraph();
 checkRetiredNames();
 checkDocLinks();
@@ -770,6 +1011,9 @@ checkThrowawayCitations();
 checkDevVerbsAreDiscoverable();
 checkNamedDevVerbsExist();
 checkDoubledSummaries();
+checkAgentRulesAgree();
+checkLinksResolve();
+checkShippedReadmesReadRight();
 
 if (problems.length === 0) {
   console.log('  ok  doc-drift: dependency graph matches the csproj files; no retired name stated as ' +
@@ -777,7 +1021,10 @@ if (problems.length === 0) {
               'no duplicate DECISIONS number; every dev.mjs verb is discoverable and every verb prose '
               + 'names exists; '
               + 'no path git calls ignored is cited as if a reader could open it; '
-              + 'no doc comment carries two <summary> elements');
+              + 'no doc comment carries two <summary> elements; '
+              + 'the agent rules agree in README, llms.txt and context7.json; every link and #anchor resolves '
+              + `(${linksRead.absolute} absolute, ${linksRead.relative} relative, ${linksRead.anchors} anchors); `
+              + 'every shipped README reads right on its registry');
   process.exit(0);
 }
 console.error(`\n\x1b[31m✖ doc-drift: ${problems.length} stale claim(s) in prose:\x1b[0m`);

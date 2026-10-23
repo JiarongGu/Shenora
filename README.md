@@ -1,390 +1,251 @@
+![Shenora](https://raw.githubusercontent.com/JiarongGu/Shenora/main/docs/assets/shenora-icon.png)
+
 # Shenora (神阙)
 
-**A hybrid app development framework — .NET + React — for Windows, Android and iOS.** Shenora is the
-"body" an app boots its logic on: shell hosting, typed IPC, modules, window management and native
-services, so an application ships only its domain logic and screens. **.NET does the platform work,
-React does the interface, and the kit owns the seam between them** — which is the whole differentiator
-against a webview-plus-plugins stack: the ceiling here is .NET's (real threads, real handles, the
-platform SDKs, background execution), not the web platform's.
+[![NuGet](https://img.shields.io/nuget/v/Shenora.svg?label=nuget)](https://www.nuget.org/packages/Shenora)
+[![npm](https://img.shields.io/npm/v/@shenora/react.svg?label=npm)](https://www.npmjs.com/package/@shenora/react)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/JiarongGu/Shenora/blob/main/LICENSE)
 
-⚠ **It is not a media library, a file library, or any other single-domain library** — those are
-capabilities it happens to carry (D53). The name (神阙, "vessel of the way") reflects the split: Shenora is
-the developing body that hosts an application's logic and intelligence; its sibling library
-[Lyntai](https://github.com/JiarongGu/Lyntai) (灵台) is the reusable AI brain. The two never
-depend on each other.
+**A hybrid app framework for .NET + React, on Windows, macOS, Linux, Android and iOS.** Your interface is a React
+page and your app's logic is .NET. Shenora is everything between them: the shell that hosts the page, typed IPC
+across the seam, windows, native services and the modules that reach the platform. An app ships its domain logic
+and its screens, and nothing else.
+
+> 神阙 (shénquè), "the spirit's gate": the classical Chinese name for the navel, where the body was first joined
+> to what fed it.
+
+**.NET does the platform work, React does the interface, and the kit owns the seam between them.** It is a
+framework, not a media library or a file library: those are capabilities it carries. Its sibling
+[Lyntai](https://github.com/JiarongGu/Lyntai) (灵台) is the AI brain, and the two never depend on each other.
+
+## Why Shenora
+
+- **Native .NET, not a JavaScript bridge.** Capacitor and Electron give you a webview and a bridge, so their
+  ceiling is the web platform plus plugins. Here it is .NET's: real threads, real handles, the platform SDKs,
+  background execution. The kit's job is the translation layer, which is to say what .NET can do and React
+  cannot.
+- **One typed IPC on every shell.** Correlated requests, batched events and structured errors, in the same
+  envelope over WebView2, the kit's Chromium shell and MAUI's `HybridWebView`. The host tells the page what it
+  offers in the handshake, so one web bundle serves every shell.
+- **Your choice of engine on the desktop.** WebView2 in a WinForms shell for a small Windows app, or the kit's
+  own Chromium shell (CEF) for one engine on Windows, macOS and Linux, with frameless windows, a native splash, a
+  tray, file dialogs and one instance per install.
+- **Media the webview cannot play.** Probe, plan, remux, or convert while it plays. On a phone the shell can draw
+  the picture itself, under a transparent region the page leaves, so a film the webview refuses plays with no
+  transcode and the page keeps every control; when the app goes to the background, a native player carries on.
+- **The desktop services an app needs.** Window state that survives a DPI change, single instance that hands a
+  later launch's arguments to the running app, secondary windows, drag and drop with real paths, the clipboard,
+  and extra browsers: off-screen, interactive and streamed.
+- **Safe file changes and updates.** A journalled file-update queue with path locks, a self-updater that applies
+  only a release whose every file matched its hash, and a native launcher that applies it before your app starts
+  and can show a startup screen until your first window.
+- **Logic that stays portable.** App logic references only `Shenora` (`net10.0`) and injects the contracts it
+  needs; a sample project turns red the moment a Windows type reaches it.
+- **Headless.** No UI component library and no design system: you bring your own React.
+
+## Quickstart
+
+The kit's Chromium shell, which is one project on Windows, macOS and Linux. On Windows alone, `Shenora.Windows`
+and `UseWindows` give you the same window in WinForms and WebView2
+([getting started, step 2](https://github.com/JiarongGu/Shenora/blob/main/docs/getting-started.md#2-a-window)).
+
+```xml
+<PropertyGroup>
+  <OutputType>WinExe</OutputType>
+  <TargetFramework>net10.0</TargetFramework>
+  <ImplicitUsings>enable</ImplicitUsings>
+  <Nullable>enable</Nullable>
+  <AssemblyName>MyApp.App</AssemblyName>
+  <RootNamespace>MyApp</RootNamespace>
+  <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+</PropertyGroup>
+<ItemGroup>
+  <PackageReference Include="Shenora.Chromium" Version="0.23.2" />
+  <EmbeddedResource Include="wwwroot\**" WithCulture="false" />
+</ItemGroup>
+```
+
+The build lays the app out as `MyApp`, which starts `MyApp.App`; the runtime identifier is the OS you build for
+(`osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, `win-x64`, `win-arm64`); `wwwroot` is your built React page.
+
+```csharp
+using Shenora;
+using Shenora.Chromium;
+using Shenora.Core.Ipc;
+using Shenora.Core.WebView;
+
+static class Program
+{
+    [STAThread]
+    static void Main(string[] args)
+    {
+        var builder = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions { Args = args, ApplicationName = "My App" });
+        builder.UseChromium(new ChromiumHostOptions
+        {
+            ResourceProvider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
+            {
+                Assembly = typeof(Program).Assembly,
+                ResourcePrefix = "MyApp.wwwroot",
+            }),
+            Window = new ChromiumWindowOptions
+            {
+                Title = "My App", Width = 1000, Height = 760, Path = "index.html",
+                FramelessChrome = false,   // the OS's title bar; frameless, the default, has the page draw its own
+            },
+        });
+        builder.Services.AddIpcModule<GreetingModule>();
+
+        using var app = builder.Build();
+        app.Run();
+    }
+}
+
+sealed class GreetingModule : ModuleBase
+{
+    public override string ModuleName => "GREETING";
+
+    protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken ct) =>
+        request.Type switch
+        {
+            "HELLO" => Task.FromResult<object?>($"Hello from .NET {Environment.Version}"),
+            _ => throw UnknownType(request),
+        };
+}
+```
+
+```ts
+// npm i @shenora/react
+import { getBridge } from '@shenora/react';
+
+await getBridge().notifyReady();                                   // the host's events flow from here
+const greeting = await getBridge().invoke<string>('GREETING', 'HELLO');
+```
+
+The first build fetches the pinned CEF build once per machine and lays the app out. A failed call rejects with a
+`ShenoraError`: a `ShenoraException`'s own code, parameters and message, or for any other exception
+`UNKNOWN_ERROR` and its type name, never its text.
+[Getting started](https://github.com/JiarongGu/Shenora/blob/main/docs/getting-started.md) goes on to the dev
+server, a splash, window state, and onto a phone.
+
+## What's in the box
+
+| You want | Reach for | Read |
+|---|---|---|
+| A window around a React page, on Windows | `Shenora.Windows`, `UseWindows` (WinForms + WebView2) | [getting started, 2](https://github.com/JiarongGu/Shenora/blob/main/docs/getting-started.md#2-a-window) |
+| One desktop app for Windows, macOS and Linux | `Shenora.Chromium`, `UseChromium` | [getting started, 2b](https://github.com/JiarongGu/Shenora/blob/main/docs/getting-started.md#2b-a-window-on-macos-or-linux) |
+| The same app on a phone | `Shenora.Android`, `Shenora.iOS` over MAUI's `HybridWebView` | [mobile](https://github.com/JiarongGu/Shenora/blob/main/docs/guides/mobile.md) |
+| Typed calls and events between page and host | `ModuleBase`, `AddIpcModule<T>()`, `getBridge()`, `useShenoraEvent` | [the IPC stack](https://github.com/JiarongGu/Shenora/blob/main/docs/packages.md#shenoracoreipc--the-wire-and-the-dispatcher-a-namespace-inside-shenora-not-a-package) |
+| Progress and cancellation for long work | `context.Report(…)`, `useShenoraRequests()` | [the IPC stack](https://github.com/JiarongGu/Shenora/blob/main/docs/packages.md#shenoracoreipc--the-wire-and-the-dispatcher-a-namespace-inside-shenora-not-a-package) |
+| Windows, tray, dialogs, clipboard, single instance | `WindowsHostOptions`, `ChromiumHostOptions`, `IFileDialogs`, `IClipboardService` | [the Windows shell](https://github.com/JiarongGu/Shenora/blob/main/docs/packages.md#shenorawindows--the-shell-the-page-host-and-extra-browsers), [the Chromium shell](https://github.com/JiarongGu/Shenora/blob/main/docs/packages.md#shenorachromium--chromium-instead-of-webview2) |
+| Local files in `<video>`, `<audio>` and `<img>` | `IWebViewInterceptor`, `UseFiles(…)` | [serving files](https://github.com/JiarongGu/Shenora/blob/main/docs/packages.md#how-the-set-is-shaped) |
+| A file the webview cannot decode | `Shenora.Modules.Media`, `useMediaSurface`, `useMediaTransport` | [media](https://github.com/JiarongGu/Shenora/blob/main/docs/guides/media.md) |
+| Background work with claims, lanes and a durable queue | `IMissionScheduler` | [missions](https://github.com/JiarongGu/Shenora/blob/main/docs/guides/missions.md) |
+| Safe file changes and self-update | `Shenora.Engine.Files`, `UpdateStage`, `Shenora.Launcher` | [file updates](https://github.com/JiarongGu/Shenora/blob/main/docs/guides/file-updates.md) |
+| Extra browsers: off-screen, interactive, streamed | `RenderSessionPool`, `InteractiveSession`, `StreamingSession` | [sessions](https://github.com/JiarongGu/Shenora/blob/main/docs/guides/sessions.md) |
+| A build onto a simulator, an iPhone or an Android device | `npx shenora ios deploy`, `npx shenora android deploy` | [`@shenora/cli`](https://github.com/JiarongGu/Shenora/blob/main/src/Shenora.Cli/README.md) |
+
+## Packages
+
+Versioned in lockstep. Reference **one shell** for the platform you build for and it brings `Shenora`;
+[the packages, one by one](https://github.com/JiarongGu/Shenora/blob/main/docs/packages.md) has how the set is
+shaped and enough of each to get it working.
+
+| Package | Registry | Target framework | In one line |
+|---|---|---|---|
+| `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against, plus the capabilities that are shell work rather than extras: media (`Shenora.Modules.Media`), file operations and the self-updater (`Shenora.Engine.Files`, `Shenora.Engine.Update`), archive extraction (`Shenora.Engine.Compression`), the mission scheduler (`Shenora.Engine.Missions`) and the extra browsers (`Shenora.Core.Sessions`). |
+| `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell: bootstrap, windows, tray, dialogs, single instance, WebView2 hosting and its IPC bridge, and the extra browsers in WebView2. The versioned TFM adds Windows' media controls and a Media Foundation player. |
+| `Shenora.Chromium` | NuGet | `net10.0` (Windows, macOS and Linux, x64 and arm64) | Chromium through CEF: a complete shell of its own (`UseChromium`) on every desktop OS, and the `ChromiumView` control `Shenora.Windows` hosts. **CEF is not in the package**: your app's build fetches the pinned CEF build, so reference it from the app's own project. |
+| `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
+| `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell, sharing its MAUI half with `Shenora.Android`, plus AVPlayer, Now Playing and Live Activities. |
+| `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The native launcher that applies a staged update before your app starts, for a framework-dependent app, and can show a startup screen until its first window. A self-contained app needs none of it. |
+| `@shenora/react` | npm | ES2022 / ESM · **React ≥ 18** | The page half: bridge, event bus, stores and hooks. |
+| `@shenora/cli` | npm | Node 20+ | **Build-time only, a `devDependency`.** The `shenora` binary that takes a built app onto a simulator, an iPhone or an Android device, with no Xcode project of your own. |
+
+**There are no optional feature packages.** Media, files, missions, updates and archives are namespaces inside
+`Shenora`, so a reference to `Shenora` plus your platform's shell is all of it.
 
 ## Status
 
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.23.2 — pre-release, stabilising toward 1.0.** The newest arrivals — `CHANGELOG.md` is the authority —
-are the Chromium shell on **Linux** (`UseChromium` with `-r linux-x64`: frameless windows, native file dialogs,
-the X11 clipboard and a StatusNotifierItem tray), file dialogs in the Chromium shell that start in the folder
-asked for on every OS, and **`Shenora.Chromium`** itself, before it: Chromium through CEF for an app that ships
-its own engine, as a shell of its own (`UseChromium`, on Windows, macOS and Linux) or as a `ChromiumView`
-control in the Windows shell.
-
-> **The segment/streaming media tier is the newest part of the kit, and the only one not extracted from an
-> application that had already proven it in production.** An August 2026 review found several faults
-> concentrated there, and the reason they concentrated is worth knowing: **it had only ever been tested
-> against media this kit itself produced.** Sources muxed by MP4Box, Bento4, mkvmerge or Apple exercise
-> shapes ours never emits — lacing, a track that starts late, a source with no cut point at all.
->
-> That is what changed. There is a foreign-muxer fixture corpus now, none of it written by this kit, and
-> its output is checked three ways: by a decoder (ffmpeg), by a real browser `MediaSource`, and on a real
-> iPhone — where a 78 MB film's first load costs the same as a 488 KB one's, and a segment carrying several
-> fragments buffers and renders. ⚠ **What has NOT run on Android is that last check**, so the shell the
-> `302`/`304` process-killer was found on has desktop-and-iOS evidence behind it rather than its own.
-
-The application builder, WinForms host, WebView2 hosting, the full typed IPC stack (envelopes,
-middleware dispatcher, scoped-container router, event bus, postMessage transport, `@shenora/react` client), the native desktop surface (frameless chrome +
-native caption buttons, STA dialogs, shell/clipboard, drag-drop zones, secondary windows, tray) and
-the auxiliary browser sessions (off-screen render pool, interactive sessions, streaming sessions) are
-extracted from proven in-house applications and verified end-to-end against the sample app. Every
-public and protected member is documented and gated by API-surface baselines. The kit also runs on
-**Android and iOS**, both proven on real hardware — an Android device and an iPhone 17 Pro, including
-media playback, the native save picker, audio conversion and Live Activities. On a phone the shell can
-also draw the PICTURE itself, behind a transparent region the page leaves, so a film the webview refuses
-plays without a transcode while the page keeps every control (`useMediaSurface`, `useMediaTransport`).
-
-⚠ **The package set was reorganised by platform in 0.5.0.** `Shenora.WinForms`, `Shenora.WebView2`
-and `Shenora.WebView2.Sessions` are superseded by a single `Shenora.Windows`, and `Shenora.Android` /
-`Shenora.iOS` are new. The old ids remain restorable at their last version (0.4.0);
-**migration is a rename, not a rewrite** — every type keeps its name and
-signature. `CHANGELOG.md` under `### Breaking` has the mapping.
-
-## Packages
-
-Version in lockstep; reference the **leaf** you need and the rest arrive transitively.
-
-| Package | Registry | Target framework | In one line |
-|---|---|---|---|
-| `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Modules.Media` — probe, plan, serve, remux, and the shell's own picture surface), file operations (`Shenora.Engine.Files` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.Engine.Compression`); and the auxiliary browser sessions (`Shenora.Core.Sessions`), written once over the browsers each shell makes. |
-| `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own — which may also show a **startup screen** from the first moment until your app's first window (D94). **A self-contained app needs none of it** — `Shenora.Engine.Update`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
-| `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and the auxiliary sessions' browsers in WebView2. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
-| `Shenora.Chromium` | NuGet | `net10.0` (Windows, macOS and Linux, x64 and arm64) | Chromium through CEF, for an app that ships its own browser engine instead of WebView2 (D81): a shell of its own (`UseChromium`), complete on Windows, macOS and Linux with no other shell package (D88), and the embedding `Shenora.Windows` hosts as a `ChromiumView`. **CEF is not in the package** — your app's build fetches the pinned CEF build and lays the app out (beside CEF's launcher on Windows, as an app bundle on macOS, beside the kit's helper on Linux), so reference it from the app's own project. |
-| `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
-| `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell. It SHARES the MAUI-shaped half with `Shenora.Android` (`src/Shenora.Mobile/`: transport, dispatcher, safe area, interception) and owns what is genuinely per-platform — AVPlayer, `MPNowPlayingInfoCenter`, ActivityKit — in its own `Services/`. |
-| `@shenora/react` | npm | ES2022 / ESM · **React ≥ 18** | The client half — bridge, event bus, store, hooks. Built and tested against the LATEST React (19); 18 is supported and the floor is enforced rather than assumed — `verify` type-checks the shipped sources against React 18's types, so an API that does not exist there fails here instead of in your build. 18 is the floor because `useSyncExternalStore` is, and the store is built on it. |
-| `@shenora/cli` | npm | Node 20+ | **Build-time only, a `devDependency`** (D67). The `shenora` binary: take a built app onto a simulator, a real iPhone or an Android device, with no Xcode project of your own. The Android half runs on Windows. Ships inside nothing you deploy. |
-
-The TFM column is here so an adopter can tell whether a package fits without downloading the nupkg to
-inspect it. **One shell package per platform** — you reference the one you are building for, and the
-two mobile ones are built from a single shared source tree so they cannot drift.
-
-**`Shenora.Windows` offers two TFMs and you pick, which is the point** (D46). Everything in the shell is in
-both; the versioned one additionally implements `IPlaybackSession` (Windows' media flyout and lock-screen
-transport) and `WindowsMediaPlayer` (the Media Foundation `IMediaPlayer`), because both rest on WinRT and
-the WinRT projections exist only when the target framework names a Windows SDK version. Stay on plain
-`net10.0-windows` and those two capabilities refuse
-by name with the one-line fix in the message; retarget and they work, on a Windows 10 1809 floor. **The kit
-does not narrow your supported platforms for a feature you did not ask for.**
-
-Dependencies — the graph is a **fan, one level deep**: each platform shell references `Shenora` and no
-other shell, so referencing two shells is impossible by construction rather than by convention. The one
-further edge is the Chromium engine, which `Shenora.Windows` references for its `ChromiumView` (D83): its
-managed code comes along, and CEF itself only into an app that references `Shenora.Chromium` directly.
-(It was a *diamond* while `Shenora.Ipc` sat in the middle; D65 removed that level.)
-
-```
-                      Shenora           net10.0    portable: no Windows reference
-                         ↑              (Core · Engine · Modules — the IPC stack is
-            ┌────────────┼────────────┬───────────────┐  Shenora.Core.Ipc, a NAMESPACE)
-            │            │            │               │
-   Shenora.Windows  Shenora.Android  Shenora.iOS   Shenora.Chromium   net10.0, Windows + macOS + Linux
-   net10.0-windows  net10.0-android  net10.0-ios      ↑   (D81)
-            └─────────────────────────────────────────┘   ChromiumView (D83)
-
-   Shenora.Launcher — native, referenced by nothing; a build-time artifact (D50)
-```
-
-**There are no optional feature packages — the framework ships as one whole** (D55). `Shenora`
-carries media, file operations and archive extraction as namespaces (`Shenora.Modules.Media`,
-`Shenora.Engine.Files`, `Shenora.Engine.Compression`) rather than as separate NuGet ids. ⚠ Those
-are the names D65 relayered to — a retired PACKAGE id written where a namespace belongs is a `using` an
-adopter cannot compile. The
-reason they stopped being packages is not size: **a package set is a public statement about what a product IS**, and
-`Shenora.Media` + `Shenora.IO` + `Shenora.IO.Compression` on nuget.org read as a shelf of single-domain
-libraries. This is a hybrid app framework; those are capabilities it carries. Reference `Shenora`
-plus your platform's shell and you have all of it.
-
-**The line is what a CONSUMER experiences, not size** (D53): *making the page host, serve and play what it
-was handed* is shell work and lives in `Shenora`; *something only some apps do* earns its own package.
-That is why media is in Core and file operations are not — every app that hosts a page can be handed a file
-it cannot play; not every app rewrites a directory tree.
-
-**`<video>`, `<audio>` and `<img>` over local files need nothing beyond the shell.** Serving bytes to a
-page is resource interception, and that is a SHELL capability (D45): `Shenora` declares
-`IWebViewInterceptor` plus a file middleware that does path containment, HTTP ranges and content types,
-and each shell implements the contract over its own webview — `WebViewHost.Interceptor` on Windows,
-`MobileWebViewInterceptor` on Android and iOS. One route, and the same three lines compile on all three:
-
-```csharp
-host.Interceptor.UseFiles(new WebViewFileOptions { AllowedRoots = [libraryDir], Resolve = MyRoute });
-```
-
-A file the platform cannot decode simply errors in the element, which is the honest outcome. **Deciding
-what to do about that** — probe it, plan it, remux it — is the `Shenora.Modules.Media` namespace, also in
-`Shenora`, composed on the same interceptor as a further middleware. An app that only ever serves
-ordinary files simply never calls it.
-
-⚠ **One measured platform fact rides on the interceptor, not on media.** Android's webview applies the
-`Range` start to whatever body it is handed; WebView2's and iOS's send the body verbatim. So the same
-request needs an *unsliced* body on one and a *sliced* body on the other two —
-`IWebViewInterceptor.RangeDelivery` reports which, `UseFiles` reads it from the platform so it cannot be
-passed in wrong, and a fourth shell cannot compile without declaring its own answer.
-
-**`Shenora.Core.Ipc` is platform-neutral and stays that way.** It is a namespace inside `Shenora`,
-which targets `net10.0` and binds to no UI framework at all — the whole transport story (D16) rests on
-that: the same envelopes ride WebView2 postMessage on Windows, `HybridWebView` on mobile, and a WebSocket
-tomorrow, and a server-side or headless host can dispatch them with no shell anywhere in the graph.
-Anything that genuinely needs a window lives one layer up: the UI-thread seam is the portable
-`IUiDispatcher` in `Shenora`, implemented once per shell.
-
-App logic that must stay portable references only `Shenora` — `samples/Shenora.Sample.Logic` is
-a plain `net10.0` project that proves it, and the same facade runs on all three shells.
-
-Two consumption profiles are supported: **desktop-only** (full postMessage IPC) and **server-backed**
-(the app runs its own in-process HTTP server shared with mobile/LAN clients; Shenora provides the
-shell and a one-way event fast-path). A `Shenora.Hosting.AspNetCore` package was considered and
-**declined** — what it would have held turned out to be five lines of ASP.NET plus a security policy
-that belongs to the app (D10).
-
-Shenora is deliberately **headless**: it depends on no UI component library and ships no design
-system — applications bring their own. It also ships no product recipes; the mechanisms are here and
-the workflows are yours (D21).
-
----
-
-## Using each package
-
-Enough to get each one working, plus the trap that costs an afternoon. The sample app under
-`samples/` is the full reference composition.
-
-### `Shenora` — the host, and portability
-
-The builder, lifetime, module registration, environment and app paths — plus the **platform-neutral
-contracts** (`IUiDispatcher`, `IFileDialogs`, `IClipboardService`, `IUrlLauncher`, `IUiInteraction`)
-and the in-process `IEventBus`.
-
-```csharp
-var builder = ShenoraApplication.CreateBuilder(args);
-builder.Services.AddSingleton<IMyService, MyService>();
-using var app = builder.Build();
-app.Run();                       // executes the registered runner (UseWindows supplies one)
-```
-
-Put your facades in a plain `net10.0` project that references only this package and inject the
-contracts. The compiler then enforces portability instead of a document asserting it — if a Windows
-type ever creeps into app logic, that project turns red. See `docs/ADOPTION.md` Stage 4.
-
-### `Shenora.Core.Ipc` — the wire and the dispatcher *(a namespace inside `Shenora`, not a package)*
-
-Typed request/response/notification envelopes, a composable middleware pipeline, IPC modules, and
-a structured error contract (`code` + parameters, i18n-ready). Transport-neutral by design: the same
-envelopes ride postMessage today and a WebSocket or mobile channel tomorrow.
-
-```csharp
-public sealed class SettingsModule : ModuleBase
-{
-    public override string ModuleName => "SETTINGS";
-
-    protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context,
-        CancellationToken ct) =>
-        request.Type switch
-        {
-            "GET"  => Task.FromResult<object?>(_settings.Current),
-            "SAVE" => Save(request, context, ct),
-            _      => throw UnknownType(request),
-        };
-}
-
-services.AddIpcModule<SettingsModule>();
-services.UseMessageDispatcher();          // error handler → logging → your middleware → modules
-```
-
-**Raw exception text never crosses the wire.** A `ShenoraException` carries the app's own code,
-parameters and message; anything else becomes `UNKNOWN_ERROR` plus the exception's type name, with
-the detail in the host log. The one sharp edge: a `ShenoraException`'s message crosses **verbatim**
-— so never build one from `ex.Message`, which would turn the sanctioned channel into a bypass.
-
-**`IModuleContext` is the route's world: who it is, how it emits, how it starts long work.**
-`context.Publish(type, payload?, scope?)` emits on the host bus under the facade's own module — the
-default gesture for progress and state, not a wiring exercise, and it can never drift from
-`ModuleName` the way a hand-typed literal at every call site can. For work too long to answer inline,
-`context.Report(new IpcProgress(40, 100, "steps"))` reports progress on the CURRENT request — no
-options record, no second id, nothing to declare. Every request is tracked automatically and the host
-stays SILENT for the first 50 ms, so a request that finishes quickly emits nothing at all and only work
-that is actually taking a while reaches the page. Pair it with `@shenora/react`'s
-`useShenoraRequests()` for a host-backed progress store with no per-feature event wiring, and cancel
-with the id you already have.
-
-### `Shenora.Windows` — the shell, the page host, and extra browsers
-
-One package, three areas — `Shell/`, `WebView/` and `Sessions/` in the source. They merged because
-this kit is React-in-a-webview by construction: there is no Windows composition that wants the
-WinForms primitives and not WebView2.
-
-#### The native shell
-
-Bootstrap with global exception handling, window-state persistence (DPI-correct, via `GetMonitorInfo`
-rather than the mis-scaled `Screen.WorkingArea`), single-instance guard, secondary windows on their
-own STA pumps, tray icon, frameless `OptimizedForm` with optional native caption buttons, splash
-panel, the app's colour scheme (`WindowsHostOptions.ColorScheme`, D93, set on each WebView it is given), and the
-Windows implementations of the Core contracts.
-
-```csharp
-builder.UseWindows(new WindowsHostOptions { MainForm = sp => new MainForm(sp) });
-```
-
-**`CloseReason.UserClosing` also means a programmatic `Close()`.** With close-to-tray on, a
-startup-abort path that calls `Close()` leaves a resident process — exit via `ExitApplication()`.
-
-#### Hosting the page
-
-One place a WebView2 is configured: environment prewarm, dev-server vs packaged-bundle loading,
-serving (embedded resources, virtual hosts, app schemes), safe defaults for new windows, downloads,
-permissions and renderer crashes, plus the postMessage IPC bridge with batched event push.
-
-```csharp
-var host = new WebViewHost(webView, options);
-await host.InitializeAsync();            // idempotent, and bounded by one InitTimeout
-var bridge = new WebViewIpcBridge(webView, new WebViewIpcBridgeOptions { Dispatcher = dispatcher });
-host.Navigate();
-bridge.Attach();
-```
-
-Construct the bridge **before** `InitializeAsync` — event buffering starts at construction, so
-anything emitted during the slow WebView2 init survives. Serving something seekable or large (video,
-audio) needs a deferred scheme rather than a folder mapping: a folder mapping cannot honour `Range`.
-The handler receives request headers and returns a status, headers and a stream, so nothing is
-buffered whole.
-
-#### Extra browsers
-
-> ⚠ **A session can only reach URLs the network can reach.** Each one runs its own browser
-> environment with its own profile, and none of the main host's serving — the resource provider, the
-> virtual host — is set up in it. So a session can load `http://localhost:…` or the internet, but NOT
-> your app's embedded bundle: navigating an off-screen session to your packaged origin renders
-> WebView2's "can't reach this page". Affects desktop-only apps serving embedded resources; a
-> server-backed app whose pages are already on a loopback origin is unaffected. To serve your bundle
-> into a session deliberately, set `VirtualHost` + `ResourceProvider` on its `WebView2SessionBrowserOptions` —
-> `docs/guides/sessions.md` has the both-or-neither rule and the CORS caveat.
-
-The sessions are `Shenora.Core.Sessions` types, written once over the browsers each shell makes (D91): this
-package makes them in WebView2 (`WebView2SessionHost`), and `Shenora.Chromium` makes them in CEF. Off-screen and
-auxiliary browser sessions: a bounded LIFO `RenderSessionPool`,
-`InteractiveSession` (a human-in-the-loop window over an isolated persistent profile, driven by
-**your** driver), and `StreamingSession` (frames out, input in). The kit ships the mechanics and no
-scenario — a worked driver example lives in the sample, to copy and edit. **What a session DOES is
-published on the app's own `IEventBus`** (`SessionEvents`, scoped by session id — navigation, DOM,
-downloads, web messages, renderer failures), and five hooks decide what happens when a page raises a
-dialog, an auth challenge, a certificate request, a popup or a permission prompt. Three of those
-prevent a wedge that would otherwise stop an off-screen page for good.
-**`docs/guides/sessions.md`** is the guide.
-
-### `Shenora.Chromium` — Chromium instead of WebView2
-
-The kit's own Chromium, through CEF (D81–D84), in either of two hosts. **Its own shell**, on CEF's windows:
-frameless chrome with real caption buttons and Snap Layouts, file drops with real paths, native file
-dialogs, the clipboard, a tray, one instance per install (a later launch's arguments reach the running app), a
-main window that opens where it was left, secondary windows, revealing files and launching processes, naming who holds
-a file open, the app's unhandled exceptions, the main window's input taken while something modal runs, the auxiliary
-browser sessions, the app's colour scheme (D93), crash reload and dev-server hot reload: a complete shell, so an app on
-Windows, macOS or Linux needs
-no other shell package (D88). A **splash** the app composes in C# (`ChromiumHostOptions.Splash`, D92) takes the
-main window's render area while Chromium starts and the app's boot work runs, with the window's own frame live around
-it: the OS draws it, so it shows before Chromium can draw anything, and an optional card shows before the window does. **Or inside a WinForms
-app**, as a `ChromiumView` control beside the WebView2 one, keeping `OptimizedForm`, the window commands
-and `SecondaryWindows`:
-
-```csharp
-// Its own shell.
-builder.UseChromium(new ChromiumHostOptions { ContentRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot") });
-
-// Or in a WinForms app: CEF runs beside the WinForms loop, and each view is a page.
-builder.UseWindows(new WindowsHostOptions { MainForm = sp => new MainForm(sp.GetRequiredService<ChromiumEngine>()) });
-builder.UseChromiumEngine(new ChromiumEngineOptions { ContentRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot") });
-// in MainForm: Controls.Add(new ChromiumView(engine) { Dock = DockStyle.Fill });
-```
-
-⚠ **Reference `Shenora.Chromium` from the app's own project, with a `RuntimeIdentifier` (`win-x64`), and
-name its assembly `<App>.App`.** Its build fetches the pinned CEF build once per machine (about 170 MB
-to download, SHA-1-checked) and lays the app out as `<App>.exe`, CEF's launcher, which creates Chromium's
-sandbox and starts `<App>.App.dll`. The build refuses a layout that could not start, and an engine with no
-CEF beside it says which package to reference. A reference that arrives only through `Shenora.Windows`
-carries the code, not CEF. Windows, macOS, where the build makes an app bundle, and Linux, where the machine
-needs `libnss3` and `libasound2`. Run from that layout, `UseChromium` starts Chromium itself, so Chromium sets up
-while the rest of the app is composed and the first frame comes sooner (D87): call it on the thread that runs the
-app. With a splash card, Chromium starts after the card instead, so the card is not held up by Chromium's start (D92). `samples/Shenora.Sample.Chromium` is a whole `UseChromium` app for all three OSes, and
-`docs/getting-started.md` (2b) walks through it.
-
-### `@shenora/react` — the client half
-
-```ts
-import { getBridge, configureBridge, useShenoraEvent, createShenoraStore } from '@shenora/react';
-
-configureBridge({ onPostError: (f) => log.error(f.module, f.type, f.error) });
-await getBridge().notifyReady();          // starts notification delivery
-
-const settings = await getBridge().invoke<Settings>('SETTINGS', 'GET');
-useShenoraEvent<Progress>('JOBS', 'PROGRESS', (p) => setProgress(p.percent));
-```
-
-**Reserve `invoke` for calls that are quick and UI-thread-safe**, and `post` for everything else.
-The host's dispatch pipeline preserves the caller's synchronization context by design, so a route's
-synchronous segment runs on the UI thread: measured on the sample, the same 3 s of work stalls the
-window 2 027 ms when left in the route and 0 ms when handed off and streamed back as events.
-
----
-
-## Building the frontend bundle
-
-The host serves **HTML no-cache and hashed assets immutable**. Two things follow for the app's build:
-
-- **Content-hash your asset filenames** and let the HTML stay unhashed. Vite does this by default
-  (`assets/index-<hash>.js`); the point is that a released HTML file must never be cached, or a user
-  keeps loading an old document that references assets you have replaced.
-- **Split vendor code into stable chunks** so a one-line app change does not invalidate the whole
-  bundle for everyone. With Vite, `build.rollupOptions.output.manualChunks` — pulling React and any
-  large third-party library into their own chunks — keeps those hashes steady across releases.
-
-Embed the built output and point the provider at it:
-
-```xml
-<!-- WithCulture="false": otherwise MSBuild reads a name like msg.fr.json as a translation and moves it out of the
-     app's assembly into a satellite one, and the bundle loses it. -->
-<EmbeddedResource Include="wwwroot\**" WithCulture="false" />
-```
-```csharp
-ResourceProvider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
-{
-    Assembly = typeof(Program).Assembly,
-    ResourcePrefix = "MyApp.wwwroot",     // includes the folder segment
-})
-```
-
-> ⚠ **Dev-loop trap.** A dev server pre-bundles `@shenora/react`. After upgrading the package, clear
-> that cache (for Vite, delete `node_modules/.vite`) and restart it — otherwise the page silently runs
-> the OLD client: imports resolve to `undefined` and the app renders blank while the host looks
-> perfectly healthy.
-
-## Dev loop
-
-```
-node devtools/dev.mjs build     # dotnet build + npm build (both npm packages)
-node devtools/dev.mjs test      # dotnet test + vitest
-node devtools/dev.mjs checks    # every hygiene gate, no build and no tests (~5 s)
-node devtools/dev.mjs verify    # build · test · typecheck · leak scan · knowledge check · doctor
-node devtools/dev.mjs pack      # nupkgs + npm tarball into publish/packages (lockstep version)
-node devtools/dev.mjs doctor    # version/readme drift check (--fix to sync)
-```
-
-Requirements: .NET 10 SDK, Node 22+. See `devtools/README.md` for the full command set,
-`docs/README.md` for the documentation map, and `docs/ADOPTION.md` to bring an existing app onto the
-kit.
+**v0.23.2 — pre-release, stabilising toward 1.0.** Every public and protected member is documented and gated by
+API-surface baselines. The WinForms shell, WebView2 hosting, the IPC stack, the native desktop services and the
+extra browsers are extracted from in-house applications that had already shipped them; the Chromium shell, the
+mobile shells and the segment media tier were built in this repository.
+
+Where it has run: Windows; macOS (x64) and Linux (x64, under WSL and Xvfb) through the Chromium shell; an Android
+device (IPC, events, the file picker, the mission scheduler); and an iPhone 17 Pro (also media playback, the save
+picker, audio conversion and Live Activities). What has not yet run (the `arm64` desktop builds, the published
+package's Linux helper, a real GNOME or KDE session) is listed in
+[`TASKS.md`](https://github.com/JiarongGu/Shenora/blob/main/TASKS.md).
+
+**This page describes the working tree, not only the newest package**: anything that has not shipped yet is
+under `## Unreleased` in [`CHANGELOG.md`](https://github.com/JiarongGu/Shenora/blob/main/CHANGELOG.md), so check
+there before assuming a member is in the version you installed.
+
+> **Versioning.** Every public change is SemVer surface, and until 1.0 a minor release may break one: it is
+> always listed under that release's `### Breaking` heading in `CHANGELOG.md`, with what to change. 1.0 is a
+> deliberate freeze, not yet cut.
+
+> **The segment (streaming) media tier had no application to prove it before it shipped.** It is checked against a
+> corpus of sources muxed by other tools (MP4Box, Bento4, mkvmerge, Apple), by a decoder, a real browser
+> `MediaSource` and a real iPhone. On Android it has run on the emulator, not yet on a phone.
+
+## Documentation
+
+- [**Getting started**](https://github.com/JiarongGu/Shenora/blob/main/docs/getting-started.md): a new app, from
+  nothing to a window with a typed IPC round trip, then onto a phone.
+- [**The packages, one by one**](https://github.com/JiarongGu/Shenora/blob/main/docs/packages.md): how the set is
+  shaped, and enough of each package to get it working.
+- [**Guides**](https://github.com/JiarongGu/Shenora/blob/main/docs/guides/README.md), one capability each:
+  [media](https://github.com/JiarongGu/Shenora/blob/main/docs/guides/media.md),
+  [mobile](https://github.com/JiarongGu/Shenora/blob/main/docs/guides/mobile.md),
+  [missions](https://github.com/JiarongGu/Shenora/blob/main/docs/guides/missions.md),
+  [file updates](https://github.com/JiarongGu/Shenora/blob/main/docs/guides/file-updates.md) and
+  [sessions](https://github.com/JiarongGu/Shenora/blob/main/docs/guides/sessions.md).
+- [**Adoption**](https://github.com/JiarongGu/Shenora/blob/main/docs/ADOPTION.md): bringing an existing
+  WinForms + WebView2 app across in stages, so it ships at every step.
+- [The wire reference](https://github.com/JiarongGu/Shenora/blob/main/docs/reference/wire.md): the module names,
+  routes, events, error codes and capabilities a page types, generated from the source.
+- [`@shenora/react`](https://github.com/JiarongGu/Shenora/blob/main/src/Shenora.React/README.md) and
+  [`@shenora/cli`](https://github.com/JiarongGu/Shenora/blob/main/src/Shenora.Cli/README.md), each package's own
+  README.
+- [The decisions](https://github.com/JiarongGu/Shenora/blob/main/docs/DECISIONS.md) behind the design, and
+  [the changelog](https://github.com/JiarongGu/Shenora/blob/main/CHANGELOG.md), breaking changes called out.
+- [The samples](https://github.com/JiarongGu/Shenora/tree/main/samples): a WinForms app, a Chromium app for all
+  three desktop OSes, a MAUI app, and the portable logic all three run.
+
+## For AI coding agents
+
+Shenora publishes [`llms.txt`](https://raw.githubusercontent.com/JiarongGu/Shenora/main/llms.txt), an index of
+these docs written for language models, and a
+[`context7.json`](https://github.com/JiarongGu/Shenora/blob/main/context7.json) telling the
+[Context7](https://context7.com) documentation index what to serve. The rules a coding agent most often gets wrong
+when it writes an app on Shenora:
+
+<!-- agent-rules:begin — llms.txt and context7.json's `rules` carry these same lines; doc-drift holds the three equal (D98) -->
+- Reference ONE shell package and it brings `Shenora`: `Shenora.Windows` (WinForms + WebView2, Windows only), `Shenora.Chromium` (the kit's Chromium shell, `UseChromium`, on Windows, macOS and Linux), `Shenora.Android` or `Shenora.iOS`. The page side is the npm package `@shenora/react`.
+- Media, files, missions, updates and archives are namespaces inside `Shenora` (`Shenora.Modules.Media`, `Shenora.Engine.Files`, `Shenora.Engine.Missions`, `Shenora.Engine.Update`, `Shenora.Engine.Compression`), never packages of their own. `Shenora.Core`, `Shenora.Ipc`, `Shenora.Media`, `Shenora.IO`, `Shenora.IO.Compression`, `Shenora.WinForms`, `Shenora.WebView2` and `Shenora.WebView2.Sessions` are retired package ids; the IPC types are in namespace `Shenora.Core.Ipc`, inside the `Shenora` package.
+- Compose with `ShenoraApplication.CreateBuilder(…)`, one shell call (`UseWindows`, `UseChromium`, `UseAndroid` or `UseIOS`), then `Build()`. `Build()` registers the framework itself (the dispatcher, the event bus, the kit's modules, the mission scheduler); the engine's `Use…` calls, such as `UseMissions`, change what it registers rather than enable it. A desktop app calls `Run()` from an `[STAThread]` `Main`; a phone app calls `Start()` and `Stop()` from its own lifecycle.
+- A host route is a class derived from `ModuleBase` that names its `ModuleName` and switches on `request.Type`, registered with `services.AddIpcModule<T>()`. The page calls it with `getBridge().invoke(module, type, { payload })`; the payload goes in the options object, and the module and type strings must match exactly on both sides.
+- For an error the page should show, throw `ShenoraException` with the app's own code and parameters: its code, parameters and message cross to the page verbatim, so never build one from `ex.Message`. Any other exception arrives as `UNKNOWN_ERROR` with only its type name, and a cancellation as `OPERATION_CANCELLED`.
+- Keep `invoke` for quick calls: a route's synchronous part runs on the shell's UI thread. Start slow work with `post`, report progress with `context.Report(…)` and results with `context.Publish(…)`, and read them on the page with `useShenoraEvent` or `useShenoraRequests()`.
+- Call `getBridge().notifyReady()` once when the page starts: the host holds its events until then, and it resolves to the `ShellInfo` the app declared (the `Shell` option of its shell or IPC bridge), or `undefined` when it declared none. Show a feature when `capabilities` names it, never by sniffing the OS or the user agent.
+- App logic meant for every shell goes in a plain `net10.0` project that references only `Shenora` and injects the contracts (`IUiDispatcher`, `IFileDialogs`, `IClipboardService`, `IUrlLauncher`); a WinForms, WebView2 or MAUI type there breaks the other shells.
+<!-- agent-rules:end -->
+
+## Contributing
+
+Issues and pull requests are welcome. The working conventions are
+[`CLAUDE.md`](https://github.com/JiarongGu/Shenora/blob/main/CLAUDE.md), the documentation map is
+[`docs/README.md`](https://github.com/JiarongGu/Shenora/blob/main/docs/README.md), and
+`node devtools/dev.mjs verify` is the "am I done?" check every change passes (build, tests, type checks and the
+doc gates). Running `node devtools/dev.mjs` with no argument prints every verb. Requirements: the .NET 10 SDK,
+Node 22+, and a JDK for the Android head. Outside the maintainer's machine, set
+`SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1`: the leak scan fails closed without the private pattern list.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](https://github.com/JiarongGu/Shenora/blob/main/LICENSE) © Jiarong Gu.

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "Shenora",
+  "description": "Hybrid app framework for .NET 10 + React on Windows, macOS, Linux, Android and iOS: the shell that hosts a React page (WinForms + WebView2, a Chromium shell through CEF, or MAUI HybridWebView), typed IPC between the page and .NET, windows and native services, media the webview cannot play, background work, safe file changes and self-update.",
+  "folders": [
+    "docs",
+    "samples",
+    "src/Shenora.React",
+    "src/Shenora.Cli"
+  ],
+  "excludeFolders": [
+    "docs/design",
+    "docs/assets"
+  ],
+  "excludeFiles": [
+    "CHANGELOG.md",
+    "CLAUDE.md",
+    "TASKS.md",
+    "DECISIONS.md",
+    "ARCHITECTURE.md",
+    "REVIEW-GUIDE.md",
+    "RELEASING.md"
+  ],
+  "rules": [
+    "Reference ONE shell package and it brings `Shenora`: `Shenora.Windows` (WinForms + WebView2, Windows only), `Shenora.Chromium` (the kit's Chromium shell, `UseChromium`, on Windows, macOS and Linux), `Shenora.Android` or `Shenora.iOS`. The page side is the npm package `@shenora/react`.",
+    "Media, files, missions, updates and archives are namespaces inside `Shenora` (`Shenora.Modules.Media`, `Shenora.Engine.Files`, `Shenora.Engine.Missions`, `Shenora.Engine.Update`, `Shenora.Engine.Compression`), never packages of their own. `Shenora.Core`, `Shenora.Ipc`, `Shenora.Media`, `Shenora.IO`, `Shenora.IO.Compression`, `Shenora.WinForms`, `Shenora.WebView2` and `Shenora.WebView2.Sessions` are retired package ids; the IPC types are in namespace `Shenora.Core.Ipc`, inside the `Shenora` package.",
+    "Compose with `ShenoraApplication.CreateBuilder(…)`, one shell call (`UseWindows`, `UseChromium`, `UseAndroid` or `UseIOS`), then `Build()`. `Build()` registers the framework itself (the dispatcher, the event bus, the kit's modules, the mission scheduler); the engine's `Use…` calls, such as `UseMissions`, change what it registers rather than enable it. A desktop app calls `Run()` from an `[STAThread]` `Main`; a phone app calls `Start()` and `Stop()` from its own lifecycle.",
+    "A host route is a class derived from `ModuleBase` that names its `ModuleName` and switches on `request.Type`, registered with `services.AddIpcModule<T>()`. The page calls it with `getBridge().invoke(module, type, { payload })`; the payload goes in the options object, and the module and type strings must match exactly on both sides.",
+    "For an error the page should show, throw `ShenoraException` with the app's own code and parameters: its code, parameters and message cross to the page verbatim, so never build one from `ex.Message`. Any other exception arrives as `UNKNOWN_ERROR` with only its type name, and a cancellation as `OPERATION_CANCELLED`.",
+    "Keep `invoke` for quick calls: a route's synchronous part runs on the shell's UI thread. Start slow work with `post`, report progress with `context.Report(…)` and results with `context.Publish(…)`, and read them on the page with `useShenoraEvent` or `useShenoraRequests()`.",
+    "Call `getBridge().notifyReady()` once when the page starts: the host holds its events until then, and it resolves to the `ShellInfo` the app declared (the `Shell` option of its shell or IPC bridge), or `undefined` when it declared none. Show a feature when `capabilities` names it, never by sniffing the OS or the user agent.",
+    "App logic meant for every shell goes in a plain `net10.0` project that references only `Shenora` and injects the contracts (`IUiDispatcher`, `IFileDialogs`, `IClipboardService`, `IUrlLauncher`); a WinForms, WebView2 or MAUI type there breaks the other shells."
+  ]
+}

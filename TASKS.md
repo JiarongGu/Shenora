@@ -247,3 +247,18 @@ mpeg4.
   this is per-encoder, not settled. Dropping is safe and lossy; buffering and sorting is neither. **An
   owner call**, and it needs the phone number re-measured first.
 
+### 📣 Make the kit findable before 1.0 — what is left needs the owner
+
+The tree's half is D98. What is left is outside the tree:
+
+- [ ] **GitHub's About, by the owner or a session driving the browser** (`gh` is not signed in on this machine):
+  the description *A hybrid app framework for .NET + React on Windows, macOS, Linux, Android and iOS*; the website
+  `https://www.nuget.org/packages/Shenora`; about twenty topics (`dotnet`, `csharp`, `react`, `typescript`,
+  `hybrid-app`, `cross-platform`, `desktop`, `mobile`, `windows`, `macos`, `linux`, `android`, `ios`,
+  `webview2`, `chromium`, `cef`, `maui`, `ipc`, `electron-alternative`, `capacitor-alternative`); and
+  `docs/assets/social-preview.png` as the social preview (Settings → General).
+- [ ] **Submit to Context7** once the tree carrying `context7.json` is pushed (context7.com/add-library → GitHub;
+  the owner signs in). It reads `context7.json` and lists what it indexed.
+
+**Done when:** the GitHub API returns the description and topics; Context7 lists Shenora with only adopter docs
+indexed; and, from the next release, the nuget.org pages show the icon and a README whose links resolve.
