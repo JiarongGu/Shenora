@@ -247,13 +247,8 @@ mpeg4.
   this is per-encoder, not settled. Dropping is safe and lossy; buffering and sorting is neither. **An
   owner call**, and it needs the phone number re-measured first.
 
-### 📣 Make the kit findable before 1.0 — what is left needs the owner
+### 📣 After the next release: read the package pages the README now feeds (D98)
 
-The tree's half is D98. What is left is outside the tree:
-
-- [ ] **Submit to Context7** (context7.com/add-library → GitHub → `JiarongGu/Shenora`). It needs a Context7
-  account, which the owner signs in to; the tree carrying `context7.json` is pushed. It reads `context7.json` and
-  lists what it indexed.
-
-**Done when:** Context7 lists Shenora with only adopter docs indexed; and, from the next release, the nuget.org
-pages show the icon and a README whose links resolve.
+- [ ] **nuget.org**: each package page shows the icon, and the README renders with the logo, the badges and links
+  that go somewhere (a relative link or an in-page anchor would render with no target). The tags and the
+  description lead-ins appear. **npm**: `@shenora/react` and `@shenora/cli` show the new keywords.
