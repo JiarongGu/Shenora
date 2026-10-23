@@ -798,6 +798,12 @@ function checkAgentRulesAgree() {
   const canonical = agentRulesBlock('README.md');
   if (!canonical) return;
   if (canonical.length === 0) { problems.push('README.md: the agent-rules block holds no "- " rule (D98).'); return; }
+  // Context7 SKIPS a rule over 255 characters, with only a line in its own parse log to say so.
+  canonical.forEach((rule, i) => {
+    if (rule.length <= 255) return;
+    problems.push(`README.md: agent rule ${i + 1} is ${rule.length} characters, and Context7 drops a rule over 255 ` +
+      `(D98). Split it.\n      ${rule.slice(0, 110)}`);
+  });
   for (const rel of AGENT_FILES) {
     const copy = agentRulesBlock(rel);
     if (!copy) continue;

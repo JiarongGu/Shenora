@@ -73,7 +73,8 @@ at the first list and missed five more breaking changes.
   keywords add the desktop OSes and `hybrid-app`.
 - **`llms.txt` and `context7.json` for coding agents** (D98): an index of the adopter docs written for language
   models, and the Context7 index's configuration, with the adopter docs in and the internal records out. Both carry
-  the README's rules for writing an app on the kit, and `doc-drift` fails while the three copies disagree.
+  the README's rules for writing an app on the kit, and `doc-drift` fails while the three copies disagree or a rule
+  runs past the 255 characters Context7 keeps.
 
 ### Changed
 

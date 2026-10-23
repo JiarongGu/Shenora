@@ -1385,7 +1385,8 @@ docs cite them — so the number is the column to scan.
   - **`llms.txt` (llmstxt.org) and `context7.json` (the Context7 index's configuration) are for coding agents** and
     are in the prose gates by name, since neither is `.md`. README's `agent-rules` block is canonical: `llms.txt`
     repeats it, `context7.json` carries it as `rules`, and `doc-drift` fails while the three disagree, since an
-    agent trusts whichever file it was handed.
+    agent trusts whichever file it was handed. A rule is one line of at most 255 characters, the most Context7
+    keeps: it drops a longer one with only a line in its own parse log.
   - **Every link resolves**: `doc-drift` reads absolute links into this repository and relative ones alike, and
     their `#anchor` by GitHub's slug rule. A README a package ships (the root one and each npm package's) links
     absolutely, and the root one carries no raw HTML and no comment inside a code block, because nuget.org shows
