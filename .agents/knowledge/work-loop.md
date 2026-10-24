@@ -30,7 +30,7 @@ change, and **every public change is SemVer surface** — note breaks in `CHANGE
 ## Debugging
 
 **An unexplained or INTERMITTENT failure has its own method** — A/B the harness, count trials, instrument
-before theorising — and it is `.claude/knowledge/debugging-method.md`, read when you hit one. An ordinary
+before theorising — and it is `.agents/knowledge/debugging-method.md`, read when you hit one. An ordinary
 reproducible bug needs none of it.
 
 ## Gates and tripwires

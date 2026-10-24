@@ -85,7 +85,7 @@ the file itself. They are prose now, and they never "complete":
     risked", which read as caution and was a hole). **Both are now gates** — `doc-drift` fails on a verb
     prose names that is not implemented. The second has no gate and probably cannot: ask instead *"is this
     sentence explaining a choice, or excusing something nobody tested?"*
-- **Add a `.claude/knowledge/` rule the moment an invariant is EARNED**, via
+- **Add a `.agents/knowledge/` document the moment an invariant is EARNED**, via
   `node devtools/dev.mjs knowledge new <name>` — don't let it live only in a code comment. UI-thread
   marshalling, WebView2 gotchas, IPC batching numbers and the mobile header table all got here that way.
 - **Re-measure the COMMENT RATIO in `src/` when a pass has been adding prose**, because it ships to

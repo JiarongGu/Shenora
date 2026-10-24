@@ -22,6 +22,18 @@ The knowledge and the skills, each with when it applies, are listed in [.agents/
 
 Skills live in `.agents/skills/`; `.claude/skills/` mirrors them for the agent that reads only there — edit the source.
 
+## Where things are
+
+Declared in `daoris.json`; look here before searching.
+
+| Role | Where | Its job |
+|---|---|---|
+| router | `docs/README.md` | every document, its kind and its standing |
+| decisions | `docs/DECISIONS.md` | numbered decisions, with why and what each rejected |
+| backlog | `TASKS.md` | open work only |
+| changelog | `CHANGELOG.md` | what a user of a release sees changed |
+| gates | `daoris.gates.json` | the checks, their commands, and what may run unasked |
+
 <!-- daoris: core/core/rules/file-tool-discipline.md @ 0.0.1 — canonical; edit via `daoris upstream` -->
 
 # Use the dedicated file tools — and never evade the approval gate

@@ -1,0 +1,35 @@
+{
+  "gates": [
+    { "name": "checks", "run": "node devtools/dev.mjs checks", "kind": "check" },
+    { "name": "verify", "run": "node devtools/dev.mjs verify", "kind": "suite" },
+    { "name": "real-clipboard", "run": "node devtools/dev.mjs test clipboard", "kind": "suite", "quiet": true }
+  ],
+  "safe": {
+    "run": [
+      "node devtools/dev.mjs",
+      "node devtools/dev.mjs build",
+      "node devtools/dev.mjs test",
+      "node devtools/dev.mjs test dotnet",
+      "node devtools/dev.mjs test npm",
+      "node devtools/dev.mjs doctor",
+      { "run": "node devtools/dev.mjs knowledge", "args": true },
+      { "run": "node devtools/dev.mjs check-sensitive", "args": true },
+      "node devtools/dev.mjs reserved-paths",
+      { "run": "node devtools/dev.mjs doc-shape", "args": true },
+      { "run": "node devtools/dev.mjs decisions-index", "args": true },
+      "node devtools/dev.mjs stale-scan",
+      "node devtools/dev.mjs cite-scan",
+      "node devtools/dev.mjs self-rename-scan",
+      "node devtools/dev.mjs decision-audit",
+      "node devtools/dev.mjs name-scope",
+      { "run": "node devtools/dev.mjs retired-audit", "args": true },
+      "dotnet build Shenora.slnx",
+      "dotnet test Shenora.slnx --filter Category!=RealClipboard"
+    ],
+    "install": [
+      "npm ci --prefix src/Shenora.React",
+      "npm ci --prefix src/Shenora.Cli",
+      "npm ci --prefix samples/Shenora.Sample.Web"
+    ]
+  }
+}

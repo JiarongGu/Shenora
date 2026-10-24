@@ -5,6 +5,13 @@
   "target": ".agents",
   "rooms": [],
   "coreBudgetBytes": 30000,
+  "documents": {
+    "router": "docs/README.md",
+    "decisions": "docs/DECISIONS.md",
+    "backlog": "TASKS.md",
+    "changelog": "CHANGELOG.md",
+    "gates": "daoris.gates.json"
+  },
   "domain": {
     "summary": "",
     "owns": [],
