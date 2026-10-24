@@ -78,3 +78,7 @@ and the release path → `release-discipline.md` · working files and cross-turn
 how the last one went stale. Details: `devtools/README.md`. Verification gate before claiming done:
 `dev.mjs verify` (builds, tests, type-checks the sample web app, and runs doctor). CI needs
 `SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1` — the sensitive guard fails CLOSED and `local/` can't exist there.
+
+<!-- daoris:import — generated; edit the canon, not this -->
+@AGENTS.md
+<!-- /daoris:import -->

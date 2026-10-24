@@ -1,32 +1,41 @@
 ---
 name: doc-loader
-description: Route a task to the docs and knowledge rules it needs and load them. Use at the START of a non-trivial task to pull the right context (the docs/README router + .claude/rules/RULES_INDEX.md) before exploring code — the knowledge rules are on-demand, so you must load what applies.
+description: Load the documents a task actually needs before touching code — the repository's own doc router plus every on-demand knowledge document whose "applies when" matches. Use at the START of any non-trivial task, because on-demand documents are not auto-loaded and an unread match is a missing contract.
 ---
+<!-- daoris: core/core/skills/doc-loader/SKILL.md @ 0.0.1 — canonical; edit via `daoris upstream` -->
 
 # doc-loader
 
-The two-tier rule base keeps sessions lean by NOT auto-loading domain rules. Before writing code
-for a non-trivial task, load what the task touches — otherwise you'll miss a hard-won invariant.
+The knowledge tier is deliberately **not** auto-loaded, so the context stays small. The cost of that
+choice is this step: if you do not load what the task touches, you will miss an invariant that someone
+already paid to learn.
 
 ## Steps
 
-1. **Docs.** Open `docs/README.md`'s "Read this when…" table — it is the SOURCE OF TRUTH and gains
-   rows as docs are added, so trust it over this list. Read the 1–2 that match:
-   `docs/ARCHITECTURE.md` (**as-built map**), `docs/design/<subsystem>.md` (**how a subsystem works and
-   what was measured**), `docs/DECISIONS.md` (why it's done this way — and what the kit IS, D53–D56),
-   `TASKS.md` (status/next), `docs/ADOPTION.md` (bringing an existing app onto the kit),
-   `docs/REVIEW-GUIDE.md` (reviewing anything). Don't read all of them.
-   🔴 **`DECISIONS.md` IS READ BY NUMBER, NEVER WHOLE.** Scan its generated index, open the `D<n>` the
-   task touches, and leave the rest shut — taking the file at once is the drift D77 names: a constraint
-   earned in one context reads as universal and a later session applies it where it does not fit.
-2. **Rules.** Open `.claude/rules/RULES_INDEX.md`. The **core** rules are already auto-loaded.
-   Scan the **Knowledge** table's *Applies when* column against the task and `Read` every matched
-   `.claude/knowledge/*.md`. Examples: extracting/porting code from a sibling app →
-   `extraction-sources` (+ private `local/EXTRACTION-MAP.md`); designing/changing any public API →
-   `generic-library`.
-3. **Private context.** If the task touches sibling apps, real paths, or session continuity, also
-   read `local/CLAUDE.local.md` / `local/PROJECT_NOTES.md`.
-4. **Report.** Print a 2–4 line summary: which docs + knowledge rules you loaded and the key
-   constraints they impose here. If nothing matched, say so and proceed.
+1. **The repository's own documents.** Find its documentation router — the table or index that maps a
+   task to the one or two documents worth reading — and read only the entries that match. Bulk-loading
+   defeats the purpose of a router.
+2. **The generated index.** The always-loaded doctrine names the index of the on-demand tiers. Read it
+   whole when it is a few dozen rows. When it is longer, search it more than once: the task's words,
+   their synonyms, and the names of the folders and parts the task touches. Read every row the
+   searches return. Where a search over this repository's knowledge is connected, ask it too, since it
+   matches by meaning, which a word search cannot; where none is, the index searches are the whole
+   step. Read every matched document. A search that finds nothing has not shown that nothing applies:
+   the index is generated from what is on disk, so it is the exhaustive list, and any shortcut table
+   elsewhere is a convenience, not the registry.
+3. **Where things are.** If the brief names an index of where things are, start every search of the
+   code there: open the row for what you need, then read the lines it names rather than the file.
+   Search past it only for what it does not list.
+4. **Private context.** If the task touches machine specifics, real paths, or another repository by
+   name, read the untracked local notes rather than guessing.
+5. **Report** in two to four lines: what you loaded, and the constraints it imposes here. If nothing
+   matched, say so and proceed.
 
-Load only what the task touches — bulk-loading defeats the point.
+## Why
+
+An unread match is indistinguishable from a rule that does not exist, right up until it is violated.
+Reporting what you loaded makes that visible while it is still cheap to correct — and makes a *silent*
+miss impossible to mistake for a considered decision.
+
+Load only what the task touches. A step that routinely loads everything will be skipped, and then the
+invariants go unread anyway.
