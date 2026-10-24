@@ -1,0 +1,13 @@
+{
+  "source": "daoris@0.0.1",
+  "packs": [],
+  "harness": "agents",
+  "target": ".agents",
+  "rooms": [],
+  "coreBudgetBytes": 30000,
+  "domain": {
+    "summary": "",
+    "owns": [],
+    "accepts": []
+  }
+}
