@@ -314,5 +314,9 @@
       "of": ".agents/skills/skill-loader/SKILL.md",
       "sha256": "8e7b477e1dc8442b3b9548200a6502ed1d1ad63972fd023cf088b3340850a99a"
     }
+  ],
+  "rooms": [
+    "devtools",
+    "samples"
   ]
 }

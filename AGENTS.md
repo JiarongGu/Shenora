@@ -1,3 +1,82 @@
+# Shenora — the brief
+
+## What this is
+
+Shenora (神阙) is a **hybrid app development framework — .NET + React**, not an app: the "body" (shell
+hosting, typed IPC, modules, window management, native services) that React apps boot their logic on. It
+is **not a media library, a file library or any other single-domain library** — those are capabilities it
+carries, and a package boundary suggesting otherwise makes a claim about the product (D53). Shipped as
+NuGet + npm, all versioned in lockstep; the package set lives once, in `docs/DECISIONS.md`'s header table.
+
+🔴 **The thesis decides what is worth building (D54):** against Capacitor and Electron the differentiator
+is **native .NET capability** — real threads, real handles, the platform SDKs, background execution. The
+question for any feature is not *"is this useful?"* but *"can React already do this?"* — if it can, the kit
+is competing with the web platform and loses. `.NET does the platform work · React does the interface · the
+kit owns the seam and the IPC.`
+
+## Before changing anything
+
+- 🔴 **Read `docs/DECISIONS.md` BY NUMBER, NEVER WHOLE** (D77): scan its generated index, open the `D<n>` the
+  task touches, leave the rest shut — a constraint earned in one context reads as universal otherwise.
+- **Every public change is SemVer surface.** Read `CHANGELOG.md`'s `## Unreleased` before touching the
+  surface — it carries breaking changes. The version is the release workflow's, never a hand edit
+  (`release-discipline`). 1.0 is a separate deliberate freeze, not yet cut.
+- **No optional feature tier** (D53/D55/D65): a capability gets a FOLDER inside `Shenora`, never a package
+  id; an ENGINE is the one package boundary (D81). The layer is the namespace — `Shenora.Core.*`,
+  `Shenora.Engine.*`, `Shenora.Modules.*`. `Shenora.Ipc` is retired as both a package id and a namespace.
+- **Layering (D19/D20/D37) is enforced:** `samples/Shenora.Sample.Logic` is a `net10.0` project that turns
+  RED if a Windows type reaches app logic. Placement law: `generic-library`.
+- **Extracted, not invented:** code comes from proven sibling apps and keeps their post-mortem comments
+  (`extraction-sources`). **Shenora must never depend on Lyntai**, its AI-brain sibling.
+- **Public repo:** no absolute local paths and no private sibling names in a tracked file or commit message;
+  the guard and its switches are `sensitive-guard`. Private context lives in untracked `local/`.
+- **Commit only on explicit approval**, one commit per logical change; a fix's root cause goes in the commit
+  message (there is no fix log); prose is corrected in place, never amended with a dated note
+  (`work-loop`). This repo never edits another: it readies the library and writes `docs/ADOPTION.md`.
+- **On this Windows machine:** never round-trip a source file through PowerShell 5 `Get-Content`/
+  `Set-Content`; `node -e "…"` in bash eats backticks; `> nul` in Git Bash creates a file. The rest:
+  `windows-dev-gotchas`.
+
+## Layout
+
+- `local/` — private, untracked, and an informal ARCHIVE: a repo-wide script must skip it. Read
+  `local/CLAUDE.local.md` + `local/PROJECT_NOTES.md` at session start (`working-state-homes`).
+- `devtools/_*` — gitignored scratch for probes and worktrees; never the system temp.
+- `.agents/skills/` is the source; `.claude/skills/` is a generated mirror. `.agents/INDEX.md` is generated.
+- Generated and checked, never hand-edited: `docs/DECISIONS.md`'s opening index (`decisions-index`) and
+  `docs/reference/wire.md` (`wire-reference`). API baselines: `tests/Shenora.Tests/Api/Baselines/`.
+- Three homes (D77), no archive (D9): a WHY → `docs/DECISIONS.md`, a subsystem's DESIGN → `docs/design/`,
+  an INVARIANT → `.agents/knowledge/`; the as-built map → `docs/ARCHITECTURE.md`; what's left → `TASKS.md`;
+  what happened → `git log`. Status → `README.md` — no version number belongs in this brief.
+
+## Build, test, verify
+
+- Done means: `node devtools/dev.mjs verify` (build · test · type-checks · sensitive scan · knowledge ·
+  doc-drift · doc-shape · doctor). Pipe it to a file under `devtools/_*`, never truncate it.
+- `node devtools/dev.mjs` with no argument prints every verb — read that, not a list here.
+  `dev.mjs checks` is the ~10 s hygiene loop and proves nothing about the code. Details: `devtools/README.md`.
+- In CI, a fresh clone or a git worktree, set `SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1`: the sensitive guard
+  fails CLOSED without `local/`, which cannot exist there.
+- What may run unasked is declared in `daoris.gates.json`. Never run `pack`, `nuget-retire` or a release —
+  the version and publishing are the release workflow's — and never a sabotage while a gate is running.
+- Behavioural claims about a shell are proven against the sample (`dev.mjs sample`), not asserted; say which
+  claims the gate did not cover.
+
+## Conventions
+
+- Start a non-trivial task with `/doc-loader` + `/pattern-finder` + `/skill-loader` — the ones whose answer
+  you lack — and close with `/phase-review` before committing (`task-start-routing`).
+- `///` docs ship to an adopter's IDE: write the shortest thing that names the invariant, from the source,
+  never the design doc (`doc-claims`).
+- A knowledge document carries `name` / `applies_when` / `enforces` frontmatter; prefer a gate or a test to a
+  new rule (`work-loop`).
+
+## Where things are
+
+The records are declared in `daoris.json` and listed in the region below. Beside them: `docs/ARCHITECTURE.md`
+(the as-built map), `docs/design/` (one design per subsystem), `docs/ADOPTION.md` (bringing an app onto the
+kit), `docs/REVIEW-GUIDE.md` (reviewing anything). No archive and no fix log: `git log` is both.
+
 <!-- daoris:rules — generated; edit the canon, not this -->
 # Doctrine
 
@@ -21,6 +100,15 @@ Generated by daoris from the shared canon. Edit the canon, not this — a local 
 The knowledge and the skills, each with when it applies, are listed in [.agents/INDEX.md](.agents/INDEX.md), generated from the files: read it before a non-trivial task, and search it when it is long.
 
 Skills live in `.agents/skills/`; `.claude/skills/` mirrors them for the agent that reads only there — edit the source.
+
+## Rooms
+
+Read a folder's room before changing anything in it.
+
+| Room | About |
+|---|---|
+| [devtools](devtools/AGENTS.md) | devtools — the dev loop, the gates, and the desktop and device drivers |
+| [samples](samples/AGENTS.md) | samples — the apps that prove the kit's behaviour |
 
 ## Where things are
 

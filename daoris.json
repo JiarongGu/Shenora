@@ -3,7 +3,7 @@
   "packs": [],
   "harness": "agents",
   "target": ".agents",
-  "rooms": [],
+  "rooms": ["devtools", "samples"],
   "coreBudgetBytes": 30000,
   "documents": {
     "router": "docs/README.md",
