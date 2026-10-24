@@ -1,3 +1,9 @@
+---
+name: debugging-method
+applies_when: "a failure is INTERMITTENT, only appears under instrumentation, or has survived several eliminations"
+enforces: "A/B the harness and count trials; instrument before theorising; a coherent story is a hypothesis, not a finding"
+---
+
 # Debugging an unexplained failure — suspect the harness, and count trials
 
 **Applies when** a failure is intermittent, only appears under instrumentation, or has survived several

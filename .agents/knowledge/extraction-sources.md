@@ -1,3 +1,9 @@
+---
+name: extraction-sources
+applies_when: "extracting/porting host, IPC, window or native-service code from a sibling; deciding where a component should come from"
+enforces: "which sibling proved which component, the gaps to FIX during the port, and the port discipline (keep the post-mortem comments)"
+---
+
 # Extraction sources — which sibling proved which component, and what to fix while porting
 
 Shenora is extracted, not invented. This rule maps each framework area to the app that proved it

@@ -1,3 +1,9 @@
+---
+name: winforms-shell
+applies_when: "touching any desktop primitive in `src/Shenora.Windows/` — bootstrap, frameless chrome/maximize, tray, secondary windows, window state, clipboard — or the single-instance guard both desktop shells run (`Core/Shell/`)"
+enforces: "STA-or-fail; idempotent init; `UserClosing` also means a PROGRAMMATIC close; `FormClosed` ≠ pump finished"
+---
+
 # WinForms shell traps — the ones that cost real debugging in `src/Shenora.Windows/`
 
 The desktop primitives (`WinFormsBootstrap`, `OptimizedForm`, `TrayIcon`, `SecondaryWindows`,

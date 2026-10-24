@@ -46,7 +46,7 @@ The standing rule: every phase gets an adversarial review before its commit.
      preserves context BY DESIGN**, see `ipc-contracts`; no sync-over-async), races
    - `async void` handlers without exhaustive try/catch; poll/retry loops without a terminal
      condition
-   - invariants from `.claude/rules/` (core) or `.claude/knowledge/` (on-demand) being violated
+   - invariants from `AGENTS.md` (always loaded) or `.agents/knowledge/` (on-demand) being violated
    It must report file:line + why it's real — no style nits.
 4. **Fix**: batch the real findings; delegating the whole fix batch to one subagent and
    re-verifying afterwards has worked well.
@@ -55,7 +55,7 @@ The standing rule: every phase gets an adversarial review before its commit.
    dependency rules; **never a surface listing**, which the API baselines and XML docs own),
    `CHANGELOG.md` (if surface
    changed), `docs/REVIEW-GUIDE.md` if an invariant or settled-decision changed, and rules — a new
-   invariant defaults to on-demand `.claude/knowledge/` via `node devtools/dev.mjs knowledge new
+   invariant defaults to on-demand `.agents/knowledge/` via `node devtools/dev.mjs knowledge new
    <name>` (only universal ones go core with `--core`); then `… knowledge check`. A non-trivial fix's
    root cause goes in the COMMIT MESSAGE — there is no fix log.
    **`TASKS.md` is pruned by DELETING finished entries, never by ticking them

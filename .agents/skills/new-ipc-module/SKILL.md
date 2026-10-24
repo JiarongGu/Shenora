@@ -12,7 +12,7 @@ after the facade compiles. Walk it in this order and none of them surprises you.
 ## Steps
 
 1. **Decide whether it belongs in the kit at all.** A module in `src/` is SemVer surface and must
-   clear the two-consumer bar (`.claude/knowledge/generic-library.md`) — one app needing it is not
+   clear the two-consumer bar (`.agents/knowledge/generic-library.md`) — one app needing it is not
    evidence. A demo or an app's own module goes in `samples/`, where that bar does not apply. If it
    belongs to an ADOPTING app, this is the wrong skill: that is `docs/ADOPTION.md`, and this repo
    never edits a sibling.
@@ -34,7 +34,7 @@ after the facade compiles. Walk it in this order and none of them surprises you.
    ⚠ **There is nothing to declare for long work** (D66): every request is tracked from dispatch, so a
    slow route just calls `context.Report(new IpcProgress(…))` and returns normally. The token it is
    handed IS the one `CANCEL` targets. Work the route hands OFF to outlive the request needs its own
-   token — do not capture that one. `.claude/knowledge/ipc-contracts.md` is the authority here — read
+   token — do not capture that one. `.agents/knowledge/ipc-contracts.md` is the authority here — read
    it before adding a route that emits, awaits, or fails in a new way.
 5. **Register.** Plain DI composition → `services.AddIpcModule<XModule>()`. Needs the live
    window → map LATE from where the form exists (`dispatcher.MapModule(facade)` in `MainForm`),

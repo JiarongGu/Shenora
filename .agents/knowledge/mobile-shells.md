@@ -1,3 +1,9 @@
+---
+name: mobile-shells
+applies_when: "CHANGING the mobile shell (`src/Shenora.Mobile` → `Shenora.Android`/`.iOS`) or a page shipping to more than one shell"
+enforces: "the C# ports for free, so the cost lands on the PAGE — MAUI re-deriving headers, `app://` being unregisterable on Android, an iOS eval that kills the app. ⚠ INVARIANTS only; measured numbers → `docs/design/mobile-shells.md`, running it → `mobile-harness` (D77)"
+---
+
 # Mobile shells — what a second and third target actually cost
 
 The mobile shell runs on Android and iOS — shipped as `Shenora.Android` + `Shenora.iOS` from one

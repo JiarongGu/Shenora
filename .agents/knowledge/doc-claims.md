@@ -1,3 +1,9 @@
+---
+name: doc-claims
+applies_when: "writing prose about what the code DOES — XML comments, `ADOPTION.md`, a README"
+enforces: "verify against the SOURCE, not the design doc; pin a surprise with a test"
+---
+
 # Doc claims — a behavioural statement is verified against the SOURCE, never the design doc
 
 Prose is the one surface with no compiler, and `doc-drift` deliberately checks only three exact things
@@ -38,7 +44,7 @@ false claim while removing an old one:
 - **A surprising behaviour gets a TEST, not just a corrected comment.** The comment that was wrong
   will be "fixed" back by the next reader who finds it surprising. `An_unseen_LANE_name_is_created_at
   _the_default_capacity_rather_than_throwing` pins the asymmetry with an unregistered claim scope,
-  which DOES throw. Sabotage-verify it both ways like any other tripwire (`phase-workflow.md`).
+  which DOES throw. Sabotage-verify it both ways like any other tripwire (`work-loop.md`).
 - **Say which claims the gate did not check.** `dev.mjs verify` compiles and runs tests; on a
   docs-only change it proves nothing about the prose. Report that explicitly rather than letting a
   green gate imply the words were checked.
@@ -92,6 +98,6 @@ false claim while removing an old one:
 - **"The kit ships X" ages badly.** X gets cut before publish (design §6's filesystem layer) or is
   planned and never written (`IMissionObserver`'s registry adapter). Grep for the type before saying it
   exists; if the app must write it, say so in the same sentence.
-- **De-identify per `sensitive-info.md` while you are in there** — an adopter-facing doc describes
+- **De-identify per `sensitive-guard.md` while you are in there** — an adopter-facing doc describes
   roles ("the primary desktop sibling"), never a private project's name or file paths. The named
   per-sibling mapping lives in `local/`.

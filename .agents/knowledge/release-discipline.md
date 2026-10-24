@@ -1,3 +1,9 @@
+---
+name: release-discipline
+applies_when: "about to touch a version number, `CHANGELOG.md`'s `## Unreleased` heading, or the release path"
+enforces: "the version is the workflow's — a hand-bump moves the baseline and SKIPS a release (cost 0.2.0); `### Breaking` only for names that actually shipped"
+---
+
 # The version is the release workflow's — never yours
 
 **Applies when** you are about to touch a version number, `CHANGELOG.md`'s `## Unreleased` heading, or

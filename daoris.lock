@@ -242,12 +242,12 @@
     {
       "path": ".claude/skills/new-ipc-module/SKILL.md",
       "of": ".agents/skills/new-ipc-module/SKILL.md",
-      "sha256": "16c1649a28c65cfbcd7cd813f2654f733de9fb99a894aa4813e1c64828592b69"
+      "sha256": "d29182352a0fe299ea988d7b657cc677b9b79aacd455abace6e02f389c28379f"
     },
     {
       "path": ".claude/skills/new-native-service/SKILL.md",
       "of": ".agents/skills/new-native-service/SKILL.md",
-      "sha256": "6a921f4eb9854941eabcb40fb934d146889a2c582008d8d7212f9aab22501abd"
+      "sha256": "8b46c38eed85290ba234b842222c10c60e985246bbc333d829dcb7e5baf1a023"
     },
     {
       "path": ".claude/skills/pattern-finder/SKILL.md",
@@ -257,7 +257,7 @@
     {
       "path": ".claude/skills/phase-review/SKILL.md",
       "of": ".agents/skills/phase-review/SKILL.md",
-      "sha256": "85931440736a74c7cfbc58b8078c45a3d697e3c25511451d7ff9cba9b0280805"
+      "sha256": "06dd3a543ffa6a2815d23d0a0a9a8dd9724ecacaa84725a13031b20beccd6b34"
     },
     {
       "path": ".claude/skills/post-feature/SKILL.md",
@@ -312,7 +312,7 @@
     {
       "path": ".claude/skills/skill-loader/SKILL.md",
       "of": ".agents/skills/skill-loader/SKILL.md",
-      "sha256": "7106f370ad73b8ee92d09c0cee7bffc69e3a65de7065155ed5c05a1362cf10a3"
+      "sha256": "8e7b477e1dc8442b3b9548200a6502ed1d1ad63972fd023cf088b3340850a99a"
     }
   ]
 }

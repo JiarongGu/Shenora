@@ -1,3 +1,9 @@
+---
+name: generic-library
+applies_when: "designing or changing ANY public API, naming a type/package, **deciding which package a type belongs in**, or a consumer asks for a feature"
+enforces: "generalize the request, never ship its shape; mechanism names not scenario names; seams over flags; every public type earns its keep; the D19/D20 placement law"
+---
+
 # Generic library — generalize the consumer's request, never ship its shape
 
 Shenora is a reusable devkit consumed by several very different apps. The moment an API encodes

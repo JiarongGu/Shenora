@@ -37,7 +37,7 @@ own logic can compile off Windows (D19/D20), and moving a contract later is a br
    their own class, and anything that realizes a window handle runs through `TestSupport/Sta.Run`:
    an OLE failure on an MTA thread is not a test failure, it is a BLOCKING WinForms dialog that
    stalls the whole suite.
-6. **Read `.claude/knowledge/winforms-shell.md`** before touching lifetime, closing, or window
+6. **Read `.agents/knowledge/winforms-shell.md`** before touching lifetime, closing, or window
    state — `CloseReason.UserClosing` also fires for a programmatic `Close()`, `SystemEvents` holds a
    strong static reference that leaks the form, and pre-handle intent belongs in a flag rather than
    a posted callback.

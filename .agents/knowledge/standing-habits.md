@@ -1,3 +1,9 @@
+---
+name: standing-habits
+applies_when: "looking for maintenance work, or about to file a recurring pass as a TASKS entry"
+enforces: "the passes that are never \"done\" (audits, sweeps, re-measurements) — habits to re-run, which is why they are not backlog"
+---
+
 # Standing habits — the maintenance passes that are never "done"
 
 Habits, not checkboxes: each one is a pass to re-run rather than a task to complete, which is exactly
@@ -30,7 +36,7 @@ the file itself. They are prose now, and they never "complete":
     not. Closing the to-do is what makes the entry lie.
   - 🔴 **A finding is closed when the CLAIM is gone from the REPO, not when the entry is amended.** An
     amendment corrects one reader; the copies keep their own dates.
-  - **CORRECT IN PLACE; the WHY goes in the commit message** (`phase-workflow.md`). ⚠ **But never
+  - **CORRECT IN PLACE; the WHY goes in the commit message** (`work-loop.md`). ⚠ **But never
     renumber** — a `D<n>` is a permanent address cited from shipped XML docs on nuget.org, so a
     superseded entry keeps its number as a one-line tombstone.
 - 🔴 **Re-read code whose ASSUMPTIONS a later change invalidated — not just code that is new.** The

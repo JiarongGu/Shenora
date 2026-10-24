@@ -1,3 +1,9 @@
+---
+name: windows-dev-gotchas
+applies_when: "editing text or running a script on THIS machine — most tasks"
+enforces: "PS5 UTF-8/BOM mangling, `node -e` eating backticks, `fs.cpSync`, `MSYS_NO_PATHCONV`, MAX_PATH. ⚠ Area traps live with their area: WebView2 → `webview2-hosting`, emulator/device → `mobile-harness`, STA tests → `winforms-shell`"
+---
+
 # Windows dev gotchas (this machine)
 
 - **NEVER roundtrip source files through PowerShell 5 `Get-Content`/`Set-Content`** — it mangles

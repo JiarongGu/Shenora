@@ -1,3 +1,9 @@
+---
+name: renames-and-prose
+applies_when: "renaming or removing anything a doc, an XML comment or an adopter could name"
+enforces: "the three steps and the skipped third (`stale-scan` triage); a rename damages the sentence that DEFINES it"
+---
+
 # Renaming or removing a public name — three steps, and the third gets skipped
 
 **Applies when** you rename or delete anything a document, an XML doc or an adopter could name: a type, a
@@ -26,4 +32,4 @@ doc wraps, and a per-line matcher sees neither half).
 
 ⚠ **A repo-wide SCRIPT must exclude `local/`** — it is an informal ARCHIVE, and its value is that it records
 what was true THEN. A sweep that "helpfully" renames through it destroys the reference rather than updating
-it. (`persist-working-state.md` carries the incident.)
+it. (`working-state-homes.md` carries the incident.)

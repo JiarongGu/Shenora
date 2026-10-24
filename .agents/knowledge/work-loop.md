@@ -1,3 +1,9 @@
+---
+name: work-loop
+applies_when: any multi-step change here — building, verifying, reviewing and committing it; writing or changing a gate, tripwire or rule; correcting prose; adding an extension point
+enforces: build → verify (dev.mjs verify) → adversarial review (/phase-review) → docs sync → commit only on approval; tripwires sabotage-verified both ways; a mechanism before a rule; prose corrected in place
+---
+
 # Work loop — build, verify, review, commit
 
 **There are no phases.** Work arrives as harvest (D15) or adoption feedback. The current release is in
@@ -65,8 +71,10 @@ is read once per session and competes with every other rule; a gate runs every t
 
 So, in order: **(1) can a gate or a test catch it?** Then write that and nothing else — the commit
 message carries the root cause. **(2) Can the code make it unrepresentable?** Closing a type, deleting
-the seam. **(3) Only if neither** — a rule, and prefer on-demand `.claude/knowledge/` over core, because
-core is paid on every session forever. `dev.mjs knowledge new <name> [--core]`.
+the seam. **(3) Only if neither** — a rule, and prefer on-demand `.agents/knowledge/` over the brief in
+`AGENTS.md`, because what is always loaded is paid on every session forever. (`dev.mjs knowledge new
+<name> [--core]` still writes to the old `.claude/` folders until `devtools/scripts/knowledge.mjs` is
+repointed.)
 
 ## Prose, and where a fix's reason goes
 
@@ -81,7 +89,7 @@ keeps its number as a one-line tombstone — those numbers ship in XML docs on n
 `git log -S "<token>" -- <path>`).
 
 **Renaming or removing a public name** has three steps and its own hazards —
-`.claude/knowledge/renames-and-prose.md`.
+`renames-and-prose.md`.
 
 ## Seams
 
@@ -92,4 +100,27 @@ it was USED.** After any pass that adds seams, re-run the audit: which contracts
 implementation and no consumer?
 
 **Extraction ports** keep the source's post-mortem comments and fix the known gaps
-(`.claude/knowledge/extraction-sources.md`).
+(`extraction-sources.md`).
+
+## Writing a rule or a knowledge document
+
+🔴 **A rule is the INVARIANT, WHEN IT APPLIES, and WHAT BREAKS if it does not. Nothing else.** The
+incident that earned it belongs to the commit, exactly as it does for a decision entry (D77) — and the
+cost of getting this wrong is not merely length:
+
+- 🔴 **A rule that cannot say when it does NOT apply gets applied everywhere.** That is how a rule comes
+  to steer development heavily, and sometimes in the wrong direction. Every rule here should be readable
+  as *"in situation X, do Y, because Z breaks"* — if X is missing, X is "always", and a law earned from
+  one incident starts taxing every task.
+- 🔴 **THE RULE BASE MODELS A PROSE STYLE, AND THE CODE COPIES IT.** Measured 2026-08-14: **45 % of
+  `src/` was comment**, carrying the same 🔴 banners, ALL-CAPS and incident narration these files use —
+  in `///` docs that ship to an adopter's IDE. `doc-claims.md` holds the bar for those; this note is
+  here because the habit starts in the rule base. **Write the shortest thing that still names the
+  invariant.**
+- **Prefer a GATE or a TEST, and delete the rule when one lands.**
+- **A knowledge document carries `name`, `applies_when` and `enforces` frontmatter** — the generated
+  `.agents/INDEX.md` lists it from those, and lists one without them under *Knowledge without
+  frontmatter*, where nothing says when to read it.
+- ⚠ **The always-loaded budget is deliberately SLACK** (`coreBudgetBytes` in `daoris.json`, reported by
+  `daoris check`) — it exists to notice a brief that DOUBLES, not to make you argue for a paragraph. It
+  WARNS, never fails: a style budget must not block a release.

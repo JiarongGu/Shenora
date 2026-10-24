@@ -1,3 +1,9 @@
+---
+name: ipc-contracts
+applies_when: "touching the IPC stack on either side (`src/Shenora/Core/Ipc/`, `WebViewIpcBridge`, `src/Shenora.React/src/`), adding a transport, or writing adoption shims"
+enforces: "C#⇄TS wire mirror kept by tripwires; no raw exception text on any error path; never-throws dispatch; always-batched notifications; context-preserving pipeline"
+---
+
 # IPC contract invariants — the wire rules the P3 stack encodes
 
 The envelope contract is FIXED (design §5, D11/D16) and both sides ship from this repo:

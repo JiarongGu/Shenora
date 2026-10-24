@@ -1,3 +1,9 @@
+---
+name: mobile-harness
+applies_when: "RUNNING something on a device — `dev.mjs android|mac`, a build host, or writing a device probe"
+enforces: "the traps that make a device result mean nothing: a log tailed before it is filtered, an app that never relaunched, signing over ssh, a probe that cannot tell its own failure from the platform's"
+---
+
 # The device harness — driving a phone, a simulator and the Mac build host
 
 Everything here is about RUNNING something on a device: `dev.mjs android|mac`, the build hosts, and

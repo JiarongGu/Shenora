@@ -1,3 +1,9 @@
+---
+name: webview2-hosting
+applies_when: "changing WebView2 hosting/serving/session code, adding a resource scheme or injected script, **or touching UI-thread marshalling in ANY package**"
+enforces: "the ONE marshalling owner and its invariants; environment thread-affinity; the sync-bundle vs deferred-scheme split"
+---
+
 # WebView2 hosting invariants — the measured rules the host encodes
 
 The family's WebView2 lessons, earned live and now enforced by `src/Shenora.Windows/`
@@ -250,7 +256,7 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
   renderer dies with `0xC0000005` about 8 s in — **before any kill** — then the Storage Service, Network
   Service and GPU process follow, and the host's auto-reload makes the probes run twice. ⚠ **It fires
   ~50 % of the time** (6/12 under plain `timeout`, 0/9 launching directly, 0/3 with `--foreground`),
-  which is why single-run elimination cannot find it — `phase-workflow.md` has that method lesson. It is
+  which is why single-run elimination cannot find it — `work-loop.md` has that method lesson. It is
   also the likeliest source of a reported `0x800700AA`. **To bound a sample run, spawn it from a
   `devtools/_*.mjs` script and `p.kill()` on a timer**, or pass `--foreground`. The redirect is innocent.
 - **WebView2 + CDP:** setting `CoreWebView2EnvironmentOptions.AdditionalBrowserArguments` makes

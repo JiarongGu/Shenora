@@ -1,3 +1,9 @@
+---
+name: probe-diagnostics
+applies_when: "writing or debugging a sample probe, or a probe reports FAIL"
+enforces: "a probe reading system-wide state survives other processes' failures; a diagnostic naming a bare exception reads as evidence and is worse than none"
+---
+
 # Probes and diagnostics — a probe is CODE, and a bad one accuses the kit
 
 The sample's probes (`samples/Shenora.Sample.*`) are how behavioural claims get proven, so a defect in a
@@ -25,7 +31,7 @@ subsystem as broken, and each cost a day.
 ## Gotchas / traps
 
 - ⚠ **"The probe says FAIL" is a hypothesis about the probe as much as about the kit.** Both incidents
-  ended with the kit innocent — as did the renderer-crash hunt in `phase-workflow.md`, where the harness
+  ended with the kit innocent — as did the renderer-crash hunt in `work-loop.md`, where the harness
   was the author. When a probe fails, the cheapest first move is to make it print MORE about its own
   execution, not to start eliminating suspects in the code under test.
 - ⚠ A probe asserting an absence proves nothing until it has been seen to FAIL. See D63 in
