@@ -13,8 +13,21 @@
     "gates": "daoris.gates.json"
   },
   "domain": {
-    "summary": "",
-    "owns": [],
-    "accepts": []
+    "summary": "A hybrid app framework for .NET + React, shipped as NuGet and npm packages: the shell that hosts a React page on Windows, macOS, Linux, Android and iOS, the typed IPC across the seam, and the native services and modules that reach the platform.",
+    "owns": [
+      "the Shenora packages and their lockstep version: Shenora, the shells Shenora.Windows, Shenora.Android and Shenora.iOS, the Chromium engine, the native launcher, and npm @shenora/react and @shenora/cli",
+      "shell hosting: WebView2 and CEF pages, windows and window state, single instance, tray, startup screen",
+      "the IPC wire contract between a page and its .NET host: envelopes, the SHENORA.* module names, error codes, event batching",
+      "the kit's modules: clipboard, file dialogs, media, platform (colour scheme, orientation, back navigation, lifecycle), request tracking",
+      "the engine services: missions and lanes, file updates and locks, update staging, resource packs",
+      "the adoption guide for bringing an existing WinForms + WebView2 app onto the kit"
+    ],
+    "accepts": [
+      "a native capability a React page cannot reach on its own, with the app that needs it and how a second app would use it",
+      "a defect in a shell, the IPC, a module or an engine service, with the case that exposes it",
+      "a gap met while adopting the kit, with the adopting app's case",
+      "a question about what the kit promises: a wire name, a status, a path it writes"
+    ],
+    "uses": []
   }
 }
