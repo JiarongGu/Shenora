@@ -34,22 +34,21 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 🎞 THE CODECS BUILD OF CEF — BUILT AND PUBLISHED BY A PERSON, THEN PINNED (D99)
+### 🎞 THE CODECS BUILD OF CEF — BUILT AND PROBED; PUBLISHING ITS ASSET IS A PERSON'S ACT (D99)
 
-> `ShenoraChromiumCodecs` (D99), its pin slot in `cef.json` and `cef-codecs.yml` are in; **the kit has published
-> no build yet**, so the opt-in answers with a build error saying so. `node devtools/dev.mjs chromium-codecs` is the
-> proof (an H.264 + AAC clip and an HEVC clip on a real page, with a VP9 control; `--standard` shows it red).
+> `ShenoraChromiumCodecs` (D99) is in, `cef.json`'s `codecs` pins the Windows x64 build of CEF 154.0.32, and
+> `node devtools/dev.mjs chromium-codecs` passes against it (H.264 + AAC and HEVC, from a build fetched, SHA-1-checked
+> and laid out by the targets). **The asset is not published:** until it is, the opt-in fails its download.
 > **Done when it passes with no extra argument.**
 >
-> - **Run `.github/workflows/cef-codecs.yml` on a runner labelled `cef-builder`** (Windows, VS 2022 + SDK, ~200 GB,
->   hours). ⚠ It has never run: its flags and paths are from CEF's documented build, so read the first log. Then the
->   steps in its header: try the artifact with `chromium-codecs -p:ShenoraCefDist=…`, pin its SHA-1 under
->   `cef.json`'s `codecs.distributions`, run `dev.mjs cef-binding`, publish the file to the `codecs.release` release.
-> - **Every CEF bump needs a new build** (the pin moves `codecs.release` and its distributions with it). macOS and
->   Linux, and arm64, are runners and matrix rows the workflow does not have yet.
-> - **If HEVC alone fails** on a machine with a hardware decoder, the GN arguments for it (`enable_platform_hevc`,
->   `enable_hevc_parser_and_hw_decoder`) are the first suspect; the probe's own lines say which clip failed how.
-> - A guide line for HEVC's machine decoder, and a `README` mention, when the first build is pinned.
+> - **Publish `cef_binary_154.0.32+g682c378+chromium-154.0.8037.58_windows64_minimal.tar.bz2` (SHA-1 in `cef.json`) as an
+>   asset of the release `cef-codecs-154.0.32` of this repository**, with the licence notice (`THIRD-PARTY-NOTICES.md`),
+>   then run `chromium-codecs` again. ⚠ It conveys patent-licensed codecs (D51, D99), so it is a release act.
+> - **Every CEF bump needs a new build** (the pin moves `codecs.release` and its distributions with it), about 9 hours on
+>   22 cores with Windows SDK 10.0.28000.0 installed. `.github/workflows/cef-codecs.yml` is that build as a workflow; it
+>   has never run as one. macOS, Linux and arm64 are runners and matrix rows it does not have yet.
+> - **HEVC needs a picture a GPU's decoder accepts:** a 128x96 clip failed on a GeForce and 320x240 played, so a tiny test
+>   clip is not evidence. A guide line (HEVC plays through the machine's decoder) lands with the published build.
 
 ### 🧭 `Shenora.Chromium` ALONE IS A COMPLETE DESKTOP SHELL — Windows included (D88)
 

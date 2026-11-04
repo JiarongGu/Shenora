@@ -37,9 +37,10 @@ at the first list and missed five more breaking changes.
   the app's project fetches the kit's own build of the same CEF, made with Chromium's proprietary codecs, in place of
   CEF's; the layout, `ChromiumBrowserProcess` and every API are unchanged, and an app that does not ask carries none of
   it. ⚠ **The codecs are patent-licensed and the build comes with no licence**: the app that opts in decides whether
-  it needs one. HEVC plays through the machine's own decoder. **The kit has published no such build yet**, so the
-  property answers with a build error saying so until `cef.json`'s `codecs` pins one; `node devtools/dev.mjs
-  chromium-codecs` is the check that an engine plays them, and it fails on CEF's standard build.
+  it needs one. HEVC plays through the machine's own decoder. `cef.json`'s `codecs` pins the Windows x64 build (CEF
+  154.0.32) and names the GitHub release it is fetched from; a platform with no pinned build answers the property with a
+  build error saying so. `node devtools/dev.mjs chromium-codecs` is the check that an engine plays them: it fails on CEF's
+  standard build and passes on this one (H.264 + AAC and HEVC, on a GeForce).
 
 ## 0.24.0 — 2026-10-23
 

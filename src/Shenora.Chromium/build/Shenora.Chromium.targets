@@ -98,8 +98,17 @@
     </ParameterGroup>
     <Task>
       <Code Type="Fragment" Language="cs"><![CDATA[
-        try { if (!System.IO.Directory.Exists(Destination)) System.IO.Directory.Move(Source, Destination); }
-        catch (System.IO.IOException) when (System.IO.Directory.Exists(Destination)) { }
+        // Whatever scans a just-extracted tree of 400 MB can hold it for a moment, and the rename then fails with "access to
+        // the path is denied" (measured once, and gone on the next try); the SDK retries its own apphost for the same reason.
+        for (var attempt = 1; ; attempt++)
+        {
+            try { if (!System.IO.Directory.Exists(Destination)) System.IO.Directory.Move(Source, Destination); break; }
+            catch (System.IO.IOException) when (System.IO.Directory.Exists(Destination)) { break; }
+            catch (System.Exception e) when (attempt < 6 && (e is System.IO.IOException || e is System.UnauthorizedAccessException))
+            {
+                System.Threading.Thread.Sleep(500 * attempt);
+            }
+        }
         if (System.IO.Directory.Exists(Source)) System.IO.Directory.Delete(Source, true);
       ]]></Code>
     </Task>
@@ -335,7 +344,7 @@ public sealed class ShenoraChromiumStampLauncher : Task
       <_ShenoraCefNeeded Condition="!Exists('$(ShenoraCefDist)')">true</_ShenoraCefNeeded>
     </PropertyGroup>
     <Error Condition="'$(_ShenoraCefFile)' == '' and '$(ShenoraChromiumCodecs)' != 'true'" Text="The pinned CEF build $(ShenoraCefBuild) names no distribution for $(ShenoraCefPlatform)." />
-    <Error Condition="'$(_ShenoraCefFile)' == '' and '$(ShenoraChromiumCodecs)' == 'true'"
+    <Error Condition="'$(_ShenoraCefFile)' == '' and '$(ShenoraChromiumCodecs)' == 'true' and '$(_ShenoraCefNeeded)' == 'true'"
            Text="ShenoraChromiumCodecs asks for the kit's CEF build with H.264, AAC and HEVC, and the kit has published none for $(ShenoraCefPlatform) at $(ShenoraCefBuild). Build without it for CEF's standard engine, which plays neither." />
 
     <MakeDir Condition="'$(_ShenoraCefNeeded)' == 'true'" Directories="$(ShenoraCefRoot)" />

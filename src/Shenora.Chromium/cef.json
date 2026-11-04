@@ -11,6 +11,8 @@
   },
   "codecs": {
     "release": "cef-codecs-154.0.32",
-    "distributions": {}
+    "distributions": {
+      "windows64": { "file": "cef_binary_154.0.32+g682c378+chromium-154.0.8037.58_windows64_minimal.tar.bz2", "sha1": "beeb30364d7d3ab5ea92b434c27767ea0e02cb79" }
+    }
   }
 }

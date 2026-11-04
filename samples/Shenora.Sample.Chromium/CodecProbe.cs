@@ -14,10 +14,12 @@ namespace Shenora.Sample.Chromium;
 /// <c>CODEC:</c> lines to <c>SHENORA_SAMPLE_CODEC_LOG</c> (default: beside the app), and closes the app. The last line is
 /// <c>CODEC: RESULT PASS</c>, or <c>CODEC: RESULT FAIL</c> and the clips that did not play.
 /// <para>
-/// A clip counts as played only when its <c>currentTime</c> advanced and the picture has its real size: the answer a page
-/// gets from <c>canPlayType</c> is reported beside it, never taken for it. CEF's standard build, which carries none of the
-/// proprietary codecs, fails both. HEVC is decoded by the machine's own decoder (a GPU, or Windows' HEVC extension), so a
-/// FAIL on it alone names the machine as much as the build. The runner is <c>dev.mjs chromium-codecs</c>.
+/// A clip counts as played only when its <c>currentTime</c> advanced and a picture came out: the answer a page gets from
+/// <c>canPlayType</c> is reported beside it, never taken for it. CEF's standard build, which carries none of the proprietary
+/// codecs, fails both. HEVC is decoded by the machine's own decoder (a GPU, or Windows' HEVC extension), so a FAIL on it
+/// alone names the machine as much as the build; the clip is 320x240 because a GPU's decoder refuses a smaller picture
+/// (measured: 128x96 failed on a GeForce with "GetVideoDecoderConfigCount failed", 320x240 played). The <c>graphics:</c>
+/// line names the GPU path the page was drawn on. The runner is <c>dev.mjs chromium-codecs</c>.
 /// </para>
 /// Windows only, as the panel is. Nothing outside the app is touched; the page comes from a server on localhost that lives
 /// as long as the probe.
@@ -80,6 +82,7 @@ internal static class CodecProbe
         // ExecuteScriptAsync answers the JSON of the string the page built, so it is a JSON string holding JSON.
         var results = System.Text.Json.JsonSerializer.Deserialize<string>(answer)!;
         using var doc = System.Text.Json.JsonDocument.Parse(results);
+        Log($"graphics: {await _ui.InvokeAsync(() => panel.Browser.ExecuteScriptAsync("window.gpuName"))}");
         var failed = new List<string>();
         var controlFailed = false;
         foreach (var clip in doc.RootElement.EnumerateArray())
@@ -173,7 +176,7 @@ internal static class CodecProbe
                   const done = new Promise(resolve => {
                     video.onerror = () => { result.detail = 'error ' + (video.error && video.error.code) + ': ' + (video.error && video.error.message); resolve(); };
                     video.ontimeupdate = () => {
-                      if (video.currentTime > 0 && video.videoWidth === 128 && video.videoHeight === 96) {
+                      if (video.currentTime > 0 && video.videoWidth > 0 && video.videoHeight > 0) {
                         result.played = true; result.detail = 'currentTime ' + video.currentTime.toFixed(2); resolve();
                       }
                     };
@@ -184,7 +187,14 @@ internal static class CodecProbe
                   await done;
                   return result;
                 }
-                (async () => { for (const clip of clips) results.push(await play(clip)); window.codecs = JSON.stringify(results); })();
+                function gpuName() {
+                  try {
+                    const gl = document.createElement('canvas').getContext('webgl');
+                    const info = gl.getExtension('WEBGL_debug_renderer_info');
+                    return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : '(no renderer info)';
+                  } catch (e) { return 'webgl: ' + e.name; }
+                }
+                (async () => { for (const clip of clips) results.push(await play(clip)); window.gpuName = gpuName(); window.codecs = JSON.stringify(results); })();
                 </script></body></html>
                 """;
         }

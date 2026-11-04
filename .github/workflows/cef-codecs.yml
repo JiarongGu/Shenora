@@ -4,9 +4,9 @@ name: CEF with codecs
 # with Chromium's proprietary codecs, for ShenoraChromiumCodecs (D99), and uploads the distribution as a WORKFLOW
 # ARTIFACT. It publishes nothing: the release asset, and the pin that names it, are a person's act (below).
 #
-# ⚠ NOT YET A GREEN RUN. It was worked out by building by hand: the sync, `gn gen` and the first compile steps ran;
-# the build then stopped in OpenXR's loader on this machine's older Windows SDK (below). Read its log before trusting a
-# line. Chromium is built from source, so it needs a runner that is not GitHub's hosted one: Windows, Visual Studio 2026
+# ⚠ NEVER RUN AS THIS WORKFLOW. Its steps are what building the pinned CEF by hand took (about 9 hours on 22 cores, with
+# SDK 10.0.28000.0 installed), ending in a distribution the Chromium sample played H.264 + AAC and HEVC from; the first
+# real run is the proof of the order of the steps, so read its log. Chromium is built from source, so it needs a runner that is not GitHub's hosted one: Windows, Visual Studio 2026
 # (18) with the "Desktop development with C++" workload, **the Windows SDK Chromium's own build/vs_toolchain.py names
 # (10.0.28000.0 for Chromium 154)**, ~200 GB free, 32+ GB RAM, git and python 3 on PATH, and GYP_MSVS_OVERRIDE_PATH,
 # vs2026_install and WINDOWSSDKDIR set in the runner's environment. Register one labelled `cef-builder`.
@@ -16,7 +16,8 @@ name: CEF with codecs
 # After a green run, by hand:
 #   1. Download the artifact; extract the build; try it: `node devtools/dev.mjs chromium-codecs -p:ShenoraCefDist=<extracted folder>`
 #      must print `CODEC: RESULT PASS` (HEVC is the machine's own decoder: a machine without one fails it alone).
-#   2. Put the summary's "codecs.distributions" entry into cef.json, run `node devtools/dev.mjs cef-binding`, commit.
+#   2. Put the summary's "codecs.distributions" entry into cef.json (when it differs from the pinned one), run
+#      `node devtools/dev.mjs cef-binding`, commit.
 #   3. Publish the file as an asset of the release named by cef.json "codecs.release" in this repository, and re-run
 #      `chromium-codecs` with no extra argument: it now fetches from that release and checks the pin.
 on:
@@ -69,10 +70,14 @@ jobs:
         shell: bash
         run: |
           out="$RUNNER_TEMP/cef-build/download/chromium/src/cef/binary_distrib"
-          want="cef_binary_${{ steps.pin.outputs.cef }}_windows64_minimal.tar.bz2"
-          # The name CEF gives it is the name the pin carries, or the build is not the pinned one.
-          test -f "$out/$want" || { echo "::error::the build produced $(ls "$out") and not $want"; exit 1; }
-          mkdir -p dist-out && cp "$out/$want" dist-out/
+          name="cef_binary_${{ steps.pin.outputs.cef }}_windows64_minimal"
+          want="$name.tar.bz2"
+          # The folder's name is the name the pin carries, or the build is not the pinned one. On Windows CEF packs a .zip
+          # and leaves the folder; the targets extract a .tar.bz2 (CEF's own index ships those), so it is packed from the folder
+          # with Windows' bsdtar, the top folder kept (the targets strip it).
+          test -d "$out/$name" || { echo "::error::the build produced $(ls "$out") and not $name"; exit 1; }
+          mkdir -p dist-out
+          "$SYSTEMROOT/System32/tar.exe" -cjf "dist-out/$want" -C "$out" "$name"
           sha1=$(sha1sum "dist-out/$want" | cut -d' ' -f1)
           {
             echo '### codecs.distributions entry for src/Shenora.Chromium/cef.json'
