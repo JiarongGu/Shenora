@@ -1,0 +1,7 @@
+# Names DECLARED PUBLIC — devtools/scripts/check-sensitive.mjs lets each one through a private ban in
+# local/sensitive-patterns.txt, but only as the exact, whole match (a ban matching more still blocks).
+# One literal name per line, case-insensitive. Adding a line PUBLISHES the name: only on the owner's say-so.
+
+# The agent workspace and sync tool. It writes its name into tracked files (AGENTS.md, its root
+# declarations, the canon stamps) and into every agent branch name, so a merge message carries it.
+Daoris

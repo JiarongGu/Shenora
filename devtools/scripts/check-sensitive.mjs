@@ -66,7 +66,7 @@ if (existsSync(localFile)) {
   for (const raw of readFileSync(localFile, 'utf8').split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
-    try { patterns.push({ re: new RegExp(line, 'i'), why: 'private ban pattern' }); loaded++; }
+    try { patterns.push({ re: new RegExp(line, 'gi'), why: 'private ban pattern', waivable: true }); loaded++; }
     catch { bad.push(line); }
   }
 
@@ -223,14 +223,28 @@ if (history) {
   bufOf = (f) => { try { return gitBuf(['show', `:${f}`]); } catch { return Buffer.alloc(0); } };
 }
 
+// A name DECLARED PUBLIC in the tracked `devtools/sensitive-public.txt` passes a private ban — and only
+// as the exact, whole match: a pattern that matches more than the name still blocks. The ban list is
+// private and lives in each checkout's `local/`, so it cannot be corrected by a change to the
+// repository; this list can, and it is reviewed like any other tracked file. Built-ins are never waived.
+const publicFile = path.join(repo, 'devtools', 'sensitive-public.txt');
+const publicNames = new Set(existsSync(publicFile)
+  ? readFileSync(publicFile, 'utf8').split(/\r?\n/).map((l) => l.trim().toLowerCase()).filter((l) => l && !l.startsWith('#'))
+  : []);
+function firstBanned(text, { re, waivable }) {
+  if (!waivable) return text.match(re)?.[0] ?? null;
+  for (const m of text.matchAll(re)) if (!publicNames.has(m[0].toLowerCase())) return m[0];
+  return null;
+}
+
 const hits = [];
 for (const f of files) {
   // The PATH is scanned too — a file merely NAMED after a banned token used to pass, because only
   // content was ever matched. Skipped for --message (the "path" is a temp file git chose).
   if (!messageFile) {
-    for (const { re, why } of patterns) {
-      const m = f.match(re);
-      if (m) hits.push({ f, line: 0, why: `${why} (in the FILE PATH)`, snippet: m[0] });
+    for (const p of patterns) {
+      const m = firstBanned(f, p);
+      if (m) hits.push({ f, line: 0, why: `${p.why} (in the FILE PATH)`, snippet: m });
     }
   }
 
@@ -241,9 +255,9 @@ for (const f of files) {
     // Ignore git's own commentary in a commit-message file — it is stripped before the commit and
     // legitimately contains branch/path chatter.
     if (messageFile && lines[i].startsWith('#')) continue;
-    for (const { re, why } of patterns) {
-      const m = lines[i].match(re);
-      if (m) hits.push({ f, line: i + 1, why, snippet: m[0] });
+    for (const p of patterns) {
+      const m = firstBanned(lines[i], p);
+      if (m) hits.push({ f, line: i + 1, why: p.why, snippet: m });
     }
   }
 }

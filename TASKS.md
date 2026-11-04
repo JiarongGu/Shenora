@@ -221,9 +221,7 @@ Still uncovered:
 Two gates still assume the old layout. `knowledge check` crashes: `devtools/scripts/knowledge.mjs:83` reads
 `.claude/rules/RULES_INDEX.md`, which no longer exists. The always-loaded doctrine is now `AGENTS.md`, and
 the index is the generated `.agents/INDEX.md`. `decision-audit.mjs:297` still scans `.claude/rules|knowledge`.
-`check-sensitive --tree` fails on the sync tool's own name, which appears in its generated files
-(`AGENTS.md`, the root `*.json`/`*.lock` declarations, the canon stamps) and is a private pattern in the checkout's `local/`. Decide whether
-that name is public and fix the pattern or the files. Proof: `verify` is green in a worktree.
+Proof: `verify` is green in a worktree.
 
 ### 🟡 The CLI package's vitest run failed once on "Channel closed"
 
