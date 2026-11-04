@@ -34,21 +34,19 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 🎞 THE CODECS BUILD OF CEF — BUILT AND PROBED; PUBLISHING ITS ASSET IS A PERSON'S ACT (D99)
+### 🎞 THE CODECS ENGINE PACKAGE — BUILT AND PROBED; PUSHING IT TO NUGET.ORG IS A PERSON'S ACT (D99)
 
-> `ShenoraChromiumCodecs` (D99) is in, `cef.json`'s `codecs` pins the Windows x64 build of CEF 154.0.32, and
-> `node devtools/dev.mjs chromium-codecs` passes against it (H.264 + AAC and HEVC, from a build fetched, SHA-1-checked
-> and laid out by the targets). **The asset is not published:** until it is, the opt-in fails its download.
-> **Done when it passes with no extra argument.**
+> `Shenora.Chromium.Codecs.win-x64` 154.0.32 (`engines/`, outside `src/`) is packed from the CEF build the kit made, and
+> `node devtools/dev.mjs chromium-codecs --dist <the build>` passes through it: the sample restores the package, its props
+> point the layout at it (`ShenoraChromiumEnginePath`), and H.264 + AAC and HEVC play. **Not on nuget.org yet:** until it is,
+> `chromium-codecs` with no argument cannot restore it. **Done when it passes with no argument.**
 >
-> - **Publish `cef_binary_154.0.32+g682c378+chromium-154.0.8037.58_windows64_minimal.tar.bz2` (SHA-1 in `cef.json`) as an
->   asset of the release `cef-codecs-154.0.32` of this repository**, with the licence notice (`THIRD-PARTY-NOTICES.md`),
->   then run `chromium-codecs` again. ⚠ It conveys patent-licensed codecs (D51, D99), so it is a release act.
-> - **Every CEF bump needs a new build** (the pin moves `codecs.release` and its distributions with it), about 9 hours on
->   22 cores with Windows SDK 10.0.28000.0 installed. `.github/workflows/cef-codecs.yml` is that build as a workflow; it
->   has never run as one. macOS, Linux and arm64 are runners and matrix rows it does not have yet.
-> - **HEVC needs a picture a GPU's decoder accepts:** a 128x96 clip failed on a GeForce and 320x240 played, so a tiny test
->   clip is not evidence. A guide line (HEVC plays through the machine's decoder) lands with the published build.
+> - **Push the .nupkg (185 MB, nuget.org's limit is 250) and check it validated**, then run `chromium-codecs` again. ⚠ nuget.org
+>   never deletes a version, only unlists it, and the package conveys patent-licensed codecs (D51, D99): a release act.
+> - **Every CEF bump needs a new build and a new package version** (CEF's), about 9 hours on 22 cores with Windows SDK
+>   10.0.28000.0 installed. `.github/workflows/cef-codecs.yml` is that build as a workflow; it has never run as one. macOS, Linux
+>   and arm64 are runners and matrix rows it does not have, and packages of their own (`ShenoraChromiumEnginePlatform` refuses a mismatch).
+> - **A tiny HEVC test clip is not evidence:** a 128x96 clip failed on a GeForce and 320x240 played.
 
 ### 🧭 `Shenora.Chromium` ALONE IS A COMPLETE DESKTOP SHELL — Windows included (D88)
 

@@ -155,7 +155,7 @@ docs cite them — so the number is the column to scan.
 | **D96** | A WINDOWS CHROMIUM APP CAN PUBLISH AS THREE FILES AND TWO FOLDERS, AS AN OPTION. |
 | **D97** | THE CHROMIUM SHELL EMBEDS A WEB PANEL: A CHILD BROWSER IN A SHELL WINDOW, IN A CHOSEN PROFILE. |
 | **D98** | THE README IS THE LANDING PAGE EVERY PACKAGE SHIPS, AND THE FILES WRITTEN FOR CODING AGENTS ARE KEPT AS STATE, NOT AS COPIES. |
-| **D99** | THE CHROMIUM ENGINE CARRIES H.264, AAC AND HEVC AS AN OPT-IN, FROM A CEF BUILD THE KIT MAKES AND PUBLISHES. |
+| **D99** | THE CHROMIUM ENGINE CARRIES H.264, AAC AND HEVC AS A PACKAGE OF ITS OWN, BUILT AND PUBLISHED BY THE KIT. |
 
 <!-- decisions-index:end -->
 
@@ -1396,20 +1396,21 @@ docs cite them — so the number is the column to scan.
   - **Rejected:** a short README that only links out. The packaged README is the one document an adopter without
     the repository can read, so it keeps the rules and the package table rather than pointing at them.
 
-- **D99 — THE CHROMIUM ENGINE CARRIES H.264, AAC AND HEVC AS AN OPT-IN, FROM A CEF BUILD THE KIT MAKES AND
-  PUBLISHES.** CEF's standard build leaves the proprietary codecs out, so the MP4 of an ordinary site shows nothing.
-  `ShenoraChromiumCodecs=true` fetches the kit's build of the SAME pinned CEF (`proprietary_codecs=true
-  ffmpeg_branding=Chrome`) from a release of this repository, SHA-1-pinned in `cef.json`'s `codecs`, into a cache of
-  its own. Layout and API are unchanged, and the owner chose this over a third party's builds and over declining.
-  - 🔴 **This is the reopening of D51 that D81 warned of, deliberately:** the kit now conveys the bytes. Opt-in, so no
-    app that does not ask carries them; the default stays CEF's own build. ⚠ Patents are not copyright: the build
-    comes with no patent licence, and the app that opts in decides whether it needs one for what it ships.
-  - **A build per CEF pin and platform, at every bump:** FFmpeg is linked into `libcef`, so no one file swaps in.
-    `.github/workflows/cef-codecs.yml` builds one on a runner of the kit's own and uploads it as an artifact;
-    publishing the asset and the pin is a person's act, after `dev.mjs chromium-codecs` passes against it.
-  - ⚠ HEVC plays through the machine's own decoder (a GPU, or Windows' HEVC extension), so it plays where one exists.
-  - **Rejected:** a package of its own (D81's 350 MB, again); the codecs on by default; a third party's hand-built
-    CEF (no HEVC, one person's binaries in a public package); sending each video to Edge.
+- **D99 — THE CHROMIUM ENGINE CARRIES H.264, AAC AND HEVC AS A PACKAGE OF ITS OWN, BUILT AND PUBLISHED BY THE KIT.**
+  CEF's standard build leaves the proprietary codecs out, so the MP4 of an ordinary site shows nothing. `Shenora.Chromium.Codecs.win-x64`
+  (`engines/`) is the kit's build of the SAME pinned CEF (`proprietary_codecs=true ffmpeg_branding=Chrome`): an app references it
+  beside `Shenora.Chromium`, and its `build/` props set `ShenoraChromiumEnginePath`, which the targets lay the app out from instead of
+  fetching CEF. Layout and API are unchanged, and the owner chose that the kit builds it and carries it in NuGet.
+  - 🔴 **This is the reopening of D51 that D81 warned of, deliberately, and it narrows D81's "never inside a nupkg" for this one
+    package.** The kit now conveys the bytes. An app that does not reference it carries none, and CEF's own build stays the default.
+    ⚠ Patents are not copyright: the package comes with no patent licence, and the app that ships it decides whether it needs one.
+    HEVC plays through the machine's own decoder (a GPU, or Windows' HEVC extension), which refuses a very small picture.
+  - **Outside the package set, on purpose:** `engines/`, not `src/`. Its version is CEF's (154.0.32; a rebuild is a fourth number), not the
+    kit's lockstep, and `dev.mjs pack` and the release workflow, which iterate `src/`, never touch it. It is an engine's bytes (D81), not
+    an optional feature (D55). A build per CEF pin and platform, at every bump: FFmpeg is linked into `libcef`, so no one file swaps in.
+  - **Rejected:** the codecs inside `Shenora.Chromium` (D81's 350 MB, again); on by default; a download from a release of this repository,
+    the first shape, which made the targets a second transport with its own pin; a third party's hand-built CEF (no HEVC, one person's
+    binaries in a public package); sending each video to Edge.
 
 ## Anti-goals — deliberately NOT built
 

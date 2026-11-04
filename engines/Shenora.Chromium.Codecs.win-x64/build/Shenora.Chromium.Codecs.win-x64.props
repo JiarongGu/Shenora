@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+    Points Shenora.Chromium's app build at the engine this package carries (D99): CEF's Release\ and Resources\ folders,
+    under tools\engine\. A .props, which NuGet imports ahead of the project and so ahead of Shenora.Chromium.targets, which
+    reads the two properties. The platform is CEF's name for it: an app built for another RuntimeIdentifier is refused rather
+    than laid out with the wrong engine. An app's own value of the path wins.
+  -->
+  <PropertyGroup>
+    <ShenoraChromiumEnginePath Condition="'$(ShenoraChromiumEnginePath)' == ''">$(MSBuildThisFileDirectory)..\tools\engine\</ShenoraChromiumEnginePath>
+    <ShenoraChromiumEnginePlatform>windows64</ShenoraChromiumEnginePlatform>
+  </PropertyGroup>
+
+</Project>

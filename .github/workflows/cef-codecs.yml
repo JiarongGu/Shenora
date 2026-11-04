@@ -1,25 +1,24 @@
 name: CEF with codecs
 
 # Manual-trigger only, like the release (D5): builds the pinned CEF (src/Shenora.Chromium/cef.json "cef") from source
-# with Chromium's proprietary codecs, for ShenoraChromiumCodecs (D99), and uploads the distribution as a WORKFLOW
-# ARTIFACT. It publishes nothing: the release asset, and the pin that names it, are a person's act (below).
+# with Chromium's proprietary codecs and packs it as Shenora.Chromium.Codecs.win-x64 (engines/, D99), uploaded as a WORKFLOW
+# ARTIFACT. It publishes nothing: pushing the package to nuget.org is a person's act (below).
 #
 # ⚠ NEVER RUN AS THIS WORKFLOW. Its steps are what building the pinned CEF by hand took (about 9 hours on 22 cores, with
-# SDK 10.0.28000.0 installed), ending in a distribution the Chromium sample played H.264 + AAC and HEVC from; the first
-# real run is the proof of the order of the steps, so read its log. Chromium is built from source, so it needs a runner that is not GitHub's hosted one: Windows, Visual Studio 2026
-# (18) with the "Desktop development with C++" workload, **the Windows SDK Chromium's own build/vs_toolchain.py names
-# (10.0.28000.0 for Chromium 154)**, ~200 GB free, 32+ GB RAM, git and python 3 on PATH, and GYP_MSVS_OVERRIDE_PATH,
+# SDK 10.0.28000.0 installed), ending in a distribution the Chromium sample played H.264 + AAC and HEVC from, packed and
+# restored through the package; the first real run is the proof of the order of the steps, so read its log. Chromium is
+# built from source, so it needs a runner that is not GitHub's hosted one: Windows, Visual Studio 2026 (18) with the
+# "Desktop development with C++" workload, **the Windows SDK Chromium's own build/vs_toolchain.py names (10.0.28000.0 for
+# Chromium 154)**, ~200 GB free, 32+ GB RAM, git, python 3 and the .NET SDK on PATH, and GYP_MSVS_OVERRIDE_PATH,
 # vs2026_install and WINDOWSSDKDIR set in the runner's environment. Register one labelled `cef-builder`.
 # Hours per platform, and again at every CEF bump (D81). Only windows64 is built here; the other platforms, and
 # macOS/Linux runners, are added when an adopter needs them.
 #
 # After a green run, by hand:
-#   1. Download the artifact; extract the build; try it: `node devtools/dev.mjs chromium-codecs -p:ShenoraCefDist=<extracted folder>`
-#      must print `CODEC: RESULT PASS` (HEVC is the machine's own decoder: a machine without one fails it alone).
-#   2. Put the summary's "codecs.distributions" entry into cef.json (when it differs from the pinned one), run
-#      `node devtools/dev.mjs cef-binding`, commit.
-#   3. Publish the file as an asset of the release named by cef.json "codecs.release" in this repository, and re-run
-#      `chromium-codecs` with no extra argument: it now fetches from that release and checks the pin.
+#   1. Download the artifact; try it: `node devtools/dev.mjs chromium-codecs --source <the folder holding the .nupkg>` must
+#      print `CODEC: RESULT PASS` (HEVC is the machine's own decoder: a machine without one fails it alone).
+#   2. Push the .nupkg to nuget.org (the package id and the version, which is CEF's, are in engines/*/*.csproj), and run
+#      `chromium-codecs` with no extra argument: it restores the published package.
 on:
   workflow_dispatch:
 
@@ -66,29 +65,20 @@ jobs:
             --branch=${{ steps.pin.outputs.branch }} --checkout=${{ steps.pin.outputs.commit }} \
             --x64-build --no-debug-build --minimal-distrib-only --no-chromium-history --with-pgo-profiles --force-build
 
-      - name: Collect the distribution and its SHA-1
+      - name: Pack the engine package
         shell: bash
         run: |
           out="$RUNNER_TEMP/cef-build/download/chromium/src/cef/binary_distrib"
           name="cef_binary_${{ steps.pin.outputs.cef }}_windows64_minimal"
-          want="$name.tar.bz2"
-          # The folder's name is the name the pin carries, or the build is not the pinned one. On Windows CEF packs a .zip
-          # and leaves the folder; the targets extract a .tar.bz2 (CEF's own index ships those), so it is packed from the folder
-          # with Windows' bsdtar, the top folder kept (the targets strip it).
+          # The folder's name is the pin's, or the build is not the pinned one. On Windows CEF packs a .zip and leaves the
+          # folder, whose Release\ and Resources\ are what the package carries.
           test -d "$out/$name" || { echo "::error::the build produced $(ls "$out") and not $name"; exit 1; }
-          mkdir -p dist-out
-          "$SYSTEMROOT/System32/tar.exe" -cjf "dist-out/$want" -C "$out" "$name"
-          sha1=$(sha1sum "dist-out/$want" | cut -d' ' -f1)
-          {
-            echo '### codecs.distributions entry for src/Shenora.Chromium/cef.json'
-            echo '```json'
-            echo "\"windows64\": { \"file\": \"$want\", \"sha1\": \"$sha1\" }"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          dotnet pack engines/Shenora.Chromium.Codecs.win-x64/Shenora.Chromium.Codecs.win-x64.csproj -c Release             "-p:CefDist=$(cygpath -w "$out/$name")" -o dist-out
+          ls -l dist-out
 
       - uses: actions/upload-artifact@v4
         with:
           name: cef-codecs-windows64
-          path: dist-out/*.tar.bz2
+          path: dist-out/*.nupkg
           if-no-files-found: error
           retention-days: 14

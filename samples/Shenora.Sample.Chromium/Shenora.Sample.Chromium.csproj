@@ -46,6 +46,10 @@
     <ProjectReference Include="..\..\src\Shenora.Chromium\Shenora.Chromium.csproj" AdditionalProperties="RuntimeIdentifier=$(RuntimeIdentifier)" />
     <!-- The app's portable logic, the same assembly the Windows and MAUI samples run. -->
     <ProjectReference Include="..\Shenora.Sample.Logic\Shenora.Sample.Logic.csproj" />
+    <!-- The engine with H.264, AAC and HEVC (D99), for `dev.mjs chromium-codecs`: an app adds this one line and its layout comes
+         from the package. ShenoraSampleCodecs is this sample's own switch (the verb sets it), not the kit's. Off by default,
+         so the sample runs on CEF's standard engine like any other app. -->
+    <PackageReference Include="Shenora.Chromium.Codecs.win-x64" Condition="'$(ShenoraSampleCodecs)' == 'true'" />
   </ItemGroup>
 
   <ItemGroup>

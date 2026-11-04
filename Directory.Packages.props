@@ -9,4 +9,10 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
+
+  <!-- The engine with H.264, AAC and HEVC (D99, engines/): the Chromium sample references it for `dev.mjs chromium-codecs`
+       only, so this is for samples/, never a src/ project's dependency. -->
+  <ItemGroup>
+    <PackageVersion Include="Shenora.Chromium.Codecs.win-x64" Version="154.0.32" />
+  </ItemGroup>
 </Project>

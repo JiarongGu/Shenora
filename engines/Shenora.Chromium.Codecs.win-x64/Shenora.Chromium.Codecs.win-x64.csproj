@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CEF with Chromium's proprietary codecs (H.264, AAC, HEVC), for Windows x64: the engine's BYTES, built by the kit from the
+    pinned CEF's sources (D99). A package of its own, outside src/ on purpose: its version is CEF's, not the kit's lockstep
+    (so no src/Directory.Build.props), it is not one of the packable projects the doctor counts, and `dev.mjs pack` and the
+    release workflow, which iterate src/, never touch it. An app adds it beside Shenora.Chromium and the layout comes from it
+    (build/ props set ShenoraChromiumEnginePath); CEF's standard engine stays the default for an app that does not.
+
+    The bytes are never in git. `-p:CefDist=<folder>` names the built distribution (its Release\ and Resources\) at pack
+    time:  dotnet pack engines/Shenora.Chromium.Codecs.win-x64 -c Release -p:CefDist=<folder> -o <feed>
+    Version is the CEF version; a rebuild of the same CEF with other flags is a fourth number (154.0.32.1).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.Chromium.Codecs.win-x64</PackageId>
+    <Version>154.0.32</Version>
+    <Authors>Jiarong Gu</Authors>
+    <Product>Shenora</Product>
+    <Description>CEF 154.0.32 (Chromium 154.0.8037.58) for Windows x64, built with Chromium's proprietary codecs: H.264, AAC and HEVC, which CEF's standard build leaves out. The engine's bytes for Shenora.Chromium, the Chromium shell of the Shenora hybrid app framework for .NET + React: reference it beside Shenora.Chromium in a win-x64 app and the app's layout comes from it, with no download at build time. H.264, AAC and HEVC are covered by patents licensed through patent pools, and this package comes with no patent licence of any kind: whether an app that ships it needs one is the app's to decide. HEVC plays through the machine's own decoder (a GPU, or Windows' HEVC extension).</Description>
+    <PackageTags>shenora;chromium;cef;codecs;h264;aac;hevc;windows</PackageTags>
+    <PackageProjectUrl>https://github.com/JiarongGu/Shenora</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/JiarongGu/Shenora</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseFile>NOTICE.md</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- Nothing compiles: the package is files. -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoWarn>$(NoWarn);NU5100;NU5128;CS2008</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md;NOTICE.md" Pack="true" PackagePath="\" />
+    <None Include="build\*.props" Pack="true" PackagePath="build\" />
+    <!-- CEF's runtime and resources, the two folders the layout copies, under tools/ so NuGet takes the .dll files there as
+         files and not as references (NU5100). The import library and symbols are not the app's. -->
+    <None Include="$(CefDist)\Release\**" Exclude="$(CefDist)\Release\**\*.lib;$(CefDist)\Release\**\*.pdb"
+          Pack="true" PackagePath="tools\engine\Release\" />
+    <None Include="$(CefDist)\Resources\**" Pack="true" PackagePath="tools\engine\Resources\" />
+    <!-- CEF's licence and Chromium's third-party notices, which an app that ships the engine ships with it. -->
+    <None Include="$(CefDist)\LICENSE.txt;$(CefDist)\CREDITS.html" Pack="true" PackagePath="tools\engine\" />
+  </ItemGroup>
+
+  <!-- A package without the engine restores fine and fails at the consumer's build, so packing one fails here. -->
+  <Target Name="RequireCefDist" BeforeTargets="GenerateNuspec;_GetPackageFiles">
+    <Error Condition="'$(CefDist)' == '' or !Exists('$(CefDist)\Release\libcef.dll') or !Exists('$(CefDist)\Release\bootstrap.exe') or !Exists('$(CefDist)\Resources\resources.pak')"
+           Text="Pass -p:CefDist=&lt;the built CEF distribution&gt;, the folder holding Release\libcef.dll, Release\bootstrap.exe and Resources\resources.pak (CEF's make_distrib output for windows64, built with proprietary_codecs=true ffmpeg_branding=Chrome)." />
+  </Target>
+
+</Project>

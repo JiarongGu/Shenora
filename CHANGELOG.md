@@ -33,14 +33,15 @@ at the first list and missed five more breaking changes.
 ### Added
 
 - **`Shenora.Chromium` can play H.264, AAC and HEVC** (D99). CEF's standard build, the engine's default, decodes none
-  of them, so the MP4 of an ordinary site showed nothing. `<ShenoraChromiumCodecs>true</ShenoraChromiumCodecs>` in
-  the app's project fetches the kit's own build of the same CEF, made with Chromium's proprietary codecs, in place of
-  CEF's; the layout, `ChromiumBrowserProcess` and every API are unchanged, and an app that does not ask carries none of
-  it. ⚠ **The codecs are patent-licensed and the build comes with no licence**: the app that opts in decides whether
-  it needs one. HEVC plays through the machine's own decoder. `cef.json`'s `codecs` pins the Windows x64 build (CEF
-  154.0.32) and names the GitHub release it is fetched from; a platform with no pinned build answers the property with a
-  build error saying so. `node devtools/dev.mjs chromium-codecs` is the check that an engine plays them: it fails on CEF's
-  standard build and passes on this one (H.264 + AAC and HEVC, on a GeForce).
+  of them, so the MP4 of an ordinary site showed nothing. `Shenora.Chromium.Codecs.win-x64` is the kit's own build of the
+  same CEF (154.0.32), made with Chromium's proprietary codecs: reference it beside `Shenora.Chromium` in a win-x64 app and
+  the layout comes from it, with no download at build time. It is a package of its own, versioned by CEF and outside the
+  kit's lockstep; the layout, `ChromiumBrowserProcess` and every API are unchanged, and an app that does not reference it
+  carries none of it. `ShenoraChromiumEnginePath` points the layout at any CEF build the app brings. ⚠ **The codecs are
+  patent-licensed and the package comes with no licence**: the app that references it decides whether it needs one. HEVC
+  plays through the machine's own decoder. Windows x64 only for now; another RuntimeIdentifier is refused with a build
+  error naming the mismatch. `node devtools/dev.mjs chromium-codecs` is the check that an engine plays them: it fails on
+  CEF's standard build and passes through this package (H.264 + AAC and HEVC, on a GeForce).
 
 ## 0.24.0 — 2026-10-23
 
