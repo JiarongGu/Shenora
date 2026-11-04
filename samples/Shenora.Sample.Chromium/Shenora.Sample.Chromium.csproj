@@ -54,6 +54,9 @@
          first. WithCulture="false": a name like msg.fr.json would otherwise go to a satellite assembly, out of the
          bundle. -->
     <EmbeddedResource Include="wwwroot\**" WithCulture="false" />
+    <!-- CodecProbe's clips: a second of H.264 + AAC and a second of HEVC, 128x96, generated with ffmpeg (libx264,
+         libx265; -tag:v hvc1 for the HEVC), beside the app where the probe serves them from. -->
+    <None Include="probe-media\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Import Project="..\..\src\Shenora.Chromium\build\Shenora.Chromium.targets" />

@@ -34,6 +34,27 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
+### 🎞 THE CHROMIUM ENGINE PLAYS H.264, AAC AND HEVC — THE CHECK EXISTS, THE BUILD DOES NOT
+
+> CEF's standard build leaves out the proprietary codecs, so a page's ordinary MP4 shows nothing on the engine
+> (`Shenora.Chromium` 0.24.0, CEF 154.0.32). **The check is in and red:** `node devtools/dev.mjs chromium-codecs`
+> (`CodecProbe`) plays an H.264 + AAC clip and an HEVC clip on a real page; today both fail with
+> `DEMUXER_ERROR_NO_SUPPORTED_STREAMS` while its VP9 control plays. **Done when it passes against the engine an
+> app ships.**
+>
+> - **What is missing is a CEF build, per CEF pin and platform:** `automate-git.py` with `is_official_build=true
+>   proprietary_codecs=true ffmpeg_branding=Chrome`. FFmpeg is linked into `libcef`, so no one file can be swapped
+>   in. A Windows build needs far more disk and hours than a dev machine has (this one: 43 GB free on its largest
+>   volume, no `depot_tools`), so it wants a build host, again at every CEF bump (D81).
+> - **The kit's half, once a build exists:** its SHA-1 pinned in `cef.json` beside the standard ones, an opt-in
+>   `ShenoraChromiumCodecs` property in `Shenora.Chromium.targets` that fetches it instead (layout unchanged, so an
+>   adopter changes no API), and the probe run against it.
+> - **Needs the owner first, because it reopens D51:** a CEF the kit builds and hosts is bytes the kit conveys (D81's
+>   own warning), and H.264, AAC and HEVC are patent-licensed (D51: the licence is settled, the patent is not).
+>   Who builds, where the asset is published and under what notice is a release act, not this task's.
+> - HEVC is decoded by the machine's own decoder (GPU, or Windows' HEVC extension), so it plays where that exists;
+>   say so in the guide when this lands.
+
 ### 🧭 `Shenora.Chromium` ALONE IS A COMPLETE DESKTOP SHELL — Windows included (D88)
 
 > **`Shenora.Chromium` is completed as a whole shell, usable on its own.** An app on any desktop references
