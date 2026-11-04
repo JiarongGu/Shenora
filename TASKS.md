@@ -40,9 +40,10 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 > chromium-codecs` with no argument restores it into an empty package cache and passes (H.264 + AAC and HEVC, on a GeForce).
 > What is open:
 >
-> - **An engine that arrives after install** (the app ships without it, a user installs it): the shim already loads CEF from
->   `engine\` beside the exe, but a running app cannot replace a loaded `libcef.dll`, so a download must be staged and swapped
->   in at the next launch, before CEF loads. Not built; how much the kit owns of it is the owner's call.
+> - **An engine that arrives after install already works, with nothing in the kit:** whatever runs before the app starts (an
+>   installer, a native starter, the staged updater) merges the package's Release and Resources into `engine\` beside the exe,
+>   and the shim loads CEF from there at the next launch. `chromium-codecs --later` is the check. Not built, on purpose: a
+>   download helper or a swap step in the shim (the owner said the installer can be anything, so the kit's code stays out of it).
 > - **The Electron model** (Electron builds Chromium with `proprietary_codecs=true ffmpeg_branding=Chrome` and FFmpeg as a
 >   separate shared library, `ffmpeg.dll`, so only a few MB need swapping): a CEF built with `is_component_ffmpeg=true` could ship
 >   its codecs as a small `ffmpeg.dll` downloaded later. ⚠ Unproven in CEF, and every app would then carry the kit's CEF build

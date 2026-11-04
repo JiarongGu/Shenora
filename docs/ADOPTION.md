@@ -332,6 +332,12 @@ them. `<ShenoraChromiumPublishFolders>true</ShenoraChromiumPublishFolders>` make
 `MyApp.exe`, `MyApp.dll` and `chrome_elf.dll` at the root, CEF in `engine\`, the app in `lib\`, and `data\` still
 beside `MyApp.exe`. That publish starts through `MyApp.exe` only; a build stays flat either way.
 
+**An engine that arrives after install** (such as the codecs build): the shim loads CEF from `engine\` beside the exe when it
+holds a `libcef.dll`, so an installer, a native starter or the staged updater (D50) that merges an engine of the same CEF
+version into `engine\` before the app starts changes what it runs on, with no change to the app. It takes effect at the
+next launch, and deleting `engine\` undoes it. The folders to merge are in `engines/Shenora.Chromium.Codecs.win-x64/README.md`;
+`dev.mjs chromium-codecs --later` runs it end to end.
+
 **Verify:** the app starts from `MyApp.exe`, the page loads from the dev server and from the bundle, and
 the caption buttons, a window drag and a file drop behave as they did on WebView2.
 

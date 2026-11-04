@@ -37,7 +37,9 @@ at the first list and missed five more breaking changes.
   same CEF (154.0.32), made with Chromium's proprietary codecs: reference it beside `Shenora.Chromium` in a win-x64 app and
   the layout comes from it, with no download at build time. It is a package of its own, versioned by CEF and outside the
   kit's lockstep; the layout, `ChromiumBrowserProcess` and every API are unchanged, and an app that does not reference it
-  carries none of it. `ShenoraChromiumEnginePath` points the layout at any CEF build the app brings. ⚠ **The codecs are
+  carries none of it. `ShenoraChromiumEnginePath` points the layout at any CEF build the app brings, and an engine can also
+  arrive after install: merged into `engine\` beside the exe before the app starts (by an installer, a starter or the staged
+  updater), it is what the app runs on from the next launch, which the shim already did and is now documented and checked. ⚠ **The codecs are
   patent-licensed and the package comes with no licence**: the app that references it decides whether it needs one. HEVC
   plays through the machine's own decoder. Windows x64 only for now; another RuntimeIdentifier is refused with a build
   error naming the mismatch. `node devtools/dev.mjs chromium-codecs` is the check that an engine plays them: it fails on

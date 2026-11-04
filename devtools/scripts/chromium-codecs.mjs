@@ -9,6 +9,10 @@
 //                     restored from there, which is how a build is tried before the package is published.
 //   --source <feed>   a folder or URL to restore the package from as well.
 //   --standard        CEF's own build under it instead, which fails by design and is how the probe is seen red.
+//   --later <folder>  an engine that arrives AFTER the app is laid out, as an installer or a launcher would bring it: the
+//                     sample is built on CEF's standard engine, copied aside, and the folder's Release\ and Resources\ (a
+//                     built distribution, or the package's tools\engine) are merged into its engine\ before it starts.
+//                     The shim loads CEF from engine\ when it holds a libcef.dll, so nothing in the app changes.
 // Any other argument is handed to `dotnet build`. It opens the sample's window for a few seconds, so it needs a desktop,
 // and the sample's layout needs the native shim (`dev.mjs cef-native`). NOT in `verify`, for the window.
 import { spawnSync } from 'node:child_process';
@@ -31,8 +35,19 @@ function take(args, name) {
   return value;
 }
 
+/** Every file under `from` copied into `into`, folders made; a manual loop, because fs.cpSync crashes Node 24 here. */
+function copyTree(from, into) {
+  fs.mkdirSync(into, { recursive: true });
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const source = path.join(from, entry.name);
+    if (entry.isDirectory()) copyTree(source, path.join(into, entry.name));
+    else fs.copyFileSync(source, path.join(into, entry.name));
+  }
+}
+
 const args = process.argv.slice(2);
-const standard = args.includes('--standard');
+const later = take(args, '--later');
+const standard = args.includes('--standard') || later !== undefined;
 const dist = take(args, '--dist');
 let source = take(args, '--source');
 const rest = args.filter((a) => a !== '--standard');
@@ -61,7 +76,22 @@ if (build.status !== 0) {
   console.error('chromium-codecs: the sample did not build.');
   process.exitCode = 1;
 } else {
-  const out = path.join(artifacts, 'bin', 'Shenora.Sample.Chromium', 'debug_win-x64');
+  let out = path.join(artifacts, 'bin', 'Shenora.Sample.Chromium', 'debug_win-x64');
+  if (later) {
+    // What an installer does before the app starts: the app is laid out on CEF's standard engine, and the engine arrives in
+    // engine\ beside it. A copy, so the build output stays the standard one; the shim picks engine\ when it holds libcef.dll.
+    const merged = path.join(repo, 'devtools', '_build', 'chromium-codecs-later');
+    fs.rmSync(merged, { recursive: true, force: true });
+    copyTree(out, merged);
+    for (const folder of ['Release', 'Resources']) {
+      if (!fs.existsSync(path.join(later, folder))) {
+        console.error(`chromium-codecs: ${later} has no ${folder}\\ folder, so it is not an engine.`);
+        process.exit(1);
+      }
+      copyTree(path.join(later, folder), path.join(merged, 'engine'));
+    }
+    out = merged;
+  }
   const log = path.join(out, 'codec-probe.log');
   fs.rmSync(log, { force: true });
   const run = spawnSync(path.join(out, 'Shenora.Sample.Chromium.exe'), [],

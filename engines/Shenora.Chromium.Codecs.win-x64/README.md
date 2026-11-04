@@ -26,4 +26,18 @@ the same layout. An app that does not reference it gets CEF's standard engine, w
 - `tools/engine/LICENSE.txt` and `tools/engine/CREDITS.html` are CEF's licence and Chromium's third-party notices, which an
   app that ships the engine ships with it.
 
+## Bringing it after the app is installed
+
+The app need not carry it. The Windows shim loads CEF from an `engine\` folder beside the app's exe when that holds a
+`libcef.dll`, and otherwise from beside the exe, so anything that runs **before the app starts** can bring the codecs: an
+installer, a native starter, the kit's staged updater (a manifest entry is a path relative to the install root, such as
+`engine/libcef.dll`). Merge this package's `tools/engine/Release/*` and `tools/engine/Resources/*` into `<app>\engine\`
+(keep `locales\`), and the next launch plays them; delete `engine\` to go back. Nothing in the app or the kit changes.
+
+- It takes effect at the **next launch**: a running app has `libcef.dll` loaded and cannot swap it.
+- The install folder must be writable by whatever brings it, and the app's own `bootstrap.exe` and `chrome_elf.dll` stay: use
+  an engine of the **same CEF version** the app was laid out with (154.0.32).
+- `node devtools/dev.mjs chromium-codecs --later <the package's tools/engine folder>` is that, end to end, in the Shenora
+  repository: a sample laid out on CEF's standard engine fails the codecs, and plays them after the merge.
+
 The check that an engine plays them is `node devtools/dev.mjs chromium-codecs` in the Shenora repository.
