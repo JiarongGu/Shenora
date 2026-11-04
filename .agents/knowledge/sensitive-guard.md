@@ -21,7 +21,10 @@ needed a full `git filter-repo` rewrite — a clean working tree is NOT enough.
   root. Generic examples like `C:\MyApp\…` in docs are fine.
 - **No private sibling-project names.** The private desktop apps Shenora is extracted from are named by
   role ("the primary desktop sibling", "the consuming app"). Lyntai and Sonora are public repositories by
-  the same author and MAY be named (`docs/DECISIONS.md` D12). The real name→path map lives only in
+  the same author and MAY be named (`docs/DECISIONS.md` D12). **A name declared public goes in the
+  tracked `devtools/sensitive-public.txt`**, which passes a private ban for that exact name only: the
+  ban list lives in each checkout's `local/`, so a repository change cannot correct it, and a ban on a
+  name the tooling writes into branch names blocks every merge message. The real name→path map lives only in
   `local/CLAUDE.local.md` / `local/EXTRACTION-MAP.md`.
 - **No personal or network specifics** — real LAN IPs, machine names, the user's name or email in file
   *content* (authorship metadata in git, `LICENSE`, `Authors` and GitHub URLs is fine).
@@ -36,7 +39,8 @@ needed a full `git filter-repo` rewrite — a clean working tree is NOT enough.
   commit-msg.
 - **It fails CLOSED when `local/sensitive-patterns.txt` is missing.** The real tokens live in that
   gitignored file (add new ones there — never in a tracked file); the tracked scanner carries only
-  generic path shapes. In CI, a fresh clone or a git worktree, `local/` cannot exist: pass
+  generic path shapes. A git worktree with no `local/` of its own reads the PRIMARY checkout's file in
+  place, so its hooks (a workspace's merge included) run the full scan. In CI or a fresh clone there is none: pass
   `SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1` deliberately — and then the brand/sibling-name half is NOT
   running, so check names by hand. Never copy `local/` across checkouts.
 - Whole tree: `node devtools/dev.mjs check-sensitive --tree`. Bypass (rare): `git commit --no-verify`.

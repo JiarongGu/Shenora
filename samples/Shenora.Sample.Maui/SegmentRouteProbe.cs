@@ -323,7 +323,7 @@ internal static class SegmentRouteProbe
         // ⚠ `Codec` is NULLABLE — the probe returns null for a codec id it does not recognise, so a
         // fixture with an exotic soundtrack would have thrown a NullReferenceException here (CS8602).
         // A probe that dies reads as a PLATFORM failure, which is the one thing it must never do
-        // (`.claude/knowledge/probe-diagnostics.md`); an unknown codec is a SKIP, like every other
+        // (`.agents/knowledge/probe-diagnostics.md`); an unknown codec is a SKIP, like every other
         // "this shell cannot answer" case below.
         if (audio.Codec is not { } codec) return $"SEEK-RUN: SKIPPED — {Fixture}'s sound track has no codec the probe recognises";
         // AAC is the one audio codec an MP4 fragment can carry verbatim; anything else needs the device.

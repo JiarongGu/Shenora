@@ -2,8 +2,8 @@
 
 **Maintainer-facing.** What `Shenora.Windows` is made of, in what order it runs, and what each piece
 promises. For the invariants you must not break while editing read
-[`winforms-shell`](../../.claude/knowledge/winforms-shell.md) and
-[`webview2-hosting`](../../.claude/knowledge/webview2-hosting.md); for the mobile shells read
+[`winforms-shell`](../../.agents/knowledge/winforms-shell.md) and
+[`webview2-hosting`](../../.agents/knowledge/webview2-hosting.md); for the mobile shells read
 [`mobile-shells.md`](mobile-shells.md); for WHY any of it is this way read the decisions linked below —
 **this doc states the design, never the rationale** (D77).
 

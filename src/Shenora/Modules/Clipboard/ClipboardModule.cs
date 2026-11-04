@@ -93,7 +93,7 @@ public sealed class ClipboardModule : ModuleBase
     /// </summary>
     /// <remarks>
     /// ⚠ The KIT's own words, never <c>ex.Message</c> — raw exception text must not cross the wire
-    /// (<c>.claude/knowledge/ipc-contracts.md</c>). The shell's own wording reaches the host log as the
+    /// (<c>.agents/knowledge/ipc-contracts.md</c>). The shell's own wording reaches the host log as the
     /// inner exception.
     /// </remarks>
     private static async Task<object?> RefusalGuarded(Func<Task<object?>> call)

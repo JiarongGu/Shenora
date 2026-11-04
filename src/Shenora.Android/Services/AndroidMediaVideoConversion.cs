@@ -10,7 +10,7 @@ namespace Shenora.Android;
 /// <summary>
 /// Android's PICTURE converter — a platform decoder rendering into a platform H.264 encoder, for a codec
 /// the device decodes but its webview refuses. Measured: <c>mpeg4</c>, which reaches <c>readyState = 4</c>
-/// with <c>error</c> null and a <c>0×0</c> picture (<c>.claude/knowledge/mobile-shells.md</c>).
+/// with <c>error</c> null and a <c>0×0</c> picture (<c>.agents/knowledge/mobile-shells.md</c>).
 /// <para>
 /// 🔴 <b>SURFACE-TO-SURFACE:</b> the decoder renders into the ENCODER'S OWN INPUT SURFACE and no frame is
 /// ever read back — no colour conversion, no stride arithmetic, nothing device-specific to get wrong.
@@ -166,7 +166,7 @@ public static class AndroidMediaVideoConversion
             // ── the decoder, whose MINIMAL format is a measured trap rather than tidiness ─────────────────
             // 🔴 `MediaCodecList.FindDecoderForFormat` REFUSES the format `MediaExtractor` hands you — it
             // carries `profile`/`level`/`sar-*` and nothing matches — so a working decoder looks ABSENT,
-            // and configuring is the same story (`.claude/knowledge/mobile-shells.md`).
+            // and configuring is the same story (`.agents/knowledge/mobile-shells.md`).
             var input = MediaFormat.CreateVideoFormat(mime, _width, _height)!;
             if (!codecPrivate.IsEmpty)
             {

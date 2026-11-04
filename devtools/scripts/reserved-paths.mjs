@@ -61,5 +61,5 @@ console.error('\n\x1b[31m✖ reserved-paths: a path here breaks `git checkout` o
 for (const h of hits) console.error(`  ${h.file}   [${h.why}]${h.staged ? '  — TRACKED, so it is already in history' : ''}`);
 console.error('\nA stray `nul` is usually a `> nul` redirect written in Git Bash — use /dev/null.');
 console.error('Delete it with:  [System.IO.File]::Delete("\\\\?\\<abs-path>")   and verify from bash (ls ./nul);');
-console.error('Remove-Item and Test-Path BOTH lie about reserved names. See .claude/rules/windows-dev-gotchas.md\n');
+console.error('Remove-Item and Test-Path BOTH lie about reserved names. See .agents/knowledge/windows-dev-gotchas.md\n');
 process.exit(1);

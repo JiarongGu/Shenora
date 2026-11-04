@@ -172,7 +172,7 @@ const EXPECTED_EXPORTS = [
  *
  * This alias is the pin: it is compiled by `npm run typecheck` (the FULL tsconfig, which includes test
  * files — the build config excludes them and vitest transpiles without checking, so a type-only pin is
- * inert without that step; see `.claude/knowledge/ipc-contracts.md`). Removing an exported type from
+ * inert without that step; see `.agents/knowledge/ipc-contracts.md`). Removing an exported type from
  * the barrel makes this file fail to compile, naming the type.
  */
 type ExportedTypeSurface = [

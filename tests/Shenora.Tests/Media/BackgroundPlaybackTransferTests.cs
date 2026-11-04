@@ -15,7 +15,7 @@ namespace Shenora.Tests.Media;
 /// </para>
 /// <para>
 /// ⚠ What these CANNOT prove is that playback survives backgrounding; that needs a device and is measured
-/// in the sample (`.claude/knowledge/mobile-shells.md`). What they DO prove is the decision logic that four
+/// in the sample (`.agents/knowledge/mobile-shells.md`). What they DO prove is the decision logic that four
 /// separate hardware defects came from — the ordering, the single owner, the missing source, and the
 /// end-of-media case.
 /// </para>

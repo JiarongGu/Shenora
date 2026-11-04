@@ -13,7 +13,7 @@ landed it is where it lives.
 
 **Status: v0.24.0 is the latest release** (tag `v0.24.0`; the release workflow stamps this paragraph).
 ⚠ `src/Directory.Build.props` must stay at `0.24.0` — the workflow owns the bump, and a hand-bump moves
-the baseline and skips a release. **Cutting the next one? Read `.claude/knowledge/release-discipline.md`
+the baseline and skips a release. **Cutting the next one? Read `.agents/knowledge/release-discipline.md`
 first**: it carries the by-hand `<Description>` read, the prose-audit-before-the-cut rule, and why a
 partial registry read afterwards is lag rather than a half-landed release.
 
@@ -215,6 +215,13 @@ Still uncovered:
   does), and its response goes into the new document, whose client drops the unknown id. Pinned on the client only.
 - [ ] **`NotificationPump.Enqueue` after dispose still queues** (no disposed check); bounded and never drained, so
   memory only. WebView2's and the mobile bridge's `SendNotification` reach it; Chromium's `Notify` checks first.
+
+### 🔴 `verify` cannot pass since the knowledge moved to `.agents/`
+
+Two gates still assume the old layout. `knowledge check` crashes: `devtools/scripts/knowledge.mjs:83` reads
+`.claude/rules/RULES_INDEX.md`, which no longer exists. The always-loaded doctrine is now `AGENTS.md`, and
+the index is the generated `.agents/INDEX.md`. `decision-audit.mjs:297` still scans `.claude/rules|knowledge`.
+Proof: `verify` is green in a worktree.
 
 ### 🟡 The CLI package's vitest run failed once on "Channel closed"
 

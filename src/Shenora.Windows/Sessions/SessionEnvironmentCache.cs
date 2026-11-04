@@ -19,7 +19,7 @@ namespace Shenora.Windows;
 /// its profile's browser process — and therefore the folder's OS lock — alive, so a process-lifetime
 /// cache would make <see cref="InteractiveSession.ClearProfile"/> fail every time instead of only while
 /// a window is open. And <see cref="CoreWebView2Environment"/> is THREAD-AFFINE
-/// (<c>.claude/knowledge/webview2-hosting.md</c>): an owner marshals all of its browser work to one
+/// (<c>.agents/knowledge/webview2-hosting.md</c>): an owner marshals all of its browser work to one
 /// anchor's UI thread, so an owner-scoped cache is single-threaded by construction and needs neither a
 /// thread key nor a lock. A global one would need both.
 /// </para>

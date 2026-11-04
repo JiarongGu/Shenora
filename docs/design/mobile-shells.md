@@ -5,7 +5,7 @@ to change the mobile shell, the media delivery it serves, or the device harness 
 the design rests on, and re-earning them costs hardware time.
 
 ⚠ **These are FINDINGS, not rules.** The invariants a session must not break stayed in
-[`.claude/knowledge/mobile-shells.md`](../../.claude/knowledge/mobile-shells.md), which loads on demand
+[`.agents/knowledge/mobile-shells.md`](../../.agents/knowledge/mobile-shells.md), which loads on demand
 when a task matches; a measurement that lived beside them read as a law and was applied as one (D77).
 ⚠ **A measurement is true of the DEVICE and DATE in its heading.** A codec table is per-device — one
 probe chose a fixture from an iPhone 17 Pro table and lost a round trip to it — so treat a figure as

@@ -117,7 +117,7 @@ public sealed class FileDialogModule : ModuleBase
     /// </summary>
     /// <remarks>
     /// ⚠ The KIT's own words plus the capability NAME, never <c>ex.Message</c> — raw exception text must
-    /// not cross the wire (<c>.claude/knowledge/ipc-contracts.md</c>). The real exception reaches the
+    /// not cross the wire (<c>.agents/knowledge/ipc-contracts.md</c>). The real exception reaches the
     /// host log as the inner exception.
     /// </remarks>
     private static async Task<object?> RefusalGuarded(string capability, Func<Task<FileDialogResult>> call)

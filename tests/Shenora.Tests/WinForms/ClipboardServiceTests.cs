@@ -36,7 +36,7 @@ namespace Shenora.Tests.WinForms;
 /// A/B'd 2026-08-21: PowerShell's own <c>Set-Clipboard</c> — none of this code — failed 0 of 45 with the
 /// emulator down and <b>59 of 60 with it up</b>, and the write is REFUSED rather than overwritten. The
 /// earlier <c>cbdhsvc</c> reading (13 of 15, then 3–6 of 15 after restarting it) was the same cause
-/// unrecognised. <c>.claude/knowledge/mobile-harness.md</c> carries the mechanism.
+/// unrecognised. <c>.agents/knowledge/mobile-harness.md</c> carries the mechanism.
 /// </para>
 /// <para>
 /// ⚠ <b>What did NOT move: everything provable without the OS.</b> The CF_HTML byte offsets, the

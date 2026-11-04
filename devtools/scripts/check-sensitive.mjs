@@ -59,14 +59,24 @@ const builtins = [
 
 // Private tokens (gitignored). Each non-comment line is a JS regex source.
 const patterns = [...builtins];
-const localFile = path.join(repo, 'local', 'sensitive-patterns.txt');
+// A linked worktree has no `local/` of its own, and the merge a workspace makes runs in one — so the
+// commit-msg hook failed closed on every merge. Read the PRIMARY checkout's file in place (the parent of
+// git's common dir): the full scan still runs, and nothing private is copied across checkouts.
+function primaryLocalFile() {
+  try {
+    const common = path.resolve(repo, execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: repo, encoding: 'utf8' }).trim());
+    return path.basename(common) === '.git' ? path.join(path.dirname(common), 'local', 'sensitive-patterns.txt') : null;
+  } catch { return null; }
+}
+const ownLocalFile = path.join(repo, 'local', 'sensitive-patterns.txt');
+const localFile = existsSync(ownLocalFile) ? ownLocalFile : (primaryLocalFile() ?? ownLocalFile);
 if (existsSync(localFile)) {
   let loaded = 0;
   const bad = [];
   for (const raw of readFileSync(localFile, 'utf8').split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
-    try { patterns.push({ re: new RegExp(line, 'i'), why: 'private ban pattern' }); loaded++; }
+    try { patterns.push({ re: new RegExp(line, 'gi'), why: 'private ban pattern', waivable: true }); loaded++; }
     catch { bad.push(line); }
   }
 
@@ -100,7 +110,7 @@ if (existsSync(localFile)) {
     console.error('  The file exists but every line is blank or a comment, so only the two structural');
     console.error('  path patterns ran — the brand/sibling-name half of the guard did NOT. A file that');
     console.error('  exists is not the property this guard needs; patterns in it are.');
-    console.error('  Fix: restore its contents (see .claude/rules/sensitive-info.md),');
+    console.error('  Fix: restore its contents (see .agents/knowledge/sensitive-guard.md),');
     console.error('  or pass --allow-builtins-only if a builtins-only scan is genuinely what you want.\n');
     process.exit(1);
   }
@@ -112,7 +122,7 @@ if (existsSync(localFile)) {
   console.error('\n\x1b[31m✖ check-sensitive: local/sensitive-patterns.txt is MISSING.\x1b[0m');
   console.error('  Without it only the two structural path patterns run — the brand/sibling-name');
   console.error('  half of the guard does NOT. Refusing to report a half-scan as clean.');
-  console.error('  Fix: restore local/sensitive-patterns.txt (see .claude/rules/sensitive-info.md),');
+  console.error('  Fix: restore local/sensitive-patterns.txt (see .agents/knowledge/sensitive-guard.md),');
   console.error('  or pass --allow-builtins-only if a builtins-only scan is genuinely what you want.');
   // 🔴 NAME THE SITUATION, or the reader invents a worse fix. `local/` is gitignored, so it CANNOT
   // exist in a fresh clone, in CI, or in an agent worktree — and this message used to describe only a
@@ -223,14 +233,28 @@ if (history) {
   bufOf = (f) => { try { return gitBuf(['show', `:${f}`]); } catch { return Buffer.alloc(0); } };
 }
 
+// A name DECLARED PUBLIC in the tracked `devtools/sensitive-public.txt` passes a private ban — and only
+// as the exact, whole match: a pattern that matches more than the name still blocks. The ban list is
+// private and lives in each checkout's `local/`, so it cannot be corrected by a change to the
+// repository; this list can, and it is reviewed like any other tracked file. Built-ins are never waived.
+const publicFile = path.join(repo, 'devtools', 'sensitive-public.txt');
+const publicNames = new Set(existsSync(publicFile)
+  ? readFileSync(publicFile, 'utf8').split(/\r?\n/).map((l) => l.trim().toLowerCase()).filter((l) => l && !l.startsWith('#'))
+  : []);
+function firstBanned(text, { re, waivable }) {
+  if (!waivable) return text.match(re)?.[0] ?? null;
+  for (const m of text.matchAll(re)) if (!publicNames.has(m[0].toLowerCase())) return m[0];
+  return null;
+}
+
 const hits = [];
 for (const f of files) {
   // The PATH is scanned too — a file merely NAMED after a banned token used to pass, because only
   // content was ever matched. Skipped for --message (the "path" is a temp file git chose).
   if (!messageFile) {
-    for (const { re, why } of patterns) {
-      const m = f.match(re);
-      if (m) hits.push({ f, line: 0, why: `${why} (in the FILE PATH)`, snippet: m[0] });
+    for (const p of patterns) {
+      const m = firstBanned(f, p);
+      if (m) hits.push({ f, line: 0, why: `${p.why} (in the FILE PATH)`, snippet: m });
     }
   }
 
@@ -241,9 +265,9 @@ for (const f of files) {
     // Ignore git's own commentary in a commit-message file — it is stripped before the commit and
     // legitimately contains branch/path chatter.
     if (messageFile && lines[i].startsWith('#')) continue;
-    for (const { re, why } of patterns) {
-      const m = lines[i].match(re);
-      if (m) hits.push({ f, line: i + 1, why, snippet: m[0] });
+    for (const p of patterns) {
+      const m = firstBanned(lines[i], p);
+      if (m) hits.push({ f, line: i + 1, why: p.why, snippet: m });
     }
   }
 }
@@ -261,5 +285,5 @@ if (hits.length === 0) {
 console.error('\n\x1b[31m✖ check-sensitive: blocked — public-repo leak(s) detected:\x1b[0m');
 for (const h of hits) console.error(`  ${h.f}:${h.line}  [${h.why}]  …${h.snippet}…`);
 console.error('\nFix: use a repo-relative path / neutral placeholder, or move the value to local/.');
-console.error('See .claude/rules/sensitive-info.md. (Override once with: git commit --no-verify)\n');
+console.error('See .agents/knowledge/sensitive-guard.md. (Override once with: git commit --no-verify)\n');
 process.exit(1);

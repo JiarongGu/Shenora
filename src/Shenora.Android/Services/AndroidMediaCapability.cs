@@ -7,7 +7,7 @@ namespace Shenora.Android;
 /// <para>
 /// 🔴 <b>Asked at runtime because there is no other honest way:</b> Android codec support is
 /// vendor-declared per device, so a hardcoded set would be confidently wrong on the one device that
-/// matters (measured — <c>.claude/knowledge/mobile-shells.md</c>).
+/// matters (measured — <c>.agents/knowledge/mobile-shells.md</c>).
 /// </para>
 /// <para>
 /// ⚠ <b>This is the PLATFORM's stack, not the webview's</b> — see <see cref="IMediaCapability"/>. A device

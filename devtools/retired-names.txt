@@ -452,9 +452,9 @@ what still had to be bounded was the WALK              # nothing had to bound th
 # NEVER ACTUALLY PRODUCED an abandoned body — all 712 were DRAINED, because every window it asks for is
 # small — so what is proven there is "this request pattern cannot leak", by construction rather than by the
 # shell's cooperation, and a LARGE abandoned window on iOS remains untested. The numbers live in
-# `.claude/knowledge/mobile-shells.md`, the Android crash in TASKS.md, and the instrument does not, which
+# `.agents/knowledge/mobile-shells.md`, the Android crash in TASKS.md, and the instrument does not, which
 # is the ResponseDisposalProbe shape. Listed so prose claiming it is live gets caught.
-LazyBodyProbe             # sample-only; measurements in .claude/knowledge/mobile-shells.md
+LazyBodyProbe             # sample-only; measurements in .agents/knowledge/mobile-shells.md
 __shenoraLazy             # its page slot
 # --- 2026-08-13: the ANDROID mid-response crash is FIXED, so every claim of it is now history --------
 # `MobileWebViewInterceptor.PlatformBody` translates a mid-read throw into a `Java.IO.IOException`, whose
@@ -491,7 +491,7 @@ so it marshals as itself and the platform sees its real type   # the rejected bo
 # lifecycle is the point: it answers ONE platform question and goes. Android's version proved a managed
 # throw killed the app (fixed); the desktop version proved WebView2 commits a SILENT SHORT BODY, like iOS —
 # `status=200|promised=262144|bytes=98304|throws=1`, app survived. Both answers live in
-# `.claude/knowledge/mobile-shells.md`, which is why neither probe needs to.
+# `.agents/knowledge/mobile-shells.md`, which is why neither probe needs to.
 # ⚠ Un-retiring it for the second write was the honest move over renaming the probe to dodge the gate — and
 # doc-drift caught that resurrection on its first run, which is exactly what this file is for.
 ThrowingBodyProbe

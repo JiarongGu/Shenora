@@ -42,7 +42,7 @@ public class IpcErrorMappingTests
         // channel through the boundary is the app's OWN words — so an adapter that "helpfully" writes
         // `new ShenoraException(code, message: ex.Message)` turns that channel into a complete
         // bypass. Found by the P6.4 adapter probe, which reproduced it against a planted secret; the
-        // rule lives in .claude/knowledge/ipc-contracts.md and the trap is called out in ADOPTION.md.
+        // rule lives in .agents/knowledge/ipc-contracts.md and the trap is called out in ADOPTION.md.
         var wrapped = IpcErrorMapping.ToError(
             new ShenoraException("MODULE_FAILED", message: new InvalidOperationException(Secret).Message));
 

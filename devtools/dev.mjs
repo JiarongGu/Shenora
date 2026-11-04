@@ -228,7 +228,7 @@ const cliDirAbs = path.join(repo, 'src', 'Shenora.Cli');
 // So probe for it (the same candidate list the server-backed sibling's APK build uses, proven on this
 // machine) and export it for the child process only. Every candidate is derived from an environment
 // variable, never a literal path — a real install root must not appear in a tracked file
-// (.claude/rules/sensitive-info.md). Returns null when there is genuinely none, and the caller says
+// (.agents/knowledge/sensitive-guard.md). Returns null when there is genuinely none, and the caller says
 // so with the fix rather than letting XA5300 speak for it.
 function resolveJdk() {
   const usable = (dir) => Boolean(dir) && fs.existsSync(path.join(dir, 'bin', 'java.exe'));
@@ -785,7 +785,7 @@ function doctor({ fix = false } = {}) {
       if (actual === expected) continue;
       if (fix) {
         // readFileSync/writeFileSync, never fs.cpSync — it hard-crashes Node 24 on this machine
-        // (see .claude/rules/windows-dev-gotchas.md).
+        // (see .agents/knowledge/windows-dev-gotchas.md).
         fs.writeFileSync(npmLicense, expected);
         console.log(`  fixed ${dir}/LICENSE (copied from the root LICENSE)`);
       } else fail(`${dir}/LICENSE ${actual === null ? 'is missing' : 'differs from'} the root LICENSE`);

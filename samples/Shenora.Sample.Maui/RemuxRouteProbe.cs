@@ -59,7 +59,7 @@ internal static class RemuxRouteProbe
 	/// this route used to decline over was deleted on 2026-08-13, so "a big film plays" is the claim that
 	/// removal has to earn on a device; every measurement before it was made under the limit. A ~78 MB
 	/// fixture must not be committed, so it is BUILT and PUSHED, the convention
-	/// <c>.claude/knowledge/mobile-shells.md</c> already uses for the other clips:
+	/// <c>.agents/knowledge/mobile-shells.md</c> already uses for the other clips:
 	/// <code>
 	/// ffmpeg -y -f lavfi -i testsrc=size=640x360:rate=30:duration=1000 \
 	///        -f lavfi -i sine=frequency=440:sample_rate=48000:duration=1000 \

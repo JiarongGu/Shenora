@@ -10,7 +10,7 @@
 
     That one property is the whole adoption. The app writes Swift VIEWS and no Swift lifecycle, no
     Info.plist, no .xcodeproj and no codesigning — which is the point, and is only possible because
-    `swiftc` alone can build a WidgetKit extension (measured; see .claude/knowledge/mobile-shells.md).
+    `swiftc` alone can build a WidgetKit extension (measured; see .agents/knowledge/mobile-shells.md).
 
     ⚠ macOS only, guarded on IsMacEnabled. An iOS app build needs a Mac regardless, so this adds no new
     requirement — but the guard keeps a Windows-side restore/evaluate from trying to run swiftc.

@@ -11,7 +11,7 @@
 # A blocklist ("Invoice", "Playlist", "Skin"…) cannot work here for two reasons. It is open-ended —
 # it only ever catches the domain words someone already thought of, and the leak that matters is the
 # one from the app nobody anticipated. And writing down the domain nouns of the private sibling apps
-# would itself put what those apps DO into a public repo (`.claude/rules/sensitive-info.md`).
+# would itself put what those apps DO into a public repo (`.agents/knowledge/sensitive-guard.md`).
 #
 # Inverting it fixes both. Every word below is shell, platform, transport or hosting vocabulary. A
 # new public type built only from these words cannot be domain-specific; a type that introduces an

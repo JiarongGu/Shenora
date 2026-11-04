@@ -55,8 +55,8 @@ kit owns the seam and the IPC.`
   doc-drift · doc-shape · doctor). Pipe it to a file under `devtools/_*`, never truncate it.
 - `node devtools/dev.mjs` with no argument prints every verb — read that, not a list here.
   `dev.mjs checks` is the ~10 s hygiene loop and proves nothing about the code. Details: `devtools/README.md`.
-- In CI, a fresh clone or a git worktree, set `SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1`: the sensitive guard
-  fails CLOSED without `local/`, which cannot exist there.
+- In CI or a fresh clone, set `SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1`: the sensitive guard fails CLOSED
+  without `local/`, which cannot exist there (a git worktree reads the primary checkout's).
 - What may run unasked is declared in `daoris.gates.json`. Never run `pack`, `nuget-retire` or a release —
   the version and publishing are the release workflow's — and never a sabotage while a gate is running.
 - Behavioural claims about a shell are proven against the sample (`dev.mjs sample`), not asserted; say which
