@@ -4,10 +4,12 @@ name: CEF with codecs
 # with Chromium's proprietary codecs, for ShenoraChromiumCodecs (D99), and uploads the distribution as a WORKFLOW
 # ARTIFACT. It publishes nothing: the release asset, and the pin that names it, are a person's act (below).
 #
-# ⚠ NOT YET RUN. Its flags and paths come from CEF's documented build (automate-git.py, GN_DEFINES), and the first run is
-# the proof; read its log before trusting a line here. Chromium is built from source, so it needs a runner that is not
-# GitHub's hosted one: Windows, VS 2022 with the "Desktop development with C++" workload and the Windows 11 SDK,
-# ~200 GB free, 32+ GB RAM, git and python 3 on PATH. Register one labelled `cef-builder` (Settings > Actions > Runners).
+# ⚠ NOT YET A GREEN RUN. It was worked out by building by hand: the sync, `gn gen` and the first compile steps ran;
+# the build then stopped in OpenXR's loader on this machine's older Windows SDK (below). Read its log before trusting a
+# line. Chromium is built from source, so it needs a runner that is not GitHub's hosted one: Windows, Visual Studio 2026
+# (18) with the "Desktop development with C++" workload, **the Windows SDK Chromium's own build/vs_toolchain.py names
+# (10.0.28000.0 for Chromium 154)**, ~200 GB free, 32+ GB RAM, git and python 3 on PATH, and GYP_MSVS_OVERRIDE_PATH,
+# vs2026_install and WINDOWSSDKDIR set in the runner's environment. Register one labelled `cef-builder`.
 # Hours per platform, and again at every CEF bump (D81). Only windows64 is built here; the other platforms, and
 # macOS/Linux runners, are added when an adopter needs them.
 #
@@ -46,16 +48,22 @@ jobs:
         env:
           GN_DEFINES: is_official_build=true proprietary_codecs=true ffmpeg_branding=Chrome
           DEPOT_TOOLS_WIN_TOOLCHAIN: '0'
-          GYP_MSVS_VERSION: '2022'
+          GYP_MSVS_VERSION: '2026'
+          # Only the configuration that is built: CEF otherwise generates x86 and arm64 ones, each wanting its own PGO profile.
+          GN_OUT_CONFIGS: Release_GN_x64
         run: |
           work="$RUNNER_TEMP/cef-build"
           mkdir -p "$work"
           git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$work/depot_tools"
           curl -fsSL -o "$work/automate-git.py" https://raw.githubusercontent.com/chromiumembedded/cef/master/tools/automate/automate-git.py
           export PATH="$work/depot_tools:$PATH"
+          # automate-git sets checkout_pgo_profiles but never runs the hooks that fetch what an official build reads, so it fails
+          # at `gn gen` (Chrome's profile) and at the compile (V8's builtins profile). Fetched here once the source is synced.
+          python3 "$work/automate-git.py" --download-dir="$work/download" --depot-tools-dir="$work/depot_tools"             --branch=${{ steps.pin.outputs.branch }} --checkout=${{ steps.pin.outputs.commit }}             --x64-build --no-debug-build --no-chromium-history --with-pgo-profiles --no-build --no-distrib || true
+          (cd "$work/download/chromium"             && python3 src/tools/update_pgo_profiles.py --target=win64 update --gs-url-base=chromium-optimization-profiles/pgo_profiles             && python3 src/v8/tools/builtins-pgo/download_profiles.py download --depot-tools "$work/depot_tools" --check-v8-revision --quiet)
           python3 "$work/automate-git.py" --download-dir="$work/download" --depot-tools-dir="$work/depot_tools" \
             --branch=${{ steps.pin.outputs.branch }} --checkout=${{ steps.pin.outputs.commit }} \
-            --x64-build --no-debug-build --minimal-distrib-only --force-clean
+            --x64-build --no-debug-build --minimal-distrib-only --no-chromium-history --with-pgo-profiles --force-build
 
       - name: Collect the distribution and its SHA-1
         shell: bash
