@@ -34,15 +34,19 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 🎞 THE CODECS ENGINE PACKAGE — BUILT AND PROBED; PUSHING IT TO NUGET.ORG IS A PERSON'S ACT (D99)
+### 🎞 THE CODECS ENGINE PACKAGE (D99) — PUBLISHED; WHAT IS LEFT
 
-> `Shenora.Chromium.Codecs.win-x64` 154.0.32 (`engines/`, outside `src/`) is packed from the CEF build the kit made, and
-> `node devtools/dev.mjs chromium-codecs --dist <the build>` passes through it: the sample restores the package, its props
-> point the layout at it (`ShenoraChromiumEnginePath`), and H.264 + AAC and HEVC play. **Not on nuget.org yet:** until it is,
-> `chromium-codecs` with no argument cannot restore it. **Done when it passes with no argument.**
+> `Shenora.Chromium.Codecs.win-x64` 154.0.32 (`engines/`, outside `src/`) is on nuget.org, and `node devtools/dev.mjs
+> chromium-codecs` with no argument restores it into an empty package cache and passes (H.264 + AAC and HEVC, on a GeForce).
+> What is open:
 >
-> - **Push the .nupkg (185 MB, nuget.org's limit is 250) and check it validated**, then run `chromium-codecs` again. ⚠ nuget.org
->   never deletes a version, only unlists it, and the package conveys patent-licensed codecs (D51, D99): a release act.
+> - **An engine that arrives after install** (the app ships without it, a user installs it): the shim already loads CEF from
+>   `engine\` beside the exe, but a running app cannot replace a loaded `libcef.dll`, so a download must be staged and swapped
+>   in at the next launch, before CEF loads. Not built; how much the kit owns of it is the owner's call.
+> - **The Electron model** (Electron builds Chromium with `proprietary_codecs=true ffmpeg_branding=Chrome` and FFmpeg as a
+>   separate shared library, `ffmpeg.dll`, so only a few MB need swapping): a CEF built with `is_component_ffmpeg=true` could ship
+>   its codecs as a small `ffmpeg.dll` downloaded later. ⚠ Unproven in CEF, and every app would then carry the kit's CEF build
+>   instead of CEF's own, widening D51's reopening from one opt-in package to the base engine.
 > - **Every CEF bump needs a new build and a new package version** (CEF's), about 9 hours on 22 cores with Windows SDK
 >   10.0.28000.0 installed. `.github/workflows/cef-codecs.yml` is that build as a workflow; it has never run as one. macOS, Linux
 >   and arm64 are runners and matrix rows it does not have, and packages of their own (`ShenoraChromiumEnginePlatform` refuses a mismatch).
