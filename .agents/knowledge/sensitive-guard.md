@@ -39,7 +39,8 @@ needed a full `git filter-repo` rewrite — a clean working tree is NOT enough.
   commit-msg.
 - **It fails CLOSED when `local/sensitive-patterns.txt` is missing.** The real tokens live in that
   gitignored file (add new ones there — never in a tracked file); the tracked scanner carries only
-  generic path shapes. In CI, a fresh clone or a git worktree, `local/` cannot exist: pass
+  generic path shapes. A git worktree with no `local/` of its own reads the PRIMARY checkout's file in
+  place, so its hooks (a workspace's merge included) run the full scan. In CI or a fresh clone there is none: pass
   `SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1` deliberately — and then the brand/sibling-name half is NOT
   running, so check names by hand. Never copy `local/` across checkouts.
 - Whole tree: `node devtools/dev.mjs check-sensitive --tree`. Bypass (rare): `git commit --no-verify`.

@@ -59,7 +59,17 @@ const builtins = [
 
 // Private tokens (gitignored). Each non-comment line is a JS regex source.
 const patterns = [...builtins];
-const localFile = path.join(repo, 'local', 'sensitive-patterns.txt');
+// A linked worktree has no `local/` of its own, and the merge a workspace makes runs in one — so the
+// commit-msg hook failed closed on every merge. Read the PRIMARY checkout's file in place (the parent of
+// git's common dir): the full scan still runs, and nothing private is copied across checkouts.
+function primaryLocalFile() {
+  try {
+    const common = path.resolve(repo, execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: repo, encoding: 'utf8' }).trim());
+    return path.basename(common) === '.git' ? path.join(path.dirname(common), 'local', 'sensitive-patterns.txt') : null;
+  } catch { return null; }
+}
+const ownLocalFile = path.join(repo, 'local', 'sensitive-patterns.txt');
+const localFile = existsSync(ownLocalFile) ? ownLocalFile : (primaryLocalFile() ?? ownLocalFile);
 if (existsSync(localFile)) {
   let loaded = 0;
   const bad = [];

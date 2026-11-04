@@ -27,8 +27,8 @@ and names live in `project.config.mjs`. The verbs and their traps are in `devtoo
   they should catch (`work-loop`).
 - Never run a sabotage while a gate runs in the background: `verify` reads the working tree, so the
   sabotage becomes its subject.
-- `check-sensitive` fails CLOSED without `local/sensitive-patterns.txt`; in CI or a worktree pass
-  `SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1` (`sensitive-guard`).
+- `check-sensitive` fails CLOSED without `local/sensitive-patterns.txt` (a worktree reads the primary
+  checkout's); in CI or a fresh clone pass `SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1` (`sensitive-guard`).
 
 ## Checks
 
