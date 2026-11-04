@@ -133,7 +133,7 @@ docs cite them — so the number is the column to scan.
 | **D74** | ONE PATH FOR BOTH STREAM KINDS: the only difference is the encode/decode logic. |
 | **D75** | THE SEGMENT TIER IS fMP4, THE GRID IS WHOLE SECONDS, AND THE DEFAULT ENGINE RUNS WHEREVER A CONVERTER IS REGISTERED. |
 | **D76** | THE SEGMENT ENGINE COPIES WHAT MP4 CAN CARRY AND RE-ENCODES ONLY WHAT IT CANNOT; A COPIED TRACK IS CUT ON THE SOURCE'S OWN KEYFRAMES, SO THE BOUNDARIES TRAVEL AS A PLAN. |
-| **D77** | THREE HOMES, and this file holds only the first: a DECISION here, a subsystem's DESIGN under `docs/design/`, an invariant in `.claude/knowledge/`. |
+| **D77** | THREE HOMES, and this file holds only the first: a DECISION here, a subsystem's DESIGN under `docs/design/`, an invariant in `.agents/knowledge/`. |
 | **D78** | FOR A REMOTE MEDIA SOURCE THE KIT SHIPS THE ADAPTER, NEVER THE TRANSPORT: |
 | **D79** | THE SHELL RAISES THE BACK GESTURE AND THE PAGE DECIDES WHAT IT MEANS, PER PRESS: |
 | **D80** | THE PLAYER'S SECOND SURFACE: ON A PHONE THE SHELL DRAWS THE PICTURE, AND THE PAGE KEEPS THE UI. |
@@ -204,7 +204,7 @@ docs cite them — so the number is the column to scan.
   which are the product — over new abstractions. The primary source is the richest desktop-only sibling;
   the second desktop sibling is the conformance reference; Sonora donates its window-state store,
   singleton/restart skeleton and event bridge. Named map: `local/EXTRACTION-MAP.md` (private);
-  de-identified: `.claude/knowledge/extraction-sources.md`.
+  de-identified: `.agents/knowledge/extraction-sources.md`.
 
 - **D9 — Repo organization clones the family system, and there is no archive tier.**: short `CLAUDE.md` → `docs/README.md` router →
   two-tier `.claude/rules|knowledge` with `RULES_INDEX.md` → gitignored `local/`, plus Lyntai's
@@ -215,7 +215,7 @@ docs cite them — so the number is the column to scan.
   **The tell that a doc is really an archive: nobody reads it, and it grows fastest.** Ask what QUESTION
   a reader arrives with — "why is it done this way?" → here · "what is the shape today?" →
   `ARCHITECTURE.md` · "what is left?" → `TASKS.md` · "what happened?" → `git log`. A warning written for
-  a future session was never history: it is an invariant, and it belongs in `.claude/knowledge/`.
+  a future session was never history: it is an invariant, and it belongs in `.agents/knowledge/`.
 
 - **D10 — Two consumption profiles; a `Shenora.Hosting.AspNetCore` package was surveyed and is NO-GO.** The split exists
   so a Sonora-style app (in-process HTTP server shared with mobile clients; WebView2 as "just a browser"
@@ -262,7 +262,7 @@ docs cite them — so the number is the column to scan.
   simulator. ⚠ **Transport neutrality is proven for IPC only** — it says nothing about the
   desktop-FLAVOURED service contracts (`FileDialogOptions` carries Win32 vocabulary a mobile picker
   would half-ignore). Narrowing those is an accepted pre-1.0 possibility awaiting a real consumer (D15).
-  What mobile actually cost landed elsewhere: `.claude/knowledge/mobile-shells.md`, D44 and D45.
+  What mobile actually cost landed elsewhere: `.agents/knowledge/mobile-shells.md`, D44 and D45.
 
 - **D17 — `Shenora` depends on the Microsoft DI IMPLEMENTATION package, not only the abstractions.**
   `ShenoraApplication.CreateBuilder` → `Build()` constructs the `ServiceProvider`, and
@@ -607,7 +607,7 @@ docs cite them — so the number is the column to scan.
     passes the body through verbatim. Getting it wrong is not graceful degradation — the offset is applied
     twice and a player asking for a file's tail retries the identical range for ever. ⚠ **And the wrong
     choice looks correct** on a faststart file, which only ever asks for `bytes=0-`.
-    (Measurements: `docs/design/mobile-shells.md`; how to observe it: `.claude/knowledge/mobile-shells.md`.)
+    (Measurements: `docs/design/mobile-shells.md`; how to observe it: `.agents/knowledge/mobile-shells.md`.)
 
 - **D45 — resource interception is a MIDDLEWARE PIPELINE in `Shenora`, implemented by each SHELL.** The
   order of the steps is the argument: the interceptor interface belongs in Core → the desktop has the same
@@ -883,7 +883,7 @@ docs cite them — so the number is the column to scan.
     ASKS for it.** Concretely — the kit resolves it from DI or takes it as a parameter, a default applies
     when it is absent, and **a test supplies a fake and asserts the fake was USED.** Not that it exists.
   - **The audit that finds them is a standing habit, not a task**, and both halves of the question live in
-    `.claude/knowledge/standing-habits.md`.
+    `.agents/knowledge/standing-habits.md`.
 
 - **D64 — the framework is ON BY DEFAULT: `Use…` CONFIGURES rather than enables, and the only per-platform
   call is the shell's, which exists to inject implementations.**
@@ -1075,7 +1075,7 @@ docs cite them — so the number is the column to scan.
   - **`IsAvailable` requires a conversion, so the engine is mobile-only** (D75); `docs/design/media.md`.
 
 - **D77 — THREE HOMES, and this file holds only the first: a DECISION here, a subsystem's DESIGN under
-  `docs/design/`, an invariant in `.claude/knowledge/`.**
+  `docs/design/`, an invariant in `.agents/knowledge/`.**
   - 🔴 **A RULE HERE IS APPLIED TO EVERY CASE, because every session takes the whole file at once.** An
     invariant earned in one context reads as universal. **A knowledge rule is loaded only when the task
     matches its area**, so scope is enforced by the loader, not by the reader remembering.
@@ -1085,7 +1085,7 @@ docs cite them — so the number is the column to scan.
     is written after, from the code. **The staleness D57 feared returns the moment a design doc argues
     instead of describes**, so it LINKS the `D<n>` for every claim that needs defending.
   - **The test:** *re-read when about to relitigate?* → here. *When about to change this subsystem?* →
-    `docs/design/`. *Every time you touch the area?* → `.claude/knowledge/`. **Or better: a gate or test.**
+    `docs/design/`. *Every time you touch the area?* → `.agents/knowledge/`. **Or better: a gate or test.**
 
 - **D78 — FOR A REMOTE MEDIA SOURCE THE KIT SHIPS THE ADAPTER, NEVER THE TRANSPORT:**
   `MediaByteSource.ForRanges` turns an app-supplied byte-range fetch into the seekable, buffered stream the

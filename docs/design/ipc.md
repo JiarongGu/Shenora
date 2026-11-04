@@ -2,7 +2,7 @@
 
 **Maintainer-facing.** What the pieces are, how they compose, and what each one promises. For the strings
 a PAGE types read [`../reference/wire.md`](../reference/wire.md); for the invariants you must not break
-while editing read [`../../.claude/knowledge/ipc-contracts.md`](../../.claude/knowledge/ipc-contracts.md);
+while editing read [`../../.agents/knowledge/ipc-contracts.md`](../../.agents/knowledge/ipc-contracts.md);
 for WHY any of it is this way read the decisions linked below — **this doc states the design, never the
 rationale** (D77).
 

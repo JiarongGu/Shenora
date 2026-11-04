@@ -1,5 +1,5 @@
 #!/bin/sh
-# Sensitive-info guard for the COMMIT MESSAGE (see .claude/rules/sensitive-info.md). A message is
+# Sensitive-info guard for the COMMIT MESSAGE (see .agents/knowledge/sensitive-guard.md). A message is
 # history too: scrubbing a leaked token out of the blobs still leaves it in `git log`, and fixing
 # that needs --replace-message on top of --replace-text. The pre-commit hook scans the staged
 # CONTENT; this one scans what you are about to write into the log.

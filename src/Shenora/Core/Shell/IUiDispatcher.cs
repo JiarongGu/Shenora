@@ -20,7 +20,7 @@ public enum UiTargetState
 
 /// <summary>
 /// The ONE UI-thread marshalling seam. Its invariants are in
-/// <c>.claude/knowledge/webview2-hosting.md</c>.
+/// <c>.agents/knowledge/webview2-hosting.md</c>.
 /// <para>
 /// Portable on purpose: an app service that needs "run this on the UI thread" depends on this interface,
 /// not on WinForms. The Windows implementation is constructed PER CONTROL — auxiliary browser sessions

@@ -100,7 +100,7 @@ if (existsSync(localFile)) {
     console.error('  The file exists but every line is blank or a comment, so only the two structural');
     console.error('  path patterns ran — the brand/sibling-name half of the guard did NOT. A file that');
     console.error('  exists is not the property this guard needs; patterns in it are.');
-    console.error('  Fix: restore its contents (see .claude/rules/sensitive-info.md),');
+    console.error('  Fix: restore its contents (see .agents/knowledge/sensitive-guard.md),');
     console.error('  or pass --allow-builtins-only if a builtins-only scan is genuinely what you want.\n');
     process.exit(1);
   }
@@ -112,7 +112,7 @@ if (existsSync(localFile)) {
   console.error('\n\x1b[31m✖ check-sensitive: local/sensitive-patterns.txt is MISSING.\x1b[0m');
   console.error('  Without it only the two structural path patterns run — the brand/sibling-name');
   console.error('  half of the guard does NOT. Refusing to report a half-scan as clean.');
-  console.error('  Fix: restore local/sensitive-patterns.txt (see .claude/rules/sensitive-info.md),');
+  console.error('  Fix: restore local/sensitive-patterns.txt (see .agents/knowledge/sensitive-guard.md),');
   console.error('  or pass --allow-builtins-only if a builtins-only scan is genuinely what you want.');
   // 🔴 NAME THE SITUATION, or the reader invents a worse fix. `local/` is gitignored, so it CANNOT
   // exist in a fresh clone, in CI, or in an agent worktree — and this message used to describe only a
@@ -261,5 +261,5 @@ if (hits.length === 0) {
 console.error('\n\x1b[31m✖ check-sensitive: blocked — public-repo leak(s) detected:\x1b[0m');
 for (const h of hits) console.error(`  ${h.f}:${h.line}  [${h.why}]  …${h.snippet}…`);
 console.error('\nFix: use a repo-relative path / neutral placeholder, or move the value to local/.');
-console.error('See .claude/rules/sensitive-info.md. (Override once with: git commit --no-verify)\n');
+console.error('See .agents/knowledge/sensitive-guard.md. (Override once with: git commit --no-verify)\n');
 process.exit(1);

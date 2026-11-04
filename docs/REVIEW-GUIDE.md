@@ -80,13 +80,13 @@ Two properties follow from that and shape every judgement:
 
 - **It is EXTRACTED, not invented.** Code is lifted from proven in-house sibling apps, keeping
   their post-mortem comments and fixing a listed set of gaps. So "why is this shaped like the
-  source?" usually has a measured answer — check `.claude/knowledge/extraction-sources.md` and the
+  source?" usually has a measured answer — check `.agents/knowledge/extraction-sources.md` and the
   per-port comments before calling a shape wrong. New abstractions with no sibling precedent are
   the ones to scrutinise hardest.
 - **It is a LIBRARY with a public surface.** Every exported type becomes SemVer surface at 1.0.
   Two hard constraints: (a) **generalize, don't ship the consumer's shape** — no app/domain
   vocabulary in `src/`, seams over flags, options records over magic values
-  (`.claude/knowledge/generic-library.md`); (b) **headless (D13)** — NO dependency on any UI
+  (`.agents/knowledge/generic-library.md`); (b) **headless (D13)** — NO dependency on any UI
   component library, anywhere.
   **(a) now has a tripwire** — `SurfaceVocabularyTests` checks every public TYPE name against an
   allow-list of shell/platform words (`tests/Shenora.Tests/Api/surface-lexicon.txt`), so a domain
@@ -151,14 +151,14 @@ a finding that contradicts one of these is either a real regression or a rule th
 
 | Area (files) | Invariant source | What to check |
 |---|---|---|
-| IPC stack (`src/Shenora/Core/Ipc/`, `WebViewIpcBridge`, `Shenora.React/src/`) | `.claude/knowledge/ipc-contracts.md` | C#⇄TS wire mirror in lockstep; **no raw exception text on ANY error path** (only `ShenoraException`/error codes cross the bridge); `DispatchAsync` never throws / never returns null; notifications always batched; ready-gate resets on navigation; camelCase wire via the frozen `IpcJson` options |
-| WebView2 hosting/serving (`src/Shenora.Windows/`) | `.claude/knowledge/webview2-hosting.md` | environment thread-affinity; `IsHandleCreated` checked BEFORE `InvokeRequired`; non-blocking `BeginInvoke` (never blocking `Invoke` off the UI thread); init-timeout guard; sync-bundle vs deferred-scheme serving split; JSON-escaped script injection; CDP arg re-append (the env-var-ignored gotcha) |
-| Any public API / naming / new type | `.claude/knowledge/generic-library.md` + D13 | generalized shape (no consumer vocabulary), options records, seams; every public type earns its keep; no UI-component-library dependency |
-| Extraction ports (all of `src/`) | `.claude/knowledge/extraction-sources.md` | post-mortem comments kept; the listed gaps actually fixed (no `as dynamic`, no static mutable registry, `ILogger` not console, async-interleaved dispatch not `Task.Run`-per-message) |
+| IPC stack (`src/Shenora/Core/Ipc/`, `WebViewIpcBridge`, `Shenora.React/src/`) | `.agents/knowledge/ipc-contracts.md` | C#⇄TS wire mirror in lockstep; **no raw exception text on ANY error path** (only `ShenoraException`/error codes cross the bridge); `DispatchAsync` never throws / never returns null; notifications always batched; ready-gate resets on navigation; camelCase wire via the frozen `IpcJson` options |
+| WebView2 hosting/serving (`src/Shenora.Windows/`) | `.agents/knowledge/webview2-hosting.md` | environment thread-affinity; `IsHandleCreated` checked BEFORE `InvokeRequired`; non-blocking `BeginInvoke` (never blocking `Invoke` off the UI thread); init-timeout guard; sync-bundle vs deferred-scheme serving split; JSON-escaped script injection; CDP arg re-append (the env-var-ignored gotcha) |
+| Any public API / naming / new type | `.agents/knowledge/generic-library.md` + D13 | generalized shape (no consumer vocabulary), options records, seams; every public type earns its keep; no UI-component-library dependency |
+| Extraction ports (all of `src/`) | `.agents/knowledge/extraction-sources.md` | post-mortem comments kept; the listed gaps actually fixed (no `as dynamic`, no static mutable registry, `ILogger` not console, async-interleaved dispatch not `Task.Run`-per-message) |
 | Missions (`src/Shenora/Engine/Missions/`) | `docs/DECISIONS.md` D27–D29 | claims declared as a SET (never acquired one at a time — that is the deadlock the design removed); work never runs under the scheduler lock; a policy is consulted only AFTER admission, so it can delay but never corrupt; a chain is one entry holding its claim UNION, stronger mode winning; the queue's pending list stays internal and synchronous (D28 records why a pluggable async queue was rejected) |
 | File updates + locking (`src/Shenora/Engine/Files/`; a package between D48 and D55, then relayered by D65) | `docs/DECISIONS.md` D30–D31 | **the journal is written BEFORE the mutation** — a plan written after is missing exactly the interrupted change, which is why undo is DATA and every change is planned then applied; recovery rolls back `Applying` and FINISHES `Committing`; undo steps check the world first (safe to run twice); leases are taken after the in-process gate, in sorted path order; lock files never land in the managed tree; `WhoHolds` empty means "cannot tell", not "nobody" |
-| Windows/build/shell | `.claude/rules/windows-dev-gotchas.md` | PS5 UTF-8/BOM traps; `fs.cpSync` avoided; WinForms `AllowDrop`/OLE handle-creation must be on an STA thread (xunit workers are MTA) |
-| Any tracked file / commit message | `.claude/rules/sensitive-info.md` | NO absolute local paths, NO private sibling names, NO personal/network data (this repo goes public) |
+| Windows/build/shell | `.agents/knowledge/windows-dev-gotchas.md` | PS5 UTF-8/BOM traps; `fs.cpSync` avoided; WinForms `AllowDrop`/OLE handle-creation must be on an STA thread (xunit workers are MTA) |
+| Any tracked file / commit message | `.agents/knowledge/sensitive-guard.md` | NO absolute local paths, NO private sibling names, NO personal/network data (this repo goes public) |
 
 ## 4. Highest-risk areas — where to spend the review budget
 
@@ -326,5 +326,5 @@ The full command list is `devtools/README.md`. ⚠ **`dev.mjs changelog` is the 
 yours** — it stamps the `## Unreleased` heading, which the workflow owns (`CLAUDE.md`).
 
 Report findings as file:line + why it's real (a concrete failure scenario), ranked by severity —
-no style nits. If a finding contradicts a rule in `.claude/knowledge/`, say which, so the invariant
+no style nits. If a finding contradicts a rule in `.agents/knowledge/`, say which, so the invariant
 can be corrected rather than silently worked around.

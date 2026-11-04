@@ -44,7 +44,7 @@
     ⚠ The SWIFT IS SHIPPED AS SOURCE and that is forced, not a style choice: ActivityKit pairs a running
     activity with a widget by its ActivityAttributes TYPE, and a Swift type's identity includes its MODULE —
     so the attributes must be compiled into the same module as the app's own views. A prebuilt binary could
-    never satisfy that. Measured; see .claude/knowledge/mobile-shells.md.
+    never satisfy that. Measured; see .agents/knowledge/mobile-shells.md.
   -->
   <ItemGroup>
     <None Include="buildTransitive\Shenora.iOS.targets" Pack="true" PackagePath="buildTransitive\" />

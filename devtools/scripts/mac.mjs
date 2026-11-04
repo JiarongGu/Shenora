@@ -1589,7 +1589,7 @@ dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${
  * info, install, notification, orientation, process, reboot, sysdiagnose, uninstall and nothing else. The
  * invocation piped through `2>/dev/null | head`, so the error text was discarded AND the exit status became
  * head's, which is always 0. The tool printed nothing, reported success, and the fallback advice below its
- * status check could never fire. **That is the exact trap `.claude/knowledge/mobile-shells.md` records for
+ * status check could never fire. **That is the exact trap `.agents/knowledge/mobile-shells.md` records for
  * `mac device` — the same mistake, in a sibling function, surviving the write-up of the first one.**
  * `set -o pipefail` is now on, as it is on the launch path.
  */

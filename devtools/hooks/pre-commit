@@ -1,5 +1,5 @@
 #!/bin/sh
-# Sensitive-info guard (see .claude/rules/sensitive-info.md). Blocks a commit that would introduce
+# Sensitive-info guard (see .agents/knowledge/sensitive-guard.md). Blocks a commit that would introduce
 # a dev-machine path, source brand, sibling-project name, or explicit age-restricted wording into
 # this public repo. Install with: node devtools/dev.mjs install-hooks  (sets core.hooksPath here).
 # Bypass intentionally with: git commit --no-verify

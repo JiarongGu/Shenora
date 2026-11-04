@@ -148,6 +148,11 @@ function retiredNames() {
 // `\bwas\b` is both simpler and right; it still cannot match inside `wash` or `wasteful`.
 // `merged` is new for the same reason `superseded` is here: it is how this repo says a thing stopped
 // existing separately (D37 merged three package ids into one).
+const CANON_STAMP = /^\s*<!-- [a-z-]+: \S+ @ \S+ — canonical;/;
+// `local/` counts as ABSENT in a git worktree too (`.git` is a file there): what a worktree holds of it
+// is a partial copy — the sensitive patterns a gate needs — so its absent `PROJECT_NOTES.md` is the
+// designed state, not a dangling pointer. See check 3.
+const LOCAL_ABSENT = !fs.existsSync(path.join(repo, 'local')) || fs.statSync(path.join(repo, '.git')).isFile();
 const HISTORY = /\b(used to|use to|formerly|former|previously|rename[sd]?|removed|no longer|until|was|were|had|used only|superseded|retired|deleted|cut|dropped|replaced|merged|before publish|history|historical|obsolete|legacy|once|sketch|originally|no such|used the)\b/i;
 // 🔴 STAYS AT 6, and this is the second time it has been TESTED rather than argued (2026-08-14, after
 // the DECISIONS.md amendment stacks were removed — the stated reason the window could finally be
@@ -305,6 +310,9 @@ function checkDocLinks() {
     for (let i = 0; i < lines.length; i++) {
       // A retired doc named in a HISTORY note is fine — that is the point of recording the retirement.
       if (HISTORY.test(lines[i])) continue;
+      // A canon provenance stamp (`<!-- <tool>: core/core/... @ 0.0.1 — canonical; … -->`) names the
+      // file's path in the CANON repository, never in this one; the sync tool writes it and owns it.
+      if (CANON_STAMP.test(lines[i])) continue;
       for (const [, target] of lines[i].matchAll(reference)) {
         // 🔴 `local/` IS ABSENT ON PURPOSE, AND EVERYWHERE BUT ONE MACHINE. It is gitignored private
         // context (`sensitive-info.md`), so it does not exist in CI, in a fresh clone, or in an agent
@@ -321,7 +329,7 @@ function checkDocLinks() {
         //
         // The pointer is still CHECKED on the machine that has `local/` — where a typo is real and
         // findable. This exempts only the case where absence is the designed state.
-        if (target.startsWith('local/') && !fs.existsSync(path.join(repo, 'local'))) continue;
+        if (target.startsWith('local/') && LOCAL_ABSENT) continue;
         if (fs.existsSync(path.join(repo, target)) || fs.existsSync(path.resolve(dir, target))) continue;
         problems.push(
           `${rel}:${i + 1}: points at "${target}", which does not exist.\n` +
@@ -956,7 +964,7 @@ function checkLinksResolve() {
         if (local === null) { say(i, `"${p}" is not valid percent-encoding`, line); continue; }
         const target = local === '' ? rel
           : path.relative(repo, path.resolve(path.dirname(file), local)).replace(/\\/g, '/');
-        if (target.startsWith('local/') && !fs.existsSync(path.join(repo, 'local'))) continue;   // see check 3
+        if (target.startsWith('local/') && LOCAL_ABSENT) continue;   // see check 3
         const why = unresolved(target.replace(/\/$/, '') || '.', anchor);
         if (why) say(i, why, line);
       }

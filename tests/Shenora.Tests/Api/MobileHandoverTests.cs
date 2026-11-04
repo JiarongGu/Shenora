@@ -23,7 +23,7 @@ namespace Shenora.Tests.Api;
 /// reference the mobile shells at all — it is one <c>net10.0-windows</c> project, and
 /// <c>Java.IO.IOException</c> exists only in the <c>net10.0-android</c> TFM (constructing one needs a live JVM
 /// for the peer), so the CONVERSION can only be asserted on a device and is
-/// (<c>.claude/knowledge/mobile-shells.md</c> carries the three-arm A/B). What is left is a claim about the
+/// (<c>.agents/knowledge/mobile-shells.md</c> carries the three-arm A/B). What is left is a claim about the
 /// SOURCE — "one call site" — and a source claim is exactly what a source check can hold.
 /// <see cref="PortableArchitectureTests"/> in this same folder gates a structurally identical thing the same
 /// way, walking <c>src/Shenora/**/*.cs</c> line by line for a platform conditional.
@@ -70,7 +70,7 @@ public class MobileHandoverTests
             "MobileWebViewInterceptor must call e.SetResponse in exactly ONE place — the seam where a managed "
             + "Stream becomes a platform body, and so the only place PlatformBody can wrap it. A second call "
             + "site is a body that skipped the wrapper, and on Android that is the difference between a failed "
-            + "load and a DEAD PROCESS (see this class's remarks and .claude/knowledge/mobile-shells.md). "
+            + "load and a DEAD PROCESS (see this class's remarks and .agents/knowledge/mobile-shells.md). "
             + $"Route the new reply through Answer instead. Found {callSites.Count}:\n  "
             + string.Join("\n  ", callSites));
     }

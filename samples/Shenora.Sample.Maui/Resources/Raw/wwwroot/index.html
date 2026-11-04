@@ -1128,7 +1128,7 @@ window.__shenoraSegCheck = function (base, mime) {
 // ⚠ It does NOT fix everything. Android reports only the display CUTOUT here, never the system bars:
 // measured `bottom=0` on a device whose navigation bar is genuinely 24 CSS px tall, so content still
 // sits under the gesture pill and no amount of CSS or JS in the page can discover that. That half needs
-// the HOST to hand the page its `WindowInsetsCompat` — see `.claude/knowledge/mobile-shells.md`.
+// the HOST to hand the page its `WindowInsetsCompat` — see `.agents/knowledge/mobile-shells.md`.
 const readInsets = (announce) => {
   const probe = document.createElement('div');
   probe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;'

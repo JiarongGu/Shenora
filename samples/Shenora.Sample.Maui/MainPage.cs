@@ -417,7 +417,7 @@ public sealed class MainPage : ContentPage
 					//     only as "this request pattern cannot leak" and a LARGE abandoned window there is
 					//     untested. The same run also measured that the platform never touches `Length`,
 					//     `Position`, `CanSeek` or `Seek` on a body it is handed — all four counters zero.
-					// Every number and raw log is in `.claude/knowledge/mobile-shells.md`. Do not re-add a
+					// Every number and raw log is in `.agents/knowledge/mobile-shells.md`. Do not re-add a
 					// probe to answer these again — re-add one when the iOS or Windows half gets a FIX to prove.
 
 					// 🔴 THE CONVERSION ROUTE, whole, on a device. Everything under `UseMediaConversion` was

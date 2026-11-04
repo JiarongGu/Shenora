@@ -14,7 +14,7 @@ namespace Shenora.Android;
 /// <see cref="Deliver"/> (<c>docs/guides/mobile.md</c>). AndroidX's <see cref="ActivityResultRegistry"/>
 /// would need no wiring, but a MAUI activity does not round-trip AndroidX instance state, so its restored
 /// request-code map is empty and an arriving result falls through unseen — measured, see
-/// <c>.claude/knowledge/mobile-shells.md</c>. The framework's own routing survives, so this relay owns its
+/// <c>.agents/knowledge/mobile-shells.md</c>. The framework's own routing survives, so this relay owns its
 /// request codes over <c>StartActivityForResult</c>.
 /// </para>
 /// <para>

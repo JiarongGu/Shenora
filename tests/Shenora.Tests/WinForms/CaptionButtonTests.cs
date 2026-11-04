@@ -17,7 +17,7 @@ namespace Shenora.Tests.WinForms;
 /// worked: all of them bypassed the routing. So these tests pin the window's DECISIONS, and the
 /// routing itself is proven only by the clip tests (which assert the covering control's region is
 /// actually cut) plus a live <c>WindowFromPoint</c>/human pass. See
-/// <c>.claude/knowledge/winforms-shell.md</c>.
+/// <c>.agents/knowledge/winforms-shell.md</c>.
 /// </para>
 /// </summary>
 public class CaptionButtonTests
