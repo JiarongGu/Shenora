@@ -155,6 +155,7 @@ docs cite them — so the number is the column to scan.
 | **D96** | A WINDOWS CHROMIUM APP CAN PUBLISH AS THREE FILES AND TWO FOLDERS, AS AN OPTION. |
 | **D97** | THE CHROMIUM SHELL EMBEDS A WEB PANEL: A CHILD BROWSER IN A SHELL WINDOW, IN A CHOSEN PROFILE. |
 | **D98** | THE README IS THE LANDING PAGE EVERY PACKAGE SHIPS, AND THE FILES WRITTEN FOR CODING AGENTS ARE KEPT AS STATE, NOT AS COPIES. |
+| **D99** | THE CHROMIUM ENGINE CARRIES H.264, AAC AND HEVC AS AN OPT-IN, FROM A CEF BUILD THE KIT MAKES AND PUBLISHES. |
 
 <!-- decisions-index:end -->
 
@@ -705,7 +706,7 @@ docs cite them — so the number is the column to scan.
     the licence question and leaves the patent one open, per shipped codec. Not legal advice.
   - ⚠ **ffmpeg's licence is DETERMINED by what is compiled in**, `--enable-nonfree` may not be distributed
     at all, and **the operational test is DISTRIBUTION, not "is it in the code base"**: a build-time fetch,
-    a fixture vendoring a binary or a release asset all leak it from a clean repo. D81 narrows it for an ENGINE.
+    a fixture vendoring a binary or a release asset all leak it from a clean repo. D81 narrows it for an ENGINE, and D99 reopens it for one build of it.
 
 - **D52 — the media layer is a TRANSLATION LAYER FOR THE WEB, not a media toolkit: the MINIMUM
   transformation that makes a file playable in a webview, and never more.** Not a remake of ffmpeg: when
@@ -1142,7 +1143,7 @@ docs cite them — so the number is the column to scan.
   - ⚠ **The engine's security updates become the app's.** The failure mode is a binding that cannot
     follow CEF's release cadence, not the size.
   - **Building CEF from source is allowed once a gap needs a Chromium patch**; until then, published builds.
-    ⚠ A CEF the kit builds is bytes it conveys, which reopens D51.
+    ⚠ A CEF the kit builds is bytes it conveys, which reopens D51 (D99 does, for the codecs).
 
 - **D82 — THE DESKTOP REACHES MACOS AND LINUX THROUGH ONE CHROMIUM SHELL OF THE KIT'S OWN, ON CEF'S VIEWS
   FRAMEWORK, BUILT AHEAD OF A CONSUMER.** Being prepared matters more here than whether a consumer exists
@@ -1394,6 +1395,21 @@ docs cite them — so the number is the column to scan.
     the first as text and strips the second.
   - **Rejected:** a short README that only links out. The packaged README is the one document an adopter without
     the repository can read, so it keeps the rules and the package table rather than pointing at them.
+
+- **D99 — THE CHROMIUM ENGINE CARRIES H.264, AAC AND HEVC AS AN OPT-IN, FROM A CEF BUILD THE KIT MAKES AND
+  PUBLISHES.** CEF's standard build leaves the proprietary codecs out, so the MP4 of an ordinary site shows nothing.
+  `ShenoraChromiumCodecs=true` fetches the kit's build of the SAME pinned CEF (`proprietary_codecs=true
+  ffmpeg_branding=Chrome`) from a release of this repository, SHA-1-pinned in `cef.json`'s `codecs`, into a cache of
+  its own. Layout and API are unchanged, and the owner chose this over a third party's builds and over declining.
+  - 🔴 **This is the reopening of D51 that D81 warned of, deliberately:** the kit now conveys the bytes. Opt-in, so no
+    app that does not ask carries them; the default stays CEF's own build. ⚠ Patents are not copyright: the build
+    comes with no patent licence, and the app that opts in decides whether it needs one for what it ships.
+  - **A build per CEF pin and platform, at every bump:** FFmpeg is linked into `libcef`, so no one file swaps in.
+    `.github/workflows/cef-codecs.yml` builds one on a runner of the kit's own and uploads it as an artifact;
+    publishing the asset and the pin is a person's act, after `dev.mjs chromium-codecs` passes against it.
+  - ⚠ HEVC plays through the machine's own decoder (a GPU, or Windows' HEVC extension), so it plays where one exists.
+  - **Rejected:** a package of its own (D81's 350 MB, again); the codecs on by default; a third party's hand-built
+    CEF (no HEVC, one person's binaries in a public package); sending each video to Edge.
 
 ## Anti-goals — deliberately NOT built
 

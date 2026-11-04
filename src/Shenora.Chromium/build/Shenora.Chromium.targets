@@ -11,6 +11,11 @@
                                 <App>.exe, and the kit's shim as <App>.dll. The launcher creates Chromium's
                                 sandbox and loads <App>.dll, which starts the app's own <App>.App.dll.
 
+    ShenoraChromiumCodecs=true (D99) fetches the kit's build of the same CEF with H.264, AAC and HEVC from the kit's
+    release instead of CEF's own, into a cache of its own. The layout and the app's code are the same; the standard
+    engine, which is the default, decodes none of them. The codecs are patent-licensed (D51): an app that opts in
+    decides for itself whether it needs a licence for what it ships.
+
     So the app's assembly is named <App>.App, and the build refuses otherwise rather than lay out an app that
     cannot start. Set ShenoraChromiumLayout=false to build without the engine (a compile-only CI step), and
     ShenoraChromiumLocales (such as "zh-CN;fr") to lay out only those of CEF's locales, and en-US. The app's own
@@ -54,7 +59,11 @@
     <ShenoraCefCache Condition="'$(ShenoraCefCache)' == '' and '$(OS)' == 'Windows_NT'">$(LOCALAPPDATA)\Shenora\cef</ShenoraCefCache>
     <ShenoraCefCache Condition="'$(ShenoraCefCache)' == ''">$(HOME)/.cache/shenora/cef</ShenoraCefCache>
     <ShenoraChromiumStrip Condition="'$(ShenoraChromiumStrip)' == ''">strip --strip-all</ShenoraChromiumStrip>
-    <ShenoraCefRoot>$([System.IO.Path]::Combine('$(ShenoraCefCache)', '$(ShenoraCefBuild)', '$(ShenoraCefPlatform)'))</ShenoraCefRoot>
+    <!-- ShenoraChromiumCodecs=true: the kit's build of the same CEF with H.264, AAC and HEVC (D99), fetched from the kit's
+         release instead of CEF's index, and cached beside the standard one, never in it. -->
+    <ShenoraChromiumCodecs Condition="'$(ShenoraChromiumCodecs)' == ''">false</ShenoraChromiumCodecs>
+    <_ShenoraCefFlavour Condition="'$(ShenoraChromiumCodecs)' == 'true'">-codecs</_ShenoraCefFlavour>
+    <ShenoraCefRoot>$([System.IO.Path]::Combine('$(ShenoraCefCache)', '$(ShenoraCefBuild)$(_ShenoraCefFlavour)', '$(ShenoraCefPlatform)'))</ShenoraCefRoot>
     <ShenoraCefDist>$([System.IO.Path]::Combine('$(ShenoraCefRoot)', 'dist'))</ShenoraCefDist>
 
     <!-- The package's own native half, the Windows shim or the macOS helper; in this repo, where an app references the
@@ -308,9 +317,16 @@ public sealed class ShenoraChromiumStampLauncher : Task
 
   <Target Name="ShenoraChromiumFetchCef" DependsOnTargets="_ShenoraChromiumCheck" Condition="'$(ShenoraChromiumLayout)' == 'true'">
     <ItemGroup>
-      <_ShenoraCefPick Include="@(ShenoraCefDistribution)" Condition="'%(Identity)' == '$(ShenoraCefPlatform)'" />
+      <_ShenoraCefPick Include="@(ShenoraCefDistribution)" Condition="'$(ShenoraChromiumCodecs)' != 'true' and '%(Identity)' == '$(ShenoraCefPlatform)'" />
+      <_ShenoraCefPick Include="@(ShenoraCefCodecsDistribution)" Condition="'$(ShenoraChromiumCodecs)' == 'true' and '%(Identity)' == '$(ShenoraCefPlatform)'" />
     </ItemGroup>
     <PropertyGroup>
+      <!-- CEF's own index, or the kit's release for the codecs build (D99). -->
+      <_ShenoraCefSource Condition="'$(ShenoraChromiumCodecs)' != 'true'">https://cef-builds.spotifycdn.com/</_ShenoraCefSource>
+      <_ShenoraCefSource Condition="'$(ShenoraChromiumCodecs)' == 'true'">https://github.com/JiarongGu/Shenora/releases/download/$(ShenoraCefCodecsRelease)/</_ShenoraCefSource>
+      <!-- ShenoraCefCodecsSource (a URL ending in /): where the codecs build is served from, as it is tried before the
+           release exists. The pin's SHA-1 still decides whether it is used. -->
+      <_ShenoraCefSource Condition="'$(ShenoraChromiumCodecs)' == 'true' and '$(ShenoraCefCodecsSource)' != ''">$(ShenoraCefCodecsSource)</_ShenoraCefSource>
       <_ShenoraCefFile>@(_ShenoraCefPick->'%(File)')</_ShenoraCefFile>
       <_ShenoraCefSha1>@(_ShenoraCefPick->'%(Sha1)')</_ShenoraCefSha1>
       <_ShenoraCefPart>$(_ShenoraCefFile).$(_ShenoraCefRun).part</_ShenoraCefPart>
@@ -318,11 +334,13 @@ public sealed class ShenoraChromiumStampLauncher : Task
       <_ShenoraCefStaging>dist.$(_ShenoraCefRun)</_ShenoraCefStaging>
       <_ShenoraCefNeeded Condition="!Exists('$(ShenoraCefDist)')">true</_ShenoraCefNeeded>
     </PropertyGroup>
-    <Error Condition="'$(_ShenoraCefFile)' == ''" Text="The pinned CEF build $(ShenoraCefBuild) names no distribution for $(ShenoraCefPlatform)." />
+    <Error Condition="'$(_ShenoraCefFile)' == '' and '$(ShenoraChromiumCodecs)' != 'true'" Text="The pinned CEF build $(ShenoraCefBuild) names no distribution for $(ShenoraCefPlatform)." />
+    <Error Condition="'$(_ShenoraCefFile)' == '' and '$(ShenoraChromiumCodecs)' == 'true'"
+           Text="ShenoraChromiumCodecs asks for the kit's CEF build with H.264, AAC and HEVC, and the kit has published none for $(ShenoraCefPlatform) at $(ShenoraCefBuild). Build without it for CEF's standard engine, which plays neither." />
 
     <MakeDir Condition="'$(_ShenoraCefNeeded)' == 'true'" Directories="$(ShenoraCefRoot)" />
     <DownloadFile Condition="'$(_ShenoraCefNeeded)' == 'true'"
-                  SourceUrl="https://cef-builds.spotifycdn.com/$([System.Uri]::EscapeDataString('$(_ShenoraCefFile)'))"
+                  SourceUrl="$(_ShenoraCefSource)$([System.Uri]::EscapeDataString('$(_ShenoraCefFile)'))"
                   DestinationFolder="$(ShenoraCefRoot)" DestinationFileName="$(_ShenoraCefPart)" />
     <ShenoraCefSha1 Condition="'$(_ShenoraCefNeeded)' == 'true'" File="$(_ShenoraCefArchive)">
       <Output TaskParameter="Hash" PropertyName="_ShenoraCefActual" />

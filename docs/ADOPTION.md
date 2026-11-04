@@ -323,7 +323,9 @@ there stays the page's. What differs: WinForms'
 (`libcef.dll` 276 MB and 220 locale files 49 MB, at CEF 154). `<ShenoraChromiumLocales>zh-CN;fr</ShenoraChromiumLocales>`
 in the app's project lays out only those locales and en-US (2 MB on Windows); a locale left out falls back to
 en-US, and a name CEF has no locale for is a build warning. Its pages play no H.264, AAC or HEVC, where
-WebView2's do (the media guide). And the app now redistributes Chromium: CEF's `LICENSE.txt` and Chromium's
+WebView2's do (the media guide), unless the app sets `<ShenoraChromiumCodecs>true</ShenoraChromiumCodecs>` (D99):
+the layout then comes from the kit's own CEF build with those codecs, which is patent-licensed, so whether the app
+needs a licence for it is the app's to decide; HEVC plays through the machine's own decoder. And the app now redistributes Chromium: CEF's `LICENSE.txt` and Chromium's
 third-party notices (`CREDITS.html`, in the same CEF build) are the app's to ship, and the layout does not copy
 them. `<ShenoraChromiumPublishFolders>true</ShenoraChromiumPublishFolders>` makes `dotnet publish` tidier (D96):
 `MyApp.exe`, `MyApp.dll` and `chrome_elf.dll` at the root, CEF in `engine\`, the app in `lib\`, and `data\` still

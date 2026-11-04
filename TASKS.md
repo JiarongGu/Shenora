@@ -34,26 +34,22 @@ to look at the glass (there is no `devicectl` screenshot); the simulator answers
 
 ## Open
 
-### 🎞 THE CHROMIUM ENGINE PLAYS H.264, AAC AND HEVC — THE CHECK EXISTS, THE BUILD DOES NOT
+### 🎞 THE CODECS BUILD OF CEF — BUILT AND PUBLISHED BY A PERSON, THEN PINNED (D99)
 
-> CEF's standard build leaves out the proprietary codecs, so a page's ordinary MP4 shows nothing on the engine
-> (`Shenora.Chromium` 0.24.0, CEF 154.0.32). **The check is in and red:** `node devtools/dev.mjs chromium-codecs`
-> (`CodecProbe`) plays an H.264 + AAC clip and an HEVC clip on a real page; today both fail with
-> `DEMUXER_ERROR_NO_SUPPORTED_STREAMS` while its VP9 control plays. **Done when it passes against the engine an
-> app ships.**
+> `ShenoraChromiumCodecs` (D99), its pin slot in `cef.json` and `cef-codecs.yml` are in; **the kit has published
+> no build yet**, so the opt-in answers with a build error saying so. `node devtools/dev.mjs chromium-codecs` is the
+> proof (an H.264 + AAC clip and an HEVC clip on a real page, with a VP9 control; `--standard` shows it red).
+> **Done when it passes with no extra argument.**
 >
-> - **What is missing is a CEF build, per CEF pin and platform:** `automate-git.py` with `is_official_build=true
->   proprietary_codecs=true ffmpeg_branding=Chrome`. FFmpeg is linked into `libcef`, so no one file can be swapped
->   in. A Windows build needs far more disk and hours than a dev machine has (this one: 43 GB free on its largest
->   volume, no `depot_tools`), so it wants a build host, again at every CEF bump (D81).
-> - **The kit's half, once a build exists:** its SHA-1 pinned in `cef.json` beside the standard ones, an opt-in
->   `ShenoraChromiumCodecs` property in `Shenora.Chromium.targets` that fetches it instead (layout unchanged, so an
->   adopter changes no API), and the probe run against it.
-> - **Needs the owner first, because it reopens D51:** a CEF the kit builds and hosts is bytes the kit conveys (D81's
->   own warning), and H.264, AAC and HEVC are patent-licensed (D51: the licence is settled, the patent is not).
->   Who builds, where the asset is published and under what notice is a release act, not this task's.
-> - HEVC is decoded by the machine's own decoder (GPU, or Windows' HEVC extension), so it plays where that exists;
->   say so in the guide when this lands.
+> - **Run `.github/workflows/cef-codecs.yml` on a runner labelled `cef-builder`** (Windows, VS 2022 + SDK, ~200 GB,
+>   hours). ⚠ It has never run: its flags and paths are from CEF's documented build, so read the first log. Then the
+>   steps in its header: try the artifact with `chromium-codecs -p:ShenoraCefDist=…`, pin its SHA-1 under
+>   `cef.json`'s `codecs.distributions`, run `dev.mjs cef-binding`, publish the file to the `codecs.release` release.
+> - **Every CEF bump needs a new build** (the pin moves `codecs.release` and its distributions with it). macOS and
+>   Linux, and arm64, are runners and matrix rows the workflow does not have yet.
+> - **If HEVC alone fails** on a machine with a hardware decoder, the GN arguments for it (`enable_platform_hevc`,
+>   `enable_hevc_parser_and_hw_decoder`) are the first suspect; the probe's own lines say which clip failed how.
+> - A guide line for HEVC's machine decoder, and a `README` mention, when the first build is pinned.
 
 ### 🧭 `Shenora.Chromium` ALONE IS A COMPLETE DESKTOP SHELL — Windows included (D88)
 

@@ -28,6 +28,19 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **`Shenora.Chromium` can play H.264, AAC and HEVC** (D99). CEF's standard build, the engine's default, decodes none
+  of them, so the MP4 of an ordinary site showed nothing. `<ShenoraChromiumCodecs>true</ShenoraChromiumCodecs>` in
+  the app's project fetches the kit's own build of the same CEF, made with Chromium's proprietary codecs, in place of
+  CEF's; the layout, `ChromiumBrowserProcess` and every API are unchanged, and an app that does not ask carries none of
+  it. ⚠ **The codecs are patent-licensed and the build comes with no licence**: the app that opts in decides whether
+  it needs one. HEVC plays through the machine's own decoder. **The kit has published no such build yet**, so the
+  property answers with a build error saying so until `cef.json`'s `codecs` pins one; `node devtools/dev.mjs
+  chromium-codecs` is the check that an engine plays them, and it fails on CEF's standard build.
+
 ## 0.24.0 — 2026-10-23
 
 ### Breaking

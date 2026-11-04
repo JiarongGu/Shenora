@@ -1,0 +1,81 @@
+name: CEF with codecs
+
+# Manual-trigger only, like the release (D5): builds the pinned CEF (src/Shenora.Chromium/cef.json "cef") from source
+# with Chromium's proprietary codecs, for ShenoraChromiumCodecs (D99), and uploads the distribution as a WORKFLOW
+# ARTIFACT. It publishes nothing: the release asset, and the pin that names it, are a person's act (below).
+#
+# ⚠ NOT YET RUN. Its flags and paths come from CEF's documented build (automate-git.py, GN_DEFINES), and the first run is
+# the proof; read its log before trusting a line here. Chromium is built from source, so it needs a runner that is not
+# GitHub's hosted one: Windows, VS 2022 with the "Desktop development with C++" workload and the Windows 11 SDK,
+# ~200 GB free, 32+ GB RAM, git and python 3 on PATH. Register one labelled `cef-builder` (Settings > Actions > Runners).
+# Hours per platform, and again at every CEF bump (D81). Only windows64 is built here; the other platforms, and
+# macOS/Linux runners, are added when an adopter needs them.
+#
+# After a green run, by hand:
+#   1. Download the artifact; extract the build; try it: `node devtools/dev.mjs chromium-codecs -p:ShenoraCefDist=<extracted folder>`
+#      must print `CODEC: RESULT PASS` (HEVC is the machine's own decoder: a machine without one fails it alone).
+#   2. Put the summary's "codecs.distributions" entry into cef.json, run `node devtools/dev.mjs cef-binding`, commit.
+#   3. Publish the file as an asset of the release named by cef.json "codecs.release" in this repository, and re-run
+#      `chromium-codecs` with no extra argument: it now fetches from that release and checks the pin.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: windows64
+    runs-on: [self-hosted, windows, x64, cef-builder]
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the pin
+        id: pin
+        shell: bash
+        run: |
+          cef=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('src/Shenora.Chromium/cef.json','utf8')).cef)")
+          # 154.0.32+g682c378+chromium-154.0.8037.58: CEF's branch is Chromium's build number (8037), its commit the g-hash.
+          echo "cef=$cef" >> "$GITHUB_OUTPUT"
+          echo "commit=$(echo "$cef" | sed -E 's/.*\+g([0-9a-f]+)\+.*/\1/')" >> "$GITHUB_OUTPUT"
+          echo "branch=$(echo "$cef" | sed -E 's/.*chromium-[0-9]+\.[0-9]+\.([0-9]+)\..*/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Build CEF with the codecs
+        shell: bash
+        env:
+          GN_DEFINES: is_official_build=true proprietary_codecs=true ffmpeg_branding=Chrome
+          DEPOT_TOOLS_WIN_TOOLCHAIN: '0'
+          GYP_MSVS_VERSION: '2022'
+        run: |
+          work="$RUNNER_TEMP/cef-build"
+          mkdir -p "$work"
+          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$work/depot_tools"
+          curl -fsSL -o "$work/automate-git.py" https://raw.githubusercontent.com/chromiumembedded/cef/master/tools/automate/automate-git.py
+          export PATH="$work/depot_tools:$PATH"
+          python3 "$work/automate-git.py" --download-dir="$work/download" --depot-tools-dir="$work/depot_tools" \
+            --branch=${{ steps.pin.outputs.branch }} --checkout=${{ steps.pin.outputs.commit }} \
+            --x64-build --no-debug-build --minimal-distrib-only --force-clean
+
+      - name: Collect the distribution and its SHA-1
+        shell: bash
+        run: |
+          out="$RUNNER_TEMP/cef-build/download/chromium/src/cef/binary_distrib"
+          want="cef_binary_${{ steps.pin.outputs.cef }}_windows64_minimal.tar.bz2"
+          # The name CEF gives it is the name the pin carries, or the build is not the pinned one.
+          test -f "$out/$want" || { echo "::error::the build produced $(ls "$out") and not $want"; exit 1; }
+          mkdir -p dist-out && cp "$out/$want" dist-out/
+          sha1=$(sha1sum "dist-out/$want" | cut -d' ' -f1)
+          {
+            echo '### codecs.distributions entry for src/Shenora.Chromium/cef.json'
+            echo '```json'
+            echo "\"windows64\": { \"file\": \"$want\", \"sha1\": \"$sha1\" }"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef-codecs-windows64
+          path: dist-out/*.tar.bz2
+          if-no-files-found: error
+          retention-days: 14

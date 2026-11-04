@@ -38,6 +38,14 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
+## The codecs build (`ShenoraChromiumCodecs`, D99)
+
+An app that sets `ShenoraChromiumCodecs` receives CEF from a release of the kit's own repository, built from the
+same CEF and Chromium sources with `proprietary_codecs=true ffmpeg_branding=Chrome`. Its licences are CEF's and
+Chromium's, with the FFmpeg that Chromium carries (LGPL, in `CREDITS.html`) built with the H.264, AAC and HEVC
+decoders enabled. **H.264, AAC and HEVC are covered by patents licensed through patent pools, and this build comes
+with no patent licence of any kind**: whether the app that ships it needs one is for that app to decide.
+
 ## .NET host (`nethost`)
 
 The shim, `tools/win-x64/native/shenora_chromium_shim.dll`, links the .NET runtime's static `libnethost` (from
