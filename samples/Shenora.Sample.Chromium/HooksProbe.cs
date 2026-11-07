@@ -26,6 +26,11 @@ namespace Shenora.Sample.Chromium;
 /// raises <c>MultipleDownloads</c> at the permission hook, which allows it in <c>auto</c> (both files saved) and declines it in
 /// <c>autodeny</c> (neither). ⚠ Delete the app's <c>data</c> folder between runs: an allow is kept in the profile, and the prompt
 /// is then never raised.</item>
+/// <item><c>SHENORA_SAMPLE_HOOKS_CERT=allow</c> or <c>deny</c> starts a loopback HTTPS server with a certificate of its own, which the
+/// page fetches (a sub-resource: it must fail, with no <c>CERTIFICATE</c> line) and then navigates itself to once it is done: the
+/// certificate hook is asked, and in <c>allow</c> it pins the server's SHA-256 (<c>pinned True</c>) and the server must report a request
+/// served, while in <c>deny</c> it must report none. ⚠ The page is then the server's: in this mode read the <c>RENDERER</c> and
+/// <c>RELOAD</c> lines as the reload of that page, not the probe's.</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -91,6 +96,21 @@ internal static class HooksProbe
         if (request.Kinds is ChromiumPermissionKind.MultipleDownloads && Auto == "autodeny") return false;
         if (request.Kinds is not (ChromiumPermissionKind.Notifications or ChromiumPermissionKind.MultipleDownloads)) return false;
         request.Allow = true;
+        return true;
+    };
+
+    // "allow" and "deny": the page also fetches a local HTTPS server whose certificate no authority signed, which the certificate hook
+    // allows when the certificate is the server's own (pinned by its SHA-256) and declines in "deny".
+    private static readonly string? Cert = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CERT") is "allow" or "deny"
+        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CERT") : null;
+    private static readonly Lazy<CertServer?> Server = new(() => On && Cert is not null ? new CertServer(Log) : null);
+
+    public static Func<ChromiumCertificateError, bool>? OnCertificateError => !On || Cert is null ? null : error =>
+    {
+        var pinned = error.Sha256 == Server.Value?.Sha256;
+        Log($"CERTIFICATE hook: {error.ErrorName} ({error.ErrorCode}) for {error.Url}, subject '{error.Subject}', issuer '{error.Issuer}', sha256 {error.Sha256}, pinned {pinned}");
+        if (Cert == "deny" || !pinned) return false;
+        error.Allow = true;
         return true;
     };
 
@@ -227,7 +247,8 @@ internal static class HooksProbe
         lock (Done) File.AppendAllText(LogPath, $"{DateTime.Now:HH:mm:ss.fff} HOOKS: {line}{Environment.NewLine}");
     }
 
-    private static string PageHtml => PageTemplate.Replace("__AUTO__", Auto is null ? "false" : "true");
+    private static string PageHtml => PageTemplate.Replace("__AUTO__", Auto is null ? "false" : "true")
+        .Replace("__CERTPORT__", (Server.Value?.Port ?? 0).ToString());
 
     private const string PageTemplate = """
         <!doctype html><meta charset="utf-8"><title>hooks probe</title>
@@ -262,13 +283,68 @@ internal static class HooksProbe
               await new Promise(resolve => setTimeout(resolve, 2500));
             }
           }
+          // A fetch of the server is a sub-resource: kept for the end, as the cert step below is the main frame's navigation.
+          if (__CERTPORT__) await fetch('https://127.0.0.1:__CERTPORT__/ping', { mode: 'no-cors' }).then(() => say('subresource', 'loaded'), e => say('subresource', 'failed ' + e.message));
           say('notification', await Notification.requestPermission());
           await new Promise(resolve => navigator.geolocation.getCurrentPosition(
             () => { say('geolocation', 'granted'); resolve(); }, e => { say('geolocation', 'denied ' + e.code); resolve(); }, { timeout: 5000 }));
           say('done', '1');
+          // The page itself goes to the server: the one request Chromium asks the certificate hook about.
+          if (__CERTPORT__) { await new Promise(resolve => setTimeout(resolve, 300)); location.href = 'https://127.0.0.1:__CERTPORT__/page'; }
         })();
         </script>
         """;
+
+    /// <summary>A loopback HTTPS server whose certificate is its own: no authority signed it, so Chromium meets a certificate error.</summary>
+    private sealed class CertServer
+    {
+        private readonly System.Net.Sockets.TcpListener _listener = new(System.Net.IPAddress.Loopback, 0);
+
+        public CertServer(Action<string> log)
+        {
+            using var key = System.Security.Cryptography.RSA.Create(2048);
+            var request = new System.Security.Cryptography.X509Certificates.CertificateRequest("CN=hooks-probe", key,
+                System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+            var names = new System.Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder();
+            names.AddIpAddress(System.Net.IPAddress.Loopback);
+            request.CertificateExtensions.Add(names.Build());
+            using var made = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+            // An ephemeral key cannot back a TLS server on Windows: round-trip it through a PFX.
+            var certificate = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12(
+                made.Export(System.Security.Cryptography.X509Certificates.X509ContentType.Pfx), null);
+            Sha256 = Convert.ToHexString(certificate.GetCertHash(System.Security.Cryptography.HashAlgorithmName.SHA256)).ToLowerInvariant();
+            _listener.Start();
+            Port = ((System.Net.IPEndPoint)_listener.LocalEndpoint).Port;
+            log($"CERT server on {Port}, sha256 {Sha256}");
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    var client = await _listener.AcceptTcpClientAsync();
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            using var tcp = client;
+                            using var tls = new System.Net.Security.SslStream(tcp.GetStream());
+                            await tls.AuthenticateAsServerAsync(certificate);
+                            var buffer = new byte[4096];
+                            var read = await tls.ReadAsync(buffer);
+                            log($"CERT server: served a request ({read} bytes) over TLS");
+                            const string body = "<title>cert page</title><p>served over TLS";
+                            await tls.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"));
+                        }
+                        catch (Exception ex) { log($"CERT server: the connection ended before a request ({ex.GetType().Name}: {ex.Message})"); }
+                    });
+                }
+            });
+        }
+
+        public int Port { get; }
+
+        /// <summary>The certificate's SHA-256 as 64 lowercase hex digits: what the hook pins.</summary>
+        public string Sha256 { get; }
+    }
 
     /// <summary>A body that arrives in 12 chunks, 400 ms apart, with no announced length: a download long enough to be paused.</summary>
     private sealed class SlowBody : Stream

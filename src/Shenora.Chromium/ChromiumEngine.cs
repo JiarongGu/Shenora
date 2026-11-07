@@ -90,6 +90,12 @@ public sealed class ChromiumEngineOptions
     /// <see cref="ChromiumHostOptions.OnProcessFailed"/>. CEF's UI thread.
     /// </summary>
     public Func<ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
+
+    /// <summary>
+    /// Asked when a page itself navigates to an address with a certificate error: the same hook, and the same contract, as
+    /// <see cref="ChromiumHostOptions.OnCertificateError"/>. CEF's UI thread: answer at once.
+    /// </summary>
+    public Func<ChromiumCertificateError, bool>? OnCertificateError { get; init; }
 }
 
 /// <summary>

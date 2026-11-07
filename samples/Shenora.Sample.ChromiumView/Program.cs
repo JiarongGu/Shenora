@@ -32,6 +32,7 @@ internal static class Program
             OnDownloadProgress = HooksProbe.OnDownloadProgress,
             OnPermissionRequested = HooksProbe.OnPermissionRequested,
             OnProcessFailed = HooksProbe.OnProcessFailed,
+            OnCertificateError = HooksProbe.OnCertificateError,
         });
         Form? form = null;
         builder.UseWindows(new WindowsHostOptions

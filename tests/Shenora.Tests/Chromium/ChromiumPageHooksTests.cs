@@ -11,8 +11,8 @@ public class ChromiumPageHooksTests
 {
     private static ChromiumPageHooks Hooks(Func<ChromiumDownloadRequest, bool>? download = null,
         Func<ChromiumPermissionRequest, bool>? permission = null, Func<ChromiumProcessReport, bool>? failed = null,
-        Action<ChromiumDownloadProgress>? progress = null) =>
-        new(download, permission, failed, progress);
+        Action<ChromiumDownloadProgress>? progress = null, Func<ChromiumCertificateError, bool>? certificate = null) =>
+        new(download, permission, failed, progress, certificate);
 
     [Fact]
     public void No_hook_set_means_no_hooks() =>
@@ -24,6 +24,8 @@ public class ChromiumPageHooksTests
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnDownloadStarting = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnPermissionRequested = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnProcessFailed = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnCertificateError = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnCertificateError = _ => false }));
     }
 
     [Fact]
@@ -201,6 +203,49 @@ public class ChromiumPageHooksTests
     [Fact]
     public void Without_a_renderer_hook_the_reload_stands() =>
         Assert.False(Hooks(download: _ => false).ProcessFailed(cef_termination_status_t.TS_PROCESS_CRASHED, 0, null));
+
+    [Fact]
+    public void Only_a_certificate_hook_has_CEF_asked()
+    {
+        Assert.True(Hooks(certificate: _ => false).HandlesCertificates);
+        Assert.False(Hooks(download: _ => false, permission: _ => false).HandlesCertificates);
+    }
+
+    [Fact]
+    public void A_certificate_error_is_allowed_only_when_the_app_handled_it_and_set_Allow()
+    {
+        ChromiumCertificateError? seen = null;
+        var hooks = Hooks(certificate: e => { seen = e; e.Allow = true; return true; });
+
+        Assert.True(hooks.CertificateError("https://10.0.0.5/", -202, "device", "device", "ab12", null));
+        Assert.Equal(("https://10.0.0.5/", -202, "ERR_CERT_AUTHORITY_INVALID", "device", "device", "ab12"),
+            (seen!.Url, seen.ErrorCode, seen.ErrorName, seen.Subject, seen.Issuer, seen.Sha256));
+    }
+
+    [Theory]
+    [InlineData(true, false)]    // handled, Allow left false: the request fails
+    [InlineData(false, true)]    // Allow set but not handled: the app declined, so the request fails
+    [InlineData(false, false)]
+    public void A_certificate_error_the_app_did_not_clearly_allow_fails(bool handled, bool allow) =>
+        Assert.False(Hooks(certificate: e => { e.Allow = allow; return handled; }).CertificateError("https://h/", -200, "", "", "", null));
+
+    [Fact]
+    public void A_certificate_hook_that_throws_fails_the_request()
+    {
+        var hooks = Hooks(certificate: e => { e.Allow = true; throw new InvalidOperationException("app bug"); });
+        Assert.False(hooks.CertificateError("https://h/", -200, "", "", "", null));
+    }
+
+    [Fact]
+    public void Without_a_certificate_hook_the_request_fails() =>
+        Assert.False(Hooks(download: _ => false).CertificateError("https://h/", -202, "", "", "", null));
+
+    [Theory]
+    [InlineData(-200, "ERR_CERT_COMMON_NAME_INVALID")]
+    [InlineData(-202, "ERR_CERT_AUTHORITY_INVALID")]
+    [InlineData(-99999, "ERR_-99999")]    // a code this CEF has no name for is still said
+    public void An_error_code_is_named_from_CEFs_list(int code, string name) =>
+        Assert.Equal(name, ChromiumPageHooks.ErrorName(code));
 
     [Theory]
     [InlineData((int)cef_termination_status_t.TS_ABNORMAL_TERMINATION, ChromiumProcessStatus.Abnormal)]

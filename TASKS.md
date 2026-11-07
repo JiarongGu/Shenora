@@ -113,6 +113,12 @@ The shell runs on Windows and macOS from the published package, and on Linux fro
 package's Linux helper has not run: see below); how it works is `docs/design/shells.md`, and why is D81–D96. What
 is left is mostly measurement that needs hardware or a person.
 
+**Every desktop OS**
+- [ ] **Two more asks of a page the app cannot answer yet.** HTTP authentication (`get_auth_credentials`: a device or proxy
+  that wants a user name and password; the shell answers none today) and the page's own file dialog (`on_file_dialog`).
+  Each as a hook beside `OnCertificateError`, measured on the HooksProbe against a loopback server first. A page's sub-resource
+  with a certificate error is not asked about by CEF at all (measured), so no hook can cover it.
+
 **Windows**
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out
   an ARM64 launcher, shim and `libcef.dll`; running it needs ARM64 hardware or a `windows-11-arm` CI runner. ⚠ The

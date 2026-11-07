@@ -83,6 +83,7 @@ internal static class Program
             OnDownloadProgress = HooksProbe.OnDownloadProgress,
             OnPermissionRequested = HooksProbe.OnPermissionRequested,
             OnProcessFailed = HooksProbe.OnProcessFailed,
+            OnCertificateError = HooksProbe.OnCertificateError,
             // A splash in the window's render area while the page loads, drawn by the OS rather than Chromium: a skeleton of
             // the page's first screen in its own colours, so the lift changes rows into content without moving anything.
             // The frame stays the window's: on this frameless window the splash's title strip (the page's title bar's

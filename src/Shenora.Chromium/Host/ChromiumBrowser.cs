@@ -630,6 +630,59 @@ internal sealed unsafe class ChromiumBrowser
             Struct->get_resource_request_handler = &GetResourceRequestHandler;
             Struct->on_render_process_terminated = &OnRendererGone;
             Struct->on_before_browse = &BeforeBrowse;
+            // Only with the app's hook: with none CEF is not asked and fails the request itself.
+            if (owner._hooks is { HandlesCertificates: true }) Struct->on_certificate_error = &CertificateError;
+        }
+
+        // UI thread. Returning 0 fails the request; 1 hands CEF's callback to us, answered before returning. No callback: the error
+        // cannot be overridden, and the app is not asked.
+        [UnmanagedCallersOnly]
+        private static int CertificateError(_cef_request_handler_t* self, _cef_browser_t* browser, cef_errorcode_t error, _cef_string_utf16_t* requestUrl,
+            _cef_sslinfo_t* sslInfo, _cef_callback_t* callback)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var s = new CefRef<_cef_sslinfo_t>(sslInfo);
+            using var c = new CefRef<_cef_callback_t>(callback);
+            var owner = From<Requests>(self)._owner;
+            if (callback == null || owner._hooks is null) return 0;
+            var url = CefStrings.Read(requestUrl);
+            string subject = string.Empty, issuer = string.Empty, sha256 = string.Empty;
+            try
+            {
+                if (sslInfo != null)
+                {
+                    using var certificate = new CefRef<_cef_x509_certificate_t>(sslInfo->get_x509_certificate(sslInfo));
+                    if (!certificate.IsNull)
+                    {
+                        subject = DisplayName(certificate.Ptr->get_subject(certificate.Ptr));
+                        issuer = DisplayName(certificate.Ptr->get_issuer(certificate.Ptr));
+                        sha256 = Fingerprint(certificate.Ptr->get_derencoded(certificate.Ptr));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppCallback.Log(owner.Log, () => "[Shenora.Chromium] Reading a server certificate failed; the app is asked without it", LogLevel.Warning, ex);
+            }
+            var allow = owner._hooks.CertificateError(url, (int)error, subject, issuer, sha256, owner.Log);
+            if (allow) callback->cont(callback); else callback->cancel(callback);
+            AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': {(allow ? "allowed" : "failed")} a navigation with a certificate error ({ChromiumPageHooks.ErrorName((int)error)})");
+            return 1;
+        }
+
+        private static string DisplayName(_cef_x509_cert_principal_t* principal)
+        {
+            using var held = new CefRef<_cef_x509_cert_principal_t>(principal);
+            return held.IsNull ? string.Empty : CefStrings.TakeUserFree(principal->get_display_name(principal));
+        }
+
+        private static string Fingerprint(_cef_binary_value_t* der)
+        {
+            using var held = new CefRef<_cef_binary_value_t>(der);
+            if (held.IsNull) return string.Empty;
+            var bytes = new byte[(int)der->get_size(der)];
+            fixed (byte* data = bytes) der->get_data(der, data, (nuint)bytes.Length, 0);
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
         }
 
         // Answering 1 cancels the navigation.

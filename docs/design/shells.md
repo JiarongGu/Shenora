@@ -534,7 +534,7 @@ waits 500 ms after a profile's last release before it makes another context for 
 because CEF reports no end of the teardown; a pool's context, made on the UI thread, does not wait.
 
 **The app's hooks on what a window's page asks of the shell** (`ChromiumHostOptions.OnDownloadStarting`,
-`OnPermissionRequested`, `OnProcessFailed`, and `OnDownloadProgress`, which only watches; D84's defaults stand where an app sets none, or answers false). Run for real
+`OnPermissionRequested`, `OnProcessFailed`, `OnCertificateError`, and `OnDownloadProgress`, which only watches; D84's defaults stand where an app sets none, or answers false). Run for real
 (`SHENORA_SAMPLE_HOOKS_PROBE=1` and `2`, Chromium sample, Windows, a click posted to the window starting each download):
 a download the hook gave a path was written there with its content, one handled with no path and one declined were
 cancelled; the hook's grant of notifications settled the page's promise as `granted`, and a request it declined got the
@@ -567,7 +567,15 @@ reach the same `ChromiumBrowser` handlers through `ChromiumPages`. Run for real 
 page's `Chrome_RenderWidgetHostHWND` child, which a form's own handle is not): every line the shell's windows gave came out
 the same, in `1`, `2`, `pause` and `cancel` (the saved download `Complete`, the other two `Canceled` and absent,
 notifications `granted`, the position denied, a pause held and resumed to all 196608 bytes, a cancel with no file, the renderer
-hook reached as `Crashed`, the page reloaded once only when it answered false). Build it like the shell sample
+hook reached as `Crashed`, the page reloaded once only when it answered false).
+`OnCertificateError` (CEF's `on_certificate_error`, given to CEF only when the hook is set) was run the same way, on both samples
+(`SHENORA_SAMPLE_HOOKS_CERT=allow` or `deny`, a loopback TLS server with a certificate of its own, whose SHA-256 the hook compares
+with the one it is given): the page's navigation to it reached the hook as `ERR_CERT_AUTHORITY_INVALID` with the subject, the issuer
+and the server certificate's own fingerprint; allowed, the server saw a request over TLS, declined it saw none, and the hook was asked
+again on the next navigation. ⚠ CEF asks only about a navigation of the page: a `fetch` of the same server failed with no call to
+the hook. ⚠ After an allow the host's later requests (a favicon) reached the server with no second call: Chromium keeps the allow for
+the host for the run. Not run: an error Chromium refuses to let an app override (it passes no callback, and the hook is skipped).
+Build it like the shell sample
 (`ShenoraChromiumLayout` on, the app laid out beside CEF's launcher) and run `Shenora.Sample.ChromiumView.exe` with the same
 variables. The probe posts clicks until the page has counted three: its first posted click was lost in most runs, not the
 hook's doing (the page counted two of three with the hook off too), which is why a fixed three showed two.
