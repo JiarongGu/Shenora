@@ -39,6 +39,12 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **The page player's position follows a speed the element changed itself.** `MediaPlayer.Status` carried a playing
+  position forward at the rate the host asked for, so a speed picked from the element's own controls, or one Chromium
+  refused (outside 0.0625–16), left it running at the wrong one. `useMediaPlayer` now sends the element's own
+  `playbackRate` as `rate` (a new optional field of `PLAYER_REPORT`) with every report and on `ratechange`, and the
+  position runs at it; `Status.Rate` stays the rate asked for. A page that reports by hand may add `rate`; one that does
+  not is carried at the rate asked for, as before.
 - **A frameless Chromium window's cover draws its caption glyphs dimmed when the window is not the foreground.** It always
   drew the active ones, so a window that opened behind another showed bright glyphs until the page painted.
 

@@ -523,7 +523,9 @@ window.Resumed += async (_, _) => { try { await transfer.ToForegroundAsync(); } 
   `MediaPlayer.Status` carries a playing position forward between reports, and the hidden-time report corrects
   it — even when it lands after `Stopped`, while the native player opens. A page reporting by hand should send
   that report too, and report the platform's pause it drops as the `Playing` the host holds, at where the element
-  stopped, with `hidden: true`: the host holds that position, where carried forward it runs on past the pause.
+  stopped, with `hidden: true`: the host holds that position, where carried forward it runs on past the pause. Every
+  report carries the element's own `playbackRate` as `rate`, and `ratechange` sends one: the position runs at that,
+  so a speed picked from the element's controls is followed, while `Status.Rate` stays the rate the host asked for.
 - **A native player paused while you were away comes back paused** (`Paused`) — from the lock screen's controls,
   or by the system (a call, another app's audio), which the iOS player reports as the pause it is.
 - **The lock screen and Control Center follow the playhead when you pass the session**

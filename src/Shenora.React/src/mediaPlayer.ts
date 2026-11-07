@@ -88,6 +88,12 @@ export interface MediaPlayerReport {
    * reports again. Never set while a hidden element plays on — a desktop window — whose position must keep moving.
    */
   hidden?: boolean;
+  /**
+   * The element's own `playbackRate`, sent with every report: a speed picked from the element's own controls, or one
+   * the engine refused (outside 0.0625–16), is then the rate the host carries a playing position forward at. The
+   * rate the host asked for (`IMediaPlayer.SetRateAsync`) stays what its status calls `Rate`.
+   */
+  rate?: number;
 }
 
 /** Inputs for {@link useMediaPlayer}. */
@@ -161,6 +167,7 @@ export function useMediaPlayer(
         state,
         position: Number.isFinite(element.currentTime) ? element.currentTime : 0,
         duration,
+        ...(element.playbackRate > 0 && Number.isFinite(element.playbackRate) ? { rate: element.playbackRate } : {}),
         ...(error ? { error } : {}),
         ...(asHidden ? { hidden: true } : {}),
       };
@@ -278,6 +285,11 @@ export function useMediaPlayer(
       ['pause', onPause],
       ['waiting', () => report('Buffering')],
       ['seeked', () => report(element.paused ? 'Paused' : 'Playing')],
+      // The element's own rate changed (its controls, or a load resetting it): said as the state the host holds, so
+      // only the rate is new. Nothing before the host has heard a state, which an open would take for the first.
+      ['ratechange', () => {
+        if (playback(shown)) report(shown!, undefined, hidden && pausedThisHide);
+      }],
       ['ended', () => report('Ended')],
       ['error', () => report('Failed', mediaErrorReason(element))],
     ];

@@ -237,6 +237,32 @@ public class MediaPlayerTests
         Assert.Equal(TimeSpan.FromSeconds(14), player.Status.Position);
     }
 
+    /// <summary>A speed the element changed itself (its own controls, or one the engine refused) is what the page's report
+    /// names, and the position runs at that until a report names another or none; the rate asked for is untouched.</summary>
+    [Fact]
+    public async Task The_elements_own_rate_is_what_the_position_runs_at_until_a_report_drops_it()
+    {
+        var (player, clock) = Estimating();
+        await player.SetRateAsync(4.0);                  // asked; the element refuses it and reports its own
+        player.ApplyReport(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(10) }, held: false, elementRate: 1.0);
+        clock.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(TimeSpan.FromSeconds(12), player.Status.Position);
+        Assert.Equal(4.0, player.Status.Rate);
+
+        player.ApplyReport(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(12) }, held: false, elementRate: 0.5);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        Assert.Equal(TimeSpan.FromSeconds(13), player.Status.Position);
+
+        // Named none, or nonsense: back to the rate asked for.
+        foreach (double? unusable in new double?[] { null, 0, -1, double.NaN, double.PositiveInfinity })
+        {
+            player.ApplyReport(new MediaPlayerStatus { State = MediaPlayerState.Playing, Position = TimeSpan.FromSeconds(20) }, held: false, elementRate: unusable);
+            clock.Advance(TimeSpan.FromSeconds(1));
+            Assert.Equal(TimeSpan.FromSeconds(24), player.Status.Position);
+        }
+    }
+
     /// <summary>The page reports <c>ended</c> itself; the estimate only stops at the duration, so a reader
     /// never sees a position past the end and never hears an end that did not happen.</summary>
     [Fact]

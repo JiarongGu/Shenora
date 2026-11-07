@@ -243,15 +243,6 @@ tried.
 - [ ] On a Mac, with an interactive session's window showing, close the main window from its title bar: it stays; and
   the app's own close (`ChromiumWindows.Close("main")`, the tray's Exit) still ends it.
 
-### 🟡 What the page player's carried-forward position cannot see
-
-`MediaPlayer.Status` carries a playing position forward from the page's last report (`docs/design/mobile-shells.md`).
-
-- [ ] **A rate the element changes by itself is not reported**: a speed picked from the element's own controls, or
-  one Chromium refuses (outside 0.0625–16). The position is then carried forward at the rate the host asked for.
-  The fix is the hook reporting `ratechange` with `element.playbackRate` (a new optional report field), the estimate
-  running at that and `Status.Rate` staying the rate asked for.
-
 ### 📱 WHAT IS LEFT ON ANDROID NEEDS A PHONE'S ENCODER, NOT AN EMULATOR'S
 
 The segment tier is answered on all three shells (`docs/design/media.md`), and the encoder's ARITHMETIC is
