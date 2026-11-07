@@ -26,7 +26,7 @@ public sealed class NotificationPump : IDisposable
     private readonly ConcurrentDictionary<string, byte> _saidOnce = new();
     private IDisposable? _busSubscription;
     private volatile bool _open;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     /// <summary>
     /// Construct BEFORE the base's client can produce anything — buffering starts HERE, not at
@@ -79,11 +79,13 @@ public sealed class NotificationPump : IDisposable
     /// <summary>
     /// Queue a notification for the next drained batch (fire-and-forget; delivery starts once
     /// <see cref="Open"/> has been called). Callable from any thread. Apps using
-    /// <see cref="NotificationPumpOptions.EventBus"/> rarely call this directly.
+    /// <see cref="NotificationPumpOptions.EventBus"/> rarely call this directly. After
+    /// <see cref="Dispose"/> it does nothing: nothing drains a disposed pump, so a queued one would only be memory.
     /// </summary>
     public void Enqueue(IpcNotification notification)
     {
         ArgumentNullException.ThrowIfNull(notification);
+        if (_disposed) return;
 
         // Applied HERE so a direct Enqueue and a forwarded bus event are the same call site.
         // ⚠ A throwing filter FAILS CLOSED — delivering anyway is the more dangerous direction.

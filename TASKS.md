@@ -120,9 +120,6 @@ package's Linux helper has not run: see below); how it works is `docs/design/she
 is left is mostly measurement that needs hardware or a person.
 
 **Windows**
-- [ ] **The app's icon on the D86 browser process's windows, and after a navigation.** Same probe
-  (`input icons --proc <App>` while `ChromiumBrowserProcess` runs, and again after the page navigates); only the
-  shell's main window was measured. Chrome's own tabbed windows may send `WM_SETICON` themselves.
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out
   an ARM64 launcher, shim and `libcef.dll`; running it needs ARM64 hardware or a `windows-11-arm` CI runner. ⚠ The
   release job builds the ARM64 shim (the 0.23.2 package's is PE machine `0xaa64`); it has never been loaded.
@@ -209,12 +206,9 @@ The bridges' gate wiring is now pinned (Chromium's `DocumentStarted`, WebView2's
 the re-handshake after a reload, the progress throttle and `configureBridge`'s rejection of the old default's work.
 Still uncovered:
 
-- [ ] **`MobileIpcBridge` has no test.** It is MAUI source compiled into the mobile packages, which the test project
-  cannot reference; its gate never closes on a document change (by design). A MAUI-free seam or a device probe.
-- [ ] **A request in flight across a reload, on the host.** Nothing cancels it on navigation (only disposing the bridge
-  does), and its response goes into the new document, whose client drops the unknown id. Pinned on the client only.
-- [ ] **`NotificationPump.Enqueue` after dispose still queues** (no disposed check); bounded and never drained, so
-  memory only. WebView2's and the mobile bridge's `SendNotification` reach it; Chromium's `Notify` checks first.
+- [ ] **`MobileIpcBridge`'s control wiring is proven on a device only.** Everything but the `HybridWebView` is in
+  `MobileIpcCore`, which `MobileIpcCoreTests` compiles; what is left is the `RawMessageReceived` hook, the dispatcher
+  timer and the handler release, and its gate never closes on a document change (by design). A device probe.
 
 ### 🔴 `verify` cannot pass since the knowledge moved to `.agents/`
 

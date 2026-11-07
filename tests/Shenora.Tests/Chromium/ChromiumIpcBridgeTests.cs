@@ -333,6 +333,39 @@ public class ChromiumIpcBridgeTests
         Assert.Contains(host.Pushed, json => json.Contains("DURING_RELOAD", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// A request in flight when the page navigates is NOT cancelled: its handler runs to the end and its response is
+    /// pushed, into the new document, whose client drops an id it never sent. Only disposing the bridge cancels
+    /// (D23's lifetime is the caller's, not the page's), and a cancelled handler would abort host-side effects — a save
+    /// — for a page that was already gone, which the mobile shell measured as a created, empty file.
+    /// </summary>
+    [Fact]
+    public async Task A_request_in_flight_across_a_new_document_is_not_cancelled_and_still_answers()
+    {
+        var host = new FakeHost();
+        var dispatcher = new Ipc.ParkedDispatcher();
+        var bridge = new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = dispatcher },
+            host.Dispatcher, host.Pushed.Add, host.Schedule);
+        bridge.Start();
+        host.RunUi();
+        bridge.Incoming(Request(IpcHostBridge.HandshakeModule, IpcHostBridge.HandshakeType));
+        await SettleAsync(host);
+        host.Pushed.Clear();
+
+        bridge.Incoming(Request("TEST", "SLOW"));
+        host.RunUi();   // dispatched, parked
+        bridge.DocumentReplaced();
+        host.RunUi();
+
+        Assert.False(dispatcher.Seen.IsCancellationRequested);
+        Assert.False(bridge.IsClientReady);
+
+        dispatcher.Gate.SetResult(IpcResponse.CreateSuccess("slow-1", new { done = true }));
+        await SettleAsync(host);
+
+        Assert.Contains(host.Pushed, json => json.Contains("slow-1", StringComparison.Ordinal));
+    }
+
     /// <summary>A dead renderer closes the gate as a new document does: a flush would drain into nothing.</summary>
     [Fact]
     public async Task A_dead_renderer_closes_the_gate_until_the_page_handshakes_again()

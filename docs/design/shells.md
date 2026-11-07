@@ -95,8 +95,11 @@ the parent's level, because CEF starts it with `--service-sandbox-type=none` on 
 (`chrome_app_icon_id`), which registers Chromium's window class with it instead of its own logo. Measured on the
 Chromium sample (`dev.mjs input icons`): the class icon (both sizes) changes from Chromium's to the app's while
 `WM_GETICON` stays empty, and the taskbar, Alt+Tab and the tray show the app's icon (seen by eye), Windows falling
-back to the class icon. Every top-level window of the process is of that class, and the D86 browser process runs the same exe through
-the same start; neither was measured separately, and Chrome's own windows may set an icon of their own. An app with no `ApplicationIcon`, or run as `dotnet <App>.App.dll`, keeps Chromium's.
+back to the class icon. Every top-level window of the process is of that class, and so are the D86 browser process's, which runs the same exe
+through the same start: measured on a probe laid out as an app is (`input icons --proc <App>`, CEF 154.0.32, 2026-11-07), its
+first window and a second one made over the debugging port (`Target.createTarget` with `newWindow`) both show the app's
+class icon at both sizes (the same dominant colour as the exe's own) with `WM_GETICON` empty, and the first still did
+after a `Page.navigate` (same icon handles). Chromium's own windows set no icon of their own there. An app with no `ApplicationIcon`, or run as `dotnet <App>.App.dll`, keeps Chromium's.
 
 **The page finds its transport because the shell marks the HTML it serves** (D36): a document from the bundle or from
 the app's own pipeline goes out marked (`ChromiumTransport.MarkHtml`), and in development the shell fetches the dev
