@@ -206,6 +206,20 @@ Two gates still assume the old layout. `knowledge check` crashes: `devtools/scri
 the index is the generated `.agents/INDEX.md`. `decision-audit.mjs:297` still scans `.claude/rules|knowledge`.
 Proof: `verify` is green in a worktree.
 
+### 🟡 Code that says one thing and does another, found reading the docs against it
+
+- [ ] **`UseFileSystem` cannot turn the update journal off.** `FileSystemExtensions.cs:64` does `resolved.Journal ??= new
+  FileUpdateJournal(...)`, so `x.Journal = null` still gets a journal, while `FileUpdateQueueOptions.Journal`'s `///`
+  (`FileUpdateQueue.cs:26`) says null means in-memory rollback only. Either give the option an explicit opt-out, or correct
+  the `///`; the guide (`docs/guides/file-updates.md`) now says only what the code does.
+- [ ] **Three comments are stale.** `Shenora.slnx:19` calls `Shenora.Chromium` "Not packable yet" (it is packable and
+  packed), `Shenora.slnx:30` says `Shenora.Sample.Logic` is "Core + Ipc only", and `Shenora.iOS.csproj:3-8` says the two
+  mobile shells "differ in nothing but their TFM" while `Services/` already holds each one's platform code.
+  `MobileWindowOrientation.cs:28` cites "(D39/D36)" for the capability-absent rule; only D36 says that.
+- [ ] **`docs/DECISIONS.md`'s header table says "six packable projects" and leaves out
+  `Shenora.Chromium.Codecs.win-x64`**, which D99 puts outside `src/` and outside the `doctor` count. The table claims to be
+  the whole package set; it is generated or protected text, so it needs the owner's wording.
+
 ### 🟡 The CLI package's vitest run failed once on "Channel closed"
 
 Once in five `verify` runs (2026-10-01), `vitest (cli package)` ended on an unhandled rejection from its worker pool,
