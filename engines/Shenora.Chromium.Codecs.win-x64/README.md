@@ -16,7 +16,7 @@ In an app with `<RuntimeIdentifier>win-x64</RuntimeIdentifier>`, the layout (the
 app) then comes from this package, with no download at build time. Nothing else changes: the same `ChromiumBrowserProcess`,
 the same layout. An app that does not reference it gets CEF's standard engine, which plays none of these codecs.
 
-- **Its version is CEF's**, not the kit's: pair it with a `Shenora.Chromium` that pins the same CEF (0.24.0 pins 154.0.32).
+- **Its version is CEF's**, not the kit's: pair it with a `Shenora.Chromium` that pins the same CEF (0.25.0 pins 154.0.32).
   A rebuild of the same CEF with other flags is a fourth number.
 - **Windows x64 only.** An app built for another RuntimeIdentifier is refused with a build error naming the mismatch.
 - **HEVC plays through the machine's own decoder** (a GPU, or Windows' HEVC Video Extensions), and a GPU's decoder refuses a

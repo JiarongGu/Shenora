@@ -261,6 +261,11 @@ while the rest of the app is composed and the first frame comes sooner (D87): ca
 app. With a splash card, Chromium starts after the card instead, so the card is not held up by Chromium's start (D92). `samples/Shenora.Sample.Chromium` is a whole `UseChromium` app for all three OSes, and
 `docs/getting-started.md` (2b) walks through it.
 
+CEF's standard engine decodes no H.264, AAC or HEVC. An app that must play them references
+`Shenora.Chromium.Codecs.win-x64` beside `Shenora.Chromium` (D99): the kit's build of the same CEF with those codecs,
+whose bytes the layout then comes from instead of the download. Windows x64 only; its version is CEF's, not the
+kit's; it comes with no patent licence.
+
 ### `@shenora/react` — the client half
 
 Bridge, event bus, store, hooks. Built and tested against the LATEST React (19); 18 is supported and the floor is

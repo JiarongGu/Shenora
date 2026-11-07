@@ -10,10 +10,12 @@ Shenora.Mobile/          ← you are here. Source only.
   Ipc/                   MobileIpcBridge — the HybridWebView transport; MobileIpcCore, the MAUI-free half a test compiles
   Threading/             MobileUiDispatcher — the ONE UI-marshalling owner on this shell
   Services/              the Core shell contracts MAUI Essentials can honour
-  Hosting/               UseAndroid(...) / UseIOS(...) — the DI registration
+  WebView/               the interceptor, safe-area insets, the media surface, page transparency
+  Hosting/               UseAndroid(...) / UseIOS(...) — the DI registration, and the lifecycle
 
-Shenora.Android/         ← packs. net10.0-android. Platforms/ = Android-only code.
-Shenora.iOS/             ← packs. net10.0-ios. Platforms/ = iOS-only code. macOS build host required.
+Shenora.Android/         ← packs. net10.0-android. Services/ = Android-only code.
+Shenora.iOS/             ← packs. net10.0-ios. Services/ = iOS-only code. Builds on Windows as a library;
+                           a Mac is needed to produce and run an app.
 ```
 
 ## Why two packages and not one multi-targeted package
@@ -32,16 +34,13 @@ and the types are identical because the source is.
 
 ## Where divergence goes
 
-**In `Platforms/`, never behind an `#if`.** The MAUI SDK includes `Platforms/<Platform>/**` only for
-the matching TFM, so the same type can have a different implementation per platform with no
-preprocessor at all. Proven the hard way: an iOS build compiled cleanly while
-`Platforms/Android/MainActivity.cs` — which references `Android.App` and cannot compile for iOS — sat
-in the same project.
+**In `Shenora.Android/Services/` or `Shenora.iOS/Services/`, never behind an `#if`.** Each shell is a
+single-TFM project, so a file in its own project is compiled for that platform alone and the same
+contract can have a different implementation per platform with no preprocessor at all. There is no
+`Platforms/<Platform>/` folder: that is the MAUI SDK's convention for a project that multi-targets, and
+these do not.
 
-Today there is **zero** divergent code. The first is expected to be the save picker: Android needs raw
-SAF (`ACTION_CREATE_DOCUMENT`), iOS needs `UIDocumentPickerViewController`, and the portable shape
-`SaveAsync(options, write)` is designed in `TASKS.md`.
-
-Namespace stays `Shenora.Mobile` in both assemblies, including for platform-specific types, so app
-code writes one `using` and compiles on either. Two assemblies sharing a namespace is safe here
-because a consumer only ever resolves one of them.
+Platform code is named for its platform (`AndroidFileDialogs`, `IosFileDialogs`: the save picker is raw
+SAF `ACTION_CREATE_DOCUMENT` on Android and `UIDocumentPickerViewController` on iOS) and sits in that
+platform's namespace, `Shenora.Android` or `Shenora.iOS`. The shared source here is in `Shenora.Mobile`,
+the same in both assemblies, and `UseAndroid` and `UseIOS` register the platform types.
