@@ -48,7 +48,10 @@ public enum ChromiumDownloadState
 /// </summary>
 public sealed class ChromiumDownloadProgress
 {
-    internal ChromiumDownloadProgress(uint id, string url, string filePath, ChromiumDownloadState state, long receivedBytes, long totalBytes)
+    private readonly IChromiumDownloadControl? _control;
+
+    internal ChromiumDownloadProgress(uint id, string url, string filePath, ChromiumDownloadState state, long receivedBytes, long totalBytes,
+        bool isPaused = false, IChromiumDownloadControl? control = null)
     {
         Id = id;
         Url = url;
@@ -56,6 +59,8 @@ public sealed class ChromiumDownloadProgress
         State = state;
         ReceivedBytes = receivedBytes;
         TotalBytes = totalBytes;
+        IsPaused = isPaused;
+        _control = control;
     }
 
     /// <summary>Tells one download's updates from another's, for this run of the app.</summary>
@@ -75,6 +80,26 @@ public sealed class ChromiumDownloadProgress
 
     /// <summary>The size the server announced, or -1 when it announced none: never read -1 as zero.</summary>
     public long TotalBytes { get; }
+
+    /// <summary>Whether it is paused: <see cref="State"/> stays <see cref="ChromiumDownloadState.InProgress"/> while it is.</summary>
+    public bool IsPaused { get; }
+
+    /// <summary>Cancels the download: its next update is <see cref="ChromiumDownloadState.Canceled"/>. Any thread; nothing once it has ended.</summary>
+    public void Cancel() => _control?.Cancel();
+
+    /// <summary>Pauses the download; <see cref="IsPaused"/> reads true on its next update. Any thread; nothing once it has ended.</summary>
+    public void Pause() => _control?.Pause();
+
+    /// <summary>Resumes a paused download. Any thread; nothing once it has ended.</summary>
+    public void Resume() => _control?.Resume();
+}
+
+/// <summary>What the app can do to a download in flight, from CEF's item callback.</summary>
+internal interface IChromiumDownloadControl
+{
+    void Cancel();
+    void Pause();
+    void Resume();
 }
 
 /// <summary>

@@ -122,7 +122,7 @@ is left is mostly measurement that needs hardware or a person.
   frameless window's four corner resizes.
 - [ ] **The hooks' last measurements.** Not yet: the `MultipleDownloads` prompt itself, which the probe's click-started
   downloads never raised, and a run of the hooks on a real engine page (`ChromiumView`; the probe ran on the shell's windows
-  only). A download's pause and cancel from the app are not offered either (CEF's item callback has both).
+  only).
 
 **macOS**
 - [ ] 🅿️ **osx-arm64 has never run** (no Apple Silicon Mac here), for the shell or for `ChromiumBrowserProcess` (D86):

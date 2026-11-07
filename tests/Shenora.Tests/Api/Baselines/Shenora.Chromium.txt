@@ -25,11 +25,15 @@ sealed class Shenora.Chromium.ChromiumChildBrowserOptions
   public string? Path { get; init; }
 sealed class Shenora.Chromium.ChromiumDownloadProgress
   public Shenora.Chromium.ChromiumDownloadState State { get; }
+  public bool IsPaused { get; }
   public long ReceivedBytes { get; }
   public long TotalBytes { get; }
   public string FilePath { get; }
   public string Url { get; }
   public uint Id { get; }
+  public void Cancel()
+  public void Pause()
+  public void Resume()
 sealed class Shenora.Chromium.ChromiumDownloadRequest
   public string MimeType { get; }
   public string SuggestedName { get; }
