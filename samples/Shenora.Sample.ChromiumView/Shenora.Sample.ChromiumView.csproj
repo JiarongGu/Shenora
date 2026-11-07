@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A WinForms app whose page is a ChromiumView (D83): the engine as a control beside the WebView2 one, with CEF's loop on a
+    thread of its own. It exists to run the app's hooks (HooksProbe, linked from the Chromium sample) on a page that is NOT one
+    of the shell's windows; nothing else is in it.
+
+    samples/ sits OUTSIDE src/, so src/Directory.Build.props does not apply: shared build properties are restated
+    (samples must never inherit packability).
+
+    NOT in Shenora.slnx, for the Chromium sample's reason: a build with the layout on fetches CEF. `dev.mjs verify` compiles it
+    with ShenoraChromiumLayout=false.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Named <App>.App: the layout runs it as <App>, Shenora.Sample.ChromiumView.exe. -->
+    <AssemblyName>Shenora.Sample.ChromiumView.App</AssemblyName>
+    <RootNamespace>Shenora.Sample.ChromiumViewHost</RootNamespace>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <CodePage>65001</CodePage>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <IsPackable>false</IsPackable>
+    <!-- Same harmless WebView2-WPF WindowsBase conflict as Shenora.Windows: demote it. -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- In an app of your own this is one line, <PackageReference Include="Shenora.Chromium" />, plus Shenora.Windows: CEF
+         arrives only through the package's build, and Shenora.Windows's reference to it brings none. Here the project is
+         referenced, so the targets are imported below, and the RuntimeIdentifier is handed on (see the Chromium sample). -->
+    <ProjectReference Include="..\..\src\Shenora.Chromium\Shenora.Chromium.csproj" AdditionalProperties="RuntimeIdentifier=$(RuntimeIdentifier)" />
+    <ProjectReference Include="..\..\src\Shenora.Windows\Shenora.Windows.csproj" />
+    <!-- The probe the hooks run under, shared with the Chromium sample, whose shell windows it ran on first. -->
+    <Compile Include="..\Shenora.Sample.Chromium\HooksProbe.cs" Link="HooksProbe.cs" />
+  </ItemGroup>
+
+  <Import Project="..\..\src\Shenora.Chromium\build\Shenora.Chromium.targets" />
+
+</Project>

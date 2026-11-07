@@ -546,8 +546,8 @@ probe's downloads each followed a click).
 times with its bytes (18 of 18) and ended `Complete`; the one the hook cancelled reported `Canceled` with an empty path. ⚠ The
 first update of a download arrived before `OnDownloadStarting` ran, with no path yet, and the handler is given to CEF
 whenever either hook is set. ⚠ Only 2 of the probe's 3 posted clicks reached the page in 10 of 12 runs, with and without the progress hook
-(the runs read in full lacked the third, so `decline.txt` never started): not attributed, and the same with the hook off, so
-not the hook's.
+(`decline.txt` never started): the probe's FIRST posted click was the one lost, so the probe now posts until the page has
+counted three. Why that first one is lost is not known.
 A download's own controls are on the update (`ChromiumDownloadProgress.Cancel/Pause/Resume`, `IsPaused`): the handler keeps the
 item callback of each download's latest update in a table of its own, on CEF's UI thread, releases it on the update that ends the
 download (or when the handler is freed), and runs a command on that thread whichever thread asks. Run for real
@@ -556,9 +556,16 @@ size, and the progress hook act on its first bytes): a pause reported `InProgres
 2.5 s it was held and then went on, and the download ended `Complete` with all 196608 bytes; a cancel reported `Canceled` with no
 path and the file was absent. ⚠ The updates after the resume jumped by several chunks at once (32768, then 114688): the body had kept arriving in CEF's
 buffer while the file stood still.
-`ChromiumEngineOptions` carries the same three for the WinForms host's pages (`ChromiumChildBrowser`): they reach the same
-`ChromiumBrowser` handlers through `ChromiumPages`, and are proven by unit test only; the probe above ran on the shell's
-windows, not on an engine page.
+`ChromiumEngineOptions` carries the same four for the WinForms host's pages (`ChromiumView`, `ChromiumChildBrowser`): they
+reach the same `ChromiumBrowser` handlers through `ChromiumPages`. Run for real on a `ChromiumView` (Windows, the same
+`HooksProbe` linked into `samples/Shenora.Sample.ChromiumView`, a WinForms form holding one view, its clicks posted to the
+page's `Chrome_RenderWidgetHostHWND` child, which a form's own handle is not): every line the shell's windows gave came out
+the same, in `1`, `2`, `pause` and `cancel` (the saved download `Complete`, the other two `Canceled` and absent,
+notifications `granted`, the position denied, a pause held and resumed to all 196608 bytes, a cancel with no file, the renderer
+hook reached as `Crashed`, the page reloaded once only when it answered false). Build it like the shell sample
+(`ShenoraChromiumLayout` on, the app laid out beside CEF's launcher) and run `Shenora.Sample.ChromiumView.exe` with the same
+variables. The probe posts clicks until the page has counted three: its first posted click was lost in most runs, not the
+hook's doing (the page counted two of three with the hook off too), which is why a fixed three showed two.
 
 ## What is deliberately absent
 
