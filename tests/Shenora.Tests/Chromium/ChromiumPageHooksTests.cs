@@ -100,6 +100,40 @@ public class ChromiumPageHooksTests
     }
 
     [Fact]
+    public void An_update_lets_the_app_cancel_pause_and_resume_its_download()
+    {
+        var control = new RecordingControl();
+        ChromiumDownloadProgress? seen = null;
+        var hooks = Hooks(progress: p => seen = p);
+
+        hooks.DownloadUpdated(new ChromiumDownloadProgress(3, "u", "p", ChromiumDownloadState.InProgress, 5, 10, isPaused: true, control), null);
+        seen!.Pause();
+        seen.Resume();
+        seen.Cancel();
+
+        Assert.True(seen.IsPaused);
+        Assert.Equal(["pause", "resume", "cancel"], control.Calls);
+    }
+
+    [Fact]
+    public void An_update_made_without_a_control_has_nothing_to_act_on()
+    {
+        var update = new ChromiumDownloadProgress(1, "u", "p", ChromiumDownloadState.Complete, 1, 1);
+        update.Cancel();
+        update.Pause();
+        update.Resume();
+        Assert.False(update.IsPaused);
+    }
+
+    private sealed class RecordingControl : IChromiumDownloadControl
+    {
+        public List<string> Calls { get; } = [];
+        public void Cancel() => Calls.Add("cancel");
+        public void Pause() => Calls.Add("pause");
+        public void Resume() => Calls.Add("resume");
+    }
+
+    [Fact]
     public void A_progress_hook_that_throws_is_ignored()
     {
         var hooks = Hooks(progress: _ => throw new InvalidOperationException("app bug"));

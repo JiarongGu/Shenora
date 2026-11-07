@@ -53,6 +53,9 @@ at the first list and missed five more breaking changes.
   `-1` means the server announced no size) and ends in `Complete`, `Canceled` or `Interrupted` (`ChromiumDownloadState`). It only
   observes. A download `OnDownloadStarting` cancelled reports too, as `Canceled` with no path, and a download's first update can
   come before that hook runs: tell yours apart by `Id` and a path.
+- **An app cancels, pauses and resumes a download in flight:** a `ChromiumDownloadProgress` has `Cancel()`, `Pause()` and
+  `Resume()` (any thread; they do nothing once the download has ended) and `IsPaused`, which reads true while `State` stays
+  `InProgress`. A cancel ends in a `Canceled` update with no path, and CEF removes the partial file.
 - **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
   `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
   `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe

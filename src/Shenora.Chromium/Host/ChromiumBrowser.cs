@@ -505,13 +505,89 @@ internal sealed unsafe class ChromiumBrowser
             using var b = new CefRef<_cef_browser_t>(browser);
             using var i = new CefRef<_cef_download_item_t>(item);
             using var c = new CefRef<_cef_download_item_callback_t>(callback);
-            var owner = From<Downloads>(self)._owner;
+            var downloads = From<Downloads>(self);
+            var owner = downloads._owner;
             if (owner._hooks is null) return;
-            var update = new ChromiumDownloadProgress(item->get_id(item), CefStrings.TakeUserFree(item->get_url(item)),
-                CefStrings.TakeUserFree(item->get_full_path(item)),
-                ChromiumPageHooks.DownloadState(item->is_canceled(item) != 0, item->is_complete(item) != 0, item->is_interrupted(item) != 0),
-                item->get_received_bytes(item), item->get_total_bytes(item));
+            var id = item->get_id(item);
+            var state = ChromiumPageHooks.DownloadState(item->is_canceled(item) != 0, item->is_complete(item) != 0, item->is_interrupted(item) != 0);
+            var control = downloads.Control(id, state, c);
+            var update = new ChromiumDownloadProgress(id, CefStrings.TakeUserFree(item->get_url(item)),
+                CefStrings.TakeUserFree(item->get_full_path(item)), state, item->get_received_bytes(item), item->get_total_bytes(item),
+                item->is_paused(item) != 0, control);
             owner._hooks.DownloadUpdated(update, owner.Log);
+        }
+
+        // One control per download in flight, on CEF's UI thread only: the item callback of its latest update, kept until it ends.
+        private readonly Dictionary<uint, DownloadControl> _controls = [];
+
+        private DownloadControl Control(uint id, ChromiumDownloadState state, CefRef<_cef_download_item_callback_t> callback)
+        {
+            if (!_controls.TryGetValue(id, out var control)) control = new DownloadControl();
+            if (state == ChromiumDownloadState.InProgress)
+            {
+                control.Hold(callback.ForCef());
+                _controls[id] = control;
+            }
+            else
+            {
+                control.End();
+                _controls.Remove(id);
+            }
+            return control;
+        }
+
+        // Whatever is still in flight when CEF lets the handler go gives its reference back (a release is thread-safe).
+        private protected override void OnFreed()
+        {
+            foreach (var control in _controls.Values) control.End();
+            _controls.Clear();
+        }
+    }
+
+    /// <summary>The app's way to cancel, pause or resume a download: CEF's item callback, run on CEF's UI thread whichever thread asks.</summary>
+    private sealed class DownloadControl : IChromiumDownloadControl
+    {
+        private _cef_download_item_callback_t* _callback;   // UI thread only; null once the download ended
+
+        public void Hold(_cef_download_item_callback_t* callback)
+        {
+            Release();
+            _callback = callback;
+        }
+
+        public void End() => Release();
+
+        private enum Command { Cancel, Pause, Resume }
+
+        public void Cancel() => OnUi(Command.Cancel);
+
+        public void Pause() => OnUi(Command.Pause);
+
+        public void Resume() => OnUi(Command.Resume);
+
+        private void OnUi(Command command)
+        {
+            if (Cef.cef_currently_on(cef_thread_id_t.TID_UI) == 1) Run(command);
+            else CefTask.Post(cef_thread_id_t.TID_UI, () => Run(command));
+        }
+
+        private void Run(Command command)
+        {
+            var callback = _callback;
+            if (callback == null) return;
+            switch (command)
+            {
+                case Command.Cancel: callback->cancel(callback); break;
+                case Command.Pause: callback->pause(callback); break;
+                default: callback->resume(callback); break;
+            }
+        }
+
+        private void Release()
+        {
+            var callback = _callback;
+            _callback = null;
+            if (callback != null) new CefRef<_cef_download_item_callback_t>(callback).Dispose();
         }
     }
 

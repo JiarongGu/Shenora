@@ -17,7 +17,11 @@ namespace Shenora.Sample.Chromium;
 /// the shell's own reload runs and the page loads a second time.
 /// <list type="bullet">
 /// <item><c>yes.txt</c> — the download hook names a path: the file must be there afterwards, with the page's content, and
-/// <c>PROGRESS</c> lines must end in <c>Complete</c> (a cancelled download ends in <c>Canceled</c>).</item>
+/// <c>PROGRESS</c> lines must end in <c>Complete</c> (a cancelled download ends in <c>Canceled</c>). With
+/// <c>SHENORA_SAMPLE_HOOKS_DOWNLOAD</c> set to <c>pause</c> or <c>cancel</c> it arrives slowly (about 5 s, no announced size)
+/// and the progress hook acts on it at its first bytes: <c>pause</c> pauses it and resumes it 2.5 s later, so the lines must
+/// show <c>paused</c> and then <c>Complete</c> with the whole file; <c>cancel</c> cancels it, so they must end in
+/// <c>Canceled</c>.</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -57,8 +61,18 @@ internal static class HooksProbe
         }
     };
 
+    private static readonly string? SlowMode = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_DOWNLOAD") switch { "pause" => "pause", "cancel" => "cancel", _ => null };
+    private static int _acted;
+
     public static Action<ChromiumDownloadProgress>? OnDownloadProgress => !On ? null : progress =>
-        Log($"PROGRESS {Path.GetFileName(progress.FilePath)}: {progress.State} {progress.ReceivedBytes}/{progress.TotalBytes} (id {progress.Id})");
+    {
+        Log($"PROGRESS {Path.GetFileName(progress.FilePath)}: {progress.State}{(progress.IsPaused ? " paused" : "")} {progress.ReceivedBytes}/{progress.TotalBytes} (id {progress.Id})");
+        if (SlowMode is null || !progress.FilePath.EndsWith("yes.txt") || progress.ReceivedBytes == 0 || Interlocked.Exchange(ref _acted, 1) == 1) return;
+        Log($"ACT {SlowMode} on id {progress.Id}");
+        if (SlowMode == "cancel") { progress.Cancel(); return; }
+        progress.Pause();
+        _ = Task.Delay(2500).ContinueWith(_ => { Log($"ACT resume on id {progress.Id}"); progress.Resume(); });
+    };
 
     public static Func<ChromiumPermissionRequest, bool>? OnPermissionRequested => !On ? null : request =>
     {
@@ -108,7 +122,8 @@ internal static class HooksProbe
         foreach (var name in new[] { "yes.txt", "no.txt", "decline.txt" })
         {
             var path = Path.Combine(Folder, name);
-            Log($"FILE {name}: {(File.Exists(path) ? $"saved, holds '{File.ReadAllText(path).Trim()}'" : "absent")}");
+            var text = File.Exists(path) ? File.ReadAllText(path).Trim() : null;
+            Log($"FILE {name}: {(text is null ? "absent" : $"saved, holds '{text[..Math.Min(40, text.Length)]}' ({text.Length} chars)")}");
         }
         var before = _loads;
         var killed = KillRenderers();
@@ -185,6 +200,35 @@ internal static class HooksProbe
         </script>
         """;
 
+    /// <summary>A body that arrives in 12 chunks, 400 ms apart, with no announced length: a download long enough to be paused.</summary>
+    private sealed class SlowBody : Stream
+    {
+        private const int Chunks = 12, ChunkSize = 16 * 1024;
+        private int _sent;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_sent >= Chunks) return 0;
+            if (_sent > 0) await Task.Delay(400, cancellationToken);
+            var count = Math.Min(buffer.Length, ChunkSize);
+            buffer.Span[..count].Fill((byte)'x');
+            if (_sent == 0) Encoding.UTF8.GetBytes("downloaded yes.txt\n").CopyTo(buffer.Span);
+            _sent++;
+            return count;
+        }
+    }
+
     private sealed class ProbeProvider(IWebViewResourceProvider app) : IWebViewResourceProvider
     {
         public bool Exists(string virtualPath) => virtualPath is "hooks.html" || virtualPath.StartsWith("dl/", StringComparison.Ordinal)
@@ -196,7 +240,7 @@ internal static class HooksProbe
             if (virtualPath.StartsWith("dl/", StringComparison.Ordinal))
             {
                 Log($"PAGE asked for {virtualPath}");
-                return new MemoryStream(Encoding.UTF8.GetBytes($"downloaded {virtualPath[3..]}"));
+                return SlowMode is not null && virtualPath == "dl/yes.txt" ? new SlowBody() : new MemoryStream(Encoding.UTF8.GetBytes($"downloaded {virtualPath[3..]}"));
             }
             if (!virtualPath.StartsWith("report/", StringComparison.Ordinal)) return app.GetResourceStream(virtualPath);
             var report = virtualPath["report/".Length..].Split('/');

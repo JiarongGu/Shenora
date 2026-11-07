@@ -548,6 +548,14 @@ first update of a download arrived before `OnDownloadStarting` ran, with no path
 whenever either hook is set. ⚠ Only 2 of the probe's 3 posted clicks reached the page in 10 of 12 runs, with and without the progress hook
 (the runs read in full lacked the third, so `decline.txt` never started): not attributed, and the same with the hook off, so
 not the hook's.
+A download's own controls are on the update (`ChromiumDownloadProgress.Cancel/Pause/Resume`, `IsPaused`): the handler keeps the
+item callback of each download's latest update in a table of its own, on CEF's UI thread, releases it on the update that ends the
+download (or when the handler is freed), and runs a command on that thread whichever thread asks. Run for real
+(`SHENORA_SAMPLE_HOOKS_DOWNLOAD=pause` or `cancel`, which makes `yes.txt` arrive as 12 chunks 400 ms apart with no announced
+size, and the progress hook act on its first bytes): a pause reported `InProgress paused` at once, the bytes stood still for the
+2.5 s it was held and then went on, and the download ended `Complete` with all 196608 bytes; a cancel reported `Canceled` with no
+path and the file was absent. ⚠ The updates after the resume jumped by several chunks at once (32768, then 114688): the body had kept arriving in CEF's
+buffer while the file stood still.
 `ChromiumEngineOptions` carries the same three for the WinForms host's pages (`ChromiumChildBrowser`): they reach the same
 `ChromiumBrowser` handlers through `ChromiumPages`, and are proven by unit test only; the probe above ran on the shell's
 windows, not on an engine page.
