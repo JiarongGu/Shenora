@@ -120,8 +120,6 @@ is left is mostly measurement that needs hardware or a person.
   must not act on the taskbar, another app's window.
 - [ ] 🅿️ **With a real pointer:** whether either caption-button mode shows the system's caption tooltips, and two of a
   frameless window's four corner resizes.
-- [ ] **The hooks' last measurement.** Not yet: the `MultipleDownloads` prompt itself, which the probe's click-started
-  downloads never raised.
 
 **macOS**
 - [ ] 🅿️ **osx-arm64 has never run** (no Apple Silicon Mac here), for the shell or for `ChromiumBrowserProcess` (D86):
