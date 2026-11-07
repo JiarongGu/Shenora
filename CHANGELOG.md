@@ -39,6 +39,12 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **A Windows Chromium app shows a startup screen with no update launcher.** `<ShenoraChromiumStartupScreen>` (a PNG) and its options
+  (`…Width`, `…Height`, `…Background`, `…ProgressBar`, `…ProgressColor`, `…Corners`, `…Monitor`, `…TimeoutSeconds`, the values
+  `shenora_launcher_startup_screen()` takes; a bad one fails the build by its name, before CEF is fetched) have the app's build
+  stamp the picture into `<App>.exe`, and the shim draws it from the browser process's first moments, before CEF's runtime and
+  .NET load, until the app's first window closes it (`ChromiumHostOptions.StartupScreen`, as for the update launcher's). An app
+  the update launcher starts keeps the launcher's screen. Without the property nothing changes. Windows only (D103).
 - **`FileUpdateQueueOptions.DefaultJournal` — `UseFileSystem` can now run without an update journal.** `x.Journal = null`
   cannot say it, because `UseFileSystem` fills a null journal; set `x.DefaultJournal = false` for in-memory rollback only
   (default `true`, so nothing changes). No journal directory is created. A `Journal` you set is still used as it is.

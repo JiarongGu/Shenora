@@ -24,6 +24,10 @@ struct StartupScreenDescription {
     ScreenCorners corners = ScreenCorners::Rounded;
     ScreenMonitor monitor = ScreenMonitor::Cursor;
     int timeout_ms = 20000;
+    /// Windows: make the whole process per-monitor DPI aware before the window, as a launcher of its own may. A screen
+    /// shown inside an app's process (the Chromium shim) leaves the process's awareness to the app and sets its own
+    /// thread's.
+    bool set_process_dpi = true;
 };
 
 /// Decoded, straight alpha, 0xAARRGGBB per pixel, top row first.

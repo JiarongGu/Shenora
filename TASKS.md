@@ -73,11 +73,13 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   shows only the wallpaper), which a person grants. Then: CJK through CoreText, the splash's rounded bottom corners
   against the window's, a click on the splash bringing its window forward, and a drag on the frameless strip (with no
   traffic lights, from its whole width: compiled, not run).
-- [ ] **The startup screen for an app without the update launcher.** D94's configured screen runs in
-  `Shenora.Launcher`, so an app that does not use the update launcher still shows nothing until .NET has started. The
-  Chromium layout's own native exe (CEF's launcher, which boots .NET) could show the same description, compiled in by
-  the build, and pass `--startup-screen` as the update launcher does. Not built; a configured picture, never a snapshot
-  of the app (D94).
+- [ ] **A startup screen for a Chromium app without the update launcher, on Linux and macOS (D103).** Windows draws it from the
+  shim, which is the native code CEF's launcher runs before .NET. On Linux and macOS the browser process IS the .NET apphost
+  (the helper `helper_linux.c` / `helper_mac.c` only runs CEF's subprocesses), so nothing native of the kit's runs first;
+  a screen there needs a native starter in front of the app, which is what the update launcher already is (D94: Windows
+  and Linux). Whether a Linux app without it needs one is for an adopter to say.
+- [ ] 🅿️ **The shim's screen on a person's desktop.** `dev.mjs chromium-startup-screen` reads its windows from outside; what a
+  person sees (the picture's crispness at a second monitor's DPI, the first frame beside a slow disk) needs their eye.
 - [ ] **The Chromium shell's folders publish on Linux (D96):** the same `engine/` and `lib/` shape, through the
   helper's and `libcef.so`'s library search paths (rpath). A spike first.
 - [ ] 🅿️ **Whether a later launch's window takes the foreground on Linux and macOS.** Not observed: WSL's desktop and

@@ -172,6 +172,15 @@
     <ParameterGroup>
       <Executable ParameterType="System.String" Required="true" />
       <From ParameterType="System.String" Required="true" />
+      <StartupScreen ParameterType="System.String" />
+      <StartupScreenWidth ParameterType="System.String" />
+      <StartupScreenHeight ParameterType="System.String" />
+      <StartupScreenBackground ParameterType="System.String" />
+      <StartupScreenProgressBar ParameterType="System.String" />
+      <StartupScreenProgressColor ParameterType="System.String" />
+      <StartupScreenCorners ParameterType="System.String" />
+      <StartupScreenMonitor ParameterType="System.String" />
+      <StartupScreenTimeoutSeconds ParameterType="System.String" />
     </ParameterGroup>
     <Task>
       <Code Type="Class" Language="cs"><![CDATA[
@@ -187,6 +196,19 @@ public sealed class ShenoraChromiumStampLauncher : Task
 {
     [Required] public string Executable { get; set; }
     [Required] public string From { get; set; }
+    public string StartupScreen { get; set; }
+    public string StartupScreenWidth { get; set; }
+    public string StartupScreenHeight { get; set; }
+    public string StartupScreenBackground { get; set; }
+    public string StartupScreenProgressBar { get; set; }
+    public string StartupScreenProgressColor { get; set; }
+    public string StartupScreenCorners { get; set; }
+    public string StartupScreenMonitor { get; set; }
+    public string StartupScreenTimeoutSeconds { get; set; }
+
+    private const string ScreenResource = "SHENORA_STARTUP_SCREEN";
+    private const string ImageResource = "SHENORA_STARTUP_IMAGE";
+    private static readonly IntPtr RcData = (IntPtr)10;
 
     private static readonly IntPtr[] Types = { (IntPtr)3 /* RT_ICON */, (IntPtr)14 /* RT_GROUP_ICON */, (IntPtr)16 /* RT_VERSION */ };
     private const uint AsData = 0x2 | 0x20;   // LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE
@@ -217,6 +239,7 @@ public sealed class ShenoraChromiumStampLauncher : Task
         if (!File.Exists(Executable) || !File.Exists(From)) { Log.LogMessage(MessageImportance.Low, "Nothing to stamp: {0} or {1} is missing.", Executable, From); return true; }
         var remove = Read(Executable, withData: false);
         var add = Read(From, withData: true);
+        if (!string.IsNullOrEmpty(StartupScreen) && !AddStartupScreen(add)) return false;
         // A file just copied can be held for a moment by whatever scans new executables, and the update then fails
         // with a sharing error (110 measured once in a row of builds); the .NET SDK retries its apphost's for the same
         // reason. Only those errors are retried.
@@ -225,17 +248,54 @@ public sealed class ShenoraChromiumStampLauncher : Task
             var error = Stamp(remove, add);
             if (error == 0)
             {
-                Log.LogMessage(MessageImportance.Low, "{0} now carries {1}'s icon and version ({2} resource(s)).", Path.GetFileName(Executable), Path.GetFileName(From), add.Count);
+                Log.LogMessage(MessageImportance.Low, "{0} now carries {1}'s icon and version and its startup screen, if any ({2} resource(s)).", Path.GetFileName(Executable), Path.GetFileName(From), add.Count);
                 return true;
             }
             if (attempt == 5 || (error != 5 && error != 32 && error != 33 && error != 110))
             {
-                Log.LogError("Giving {0} the app's icon and version failed (error {1}).", Executable, error);
+                Log.LogError("Giving {0} the app's icon, version and startup screen failed (error {1}).", Executable, error);
                 return false;
             }
             Log.LogMessage(MessageImportance.Normal, "{0} is busy (error {1}); trying again.", Path.GetFileName(Executable), error);
             System.Threading.Thread.Sleep(200 * attempt);
         }
+    }
+
+    // The startup screen the shim draws (D103): its description, one key=value per line, and its picture, as RCDATA of the
+    // launcher. The values were checked before the fetch (_ShenoraChromiumCheck); only what MSBuild cannot read is here.
+    private bool AddStartupScreen(List<Resource> add)
+    {
+        var image = Path.GetFullPath(StartupScreen);
+        byte[] png;
+        try { png = File.ReadAllBytes(image); }
+        catch (Exception error) { Log.LogError("ShenoraChromiumStartupScreen names {0}, which could not be read: {1}", image, error.Message); return false; }
+        var signature = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+        if (png.Length < signature.Length) { Log.LogError("ShenoraChromiumStartupScreen names {0}, which is not a PNG (too short).", image); return false; }
+        for (var i = 0; i < signature.Length; i++)
+            if (png[i] != signature[i]) { Log.LogError("ShenoraChromiumStartupScreen names {0}, which is not a PNG (it does not start as one).", image); return false; }
+        var text = string.Join("\n", new[]
+        {
+            "width=" + Or(StartupScreenWidth, "480"),
+            "height=" + Or(StartupScreenHeight, "300"),
+            "background=" + Argb(Or(StartupScreenBackground, "#202020")),
+            "progress_bar=" + (string.Equals(Or(StartupScreenProgressBar, "false"), "true", StringComparison.OrdinalIgnoreCase) ? "1" : "0"),
+            "progress_color=" + Argb(Or(StartupScreenProgressColor, "#3B82F6")),
+            "corners=" + Or(StartupScreenCorners, "Rounded").ToLowerInvariant(),
+            "monitor=" + Or(StartupScreenMonitor, "Cursor").ToLowerInvariant(),
+            "timeout_ms=" + (long.Parse(Or(StartupScreenTimeoutSeconds, "20")) * 1000),
+        });
+        add.Add(new Resource { Type = RcData, Name = ScreenResource, Language = 0, Data = System.Text.Encoding.UTF8.GetBytes(text) });
+        add.Add(new Resource { Type = RcData, Name = ImageResource, Language = 0, Data = png });
+        return true;
+    }
+
+    private static string Or(string value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
+    // "#RRGGBB" or "#AARRGGBB" (the # optional) as AARRGGBB, eight hex digits.
+    private static string Argb(string color)
+    {
+        var hex = color.TrimStart('#');
+        return (hex.Length == 6 ? "FF" + hex : hex).ToUpperInvariant();
     }
 
     // 0, or the Win32 error that stopped it; nothing is saved unless every step succeeded.
@@ -313,6 +373,28 @@ public sealed class ShenoraChromiumStampLauncher : Task
   <Target Name="_ShenoraChromiumCheck">
     <Error Condition="'$(ShenoraChromiumEnginePath)' != '' and '$(ShenoraChromiumEnginePlatform)' != '' and '$(ShenoraChromiumEnginePlatform)' != '$(ShenoraCefPlatform)'"
            Text="The engine at $(ShenoraChromiumEnginePath) is a build for $(ShenoraChromiumEnginePlatform), and this app's RuntimeIdentifier '$(RuntimeIdentifier)' needs CEF's '$(ShenoraCefPlatform)'. Reference the engine package that matches the RuntimeIdentifier, or build for the one it carries." />
+    <!-- The startup screen's options (D103), each refused by the name of the property that is wrong; the shim draws it on
+         Windows only. -->
+    <Error Condition="'$(ShenoraChromiumStartupScreen)' != '' and !Exists('$(ShenoraChromiumStartupScreen)')"
+           Text="ShenoraChromiumStartupScreen names $(ShenoraChromiumStartupScreen), which does not exist. It is the PNG the startup screen shows, a path relative to the project or an absolute one." />
+    <Error Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumStartupScreenWidth)' != '' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(ShenoraChromiumStartupScreenWidth)', '^[1-9][0-9]{0,4}$'))"
+           Text="ShenoraChromiumStartupScreenWidth must be a positive whole number of device-independent pixels, not '$(ShenoraChromiumStartupScreenWidth)'." />
+    <Error Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumStartupScreenHeight)' != '' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(ShenoraChromiumStartupScreenHeight)', '^[1-9][0-9]{0,4}$'))"
+           Text="ShenoraChromiumStartupScreenHeight must be a positive whole number of device-independent pixels, not '$(ShenoraChromiumStartupScreenHeight)'." />
+    <Error Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumStartupScreenTimeoutSeconds)' != '' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(ShenoraChromiumStartupScreenTimeoutSeconds)', '^[1-9][0-9]{0,5}$'))"
+           Text="ShenoraChromiumStartupScreenTimeoutSeconds must be a positive whole number, not '$(ShenoraChromiumStartupScreenTimeoutSeconds)'." />
+    <Error Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumStartupScreenBackground)' != '' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(ShenoraChromiumStartupScreenBackground)', '^#?([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$'))"
+           Text="ShenoraChromiumStartupScreenBackground must be #RRGGBB or #AARRGGBB, not '$(ShenoraChromiumStartupScreenBackground)'." />
+    <Error Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumStartupScreenProgressColor)' != '' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(ShenoraChromiumStartupScreenProgressColor)', '^#?([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$'))"
+           Text="ShenoraChromiumStartupScreenProgressColor must be #RRGGBB or #AARRGGBB, not '$(ShenoraChromiumStartupScreenProgressColor)'." />
+    <Error Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumStartupScreenProgressBar)' != '' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(ShenoraChromiumStartupScreenProgressBar)', '^(?i:true|false)$'))"
+           Text="ShenoraChromiumStartupScreenProgressBar must be true or false, not '$(ShenoraChromiumStartupScreenProgressBar)'." />
+    <Error Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumStartupScreenCorners)' != '' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(ShenoraChromiumStartupScreenCorners)', '^(?i:rounded|square)$'))"
+           Text="ShenoraChromiumStartupScreenCorners must be Rounded or Square, not '$(ShenoraChromiumStartupScreenCorners)'." />
+    <Error Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumStartupScreenMonitor)' != '' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(ShenoraChromiumStartupScreenMonitor)', '^(?i:cursor|primary)$'))"
+           Text="ShenoraChromiumStartupScreenMonitor must be Cursor or Primary, not '$(ShenoraChromiumStartupScreenMonitor)'." />
+    <Warning Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumLayout)' == 'true' and '$(ShenoraCefPlatform)' != '' and !$(ShenoraCefPlatform.StartsWith('windows'))"
+             Text="ShenoraChromiumStartupScreen is drawn on Windows only, so this $(RuntimeIdentifier) app shows none." />
     <Error Condition="'$(ShenoraChromiumEnginePath)' != '' and !Exists('$(ShenoraCefDist)\Release')"
            Text="ShenoraChromiumEnginePath names $(ShenoraCefDist), which has no Release\ folder of CEF's." />
     <Error Condition="'$(ShenoraCefPlatform)' == ''"
@@ -445,7 +527,12 @@ public sealed class ShenoraChromiumStampLauncher : Task
     <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(_ShenoraEngineInto)%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraCefDist)\Release\$(_ShenoraBootstrap)" DestinationFiles="$(_ShenoraWindowsInto)$(_ShenoraAppExe).exe" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(_ShenoraWindowsInto)$(_ShenoraAppExe).dll" SkipUnchangedFiles="true" />
-    <ShenoraChromiumStampLauncher Executable="$(_ShenoraWindowsInto)$(_ShenoraAppExe).exe" From="$(_ShenoraAppInto)$(AssemblyName).dll" />
+    <ShenoraChromiumStampLauncher Executable="$(_ShenoraWindowsInto)$(_ShenoraAppExe).exe" From="$(_ShenoraAppInto)$(AssemblyName).dll"
+                                  StartupScreen="$(ShenoraChromiumStartupScreen)" StartupScreenWidth="$(ShenoraChromiumStartupScreenWidth)"
+                                  StartupScreenHeight="$(ShenoraChromiumStartupScreenHeight)" StartupScreenBackground="$(ShenoraChromiumStartupScreenBackground)"
+                                  StartupScreenProgressBar="$(ShenoraChromiumStartupScreenProgressBar)" StartupScreenProgressColor="$(ShenoraChromiumStartupScreenProgressColor)"
+                                  StartupScreenCorners="$(ShenoraChromiumStartupScreenCorners)" StartupScreenMonitor="$(ShenoraChromiumStartupScreenMonitor)"
+                                  StartupScreenTimeoutSeconds="$(ShenoraChromiumStartupScreenTimeoutSeconds)" />
   </Target>
 
   <!-- A self-contained app is built with the .NET apphost, because the SDK requires one; it is not published, since the

@@ -82,9 +82,11 @@ public:
     bool open(std::string& error) {
         // Before any window: per-monitor DPI, so the screen is drawn crisp at the monitor's own scale.
         using SetContext = BOOL(WINAPI*)(DPI_AWARENESS_CONTEXT);
-        if (auto set = reinterpret_cast<SetContext>(
-                reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"user32"), "SetProcessDpiAwarenessContext"))))
-            set(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        if (desc_.set_process_dpi) {
+            if (auto set = reinterpret_cast<SetContext>(
+                    reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"user32"), "SetProcessDpiAwarenessContext"))))
+                set(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        }
 
         POINT at{};
         if (desc_.monitor == ScreenMonitor::Cursor) GetCursorPos(&at);
