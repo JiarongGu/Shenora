@@ -109,7 +109,9 @@ which is the only one recovery needs.
 Leases are taken **after** the in-process gate (taking a cross-process lock while another thread of this
 process holds the partition is waiting on ourselves through the filesystem) and in **sorted path order**,
 so two overlapping updates cannot deadlock. Lock files live in the app's own storage, never in the managed
-tree, and are `DeleteOnClose` so a crash cannot leave a permanent lock.
+tree. On Windows they are `DeleteOnClose`, so a crash cannot leave a permanent lock; on Unix the file STAYS
+(unlinking it on release lets a waiter lock a dead inode while a newcomer locks a new one), and the OS's
+`flock` goes with the process, so a leftover file holds nothing.
 
 ⚠ **A refused lease must report the path that REFUSED**, not the first in the set — the lock inspector is
 asked about that path, and asking about the wrong one returns empty while looking like it worked.

@@ -104,8 +104,6 @@ Shenora.slnx
 │   │                                                    MediaPlayer on every shell, so a page's
 │   │                                                    PLAYER_REPORT cannot land on a native player that
 │   │                                                    has no Report to take. Opt in by name.
-│   │                                                    An Android native player is absent
-│   │                                                    rather than stubbed.
 │   │                                                    ⚠ This BOUNDS the four stages above rather than
 │   │                                                    replacing them: they exist for apps serving bytes
 │   │                                                    to a <video>, and stop being the answer to "the
@@ -347,8 +345,15 @@ Shenora.slnx
 │                                               nothing: the `shenora` binary takes a built app onto a
 │                                               simulator, an iPhone or an Android device. Node, no build
 │                                               step, tested with vitest. The Android half runs on Windows.
+├── engines/                                 — an engine's BYTES, outside src/ and outside the lockstep (D99)
+│   └── Shenora.Chromium.Codecs.win-x64  net10.0, no code — CEF built with H.264, AAC and HEVC, referenced
+│                                               BESIDE Shenora.Chromium; its version is CEF's (a rebuild is a
+│                                               fourth number), so `dev.mjs pack` and the release workflow,
+│                                               which iterate src/, never touch it (`dev.mjs chromium-codecs` probes it)
 ├── tests/
-│   └── Shenora.Tests       net10.0-windows  — xunit; references the four leaf src projects (Core transitively)
+│   └── Shenora.Tests       net10.0-windows  — xunit; references Shenora.Windows and Shenora.Chromium (Core
+│                                               transitively) and the desktop sample; Android/iOS are covered by
+│                                               compiling the few mobile source files it needs
 └── samples/                                 — never packable; the e2e subject (dev.mjs sample/vite/shot/wgc/click)
     ├── Shenora.Sample.Desktop  net10.0-windows — the reference composition (builder → UseWindows →
     │                                            prewarm → WebViewHost + provider + SplashPanel +
@@ -418,13 +423,13 @@ a different category". **Four kinds, not one list:**
 | Kind | What it is | Members | How an adopter reaches it |
 |---|---|---|---|
 | **Host** | the application object, its lifecycle and the things every app needs | builder · runner · `ShenoraPaths` · `ShenoraEnvironment` · `IEventBus` · `AppCallback` | `ShenoraApplication.CreateBuilder(…)` |
-| **Shell** | one per PLATFORM; picks who owns the UI loop | `UseWindows` · `UseAndroid`/`UseIOS` · `UseHeadless` | exactly one, at startup |
-| **Engines** | portable logic with no platform code — the kit's own algorithms | **Missions** (`Missions/`) · **Media** (`Media/`) · **File system** (`Files/`) | one `Use…` call each |
+| **Shell** | one per PLATFORM; picks who owns the UI loop | `UseWindows` · `UseChromium` · `UseAndroid`/`UseIOS` · `UseHeadless` | exactly one, at startup |
+| **Engines** | portable logic with no platform code — the kit's own algorithms | **Missions** (`Engine/Missions/`) · **Media** (`Modules/Media/`) · **File system** (`Engine/Files/`) | one `Use…` call each |
 | **Shell capabilities** | "can this platform do X?" — a portable contract, an implementation per shell | dialogs · clipboard · **drop zones** · tray/windows · `IPlaybackSession` · `ILiveActivities` · safe area · `IUrlLauncher` · `IUiDispatcher` · `IFileLockInspector` · `IMediaCapability` | injected; registered BY the shell |
 
 - 🔴 **DropZone is NOT a peer of the other three — it is a shell capability**, and that is why it has no
   folder and no `Use…` call. It is a `ShellCapability` declaration + an IPC module + a React hook
-  (`useDropZone`), with the real work in `Shenora.Windows`' overlay. Ask of anything proposed as a
+  (`useDropZone`), with the real work in each shell's own overlay (`Shenora.Windows`', `Shenora.Chromium`'s). Ask of anything proposed as a
   subsystem: **does it have portable LOGIC of its own, or is it a platform ability the kit is exposing?**
   Drop zones are the second. So are clipboard, dialogs and Now Playing.
 - **The engines are the answer to "what does .NET do that React cannot" (D54)** — they are where the kit's
@@ -519,7 +524,8 @@ and the dependency rules a reviewer checks.
   rule — a SHELL implements it, so the contract lives here),
   and the portable bases `IUrlLauncher`/`IUiInteraction`, plus `ShellCapability` — the shared
   capability vocabulary (`windowChrome`, `dropZones`, `filePicker`, `folderPicker`, `savePicker`,
-  `secondaryWindows`, `tray`) and the `NotSupported` factory a shell throws from when it lacks one
+  `secondaryWindows`, `tray`, `backNavigation`, `clipboardFiles`, `localFiles`, `windowOrientation`,
+  `mediaSurface`, `colorScheme`) and the `NotSupported` factory a shell throws from when it lacks one
   (D33). The names are what a host advertises through `ShellInfo` and what a page branches on.
   Their Windows implementations stay in
   `Shenora.Windows`, which registers BOTH faces of each split service so app logic can depend on the

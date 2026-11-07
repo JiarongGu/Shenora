@@ -87,7 +87,7 @@ boot.
 ### The trust split
 
 The device half and the operator half live on the same port and are told apart **per request, by the peer's
-address**, not by the bind address:
+address** (and the name it was addressed to), not by the bind address:
 
 | Half | Routes | Open to the LAN? |
 |---|---|---|
@@ -95,9 +95,12 @@ address**, not by the bind address:
 | Operator | queue an action, read results, list devices, **run an ssh command** | **no** — loopback only |
 
 The server binds `0.0.0.0` deliberately: the whole point is that a phone can reach it. The boundary is
-`req.socket.remoteAddress` against the loopback set — a socket fact, never a header, so nothing a client
-sends can move it. A privileged request from off-box gets **404**, not 403: an operator route should not
-confirm it exists to anyone who cannot use it.
+`req.socket.remoteAddress` against the loopback set — a socket fact; `X-Forwarded-For` is never consulted.
+A loopback peer alone is not enough (`isOperatorRequest`): a browser on the dev machine is a loopback peer
+for any site it has open, so the request must also be addressed to a loopback `Host`, and one carrying an
+`Origin` (a browser's) must come from the service's own page. The CLI's own requests carry none. A privileged
+request that fails the gate gets **404**, not 403: an operator route should not confirm it exists to anyone
+who cannot use it.
 
 🔴 **The ssh route is on the operator half and that is load-bearing.** `POST /api/inspect/host` runs a command
 on the configured Mac. Reachable from the LAN it would be a remote shell for anyone on the coffee-shop

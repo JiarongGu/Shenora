@@ -52,7 +52,8 @@ thesis** — the differentiator is native .NET capability, so the question is ne
 but *"can React already do this?"*. Read `CLAUDE.md`'s opening before judging anything load-bearing.
 
 Shipped as **`Shenora`** (the framework itself) + three shell packages (`Windows`, `Android`, `iOS`;
-D37) + the native `Launcher` (D50) + npm `@shenora/react` and the build-time `@shenora/cli` (D67),
+D37) + the Chromium engine `Shenora.Chromium` (D81, also a shell of its own on every desktop OS, D88)
++ the native `Launcher` (D50) + npm `@shenora/react` and the build-time `@shenora/cli` (D67),
 versioned in lockstep. **Read D65 before
 judging any placement**: core is the CONTRACT (IPC · EventBus · RouteInterceptor), logic is the BRAIN
 (missions, safe file mutation), features BRIDGE .NET to the web (media, dialogs, update).
@@ -254,7 +255,7 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   parameter NAMES, generic constraints, nullability, base types, const VALUES and attributes — all 22
   `[JsonPropertyName]` wire names included, so a rename cannot break the C#⇄TS mirror silently. A
   companion test walks transitive references so a NEW package cannot ship without a baseline. The npm
-  half has its own gate since H7 (`index.test.ts` pins the barrel's 21 runtime exports as an explicit
+  half has its own gate since H7 (`index.test.ts` pins the barrel's runtime exports as an explicit
   array — not a snapshot, which would self-update under `-u`). Unit tests cover the pure/
   seam-testable logic: Core env/paths/builder/event-bus, Ipc envelopes/dispatcher/facade/router/
   payload, WinForms dpi/window-state/single-instance/dialog seams, WebView2 bridge + drop-zone
@@ -275,15 +276,15 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   and whether `DeleteOnClose` semantics hold on POSIX (the implementation targets Windows and says
   so). Each is stated as a limit in the XML rather than assumed.
 - **The sessions live-browser boundary — read this before filing "untested public member".**
-  `SessionController`'s constructor subscribes to `_web.CoreWebView2.WebMessageReceived`, so the type
-  cannot be INSTANTIATED without a real browser core. Everything reachable only through an instance is
-  therefore e2e/manual territory by construction, not by neglect: `SessionController`'s public members
-  (bar `ComputeFitSize`, which is tested), `StreamingSession.DispatchAsync`/`Frames`/`DisposeAsync`, `RenderSession`'s tap BOOKKEEPING (its disposal checks *are* tested), and
-  and — until P7 moved it out of the kit — a reference driver's four-line `SessionController` →
-  `Hooks` mapping. The lesson H7 applied where it
+  The session types (`SessionController`, `RenderSessionPool`, `StreamingSession`, `InteractiveSession`)
+  are written once in `Shenora.Core.Sessions` over `ISessionHost`/`ISessionBrowser` (D91), so the suite
+  drives them against `FakeSessionHost`/`FakeSessionBrowser` and they are NOT live-browser territory.
+  What a fake cannot reach is each shell's own implementation of the seam: `WebView2SessionHost` and
+  `SessionBrowser` in `Shenora.Windows/Sessions/`, `ChromiumSessionHost` in `Shenora.Chromium` — their
+  `CoreWebView2`/CEF calls are e2e/manual by construction, not by neglect. The lesson H7 applied where it
   COULD: pure decisions get lifted out of live-object lambdas so the real rule is testable — that is
-  what `ShouldBlockRequest` and the pool's `AwaitResetNavigationAsync` are. Prefer that over a mock of
-  `CoreWebView2`.
+  what `SessionPolicy.ShouldBlockRequest`, `ComputeFitSize` and the pool's `AwaitResetNavigationAsync` are.
+  Prefer that over a mock of `CoreWebView2`.
 - **The chrome that only the OS can exercise — also by construction, not neglect (P5.6).** Two things
   about `OptimizedForm` cannot be built in-process and are verified live instead. **Input ROUTING:**
   which window receives a click is decided by `WindowFromPoint`, so a `SendMessage` test proves the
@@ -314,7 +315,7 @@ an active mask: it hid a test that entered the OS modal size loop for ~17 s.
 ## 7. Reproduce / verify locally
 
 ```
-node devtools/dev.mjs verify   # build · test · typechecks · sensitive scan · knowledge · doc-drift · doctor
+node devtools/dev.mjs verify   # build · test · typechecks · sensitive scan · knowledge · doc-drift · doc-shape · doctor
 node devtools/dev.mjs pack     # every nupkg + snupkg + the npm tarball into publish/packages
 node devtools/dev.mjs sample --dev   # run the sample against Vite with CDP (e2e subject)
 node devtools/dev.mjs vite      # the sample's Vite dev server (port 3900)

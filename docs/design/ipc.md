@@ -13,7 +13,9 @@ Both sides ship from this repo and are kept in step by a tripwire, not by care (
 | Half | Lives in | Owns |
 |---|---|---|
 | host | `src/Shenora/Core/Ipc/` | the envelope, the pipeline, request tracking, the error boundary |
-| transport (desktop) | `src/Shenora.Windows/WebView/WebViewIpcBridge.cs` | a WinForms timer, WebView2 events, `PostWebMessageAsString` |
+| transport (WebView2) | `src/Shenora.Windows/WebView/WebViewIpcBridge.cs` | a WinForms timer, WebView2 events, `PostWebMessageAsString` |
+| transport (Chromium) | `src/Shenora.Chromium/Host/ChromiumIpcBridge.cs` | one bridge per Chromium window over `IpcHostBridge` + `NotificationPump` |
+| transport (mobile) | `src/Shenora.Mobile/Ipc/` (`MobileIpcBridge`, `MobileIpcCore`) | the MAUI `HybridWebView` raw-message channel, compiled into both mobile packages |
 | client | `src/Shenora.React/src/` | correlation, category demux, batch unbundling, the event bus mirror |
 
 **Nothing transport-specific lives in `Core`, and nothing protocol-shaped lives in a transport.** The
