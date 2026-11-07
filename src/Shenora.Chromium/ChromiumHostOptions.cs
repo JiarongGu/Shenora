@@ -173,6 +173,22 @@ public sealed class ChromiumHostOptions
     /// </para>
     /// </summary>
     public Func<ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
+
+    /// <summary>
+    /// Asked when a window's page itself navigates to an address with a certificate error (an authority Chromium does not
+    /// trust, a name that does not match, an expired certificate), where the app can carry on despite it: a device on the
+    /// local network with a certificate of its own, say. Without it, or when it answers <c>false</c> or throws, the navigation
+    /// fails as it always has.
+    /// <para>
+    /// ⚠ <b>Set <see cref="ChromiumCertificateError.Allow"/> and return <c>true</c> to carry on</b>, and decide on what you can
+    /// pin, <see cref="ChromiumCertificateError.Sha256"/> before anything: allowing every error removes what HTTPS gives the
+    /// page. ⚠ Only a navigation of the page is asked about: a sub-resource (<c>fetch</c>, an image, a frame) with the same
+    /// error fails without the hook, as does an error Chromium forbids to override (a host that pins HTTPS). An allow is
+    /// kept for that host for the rest of the run, so its later requests are not asked; a refusal is asked again. CEF's UI
+    /// thread: answer at once.
+    /// </para>
+    /// </summary>
+    public Func<ChromiumCertificateError, bool>? OnCertificateError { get; init; }
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

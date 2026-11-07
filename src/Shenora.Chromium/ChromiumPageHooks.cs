@@ -224,25 +224,79 @@ public sealed class ChromiumProcessReport
 }
 
 /// <summary>
+/// A certificate error the page's navigation met, offered to <see cref="ChromiumHostOptions.OnCertificateError"/>. The navigation
+/// fails unless the app sets <see cref="Allow"/>.
+/// </summary>
+public sealed class ChromiumCertificateError
+{
+    internal ChromiumCertificateError(string url, int errorCode, string subject, string issuer, string sha256)
+    {
+        Url = url;
+        ErrorCode = errorCode;
+        Subject = subject;
+        Issuer = issuer;
+        Sha256 = sha256;
+    }
+
+    /// <summary>The address the page navigated to.</summary>
+    public string Url { get; }
+
+    /// <summary>Chromium's net error code, such as -202 for an authority it does not trust.</summary>
+    public int ErrorCode { get; }
+
+    /// <summary>The error's name in Chromium's list, such as <c>ERR_CERT_AUTHORITY_INVALID</c>.</summary>
+    public string ErrorName => ChromiumPageHooks.ErrorName(ErrorCode);
+
+    /// <summary>The server certificate's subject, as Chromium displays it; empty when there is none.</summary>
+    public string Subject { get; }
+
+    /// <summary>The server certificate's issuer, as Chromium displays it; empty when there is none.</summary>
+    public string Issuer { get; }
+
+    /// <summary>The SHA-256 of the server certificate's DER bytes, as 64 lowercase hex digits; empty when there is no certificate. What an app pins.</summary>
+    public string Sha256 { get; }
+
+    /// <summary>Whether to carry on with the navigation despite the error. False until set.</summary>
+    public bool Allow { get; set; }
+}
+
+/// <summary>
 /// The app's answers to what a page asks of the shell (<see cref="ChromiumHostOptions.OnDownloadStarting"/>,
-/// <see cref="ChromiumHostOptions.OnPermissionRequested"/>, <see cref="ChromiumHostOptions.OnProcessFailed"/>, and
+/// <see cref="ChromiumHostOptions.OnPermissionRequested"/>, <see cref="ChromiumHostOptions.OnProcessFailed"/>,
+/// <see cref="ChromiumHostOptions.OnCertificateError"/>, and
 /// <see cref="ChromiumHostOptions.OnDownloadProgress"/>, which only observes), and the
 /// shell's default for each when the app has none or declines. A hook that throws is logged and declines. CEF's UI thread.
 /// </summary>
 internal sealed class ChromiumPageHooks(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
-    Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress = null)
+    Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress = null,
+    Func<ChromiumCertificateError, bool>? certificate = null)
 {
     /// <summary>The hooks the app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumHostOptions options) =>
-        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress);
+        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError);
 
     /// <summary>The hooks the engine's app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumEngineOptions options) =>
-        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress);
+        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError);
 
     private static ChromiumPageHooks? From(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
-        Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress) =>
-        download is null && permission is null && failed is null && progress is null ? null : new ChromiumPageHooks(download, permission, failed, progress);
+        Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress, Func<ChromiumCertificateError, bool>? certificate) =>
+        download is null && permission is null && failed is null && progress is null && certificate is null
+            ? null : new ChromiumPageHooks(download, permission, failed, progress, certificate);
+
+    /// <summary>Whether the app set a certificate hook: without one CEF is not asked, and its own policy (the navigation fails) stands.</summary>
+    public bool HandlesCertificates => certificate is not null;
+
+    /// <summary>True when the app allowed the navigation to go on despite the error. A throw, no hook, or an answer of false is the failure CEF would give.</summary>
+    public bool CertificateError(string url, int errorCode, string subject, string issuer, string sha256, ILogger? log)
+    {
+        if (certificate is null) return false;
+        var error = new ChromiumCertificateError(url, errorCode, subject, issuer, sha256);
+        var handled = AppCallback.RunOrDefault(() => certificate(error), false, Failed(log, nameof(ChromiumHostOptions.OnCertificateError)));
+        return handled && error.Allow;
+    }
+
+    internal static string ErrorName(int code) => Enum.IsDefined(typeof(cef_errorcode_t), code) ? ((cef_errorcode_t)code).ToString() : $"ERR_{code}";
 
     /// <summary>Whether the download handler is given to CEF: an app that watches downloads gets it too, and its downloads are
     /// still cancelled unless <see cref="ChromiumHostOptions.OnDownloadStarting"/> takes them.</summary>

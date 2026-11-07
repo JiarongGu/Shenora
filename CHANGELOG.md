@@ -62,6 +62,11 @@ at the first list and missed five more breaking changes.
 - **An app cancels, pauses and resumes a download in flight:** a `ChromiumDownloadProgress` has `Cancel()`, `Pause()` and
   `Resume()` (any thread; they do nothing once the download has ended) and `IsPaused`, which reads true while `State` stays
   `InProgress`. A cancel ends in a `Canceled` update with no path, and CEF removes the partial file.
+- **An app decides on a certificate error of a Chromium page's navigation: `OnCertificateError`** on `ChromiumHostOptions` and
+  `ChromiumEngineOptions`. It gets a `ChromiumCertificateError` (`Url`, `ErrorCode`, `ErrorName`, `Subject`, `Issuer`, and `Sha256`,
+  the certificate's fingerprint, which is what to pin); set `Allow` and return `true` to carry on, and anything else fails the
+  navigation as before. Only the page's own navigation is asked about: a `fetch` or an image with the same error still fails, and
+  so does an error Chromium forbids to override. An allow is kept for the host until the app exits.
 - **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
   `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
   `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe
