@@ -27,7 +27,8 @@ namespace Shenora.Sample.Chromium;
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
 /// declines, so the default denies it (code 1).</item>
 /// </list>
-/// Windows only, since the renderer is killed through PowerShell. Nothing outside the app is touched but its own renderer
+/// <c>Shenora.Sample.ChromiumView</c> links this file and runs the same probe on a WinForms <c>ChromiumView</c> page
+/// (<see cref="Start"/>). Windows only, since the renderer is killed through PowerShell. Nothing outside the app is touched but its own renderer
 /// processes, found by their command line.
 /// </summary>
 internal static class HooksProbe
@@ -39,7 +40,7 @@ internal static class HooksProbe
         : null;
     private static readonly TaskCompletionSource Done = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private static readonly TaskCompletionSource Ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private static int _loads;
+    private static int _loads, _pageClicks;
 
     /// <summary>The probe is running.</summary>
     public static bool Active => On;
@@ -48,7 +49,7 @@ internal static class HooksProbe
     public static string Page(string normal) => On ? "hooks.html" : normal;
 
     /// <summary>The app's provider, answering the probe's page and its reports first while it runs.</summary>
-    public static IWebViewResourceProvider Provider(IWebViewResourceProvider app) => On ? new ProbeProvider(app) : app;
+    public static IWebViewResourceProvider? Provider(IWebViewResourceProvider? app) => On ? new ProbeProvider(app) : app;
 
     public static Func<ChromiumDownloadRequest, bool>? OnDownloadStarting => !On ? null : download =>
     {
@@ -92,24 +93,46 @@ internal static class HooksProbe
     public static void StartIfAsked(ShenoraApplication app)
     {
         if (!On) return;
+        var windows = app.Services.GetRequiredService<ChromiumWindows>();
+        Start("Shenora Chromium Sample", pageWindow: false, () => windows.Close(ChromiumWindows.MainWindowName));
+    }
+
+    /// <summary>
+    /// Start the probe on a window of another host, such as a WinForms form holding a <c>ChromiumView</c>. The clicks are
+    /// posted to the page's own child window (<paramref name="pageWindow"/>), which a form's handle is not; the shell's
+    /// top-level window takes them itself.
+    /// </summary>
+    /// <param name="windowTitle">The title of the window showing the probe's page.</param>
+    /// <param name="pageWindow">Post the clicks to the page's render widget inside that window, not to the window.</param>
+    /// <param name="close">Ends the app, from any thread, once the probe has reported.</param>
+    public static void Start(string windowTitle, bool pageWindow, Action close)
+    {
+        if (!On) return;
         if (Directory.Exists(Folder)) Directory.Delete(Folder, recursive: true);
         Directory.CreateDirectory(Folder);
         _ = Task.Run(async () =>
         {
-            var windows = app.Services.GetRequiredService<ChromiumWindows>();
-            try { await RunAsync(); }
+            try { await RunAsync(windowTitle, pageWindow); }
             catch (Exception ex) { Log($"THREW {ex.GetType().Name}: {ex.Message}"); }
-            finally { windows.Close(ChromiumWindows.MainWindowName); }
+            finally { close(); }
         });
     }
 
-    private static async Task RunAsync()
+    private static async Task RunAsync(string windowTitle, bool pageWindow)
     {
-        var hwnd = await MainWindowAsync();
+        var hwnd = await MainWindowAsync(windowTitle);
         await Task.WhenAny(Ready.Task, Task.Delay(20_000));
+        if (pageWindow)
+        {
+            // Not the form: the page's input window is a child CEF made, and a posted click means nothing to the form.
+            var page = PageWindow(hwnd);
+            Log(page == 0 ? "CLICK target: the page's child window was NOT found, the form itself takes the clicks" : $"CLICK target: the page's child window, class {ClassOf(page)}");
+            if (page != 0) hwnd = page;
+        }
         GetClientRect(hwnd, out var client);
         var center = (client.Bottom / 2 << 16) | (client.Right / 2 & 0xFFFF);
-        for (var i = 0; i < 3; i++)
+        // Until the page has counted three: a click posted while the page was still settling is lost (seen on the first of them).
+        for (var i = 0; i < 8 && Volatile.Read(ref _pageClicks) < 3; i++)
         {
             PostMessageW(hwnd, WmMouseMove, 0, center);
             PostMessageW(hwnd, WmLButtonDown, MkLButton, center);
@@ -145,15 +168,34 @@ internal static class HooksProbe
         return int.TryParse(output, out var n) ? n : -1;
     }
 
-    private static async Task<nint> MainWindowAsync()
+    private static async Task<nint> MainWindowAsync(string title)
     {
         for (var i = 0; i < 150; i++)
         {
-            var hwnd = FindWindowW(null, "Shenora Chromium Sample");
+            var hwnd = FindWindowW(null, title);
             if (hwnd != 0 && IsWindowVisible(hwnd)) return hwnd;
             await Task.Delay(200);
         }
         throw new TimeoutException("the main window did not appear");
+    }
+
+    // The first descendant of the window that is CEF's render widget: where Chromium takes a page's mouse input.
+    private static nint PageWindow(nint parent)
+    {
+        nint found = 0;
+        EnumChildWindows(parent, (child, _) =>
+        {
+            if (ClassOf(child) != "Chrome_RenderWidgetHostHWND") return true;
+            found = child;
+            return false;
+        }, 0);
+        return found;
+    }
+
+    private static string ClassOf(nint hwnd)
+    {
+        var name = new StringBuilder(256);
+        return GetClassNameW(hwnd, name, name.Capacity) > 0 ? name.ToString() : "?";
     }
 
     private const uint WmMouseMove = 0x0200, WmLButtonDown = 0x0201, WmLButtonUp = 0x0202;
@@ -164,6 +206,9 @@ internal static class HooksProbe
     [DllImport("user32")] private static extern bool IsWindowVisible(nint hwnd);
     [DllImport("user32")] private static extern bool GetClientRect(nint hwnd, out RectStruct rect);
     [DllImport("user32")] private static extern bool PostMessageW(nint hwnd, uint message, nint w, nint l);
+    private delegate bool EnumChildProc(nint hwnd, nint lParam);
+    [DllImport("user32")] private static extern bool EnumChildWindows(nint parent, EnumChildProc callback, nint lParam);
+    [DllImport("user32", CharSet = CharSet.Unicode)] private static extern int GetClassNameW(nint hwnd, StringBuilder name, int max);
 
     private static void Log(string line)
     {
@@ -229,10 +274,10 @@ internal static class HooksProbe
         }
     }
 
-    private sealed class ProbeProvider(IWebViewResourceProvider app) : IWebViewResourceProvider
+    private sealed class ProbeProvider(IWebViewResourceProvider? app) : IWebViewResourceProvider
     {
         public bool Exists(string virtualPath) => virtualPath is "hooks.html" || virtualPath.StartsWith("dl/", StringComparison.Ordinal)
-            || virtualPath.StartsWith("report/", StringComparison.Ordinal) || app.Exists(virtualPath);
+            || virtualPath.StartsWith("report/", StringComparison.Ordinal) || app?.Exists(virtualPath) == true;
 
         public Stream? GetResourceStream(string virtualPath)
         {
@@ -242,10 +287,11 @@ internal static class HooksProbe
                 Log($"PAGE asked for {virtualPath}");
                 return SlowMode is not null && virtualPath == "dl/yes.txt" ? new SlowBody() : new MemoryStream(Encoding.UTF8.GetBytes($"downloaded {virtualPath[3..]}"));
             }
-            if (!virtualPath.StartsWith("report/", StringComparison.Ordinal)) return app.GetResourceStream(virtualPath);
+            if (!virtualPath.StartsWith("report/", StringComparison.Ordinal)) return app?.GetResourceStream(virtualPath);
             var report = virtualPath["report/".Length..].Split('/');
             var count = report[0] == "loaded" ? Interlocked.Increment(ref _loads) : 0;
             Log($"PAGE {report[0]}: {Uri.UnescapeDataString(report.ElementAtOrDefault(1) ?? "")}");
+            if (report[0] == "click") Interlocked.Increment(ref _pageClicks);
             if (report[0] == "ready") Ready.TrySetResult();
             if (report[0] == "done") Done.TrySetResult();
             return new MemoryStream(Encoding.UTF8.GetBytes(count.ToString()));

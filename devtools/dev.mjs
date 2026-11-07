@@ -1177,6 +1177,13 @@ switch (cmd) {
         buildOut += r.out;
         return r.ok;
       })
+      // The ChromiumView sample links the Chromium sample's HooksProbe, so a change to that file must compile in both.
+      && await step('dotnet build (ChromiumView sample, no layout)', async () => {
+        const r = await runTee('dotnet', ['build', path.join('samples', 'Shenora.Sample.ChromiumView', 'Shenora.Sample.ChromiumView.csproj'),
+          '-p:ShenoraChromiumLayout=false', '-v', 'minimal', '--artifacts-path', path.join('devtools', '_build', 'chromium-view-sample')]);
+        buildOut += r.out;
+        return r.ok;
+      })
       // EVERY npm package, from the config — see `pack` for the release this shape cost.
       && config.npmPackages.every((dir) => {
         const abs = path.join(repo, ...dir.split('/'));
