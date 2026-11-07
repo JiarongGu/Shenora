@@ -262,6 +262,7 @@ takes, the main window's render area, and leaves the window's frame to the windo
 minimizes and closes from the moment CEF shows it.
 
 ```
+(the shim, before all of it: an opt-in startup screen, D103 — below)
 UseChromium        ← with a Card, CEF is NOT started early (D87's exception); with none it is
 Run: gate          ← a launch turned away shows nothing
      SplashSession.Start  ← setup; the card, if any (once it is on screen, a launcher's startup screen goes, D94);

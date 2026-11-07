@@ -161,6 +161,7 @@ docs cite them — so the number is the column to scan.
 | **D100** | PROPOSED: HISTORY NAVIGATION STAYS ON THE CHROMIUM WEB PANEL; `ISessionBrowser` GAINS NONE OF IT UNTIL A SECOND SHELL WANTS IT, AND THEN AS AN OPTIONAL INTERFACE. |
 | **D101** | PROPOSED: THE KIT TAKES ONE PLAYBACK-HEALTH FIGURE — DROPPED PICTURES, ABSENT WHEN UNKNOWN — AND ONLY WHERE ITS OWN PLAYERS CAN READ IT. |
 | **D102** | PROPOSED: ASK THE ANDROID ENCODER NOT TO REORDER, KEEP THE WRITER'S DROP AS THE BACKSTOP, AND BUILD THE REORDERING WRITER ONLY IF THE LOSS SURVIVES IT. |
+| **D103** | A WINDOWS CHROMIUM APP'S STARTUP SCREEN IS DRAWN BY THE SHIM, FROM RESOURCES THE BUILD STAMPS INTO ITS LAUNCHER. |
 
 <!-- decisions-index:end -->
 
@@ -1508,6 +1509,21 @@ docs cite them — so the number is the column to scan.
     reorder), so the re-measure on a phone says which cause it is. Build (C) only if the loss remains with B-frames off: it
     is the right end state if the encoder reorders in the field, and a bigger risk than the problem seen so far, which is
     one emulator's software encoder. The row's own condition stands: the phone number is re-measured before anything is built.
+
+- **D103 — A WINDOWS CHROMIUM APP'S STARTUP SCREEN IS DRAWN BY THE SHIM, FROM RESOURCES THE BUILD STAMPS INTO ITS LAUNCHER.**
+  `ShenoraChromiumStartupScreen` (a PNG, with size, background, bar, corners, monitor and timeout) puts D94's screen on an app
+  that has no update launcher: `<App>.dll`, the shim, draws it from the browser process's first moments, before CEF's runtime
+  is loaded and .NET has started, and the app closes it at its first window as it does the launcher's.
+  - 🔴 **Resources of `<App>.exe`, not files beside it and not a build of the shim per app:** the shim is one prebuilt binary
+    in the package, so D94's "compiled in" cannot mean compiled into it; the stamp that already gives CEF's launcher the
+    app's icon and version (`ShenoraChromiumStampLauncher`) adds two RCDATA resources, so the install stays the same files.
+  - **One implementation, two hosts:** the shim compiles the launcher's own window and pixel code (`Shenora.Launcher/src`)
+    and runs it on a thread of its own, so the screen keeps moving while CEF loads. It leaves the process's DPI awareness
+    to the app and sets its thread's; the app is passed `--startup-screen <window id>` as the launcher passes it.
+  - **The constraints:** opt-in (no property, no resource, nothing drawn); a browser process only, never a CEF subprocess;
+    none when the arguments already carry `--startup-screen` (the update launcher's screen is the one up); a bad value is
+    refused by its property's name before CEF is fetched; a screen that cannot be shown is none and never a failed start;
+    Windows only (on macOS and Linux the browser process is the .NET apphost). Rejected: a file beside the exe (one more to lose), and a launcher of the kit's own before CEF's (a second process).
 
 ## Anti-goals — deliberately NOT built
 

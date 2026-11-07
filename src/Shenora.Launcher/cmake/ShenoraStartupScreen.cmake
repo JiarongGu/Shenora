@@ -84,7 +84,7 @@ const unsigned char kPng[] = { ${png} };
 }  // namespace
 const StartupScreenDescription* embedded_startup_screen() {
     static const StartupScreenDescription d{ ${S_WIDTH}, ${S_HEIGHT}, ${BACKGROUND_HEX}u, kPng, sizeof(kPng), ${bar},
-        ${PROGRESS_COLOR_HEX}u, ScreenCorners::${corners}, ScreenMonitor::${monitor}, ${timeout_ms} };
+        ${PROGRESS_COLOR_HEX}u, ScreenCorners::${corners}, ScreenMonitor::${monitor}, ${timeout_ms}, true };
     return &d;
 }
 }  // namespace shenora

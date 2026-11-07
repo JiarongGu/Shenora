@@ -22,10 +22,14 @@ if(NOT WIN32)
   message(FATAL_ERROR "The shim is Windows' alone; macOS and Linux build their helper (helper_mac.c, helper_linux.c) through `node devtools/dev.mjs cef-native`, without CMake.")
 endif()
 
-add_library(shenora_chromium_shim SHARED shim_win.cpp)
-target_include_directories(shenora_chromium_shim PRIVATE "${CEF_ROOT}" "${NETHOST_DIR}")
+# The startup screen (D103) is the update launcher's own, its window and its pixels: one implementation, two hosts.
+set(LAUNCHER "${CMAKE_CURRENT_SOURCE_DIR}/../../Shenora.Launcher")
+add_library(shenora_chromium_shim SHARED shim_win.cpp
+  "${LAUNCHER}/src/startup_screen_compose.cpp" "${LAUNCHER}/src/startup_screen_win32.cpp")
+target_include_directories(shenora_chromium_shim PRIVATE "${CEF_ROOT}" "${NETHOST_DIR}" "${LAUNCHER}/include")
 target_compile_definitions(shenora_chromium_shim PRIVATE CEF_API_VERSION=${CEF_API_VERSION} NETHOST_USE_AS_STATIC UNICODE _UNICODE)
-target_link_libraries(shenora_chromium_shim PRIVATE "${CEF_ROOT}/Release/libcef.lib" "${NETHOST_DIR}/libnethost.lib" shell32 user32)
+target_link_libraries(shenora_chromium_shim PRIVATE "${CEF_ROOT}/Release/libcef.lib" "${NETHOST_DIR}/libnethost.lib" shell32 user32
+  gdi32 dwmapi shcore windowscodecs ole32)   # the last five: the startup screen's DIB, DWM's transitions, per-monitor DPI, WIC's PNG decoder over COM
 # /utf-8: BOM-less UTF-8 sources on a CJK-locale box are otherwise read as codepage 936, and a comment's
 # em dash fails C4819 under /WX (the same trap src/Shenora.Launcher documents).
 target_compile_options(shenora_chromium_shim PRIVATE /utf-8 /W4 /WX /permissive- $<$<CONFIG:Release>:/O1 /GL>)

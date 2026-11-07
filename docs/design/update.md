@@ -255,6 +255,19 @@ only the bar's rows.
   (`launcher-src/third_party/`, public domain / MIT). The X11 headers (`libx11-dev`, `libxrandr-dev`) are needed to
   build the screen, not to run it: without them the library builds as before, and a launcher given a screen warns at
   configure and shows none.
+- **An app with no update launcher (Windows, Chromium shell, D103):** `<ShenoraChromiumStartupScreen>` and the same options
+  in the app's project (`…Width`, `…Height`, `…Background`, `…ProgressBar`, `…ProgressColor`, `…Corners`, `…Monitor`,
+  `…TimeoutSeconds`: DIPs, `#RRGGBB`, `true`/`false`) have the build stamp the description and the PNG into `<App>.exe` as
+  RCDATA (`SHENORA_STARTUP_SCREEN`, `SHENORA_STARTUP_IMAGE`), beside the icon and version it already gives CEF's launcher. The
+  shim reads them at the top of the browser process, before it loads CEF, and draws the screen with this library's own window
+  and pixel code on a thread of its own (the process's DPI awareness is the app's, the thread's is per-monitor), then hands the
+  app `--startup-screen <HWND>`, so `IStartupScreen` closes it as it closes the launcher's. A command line that already
+  carries the flag (this launcher started the app) gets no second screen; a CEF subprocess never draws one. A bad value fails the
+  build naming its property, before CEF is fetched. `node devtools/dev.mjs chromium-startup-screen` builds the sample with a
+  screen, watches its windows from outside, and checks that it is up before the app's window, has the box asked for, goes at the
+  window, and is not drawn when the flag is passed. In three runs on a busy machine it was seen 0.8–2.1 s before the main window
+  and went 40–190 ms after it showed. Not measured: a person's eye on its pixels beyond the launcher's frame
+  conformance, which draws the same code; macOS and Linux draw none (the Linux helper is C with no window code).
 - **Measured on Windows** (a launcher starting a Chromium app with a splash card, 4 runs, from the launcher process's
   creation): warm, the screen visible at ~70–80 ms (the launcher's `main` at ~25, `show()` ~50 with a 100×100 PNG),
   the app's card at ~390–550 ms, and the screen gone 5–7 ms after the card. A freshly copied executable's first run
