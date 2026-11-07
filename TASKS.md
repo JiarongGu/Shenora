@@ -209,8 +209,9 @@ The bridges' gate wiring is now pinned (Chromium's `DocumentStarted`, WebView2's
 the re-handshake after a reload, the progress throttle and `configureBridge`'s rejection of the old default's work.
 Still uncovered:
 
-- [ ] **`MobileIpcBridge` has no test.** It is MAUI source compiled into the mobile packages, which the test project
-  cannot reference; its gate never closes on a document change (by design). A MAUI-free seam or a device probe.
+- [ ] **`MobileIpcBridge`'s control wiring is proven on a device only.** Everything but the `HybridWebView` is in
+  `MobileIpcCore`, which `MobileIpcCoreTests` compiles; what is left is the `RawMessageReceived` hook, the dispatcher
+  timer and the handler release, and its gate never closes on a document change (by design). A device probe.
 
 ### 🔴 `verify` cannot pass since the knowledge moved to `.agents/`
 

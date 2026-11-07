@@ -66,6 +66,12 @@
          from the shipped one silently, which is the trap the Live Activity mirror already paid for. -->
     <Compile Include="..\..\src\Shenora.Mobile\Hosting\AppForegroundTracker.cs"
              Link="Ipc\AppForegroundTracker.cs" />
+    <!-- And the part of MobileIpcBridge that is not the control: its options, validation, handshake, flush and teardown
+         order. The bridge keeps the HybridWebView wiring and is the only half a device proves. -->
+    <Compile Include="..\..\src\Shenora.Mobile\Ipc\MobileIpcCore.cs"
+             Link="Ipc\MobileIpcCore.cs" />
+    <Compile Include="..\..\src\Shenora.Mobile\Ipc\MobileIpcBridgeOptions.cs"
+             Link="Ipc\MobileIpcBridgeOptions.cs" />
     <!-- The same exception, for the same reason: arithmetic over PCM bytes, with no Android type in it. -->
     <Compile Include="..\..\src\Shenora.Android\Services\PcmDownmix.cs"
              Link="Media\PcmDownmix.cs" />

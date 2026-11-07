@@ -7,7 +7,7 @@ published by accident.
 
 ```
 Shenora.Mobile/          ← you are here. Source only.
-  Ipc/                   MobileIpcBridge — the HybridWebView transport
+  Ipc/                   MobileIpcBridge — the HybridWebView transport; MobileIpcCore, the MAUI-free half a test compiles
   Threading/             MobileUiDispatcher — the ONE UI-marshalling owner on this shell
   Services/              the Core shell contracts MAUI Essentials can honour
   Hosting/               UseAndroid(...) / UseIOS(...) — the DI registration
