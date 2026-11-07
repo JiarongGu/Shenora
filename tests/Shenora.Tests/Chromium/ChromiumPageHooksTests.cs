@@ -10,8 +10,9 @@ namespace Shenora.Tests.Chromium;
 public class ChromiumPageHooksTests
 {
     private static ChromiumPageHooks Hooks(Func<ChromiumDownloadRequest, bool>? download = null,
-        Func<ChromiumPermissionRequest, bool>? permission = null, Func<ChromiumProcessReport, bool>? failed = null) =>
-        new(download, permission, failed);
+        Func<ChromiumPermissionRequest, bool>? permission = null, Func<ChromiumProcessReport, bool>? failed = null,
+        Action<ChromiumDownloadProgress>? progress = null) =>
+        new(download, permission, failed, progress);
 
     [Fact]
     public void No_hook_set_means_no_hooks() =>
@@ -75,6 +76,44 @@ public class ChromiumPageHooksTests
     [Fact]
     public void Without_a_download_hook_nothing_is_taken() =>
         Assert.Null(Hooks(permission: _ => false).Download("https://app.local/a", "a", "", null));
+
+    [Fact]
+    public void Watching_downloads_is_a_hook_too_and_gives_CEF_the_download_handler()
+    {
+        var progress = ChromiumPageHooks.From(new ChromiumHostOptions { OnDownloadProgress = _ => { } })!;
+        Assert.True(progress.HandlesDownloads);
+        Assert.Null(progress.Download("https://app.local/a", "a", "", null));   // watching takes nothing: still cancelled
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnDownloadProgress = _ => { } }));
+        Assert.False(Hooks(permission: _ => false).HandlesDownloads);
+    }
+
+    [Fact]
+    public void A_download_update_reaches_the_app_with_what_CEF_reported()
+    {
+        ChromiumDownloadProgress? seen = null;
+        var hooks = Hooks(progress: p => seen = p);
+
+        hooks.DownloadUpdated(new ChromiumDownloadProgress(7, "https://app.local/a.bin", @"C:\out\a.bin", ChromiumDownloadState.InProgress, 10, -1), null);
+
+        Assert.Equal((7u, "https://app.local/a.bin", @"C:\out\a.bin", ChromiumDownloadState.InProgress, 10L, -1L),
+            (seen!.Id, seen.Url, seen.FilePath, seen.State, seen.ReceivedBytes, seen.TotalBytes));
+    }
+
+    [Fact]
+    public void A_progress_hook_that_throws_is_ignored()
+    {
+        var hooks = Hooks(progress: _ => throw new InvalidOperationException("app bug"));
+        hooks.DownloadUpdated(new ChromiumDownloadProgress(1, "u", "p", ChromiumDownloadState.Complete, 1, 1), null);
+    }
+
+    [Theory]
+    [InlineData(false, false, false, ChromiumDownloadState.InProgress)]
+    [InlineData(false, true, false, ChromiumDownloadState.Complete)]
+    [InlineData(true, false, false, ChromiumDownloadState.Canceled)]
+    [InlineData(true, false, true, ChromiumDownloadState.Canceled)]     // a cancel reads as interrupted too: cancelled wins
+    [InlineData(false, false, true, ChromiumDownloadState.Interrupted)]
+    public void A_download_state_is_read_from_CEFs_flags(bool canceled, bool complete, bool interrupted, ChromiumDownloadState expected) =>
+        Assert.Equal(expected, ChromiumPageHooks.DownloadState(canceled, complete, interrupted));
 
     [Theory]
     [InlineData(true, true, true)]

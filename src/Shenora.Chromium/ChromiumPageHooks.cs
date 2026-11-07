@@ -29,6 +29,54 @@ public sealed class ChromiumDownloadRequest
     public string? ResultFilePath { get; set; }
 }
 
+/// <summary>Where a download stands.</summary>
+public enum ChromiumDownloadState
+{
+    /// <summary>Still arriving.</summary>
+    InProgress,
+    /// <summary>Finished: the file is complete at <see cref="ChromiumDownloadProgress.FilePath"/>.</summary>
+    Complete,
+    /// <summary>Canceled, by the user or the shell; the file is not complete.</summary>
+    Canceled,
+    /// <summary>Stopped by an error (the network, the disk); the file is not complete.</summary>
+    Interrupted,
+}
+
+/// <summary>
+/// A download changed, offered to <see cref="ChromiumHostOptions.OnDownloadProgress"/>. The last one of a download is not
+/// <see cref="ChromiumDownloadState.InProgress"/>.
+/// </summary>
+public sealed class ChromiumDownloadProgress
+{
+    internal ChromiumDownloadProgress(uint id, string url, string filePath, ChromiumDownloadState state, long receivedBytes, long totalBytes)
+    {
+        Id = id;
+        Url = url;
+        FilePath = filePath;
+        State = state;
+        ReceivedBytes = receivedBytes;
+        TotalBytes = totalBytes;
+    }
+
+    /// <summary>Tells one download's updates from another's, for this run of the app.</summary>
+    public uint Id { get; }
+
+    /// <summary>What is being downloaded.</summary>
+    public string Url { get; }
+
+    /// <summary>The full path it is written to; empty before the app's <see cref="ChromiumHostOptions.OnDownloadStarting"/> has named one, and for a download it cancelled.</summary>
+    public string FilePath { get; }
+
+    /// <summary>Where it stands.</summary>
+    public ChromiumDownloadState State { get; }
+
+    /// <summary>The bytes written so far.</summary>
+    public long ReceivedBytes { get; }
+
+    /// <summary>The size the server announced, or -1 when it announced none: never read -1 as zero.</summary>
+    public long TotalBytes { get; }
+}
+
 /// <summary>
 /// What a page can ask Chromium for, as the flags of <see cref="ChromiumPermissionRequest.Kinds"/>; a request names one or
 /// more. The values are CEF's.
@@ -152,25 +200,41 @@ public sealed class ChromiumProcessReport
 
 /// <summary>
 /// The app's answers to what a page asks of the shell (<see cref="ChromiumHostOptions.OnDownloadStarting"/>,
-/// <see cref="ChromiumHostOptions.OnPermissionRequested"/>, <see cref="ChromiumHostOptions.OnProcessFailed"/>), and the
+/// <see cref="ChromiumHostOptions.OnPermissionRequested"/>, <see cref="ChromiumHostOptions.OnProcessFailed"/>, and
+/// <see cref="ChromiumHostOptions.OnDownloadProgress"/>, which only observes), and the
 /// shell's default for each when the app has none or declines. A hook that throws is logged and declines. CEF's UI thread.
 /// </summary>
 internal sealed class ChromiumPageHooks(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
-    Func<ChromiumProcessReport, bool>? failed)
+    Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress = null)
 {
     /// <summary>The hooks the app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumHostOptions options) =>
-        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed);
+        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress);
 
     /// <summary>The hooks the engine's app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumEngineOptions options) =>
-        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed);
+        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress);
 
     private static ChromiumPageHooks? From(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
-        Func<ChromiumProcessReport, bool>? failed) =>
-        download is null && permission is null && failed is null ? null : new ChromiumPageHooks(download, permission, failed);
+        Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress) =>
+        download is null && permission is null && failed is null && progress is null ? null : new ChromiumPageHooks(download, permission, failed, progress);
 
-    public bool HandlesDownloads => download is not null;
+    /// <summary>Whether the download handler is given to CEF: an app that watches downloads gets it too, and its downloads are
+    /// still cancelled unless <see cref="ChromiumHostOptions.OnDownloadStarting"/> takes them.</summary>
+    public bool HandlesDownloads => download is not null || progress is not null;
+
+    /// <summary>Tells the app a download it took changed. A hook that throws is logged and ignored.</summary>
+    public void DownloadUpdated(ChromiumDownloadProgress update, ILogger? log)
+    {
+        if (progress is null) return;
+        AppCallback.Run(() => progress(update), Failed(log, nameof(ChromiumHostOptions.OnDownloadProgress)));
+    }
+
+    internal static ChromiumDownloadState DownloadState(bool canceled, bool complete, bool interrupted) =>
+        canceled ? ChromiumDownloadState.Canceled
+        : complete ? ChromiumDownloadState.Complete
+        : interrupted ? ChromiumDownloadState.Interrupted
+        : ChromiumDownloadState.InProgress;
 
     /// <summary>The path the app chose for the download, or null: it cancelled it, or declined and the default (cancel) stands.</summary>
     public string? Download(string url, string suggestedName, string mimeType, ILogger? log)

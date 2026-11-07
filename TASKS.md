@@ -120,10 +120,9 @@ is left is mostly measurement that needs hardware or a person.
   must not act on the taskbar, another app's window.
 - [ ] 🅿️ **With a real pointer:** whether either caption-button mode shows the system's caption tooltips, and two of a
   frameless window's four corner resizes.
-- [ ] **The download, permission and renderer-failure hooks' other half.** The shell's windows and `ChromiumEngineOptions`
-  (the WinForms host's pages) have them; not yet: a download's progress and completion (CEF's `on_download_updated`; today
-  the app watches the file), the `MultipleDownloads` prompt itself, which the probe's click-started downloads never raised,
-  and a run of the hooks on a real engine page (the probe ran on the shell's windows only).
+- [ ] **The hooks' last measurements.** Not yet: the `MultipleDownloads` prompt itself, which the probe's click-started
+  downloads never raised, and a run of the hooks on a real engine page (`ChromiumView`; the probe ran on the shell's windows
+  only). A download's pause and cancel from the app are not offered either (CEF's item callback has both).
 
 **macOS**
 - [ ] 🅿️ **osx-arm64 has never run** (no Apple Silicon Mac here), for the shell or for `ChromiumBrowserProcess` (D86):
