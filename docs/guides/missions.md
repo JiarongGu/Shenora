@@ -77,7 +77,7 @@ regression hides on the one box with two cores.
 | A live "max active" slider | the `ILane.Capacity` setter | Lowering it never cancels running work — the surplus is swallowed as items finish. Proven in both directions: `Lowering_lane_capacity_throttles_new_work_without_killing_running_work` and `A_lowered_capacity_is_enforced_once_the_surplus_drains`. The setter enforces a floor of 1 and no ceiling, so clamp to your own maximum before assigning. |
 | A hand-written IPC route that opens a file/folder/save dialog for the page | `services.AddShenoraFileDialogs()` + `useFileDialogs()` from `@shenora/react` | The kit ships the routes and the typed client. `canPickFile`/`canPickFolder`/`canPickSavePath` come from the ready handshake, so ONE bundle hides the controls a shell cannot honour rather than calling and catching. Keep your own route only when you have logic AROUND the dialog (a slow interruptible write, app validation) — not for a plain picker. |
 | A capacity governor that suspends work under system load | `ILane.Hold()` / `Release()` (re-entrant), and `IMissionScheduler.GlobalLane` to move the total bound | The kit ships the mechanism and no policy: load probes, hysteresis and debounce stay yours. This is the difference between "yield the GPU while the user games" and "kill the user's transcode". ⚠ A governor that RESTORES as well as throttles must raise `GlobalLane.Capacity` too — see "Known gaps" #5. |
-| Dedup of an identical pending operation; a batch merge of work accumulated during a slow plan | `MissionDefinition.Key` (+ `IsActive(key)` so you can skip building an expensive request you know would only be deduplicated) | A matching submission completes eagerly against the existing item with `MissionOutcome.Deduplicated`, and the body runs once. |
+| Dedup of an identical pending operation; a batch merge of work accumulated during a slow plan | `MissionDefinition.Key` (+ `IsActive(key)` so you can skip building an expensive request you know would only be deduplicated) | A matching submission waits on the existing item and takes ITS outcome: `MissionOutcome.Deduplicated` if that succeeded, `Failed`/`Cancelled` (with its error) if not. The body runs once. |
 | `MAX_RETRY_ATTEMPTS` / `RETRY_DELAY_MS` constants | `RetryPolicy` | Same defaults as the family's measured value: 3 attempts, 500 ms × attempt, `IOException` only. `RetryPolicy.None` opts out; `Retry = null` already means none. |
 | A retry loop wrapped around an expensive operation to survive a cheap final step | `Run` (the expensive phase, runs ONCE) + `Commit` (cheap, retried) | Setting `Commit` is what makes `Run` exempt from the retry budget. |
 | A `Channel` + worker pool + gate, or a plan-swap with a signal and a worker task | the scheduler | Dispatch is event-driven — on submit and on each completion. No worker thread, no polling latency. |
@@ -147,7 +147,7 @@ the reverse (D19/D20). ⚠ The two halves are LAYERS inside `Shenora`, not separ
 changes where the rule is enforced but not the rule. `IMissionObserver` is the seam: `OnQueued`/`OnStarted`/`OnFinished` for every
 item, each call guarded so a throwing observer cannot fail the work it was only watching.
 
-**The adapter is yours to write. It is about 35 lines** — measured, not estimated: the kit's own
+**The adapter is yours to write. It is about 25 lines of code** — measured, not estimated: the kit's own
 sample carries one (`samples/Shenora.Sample.Logic/MissionEventPublisher.cs`). Copy it. No mission body
 reports progress by hand again, which is the boilerplate the family's apps repeated at every call site
 and occasionally forgot. The same seam is where metrics and tracing attach.
@@ -185,7 +185,8 @@ Two things that adapter learned the moment it ran, both of which you will hit:
 
   The same `Key` is what `IsActive(key)` answers about and what deduplicates a resubmission — an
   identical key already in flight carries the second caller's completion and the body never runs
-  twice (`MissionOutcome.Deduplicated`, which counts as success). ⚠ **`MissionRecord.Key` matters
+  twice (`MissionOutcome.Deduplicated`, which counts as success and is reported only when the work it joined
+  succeeded). ⚠ **`MissionRecord.Key` matters
   most**: the kit ships no store (D28), so that record is the wire format between the kit and your
   storage, and a `rehydrate` callback needs something your app chose rather than an id it has never
   seen.
@@ -208,7 +209,7 @@ things that tripwire keeps honest (`samples/Shenora.Sample.Logic` turns RED if a
 - **No archive, download or cleanup helpers.** Carve depth caps, leaked-handle retries, an
   extract-never-execute rule: business logic, and it stays yours.
 - **No persistent `IMissionQueueStore`, no handler registry by job type, no DAG/workflow engine, no per-item
-  cooperative pause.** Each is deliberate, with reasons, in §10 of the design doc.
+  cooperative pause.** Each is deliberate, with reasons, under "What is deliberately absent" in `docs/design/missions-and-files.md`.
 
 ### Order to adopt
 

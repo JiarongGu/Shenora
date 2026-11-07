@@ -97,7 +97,7 @@ window.Destroying += (_, _) =>
 {
     // The kit's answer to "is this teardown real?" — false on iOS, where a scene teardown is one.
     if (Shenora.Mobile.MobileWindowLifecycle.IsRecreating) return;
-    shenora.Stop();
+    app.Stop();   // the ShenoraApplication that shenora.Build() returned
 };
 ```
 
@@ -200,7 +200,7 @@ the previous fix as the trigger.
 | **Live Activities / Dynamic Island (iOS)** | `ILiveActivities` — see the recipe below. Android registers an implementation that answers `Unavailable` with a reason rather than throwing, so portable logic asks and branches. |
 
 **Where a contract is only partly honourable, it refuses LOUDLY** rather than doing nothing: the
-folder picker, and a clipboard PICTURE **on Android only**, throw `ShellCapability.NotSupported`
+folder picker, `SaveFileAsync` (below), putting FILES on the clipboard, and a clipboard PICTURE **on Android only**, throw `ShellCapability.NotSupported`
 naming the platform and the alternative. ⚠ The clipboard's split is per-platform and deliberate —
 iOS carries any format, because `UIPasteboard` takes an arbitrary UTI; Android refuses everything
 but text and HTML, because a picture there travels as a `content://` URI needing a `ContentProvider`
@@ -729,7 +729,9 @@ Advertise what you actually composed. A capability you claim but did not registe
 button into a `NotSupported` throw at the moment a user presses it.
 
 Both samples do this for real and disagree honestly: `Shenora.Sample.Desktop` answers `winforms` with
-all seven, `Shenora.Sample.Maui` answers `maui` with `[filePicker]`, and `Shenora.Sample.Web`'s
+all seven, `Shenora.Sample.Maui` answers with the platform's own name (`android` / `ios`) and
+`filePicker`, `localFiles` and `mediaSurface`, plus `backNavigation` and `windowOrientation` only where
+`MobileBackNavigation.IsSupported` / `MobileWindowOrientation.IsSupported` say so, and `Shenora.Sample.Web`'s
 `App.tsx` reads the reply without knowing which one it is talking to.
 
 **`FileDialogOptions` survived contact with mobile, which was an open question until now.**

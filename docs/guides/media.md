@@ -10,7 +10,9 @@
 **Three things: a segmenting engine, a media interface to your frontend, and a conversion interface.**
 🔴 **A CODEC is not one of them.** The kit ships no codec and no binary — not as a NuGet payload, not as
 a download, not behind a path option (D51) — and that is a statement about what this tier IS rather than a
-limitation it is working around.
+limitation it is working around. (The one package of codec bytes the kit publishes is the Chromium
+engine's, `Shenora.Chromium.Codecs.win-x64`, which an app opts into — D99, below. It is an engine's bytes outside
+the media tier, not a codec the tier ships.)
 
 **There IS a default conversion engine, and it is the platform's own decoders wired up** (D70) — which is
 not a codec, and is why both halves of that sentence are true at once. Its reach is exactly D59's line —
@@ -100,14 +102,17 @@ converter, the player, the segment engine — with no other change:
 pipeline.Use((source, codecPrivate) => source.Codec is "ac3" ? MyDecoder.Begin(source) : null);
 ```
 
-⚠ **The kit ships no codec and no engine, ever** (D51) — every byte of decoding is the platform's. Where
+⚠ **The media tier ships no codec and no engine, ever** (D51) — every byte of decoding is the platform's. Where
 the device cannot decode it either, there is nothing to bridge and the honest answer is a refusal.
 
-⚠ **A page on the Chromium engine plays no H.264, AAC or HEVC.** CEF's published builds, which
+⚠ **A page on the Chromium engine plays no H.264, AAC or HEVC by default.** CEF's published builds, which
 `Shenora.Chromium` pins, carry no licensed codecs: on the pinned build (measured on Windows) `canPlayType` and
 `MediaSource` refuse all three, and an H.264+AAC MP4 fails as an unsupported source, while VP8, VP9, AV1, Opus and
 MP3 play. So a
-Chromium page cannot play the MP4 that container repair produces, and its policy names only what it decodes. In
+Chromium page cannot play the MP4 that container repair produces, and its policy names only what it decodes. A
+Windows x64 app that wants the three references `Shenora.Chromium.Codecs.win-x64` beside `Shenora.Chromium` (D99):
+the kit's build of the same CEF with them, which the app's layout then comes from instead of CEF's download. It
+comes with no patent licence, and whether the app needs one is the app's to decide. In
 the WinForms shell a `ChromiumView` app still has `WindowsMediaPlayer`, which uses the platform's codecs; the
 Chromium shell (`UseChromium`) has no native player of its own, and registers no `IPlaybackSession` (D90): there the
 page's own `navigator.mediaSession` reaches the OS's media controls, its metadata out and the controls' commands back
@@ -314,7 +319,7 @@ var route = interceptor.UseSegmentStream(engine, new SegmentStreamOptions
 
 🔴 **`UseSegmentStream` registers NOTHING when the engine is unavailable, and that is the feature.** It
 returns a stub route instead of throwing, so the call site is identical on a shell with no conversion
-engine — the page gets an honest "not ready" rather than the app failing to compose. Check
+engine — the route answers nothing, rather than the app failing to compose or the page getting a `503` for ever. Check
 `engine.IsAvailable` if you want to hide the UI that leads there.
 
 **Page — one call, no hook:**
@@ -373,7 +378,9 @@ var bytes = MediaByteSource.ForRanges("Episode 3", contentLength, async (offset,
     return await response.Content.ReadAsStreamAsync(token);
 });
 
-registry.Register(new RemoteMediaSource { Url = myUrl, Label = "Episode 3", Open = bytes.Open });
+// `registry` is the MediaSourceRegistry you pass as SegmentStreamOptions.Sources (null = local files only).
+var handle = registry.Register(new RemoteMediaSource { Url = myUrl, Label = "Episode 3", Open = bytes.Open });
+// The page names the handle, never the url: /shenora-hls/~remote/{handle}/index.m3u8
 ```
 
 - 🔴 **Do not write the `Stream` yourself.** The EBML parser reads varints ONE BYTE AT A TIME, so the
