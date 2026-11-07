@@ -149,7 +149,7 @@ server, a splash, window state, and onto a phone.
 
 ## Packages
 
-Versioned in lockstep. Reference **one shell** for the platform you build for and it brings `Shenora`;
+Versioned in lockstep, except the codecs engine below. Reference **one shell** for the platform you build for and it brings `Shenora`;
 [the packages, one by one](https://github.com/JiarongGu/Shenora/blob/main/docs/packages.md) has how the set is
 shaped and enough of each to get it working.
 
@@ -158,6 +158,7 @@ shaped and enough of each to get it working.
 | `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against, plus the capabilities that are shell work rather than extras: media (`Shenora.Modules.Media`), file operations and the self-updater (`Shenora.Engine.Files`, `Shenora.Engine.Update`), archive extraction (`Shenora.Engine.Compression`), the mission scheduler (`Shenora.Engine.Missions`) and the extra browsers (`Shenora.Core.Sessions`). |
 | `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell: bootstrap, windows, tray, dialogs, single instance, WebView2 hosting and its IPC bridge, and the extra browsers in WebView2. The versioned TFM adds Windows' media controls and a Media Foundation player. |
 | `Shenora.Chromium` | NuGet | `net10.0` (Windows, macOS and Linux, x64 and arm64) | Chromium through CEF: a complete shell of its own (`UseChromium`) on every desktop OS, and the `ChromiumView` control `Shenora.Windows` hosts. **CEF is not in the package**: your app's build fetches the pinned CEF build, so reference it from the app's own project. |
+| `Shenora.Chromium.Codecs.win-x64` | NuGet | files only (Windows x64) | **An engine's bytes, referenced beside `Shenora.Chromium` by an app that wants them:** CEF built with H.264, AAC and HEVC, which CEF's standard build leaves out. Its version is CEF's (`154.0.32`), not the kit's, and it comes with no patent licence. |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell, sharing its MAUI half with `Shenora.Android`, plus AVPlayer, Now Playing and Live Activities. |
 | `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The native launcher that applies a staged update before your app starts, for a framework-dependent app, and can show a startup screen until its first window. A self-contained app needs none of it. |

@@ -46,13 +46,14 @@ burns no version:
 
 1. Resolve the new version; rewrite `<VersionPrefix>` in `src/Directory.Build.props`, **stamp the
    CHANGELOG's `## Unreleased` heading** (`dev.mjs changelog --fix --version X.Y.Z`), and **sync the
-   derived files from VersionPrefix** (`dev.mjs doctor --fix` — rewrites the npm package.json version
-   and the README `## Status` headline) — all in the working tree only. Stamping is automated because
+   derived files from VersionPrefix** (`dev.mjs doctor --fix` — rewrites both npm package.json versions,
+   the README `## Status` headline, `docs/ARCHITECTURE.md`'s `## Current state` line, `TASKS.md`'s status
+   paragraph and the Shenora `PackageReference` versions shown in tracked docs) — all in the working tree only. Stamping is automated because
    it was the one release edit left to a human, and the sibling library shipped a version whose
    section was still titled "Unreleased" because of it. The derived-file sync has to happen HERE (not
    in Pack) because `verify`'s `doctor` is deliberately non-fixing — a bump would otherwise create
    drift that Verify caught and blocked (P5.5 H5 combined with the release path is what earned this,
-   in v0.1.1). The step then asks *git* whether any of the four files actually changed, rather than
+   in v0.1.1). The step then asks *git* whether any of those files (`derivedVersionFiles` in `devtools/project.config.mjs`) actually changed, rather than
    comparing version strings: the edits move independently, so a string compare would skip the commit
    when only one moved — and would produce an empty commit on a re-run that moved none.
 
@@ -128,7 +129,8 @@ burns no version:
    atomic, so the goal is re-runnability — without the guard, any failure after both pushes (a
    rejected bump commit, a tag race) leaves every re-run stuck here, unable to complete the bump or
    the tag.
-6. Commit `chore: release vX.Y.Z` — props + CHANGELOG + README + npm `package.json`, named
+6. Commit `chore: release vX.Y.Z` — the files step 1 rewrote (props, CHANGELOG, README,
+   ARCHITECTURE, getting-started, TASKS and both npm `package.json`s), named
    explicitly so no build artifact rides along — then push, then the annotated tag `vX.Y.Z`. The tag
    step is gated on `create_tag` and skipped if the tag already exists.
 7. Generate release notes from conventional-commit subjects since the previous release tag
@@ -267,10 +269,16 @@ So (owner, 2026-08-02):
 - **The Chromium shim is BUILT BY THE RELEASE too, and never committed.** The `chromium-shim` job downloads
   the CEF builds `cef.json` pins (SHA-1-checked), builds `shenora_chromium_shim.dll` for win-x64 and, cross-
   compiled, win-arm64 against their headers and the SDK's static nethost; the `chromium-helper-macos` job builds
-  the macOS helper for osx-x64 and osx-arm64 with clang; `publish` `needs:` both and asserts all four, and
-  `dev.mjs pack` compiles the macOS binding it packs, once, as `runtimes/osx/lib`. Packing `Shenora.Chromium` without
-  any one of them fails, so a Windows-only box cannot pack it: the helpers need a Mac. ⚠ It first runs in CI on the release that first ships the package, so rehearse with
+  the macOS helper for osx-x64 and osx-arm64 with clang, and `chromium-helper-linux` the Linux helper for linux-x64
+  and linux-arm64 with zig; `publish` `needs:` all of them (and the launcher) and asserts all six native halves, and
+  `dev.mjs pack` compiles the macOS and Linux bindings it packs, once each, as `runtimes/osx/lib` and
+  `runtimes/linux/lib`. Packing `Shenora.Chromium` without any one of them fails, so a Windows-only box cannot pack
+  it: the macOS helpers need a Mac. ⚠ It first runs in CI on the release that first ships the package, so rehearse with
   `dry_run: true`.
+- **`Shenora.Chromium.Codecs.win-x64` is NOT in this release.** It is not in `packableProjects`, so `pack` and
+  `release.yml` never touch it; `.github/workflows/cef-codecs.yml` (manual, a self-hosted runner, hours per run)
+  builds CEF with the proprietary codecs and packs it as a workflow artifact, and pushing that `.nupkg` to nuget.org is
+  a person's act (D99). Its version is CEF's, not `VersionPrefix`.
 - **A one-platform build proves one platform.** The launcher's POSIX half went uncompiled until the 0.10.0
   release tried it and failed on two missing includes. Before a release that touches C++, run
   `node devtools/dev.mjs launcher --posix`; fix-log 2026-08-05.

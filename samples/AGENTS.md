@@ -4,8 +4,9 @@
 
 The sample apps every behavioural claim is proven against: `Shenora.Sample.Desktop` (WinForms + WebView2),
 `Shenora.Sample.Chromium`, `Shenora.Sample.Maui` (the Android and iOS head), `Shenora.Sample.Web` (the React
-page they host) and `Shenora.Sample.Logic`. All of them are in `Shenora.slnx`, so `verify` builds them.
-They consume the kit as an adopter would; nothing in `src/` may depend on them.
+page they host) and `Shenora.Sample.Logic`. The three .NET projects other than `Shenora.Sample.Chromium` are in `Shenora.slnx`, so
+`verify` builds them; the Chromium sample is not (a build with its layout on fetches CEF), so `verify` compiles it with
+`ShenoraChromiumLayout=false`, and the Web page is type-checked. They consume the kit as an adopter would; nothing in `src/` may depend on them.
 
 ## Conventions here
 

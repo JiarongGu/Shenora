@@ -45,7 +45,10 @@ carries H.264, HEVC and AAC untouched, and Matroska already stores them in the l
 uses, so a copy is a byte move.
 
 ```
-Mp4Remuxer          whole file    every stream copied, or the source is refused
+Mp4Remuxer          whole file    copies what MP4 carries; the rest is converted through the seam
+                                  it is given, or REPORTED as dropped when it has none. Only its
+                                  PLAN (the computed route) is all-or-nothing: null unless every
+                                  stream copies
 DefaultSegmentEngine  fragments   per TRACK: copy what MP4 carries, convert the rest
 ```
 
@@ -203,7 +206,8 @@ misbehave, and proven QUIET against an honest one whose file genuinely opens wit
 ⚠ **The length must be known up front**, because Matroska is read by offset from the END — SeekHead, then
 Cues. Over HTTP it is `Content-Length`, from a HEAD or from any one ranged response's `Content-Range`.
 **What the kit still does not ship is the transport itself** (D78): no `HttpClient` appears anywhere in
-`src/`, so auth, refresh, proxies and redirects stay the app's, and no url ever reaches the kit.
+the media tier (`src/Shenora/Modules/Media/`), so auth, refresh, proxies and redirects stay the app's, and no
+url ever reaches the kit.
 
 **Containment cannot guard a url**, which is why the second door is not the first one widened. `AllowedRoots`
 answers "is this path inside a directory I trust", and a url has no such relation to anything. The conversion
@@ -395,14 +399,17 @@ channel's times against another's is how the sound side of every cut lands somew
 
 ## What is deliberately absent
 
-- **No engine bytes ship, ever** (D51) — an app supplies one through a seam or a `ResourcePack`.
+- **No conversion-engine bytes ship** (D51) — an app supplies one through a seam or a `ResourcePack`. (The
+  one set of codec bytes the kit does convey is the Chromium shell's H.264/AAC/HEVC engine package, D99: the
+  page's own decoder, outside this tier's seams.)
 - **No segment engine on the desktop until something registers a converter** (D75) — the kit ships none for
   Windows, so out of the box the desktop's answer is the computed-remux route. ⚠ That is a fact about what
   the kit provides, not a platform rule: an app supplying its own decoding library gets the engine there.
 - **No thumbnail type spanning both mechanisms** (D43) — extracting a frame needs a decoder, resizing an
   image needs an image codec; they are different capabilities wearing one word.
-- **No shell picture on the DESKTOP.** `IMediaSurface` is registered by the mobile shells only; Windows
-  reports the capability absent and the page's own element stays the picture, which is the right answer
+- **No shell picture on the DESKTOP.** `IMediaSurface` is registered by the mobile shells only
+  (`AddShenoraMediaSurface`, opt-in); the desktop shells register none and advertise no
+  `ShellCapability.MediaSurface`, so the page's own element stays the picture, which is the right answer
   wherever the webview decodes the file. Compositing a native player under WebView2 is unmeasured here,
   and an API that compiles on three shells and means something weaker on one is what D39 refuses.
 
@@ -436,7 +443,8 @@ WinForms app on the kit's packages; `clip-faststart.mp4`, the same streams in MP
 
 So D52's container case is **iOS's**: WKWebView refuses Matroska, and so does the shell's AVPlayer, which leaves
 container repair the only way that file plays there. Android's WebView, two generations apart, and WebView2 play
-it directly. (A page on the Chromium engine plays no H.264 at all; the media guide has that.)
+it directly. (A page on CEF's standard build plays no H.264 at all; the media guide has that, and
+`Shenora.Chromium.Codecs.win-x64` (D99) is the build that adds it.)
 
 **What this settles for D80 on Android:** the kit's zero-dependency default reaches the file, so ExoPlayer
 is not needed for CONTAINER reach here (D51/D42's seam remains the answer for an app that needs more). The

@@ -57,7 +57,7 @@ competes with `ARCHITECTURE.md` for "what is true now" and loses (D57); plans li
 | Keeping the library generic | `.agents/knowledge/generic-library.md` |
 | When did this break? | `git log -S "<distinctive token>" -- <path>` — there is no fix log; commit messages carry root causes |
 | Adopting Shenora into an existing desktop app | `docs/ADOPTION.md` (stage order, what replaces what, what stays the app's own) |
-| Changing a DESKTOP shell — the WinForms shell and WebView2 hosting, or the Chromium shell: the run sequence, the window, the splash, native services | [`docs/design/shells.md`](design/shells.md) — the order the runner depends on, the STA rule, the DPI rule, and what is deliberately absent. INVARIANTS: `.agents/knowledge/winforms-shell.md` + `.agents/knowledge/webview2-hosting.md`. WHY: `docs/DECISIONS.md` **D19**+**D20** (the layer and its direction) + **D37** (one shell package per platform) + **D81**–**D96** (the Chromium engine and its shell) |
+| Changing a DESKTOP shell — the WinForms shell and WebView2 hosting, or the Chromium shell: the run sequence, the window, the splash, native services | [`docs/design/shells.md`](design/shells.md) — the order the runner depends on, the STA rule, the DPI rule, and what is deliberately absent. INVARIANTS: `.agents/knowledge/winforms-shell.md` + `.agents/knowledge/webview2-hosting.md`. WHY: `docs/DECISIONS.md` **D19**+**D20** (the layer and its direction) + **D37** (one shell package per platform) + **D81**–**D97** (the Chromium engine and its shell) + **D99** (the codecs engine package) |
 | Running the same app logic on MOBILE (a MAUI shell) | `docs/guides/mobile.md` (what transfers, what does not, and the traps already paid for) + `docs/DECISIONS.md` **D32**–**D34** (a second shell is a PEER; absent vs differently-satisfied capabilities; why its API baseline is weaker) + **D36** (the host advertises capabilities in the handshake, so ONE web bundle serves both shells) + **D39** (why the auxiliary-session stack does NOT port, even though both shells host a webview) |
 | Replacing a hand-rolled file-operation planner, job queue or resource gate | `docs/DECISIONS.md` **D27**–**D31** (the one-scheduler-two-key-kinds claim) + **D57** (why a policy is safe to expose: it chooses among LEGAL moves) + `docs/guides/missions.md` (adopter-facing mapping) |
 | Serializing filesystem MUTATIONS, atomic replace, crash-atomicity, cross-process file locks | `docs/DECISIONS.md` **D30**+**D31** (why the file queue is separate from scheduling; why locking is two mechanisms) + **D48**+**D55**+**D65** (the layering, and why it is the `Shenora.Engine.Files` namespace inside `Shenora` rather than a package) + `docs/guides/file-updates.md` |
@@ -77,6 +77,8 @@ competes with `ARCHITECTURE.md` for "what is true now" and loses (D57); plans li
   feature tier goes on being listed. Alongside them: `Shenora.Mobile/` as the SOURCE (no csproj) compiled into both mobile packages,
   `Shenora.React/` and `Shenora.Cli/` (the two npm packages), and `Directory.Build.props` (the ONLY
   version source).
+- `engines/` — `Shenora.Chromium.Codecs.win-x64`, CEF's bytes with H.264, AAC and HEVC (D99). Outside `src/` on
+  purpose: its version is CEF's, not the lockstep, and `dev.mjs pack` and the release workflow never touch it.
 - `tests/Shenora.Tests` — the single test project (folders mirror src).
 - `samples/` — five: `Sample.Logic` (portable `net10.0`, the D20 tripwire), `Sample.Desktop`,
   `Sample.Chromium` (the Chromium shell on its own, outside the solution: its layout fetches CEF), `Sample.Web`
@@ -84,7 +86,7 @@ competes with `ARCHITECTURE.md` for "what is true now" and loses (D57); plans li
   Windows, Android and iOS.
 - `devtools/` — one-entry dev loop (`node devtools/dev.mjs <cmd>`); config in `project.config.mjs`.
 - `local/` — gitignored private context (real paths, sibling names, session notes).
-- `.github/workflows/release.yml` — the manual release pipeline.
+- `.github/workflows/release.yml` — the manual release pipeline; `cef-codecs.yml` builds the codecs engine (D99).
 
 ## Doc inventory
 

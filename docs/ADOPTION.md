@@ -67,7 +67,7 @@ middle; D65 removed that level.)
                          ↑              (the IPC stack is Shenora.Core.Ipc, a NAMESPACE)
             ┌────────────┼────────────┬───────────────┐
             │            │            │               │
-   Shenora.Windows  Shenora.Android  Shenora.iOS   Shenora.Chromium   net10.0, win-x64/arm64, osx-x64/arm64
+   Shenora.Windows  Shenora.Android  Shenora.iOS   Shenora.Chromium   net10.0, win/osx/linux x64 and arm64
    net10.0-windows  net10.0-android  net10.0-ios      ↑   (D81)
             └─────────────────────────────────────────┘   ChromiumView (D83)
 ```

@@ -11,7 +11,7 @@ different times in different processes:
 
 | Phase | Runs | Owner |
 |---|---|---|
-| **Stage** — fetch, verify, publish a marker | while the app is alive | `UpdateStage` (this package) |
+| **Stage** — fetch, verify, publish a marker | while the app is alive | `UpdateStage` (`Shenora.Engine.Update`) |
 | **Apply** — overlay, remove, clear | with the app not running | `UpdateStage.ApplyAsync`, or a native applier |
 
 **The kit owns the PROTOCOL, not the download.** There is no HTTP client and no release host — an app

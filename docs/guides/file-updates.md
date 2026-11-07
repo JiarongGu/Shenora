@@ -24,9 +24,9 @@ over it. The rest of this section is what the queue does and how to drive it.
 This lives inside `Shenora` — no extra package to reference. Still no shell/IPC/Windows dependency, and
 **independent of the scheduler**: usable with it, without it, or before you adopt it.
 
-🔴 **It is THREE namespaces, not one.** The former `Shenora.IO` was removed by D65's relayering, so
-`using Shenora.IO;` no longer compiles. All three are ENGINE concerns — none of them carries a .NET
-capability to the page, which is what `Shenora.Modules.*` means:
+🔴 **It is FIVE namespaces, not one.** The former `Shenora.IO` was removed by D65's relayering, so
+`using Shenora.IO;` no longer compiles. Four are ENGINE concerns and the fifth a Core contract — none of them
+carries a .NET capability to the page, which is what `Shenora.Modules.*` means:
 
 ```csharp
 using Shenora.Engine;              // RetryPolicy — shared by the queue AND the scheduler
@@ -76,11 +76,10 @@ using var app = builder.Build();
 await app.Services.GetRequiredService<IFileUpdateQueue>().RecoverAsync();   // BEFORE the first update
 ```
 
-Configure it — or turn it off — through the same `Use…` call as everything else:
-
-```csharp
-builder.UseFileSystem(x => x.Journal = null);   // in-process rollback only: a failed change, not a dead process
-```
+Configure it through the same `Use…` call as everything else — `x.Journal = new FileUpdateJournal(…)` puts it
+elsewhere. `UseFileSystem` fills a `null` journal, so `x.Journal = null` does NOT turn it off; for in-process
+rollback only (a failed change, not a dead process) construct `new FileUpdateQueue(new FileUpdateQueueOptions { … })`
+yourself and register it as `IFileUpdateQueue`.
 
 An update interrupted while applying is rolled back; one interrupted after every change landed (only
 staged deletions left) is finished instead — rolling that back would undo a success. Recovery is safe

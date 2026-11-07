@@ -109,7 +109,7 @@ var stream = await StreamingSession.StartAsync(new StreamingSessionOptions
 });
 
 await foreach (var frame in stream.Frames.ReadAllAsync(ct)) Show(frame);   // latest-frame-wins
-await stream.DispatchAsync(SessionInput.Click(x, y), ct);
+await stream.DispatchAsync(new SessionPointerInput(SessionPointerAction.Down, fx, fy), ct);   // fx, fy: fractions of the viewport, 0..1
 ```
 
 ⚠ **`DispatchAsync` is single-consumer: await each call before the next.** Overlapping calls reorder
