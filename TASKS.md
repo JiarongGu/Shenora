@@ -211,8 +211,6 @@ Still uncovered:
 
 - [ ] **`MobileIpcBridge` has no test.** It is MAUI source compiled into the mobile packages, which the test project
   cannot reference; its gate never closes on a document change (by design). A MAUI-free seam or a device probe.
-- [ ] **A request in flight across a reload, on the host.** Nothing cancels it on navigation (only disposing the bridge
-  does), and its response goes into the new document, whose client drops the unknown id. Pinned on the client only.
 
 ### 🔴 `verify` cannot pass since the knowledge moved to `.agents/`
 

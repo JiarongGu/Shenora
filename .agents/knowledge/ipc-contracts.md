@@ -90,7 +90,9 @@ a rule is read as instructions — this line pointed at a folded package and a r
   work a route hands OFF to the background outlives the request, so it needs its own token — capturing
   this one kills long work the moment the page navigates. What the client "cancel this operation" case
   needs is an app-level CANCEL route carrying the operation id, never a transport concern: a one-way
-  `post` has no caller waiting.
+  `post` has no caller waiting. A navigation does not cancel either: the request in flight finishes and its
+  response goes into the new document, whose client drops the unknown id (a cancelled handler would abort a
+  save for a page already gone). Pinned on the Chromium and WebView2 bridges (`…in_flight_across…`).
 - **A test that awaits a cancellable operation must be BOUNDED (`WaitAsync`), not bare.** If the token
   ever stops flowing, `await Task.Delay(Timeout.Infinite, ct)` waits on something nobody can cancel and
   the test HANGS instead of failing — the worst outcome here, and the reason the dotnet suite runs

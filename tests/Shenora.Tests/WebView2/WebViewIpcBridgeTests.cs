@@ -402,6 +402,30 @@ public class WebViewIpcBridgeTests
         Assert.NotNull(bridge.TryBuildBatchJson());
     }
 
+    [Fact]
+    public async Task A_request_in_flight_across_a_navigation_is_not_cancelled_and_still_answers()
+    {
+        // Only disposing the bridge cancels (D23: the lifetime is the caller's, not the page's). A navigation
+        // cancelling would abort a handler's host-side effects for a page that is already gone; the response goes
+        // into the new document, whose client drops an id it never sent.
+        var dispatcher = new Ipc.ParkedDispatcher();
+        using var bridge = CreateBridge(new WebViewIpcBridgeOptions { Dispatcher = dispatcher });
+        await bridge.HandleIncomingAsync(ReadyJson("h1"));
+
+        var inFlight = bridge.HandleIncomingAsync(IpcJson.Serialize(new IpcRequest { Id = "slow-1", Module = "APP", Type = "SLOW" }));
+        bridge.ResetClientReady();
+
+        Assert.False(dispatcher.Seen.IsCancellationRequested);
+        Assert.False(bridge.IsClientReady);
+
+        dispatcher.Gate.SetResult(IpcResponse.CreateSuccess("slow-1"));
+        var response = await inFlight;
+
+        using var doc = JsonDocument.Parse(response!);
+        Assert.Equal("slow-1", doc.RootElement.GetProperty("id").GetString());
+        Assert.True(doc.RootElement.GetProperty("success").GetBoolean());
+    }
+
     // ── The outgoing serialize guard (P5.5 H1) ────────────────────────────────────────────────────
     // Payloads are APP-supplied objects, so serialization can throw on data the framework only sees
     // at flush time. The queue is drained BEFORE the serialize, so an unguarded throw both crashed
