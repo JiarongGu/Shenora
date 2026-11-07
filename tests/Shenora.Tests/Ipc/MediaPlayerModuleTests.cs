@@ -96,6 +96,22 @@ public class MediaPlayerModuleTests
         Assert.Equal(TimeSpan.FromSeconds(10), player.Status.Position);
     }
 
+    /// <summary><c>rate</c> is the element's own speed (a pick from its controls): the position is carried forward at it,
+    /// and the status's rate stays the one the host asked for.</summary>
+    [Fact]
+    public async Task A_report_naming_the_elements_own_rate_is_carried_forward_at_it()
+    {
+        var options = new MediaPlayerOptions();
+        var clock = new FakeTimeProvider();
+        using var player = new MediaPlayer(new RecordingBus(), options, clock);
+        await DispatchAsync(player, options, new { state = "Playing", position = 10.0, duration = 245.25, rate = 2.0 });
+
+        clock.Advance(TimeSpan.FromSeconds(4));
+
+        Assert.Equal(TimeSpan.FromSeconds(18), player.Status.Position);
+        Assert.Equal(1.0, player.Status.Rate);
+    }
+
     /// <summary>
     /// A live stream has no duration, and the wire carries <c>null</c> for it.
     /// <para>

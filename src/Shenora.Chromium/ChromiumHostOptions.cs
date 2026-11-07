@@ -127,6 +127,39 @@ public sealed class ChromiumHostOptions
     /// does not use it, since it can cost rendering performance; a session asked for without it is refused.
     /// </summary>
     public bool OffscreenSessions { get; init; }
+
+    /// <summary>
+    /// Replaces the default download policy for the shell's windows (downloads are CANCELED and logged, D84). Set
+    /// <see cref="ChromiumDownloadRequest.ResultFilePath"/> to take one; the file is written there without a prompt.
+    /// <para>
+    /// ⚠ <b>Return <c>true</c> when you have handled it</b>: handled with no path cancels it, and <c>false</c>, like a
+    /// throw (which is logged), falls through to the default. Chromium reports nothing more about a download the app
+    /// takes: the file's own completion is the app's to watch. CEF's UI thread: answer at once.
+    /// </para>
+    /// </summary>
+    public Func<ChromiumDownloadRequest, bool>? OnDownloadStarting { get; init; }
+
+    /// <summary>
+    /// Replaces the default permission policy for the shell's windows (a clipboard read from the app's own page is allowed
+    /// and everything else denied with no prompt, D84).
+    /// <para>
+    /// ⚠ <b>Return <c>true</c> when you have set <see cref="ChromiumPermissionRequest.Allow"/></b>; <c>false</c> (or a
+    /// throw, which is logged) falls through to the default. An unanswered request is never left to Chromium: its page's
+    /// promise would not settle. CEF's UI thread: answer at once.
+    /// </para>
+    /// </summary>
+    public Func<ChromiumPermissionRequest, bool>? OnPermissionRequested { get; init; }
+
+    /// <summary>
+    /// Told when a window's renderer process ends. The default logs it and reloads the page, at most three times running
+    /// and never twice within ten seconds (a load that succeeds restores the three).
+    /// <para>
+    /// 🔴 <b>Return <c>false</c> to OBSERVE without replacing.</b> <c>true</c> means "handled", which skips the
+    /// automatic reload: the page stays as it is, with its bridge closed, for the app to reload or replace. The log line is
+    /// written either way. CEF's UI thread.
+    /// </para>
+    /// </summary>
+    public Func<ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

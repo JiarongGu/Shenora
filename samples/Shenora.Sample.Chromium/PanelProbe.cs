@@ -22,7 +22,8 @@ namespace Shenora.Sample.Chromium;
 /// second launch shows what a restart keeps with <c>PersistSessionCookies</c> true (<c>2</c>, the default) or false
 /// (<c>3</c>).</item>
 /// <item><c>4</c> — a panel disposed and another made in the same profile at once, in one process; <c>5</c> — the same
-/// with another profile's panel opened and closed in between (the session cookie went missing in 2 of 7 such runs).</item>
+/// with another profile's panel opened and closed in between (a cookie went missing in 8 of 100 such runs, before the host
+/// waited for a profile's teardown).</item>
 /// </list>
 /// Windows only, as the panel is. Nothing outside the app is touched: input is posted to its own window, and the page
 /// comes from a server on localhost that lives as long as the probe.

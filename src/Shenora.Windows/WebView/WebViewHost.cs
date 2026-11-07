@@ -72,7 +72,7 @@ public sealed class WebViewHost
             ex => Log(() => "[Shenora.Windows] Posted UI work failed", ex));
 
         // The app's colour scheme follows this WebView until its control goes: the setting outlives every window.
-        if (options.ColorScheme is { } scheme)
+        if (options.ColorSchemeSetting is { } scheme)
         {
             scheme.Changed += ColorSchemeChanged;
             webView.Disposed += (_, _) => Shenora.AppCallback.Run(() => scheme.Changed -= ColorSchemeChanged,
@@ -86,7 +86,7 @@ public sealed class WebViewHost
     // UI thread.
     private void ApplyColorScheme()
     {
-        if (_webView.IsDisposed || _webView.CoreWebView2 is not { } core || _options.ColorScheme is not { } setting) return;
+        if (_webView.IsDisposed || _webView.CoreWebView2 is not { } core || _options.ColorSchemeSetting is not { } setting) return;
         core.Profile.PreferredColorScheme = Preferred(setting.Scheme);
     }
 

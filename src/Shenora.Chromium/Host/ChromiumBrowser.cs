@@ -54,6 +54,7 @@ internal sealed unsafe class ChromiumBrowser
 {
     private readonly ILogger? _log;
     private readonly IUrlLauncher? _urls;
+    private readonly ChromiumPageHooks? _hooks;
     private readonly Client _client;
     private readonly RendererRecovery _recovery;
     private _cef_browser_t* _browser;
@@ -67,14 +68,16 @@ internal sealed unsafe class ChromiumBrowser
     /// <param name="bridge">Builds this page's IPC bridge.</param>
     /// <param name="log">Diagnostics.</param>
     /// <param name="urls">Where popups go; none drops them.</param>
+    /// <param name="hooks">The app's answers to downloads, permissions and a renderer's end; none leaves the defaults.</param>
     public ChromiumBrowser(string name, ChromiumServing serving, ChromiumOrigins origins, Func<ChromiumBrowser, ChromiumIpcBridge> bridge,
-        ILogger? log, IUrlLauncher? urls = null)
+        ILogger? log, IUrlLauncher? urls = null, ChromiumPageHooks? hooks = null)
     {
         Name = name;
         Serving = serving;
         Origins = origins;
         _log = log;
         _urls = urls;
+        _hooks = hooks;
         Bridge = bridge(this);
         _client = new Client(this);
         _recovery = new RendererRecovery(message => AppCallback.Log(_log, () => $"[Shenora.Chromium] Window '{Name}': {message}", LogLevel.Warning));
@@ -311,9 +314,10 @@ internal sealed unsafe class ChromiumBrowser
 
     // From the renderer-terminated callback. The reload is posted, so it runs after CEF has finished reporting
     // the dead renderer.
-    private void RendererTerminated()
+    private void RendererTerminated(cef_termination_status_t status, int errorCode)
     {
         Bridge.RendererGone();
+        if (_hooks?.ProcessFailed(status, errorCode, _log) == true) return;
         if (!_recovery.ShouldReload(DateTime.UtcNow)) return;
         CefTask.Post(cef_thread_id_t.TID_UI, () => { if (_browser != null) _browser->reload(_browser); });
     }
@@ -378,6 +382,7 @@ internal sealed unsafe class ChromiumBrowser
         private readonly Drag _drag;
         private readonly Display _display;
         private readonly Permissions _permissions;
+        private readonly Downloads? _downloads;   // only with the app's hook: with none, CEF cancels every download itself
         private readonly FocusHandler _focus;
 
         public Client(ChromiumBrowser owner)
@@ -388,6 +393,7 @@ internal sealed unsafe class ChromiumBrowser
             _drag = new Drag(owner);
             _display = new Display(owner);
             _permissions = new Permissions(owner);
+            _downloads = owner._hooks is { HandlesDownloads: true } ? new Downloads(owner) : null;
             _focus = new FocusHandler(owner);
             Struct->get_request_handler = &GetRequests;
             Struct->get_life_span_handler = &GetLifeSpan;
@@ -395,6 +401,7 @@ internal sealed unsafe class ChromiumBrowser
             Struct->get_drag_handler = &GetDrag;
             Struct->get_display_handler = &GetDisplay;
             Struct->get_permission_handler = &GetPermissions;
+            Struct->get_download_handler = &GetDownloads;
             Struct->get_focus_handler = &GetFocus;
         }
 
@@ -407,6 +414,7 @@ internal sealed unsafe class ChromiumBrowser
             _drag.Release();
             _display.Release();
             _permissions.Release();
+            _downloads?.Release();
             _focus.Release();
         }
 
@@ -417,6 +425,7 @@ internal sealed unsafe class ChromiumBrowser
         [UnmanagedCallersOnly] private static _cef_drag_handler_t* GetDrag(_cef_client_t* self) => From<Client>(self)._drag.ForCef();
         [UnmanagedCallersOnly] private static _cef_display_handler_t* GetDisplay(_cef_client_t* self) => From<Client>(self)._display.ForCef();
         [UnmanagedCallersOnly] private static _cef_permission_handler_t* GetPermissions(_cef_client_t* self) => From<Client>(self)._permissions.ForCef();
+        [UnmanagedCallersOnly] private static _cef_download_handler_t* GetDownloads(_cef_client_t* self) => From<Client>(self)._downloads is { } downloads ? downloads.ForCef() : null;
         [UnmanagedCallersOnly] private static _cef_focus_handler_t* GetFocus(_cef_client_t* self) => From<Client>(self)._focus.ForCef();
     }
 
@@ -441,7 +450,54 @@ internal sealed unsafe class ChromiumBrowser
         }
     }
 
-    /// <summary>Answers every permission prompt (<see cref="ChromiumRouting.AllowsPermission"/>). Media access has its
+    /// <summary>A page-started download. No handler takes one, which CEF cancels (D84), unless the app set
+    /// <see cref="ChromiumHostOptions.OnDownloadStarting"/> and it names a path.</summary>
+    private sealed class Downloads : CefObject<_cef_download_handler_t>
+    {
+        private readonly ChromiumBrowser _owner;
+
+        public Downloads(ChromiumBrowser owner)
+        {
+            _owner = owner;
+            Struct->can_download = &CanDownload;
+            Struct->on_before_download = &BeforeDownload;
+        }
+
+        // Left unset, CEF never asks the hook (measured): it is OnBeforeDownload that decides.
+        [UnmanagedCallersOnly]
+        private static int CanDownload(_cef_download_handler_t* self, _cef_browser_t* browser, _cef_string_utf16_t* url, _cef_string_utf16_t* method)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            return 1;
+        }
+
+        // Returning 1 with the callback continued saves it there, with no dialog; returning 0 is CEF's default, which
+        // cancels in Alloy style.
+        [UnmanagedCallersOnly]
+        private static int BeforeDownload(_cef_download_handler_t* self, _cef_browser_t* browser, _cef_download_item_t* item,
+            _cef_string_utf16_t* suggestedName, _cef_before_download_callback_t* callback)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var i = new CefRef<_cef_download_item_t>(item);
+            using var c = new CefRef<_cef_before_download_callback_t>(callback);
+            var owner = From<Downloads>(self)._owner;
+            var url = CefStrings.TakeUserFree(item->get_url(item));
+            var path = owner._hooks?.Download(url, CefStrings.Read(suggestedName), CefStrings.TakeUserFree(item->get_mime_type(item)), owner.Log);
+            if (path is null)
+            {
+                AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': download canceled by policy: {url}");
+                return 0;
+            }
+            fixed (char* p = path)
+            {
+                var target = CefStrings.View(p, path.Length);
+                callback->cont(callback, &target, 0);
+            }
+            return 1;
+        }
+    }
+
+    /// <summary>Answers every permission prompt (<see cref="ChromiumRouting.AllowsPermission"/>, or the app's own). Media access has its
     /// own callback, left to Alloy's default, which denies and settles (measured).</summary>
     private sealed class Permissions : CefObject<_cef_permission_handler_t>
     {
@@ -461,7 +517,9 @@ internal sealed unsafe class ChromiumBrowser
             using var b = new CefRef<_cef_browser_t>(browser);
             using var c = new CefRef<_cef_permission_prompt_callback_t>(callback);
             var owner = From<Permissions>(self)._owner;
-            var allow = AppCallback.RunOrDefault(() => ChromiumRouting.AllowsPermission(requested, CefStrings.Read(origin), owner.Origins), fallback: false);
+            var from = CefStrings.Read(origin);
+            var allow = owner._hooks?.Permission(requested, from, owner.Log)
+                ?? AppCallback.RunOrDefault(() => ChromiumRouting.AllowsPermission(requested, from, owner.Origins), fallback: false);
             callback->cont(callback, allow ? cef_permission_request_result_t.CEF_PERMISSION_RESULT_ACCEPT : cef_permission_request_result_t.CEF_PERMISSION_RESULT_DENY);
             if (!allow) AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': denied a permission prompt (flags {requested:X})");
             return 1;
@@ -537,7 +595,7 @@ internal sealed unsafe class ChromiumBrowser
             using var b = new CefRef<_cef_browser_t>(browser);
             var owner = From<Requests>(self)._owner;
             AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': the renderer terminated ({status}, {errorCode})", LogLevel.Warning);
-            AppCallback.Run(owner.RendererTerminated);
+            AppCallback.Run(() => owner.RendererTerminated(status, errorCode));
         }
     }
 

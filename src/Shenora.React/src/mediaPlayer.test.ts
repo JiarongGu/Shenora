@@ -127,6 +127,40 @@ describe('useMediaPlayer', () => {
     expect(reports(transport)).toHaveLength(0);
   });
 
+  /**
+   * A speed the element changes itself (its own controls) or one the engine refuses reaches the host as the element's
+   * `playbackRate`, which the host carries a playing position forward at; the rate the host asked for is not the report's.
+   */
+  describe('the element’s own rate', () => {
+    it('is on every report', () => {
+      const { transport, element } = createFixture();
+
+      element.dispatchEvent(new Event('play'));
+      element.dispatchEvent(new Event('waiting'));
+
+      expect(reports(transport).map((r) => r.rate)).toEqual([1, 1]);
+    });
+
+    // jsdom, like a browser, raises `ratechange` itself when `playbackRate` is set.
+    it('is reported when it changes, as the state the host already holds', () => {
+      const { transport, element } = createFixture();
+      element.dispatchEvent(new Event('play'));
+
+      element.playbackRate = 1.5;
+
+      expect(reports(transport).map((r) => [r.state, r.rate])).toEqual([['Playing', 1], ['Playing', 1.5]]);
+    });
+
+    it('says nothing before the host has heard a state: a load resets the rate, and an open would take that for its first report', async () => {
+      const { bus, transport, element } = createFixture();
+      await send(bus, MediaPlayerCommands.load, { uri: 'app://files/a.m4a', startAt: 0 });
+
+      element.dispatchEvent(new Event('ratechange'));
+
+      expect(reports(transport)).toHaveLength(0);
+    });
+  });
+
   describe('going to the background', () => {
     const setHidden = (hidden: boolean) =>
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });

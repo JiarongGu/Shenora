@@ -28,6 +28,44 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Breaking
+
+- **`WebViewHostOptions.ColorScheme` is now `ColorSchemeSetting`.** It holds the app's `IColorScheme`, while
+  `WindowsHostOptions.ColorScheme` and `ChromiumHostOptions.ColorScheme` hold the `ColorScheme` enum that seeds it, so one
+  name meant two types across the options. Rename the property where `WebViewHostOptions` is built; the value passed is
+  unchanged.
+
+### Added
+
+- **An app answers a Chromium window's downloads, permission prompts and renderer failures.**
+  `ChromiumHostOptions.OnDownloadStarting` (set `ResultFilePath` to save a download there; handled with none cancels it),
+  `OnPermissionRequested` (set `Allow`) and `OnProcessFailed` (`true` skips the shell's reload), with the WebView2 host's
+  names and its rule: return `true` when handled, and `false`, or a throw, leaves the shell's default (downloads cancelled,
+  a clipboard read from the app's page allowed and the rest denied, a renderer reloaded). They cover the shell's windows,
+  not the pages of `ChromiumEngine`.
+- **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
+  `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
+  `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe
+  is still CEF's launcher: the SDK's apphost, which a self-contained build needs, is built and left out of the publish.
+
+### Fixed
+
+- **A panel or window recreated at once for a profile could come up without its cookies.** CEF tears a profile down on its
+  own threads after the last reference goes, and a context made for the same folder meanwhile could read the cookie file
+  early (a cookie was missing from a recreated panel in 8 of 100 runs of the panel probe, with another profile's panel
+  opened and closed between). The host now waits 500 ms after a profile's context was let go before it makes another for
+  it; none of 40 runs with it lost one.
+- **The page player's position follows a speed the element changed itself.** `MediaPlayer.Status` carried a playing
+  position forward at the rate the host asked for, so a speed picked from the element's own controls, or one Chromium
+  refused (outside 0.0625–16), left it running at the wrong one. `useMediaPlayer` now sends the element's own
+  `playbackRate` as `rate` (a new optional field of `PLAYER_REPORT`) with every report and on `ratechange`, and the
+  position runs at it; `Status.Rate` stays the rate asked for. A page that reports by hand may add `rate`; one that does
+  not is carried at the rate asked for, as before.
+- **A frameless Chromium window's cover draws its caption glyphs dimmed when the window is not the foreground.** It always
+  drew the active ones, so a window that opened behind another showed bright glyphs until the page painted.
+
 ## 0.25.0 — 2026-11-04
 
 ### Added

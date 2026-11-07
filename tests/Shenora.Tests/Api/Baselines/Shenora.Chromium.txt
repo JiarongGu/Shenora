@@ -23,6 +23,11 @@ sealed class Shenora.Chromium.ChromiumChildBrowserOptions
   public System.Drawing.Color? BackgroundColor { get; init; }
   public string Name { get; init; }
   public string? Path { get; init; }
+sealed class Shenora.Chromium.ChromiumDownloadRequest
+  public string MimeType { get; }
+  public string SuggestedName { get; }
+  public string Url { get; }
+  public string? ResultFilePath { get; set; }
 enum Shenora.Chromium.ChromiumDragAreaAction (int)
   public const Shenora.Chromium.ChromiumDragAreaAction Move = 0
   public const Shenora.Chromium.ChromiumDragAreaAction ShowSystemMenu = 2
@@ -72,6 +77,9 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public Shenora.Core.Shell.WindowStateHostOptions? WindowState { get; init; }
   public Shenora.Core.WebView.IWebViewResourceProvider? ResourceProvider { get; init; }
   public System.Action<Shenora.Core.Shell.UnhandledExceptionReport>? OnUnhandledException { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumDownloadRequest, bool>? OnDownloadStarting { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumPermissionRequest, bool>? OnPermissionRequested { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
   public bool ObserveUnobservedTaskExceptions { get; init; }
   public bool OffscreenSessions { get; init; }
   public bool? IsDevelopment { get; init; }
@@ -82,6 +90,53 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public string? Locale { get; init; }
   public string? NotFoundPage { get; init; }
   public string? UserDataFolder { get; init; }
+[Flags] enum Shenora.Chromium.ChromiumPermissionKind (int)
+  public const Shenora.Chromium.ChromiumPermissionKind ArSession = 1
+  public const Shenora.Chromium.ChromiumPermissionKind CameraPanTiltZoom = 2
+  public const Shenora.Chromium.ChromiumPermissionKind CameraStream = 4
+  public const Shenora.Chromium.ChromiumPermissionKind CapturedSurfaceControl = 8
+  public const Shenora.Chromium.ChromiumPermissionKind Clipboard = 16
+  public const Shenora.Chromium.ChromiumPermissionKind DiskQuota = 64
+  public const Shenora.Chromium.ChromiumPermissionKind FileSystemAccess = 16777216
+  public const Shenora.Chromium.ChromiumPermissionKind Geolocation = 256
+  public const Shenora.Chromium.ChromiumPermissionKind HandTracking = 512
+  public const Shenora.Chromium.ChromiumPermissionKind IdentityProvider = 1024
+  public const Shenora.Chromium.ChromiumPermissionKind IdleDetection = 2048
+  public const Shenora.Chromium.ChromiumPermissionKind KeyboardLock = 65536
+  public const Shenora.Chromium.ChromiumPermissionKind LocalFonts = 128
+  public const Shenora.Chromium.ChromiumPermissionKind LocalNetwork = 67108864
+  public const Shenora.Chromium.ChromiumPermissionKind LocalNetworkAccessDeprecated = 33554432
+  public const Shenora.Chromium.ChromiumPermissionKind LoopbackNetwork = 134217728
+  public const Shenora.Chromium.ChromiumPermissionKind MicStream = 4096
+  public const Shenora.Chromium.ChromiumPermissionKind MidiSysex = 8192
+  public const Shenora.Chromium.ChromiumPermissionKind MultipleDownloads = 16384
+  public const Shenora.Chromium.ChromiumPermissionKind None = 0
+  public const Shenora.Chromium.ChromiumPermissionKind Notifications = 32768
+  public const Shenora.Chromium.ChromiumPermissionKind PointerLock = 131072
+  public const Shenora.Chromium.ChromiumPermissionKind ProtectedMediaIdentifier = 262144
+  public const Shenora.Chromium.ChromiumPermissionKind RegisterProtocolHandler = 524288
+  public const Shenora.Chromium.ChromiumPermissionKind Sensors = 268435456
+  public const Shenora.Chromium.ChromiumPermissionKind StorageAccess = 1048576
+  public const Shenora.Chromium.ChromiumPermissionKind TopLevelStorageAccess = 32
+  public const Shenora.Chromium.ChromiumPermissionKind VrSession = 2097152
+  public const Shenora.Chromium.ChromiumPermissionKind WebAppInstallation = 4194304
+  public const Shenora.Chromium.ChromiumPermissionKind WindowManagement = 8388608
+  public int value__
+sealed class Shenora.Chromium.ChromiumPermissionRequest
+  public Shenora.Chromium.ChromiumPermissionKind Kinds { get; }
+  public bool Allow { get; set; }
+  public string Origin { get; }
+sealed class Shenora.Chromium.ChromiumProcessReport
+  public Shenora.Chromium.ChromiumProcessStatus Status { get; }
+  public int ErrorCode { get; }
+enum Shenora.Chromium.ChromiumProcessStatus (int)
+  public const Shenora.Chromium.ChromiumProcessStatus Abnormal = 0
+  public const Shenora.Chromium.ChromiumProcessStatus Crashed = 2
+  public const Shenora.Chromium.ChromiumProcessStatus IntegrityFailure = 5
+  public const Shenora.Chromium.ChromiumProcessStatus Killed = 1
+  public const Shenora.Chromium.ChromiumProcessStatus LaunchFailed = 4
+  public const Shenora.Chromium.ChromiumProcessStatus OutOfMemory = 3
+  public int value__
 sealed class Shenora.Chromium.ChromiumSessionHost : Shenora.Core.Sessions.ISessionHost
   public Shenora.Core.Sessions.ISessionBrowserContext CreateContext()
   public Shenora.Core.Shell.IUiDispatcher Ui { get; }

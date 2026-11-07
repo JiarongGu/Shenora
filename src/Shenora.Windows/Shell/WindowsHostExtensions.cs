@@ -40,7 +40,7 @@ public sealed class WindowsHostOptions
 
     /// <summary>The app's colour scheme as it starts: whether it follows the OS's light or dark setting
     /// (<see cref="ColorScheme.System"/>, the default) or is held at one. Registered as <see cref="IColorScheme"/>,
-    /// which a <see cref="WebViewHostOptions.ColorScheme"/> applies to its WebView. Pass the user's saved choice here;
+    /// which a <see cref="WebViewHostOptions.ColorSchemeSetting"/> applies to its WebView. Pass the user's saved choice here;
     /// change it later through <see cref="IColorScheme"/>, and save it on its <see cref="IColorScheme.Changed"/>.</summary>
     public ColorScheme ColorScheme { get; init; } = ColorScheme.System;
 

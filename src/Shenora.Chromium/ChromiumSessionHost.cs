@@ -62,8 +62,9 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
             // The profile opens first: a profile on disk is ready only once CEF says so, and a browser asked for before
             // then is refused (measured: create_browser_sync answered null).
             var shared = definition.Context as Context;
+            if (shared is null && SettleLeft(profile) is { Ticks: > 0 } wait) return Settled(wait, cancellationToken, () => CreateAsync(definition, cancellationToken));
             var (context, ready) = shared is not null ? shared.For(profile) : Open(profile);
-            Action abandon = () => { if (shared is null) Release((_cef_request_context_t*)context); };
+            Action abandon = () => { if (shared is null) Release((_cef_request_context_t*)context, profile); };
             void Alive()
             {
                 if (shared?.IsDisposed == true)
@@ -106,12 +107,13 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         {
             cancellationToken.ThrowIfCancellationRequested();
             var profile = Admit(definition.Options, windowless: false);
+            if (SettleLeft(profile) is { Ticks: > 0 } wait) return Settled(wait, cancellationToken, () => OpenWindowAsync(definition, cancellationToken));
             var (context, ready) = Open(profile);
             return SessionCalls.Made<ISessionWindow>(ready, profile, definition.Options.InitTimeout, cancellationToken, _ui,
                 () => OpenWindow(definition.Options, definition.Scope, onGone: null, definition.Title, definition.ClientSize, definition.MinimumSize,
                     definition.Revealed, modal: true, definition.BackColor, profile, (_cef_request_context_t*)context, owned: true, place: null),
                 window => ((ChromiumSessionWindow)window).Opened, window => TearDown((ChromiumSessionWindow)window),
-                () => Release((_cef_request_context_t*)context));
+                () => Release((_cef_request_context_t*)context, profile));
         }
         catch (Exception ex)
         {
@@ -164,12 +166,12 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         if (made == null)
         {
             browser.NeverMade();   // its client, which nothing would ever retire, as the window path already says
-            if (owned) Release(context);
+            if (owned) Release(context, profile);
             throw new InvalidOperationException($"Chromium would not make a session browser (profile '{profile}').");
         }
         browser.Attach(made);
         // A browser of its own lets its profile go as it closes; a pool's context lets go when the pool does.
-        if (owned) browser.WhenClosed(() => Release(context));
+        if (owned) browser.WhenClosed(() => Release(context, profile));
         return browser;
     }
 
@@ -188,12 +190,14 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         {
             cancellationToken.ThrowIfCancellationRequested();
             var profile = Admit(options, windowless: false);
+            if (SettleLeft(profile) is { Ticks: > 0 } wait)
+                return Settled(wait, cancellationToken, () => CreateChildAsync(options, onGone, host, bounds, background, persistSessionCookies, proxyServer, cancellationToken));
             var (context, ready) = Open(profile, persistSessionCookies, proxyServer);
             return SessionCalls.Made<ChromiumWebPanelBrowser>(ready, profile, options.InitTimeout, cancellationToken, _ui,
                 () => CreateChild(options, onGone, profile, host, bounds, background, (_cef_request_context_t*)context),
                 panel => panel.Ready,
                 panel => _ui.InvokeAsync(panel.Close, CancellationToken.None),
-                () => Release((_cef_request_context_t*)context));
+                () => Release((_cef_request_context_t*)context, profile));
         }
         catch (Exception ex)
         {
@@ -207,7 +211,7 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         ChromiumWindow host, Rectangle bounds, Color? background, _cef_request_context_t* context)
     {
 #if !CEF_WINDOWS
-        Release(context);
+        Release(context, profile);
         throw new PlatformNotSupportedException("A Chromium web panel is Windows only, today.");
 #else
         var size = new Size(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height));
@@ -219,11 +223,11 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         }
         catch
         {
-            Release(context);
+            Release(context, profile);
             throw;
         }
         // The context is the panel's own, let go as its browser closes.
-        browser.WhenClosed(() => Release(context));
+        browser.WhenClosed(() => Release(context, profile));
         return panel;
 #endif
     }
@@ -243,10 +247,10 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         catch (Exception ex)
         {
             browser.NeverMade();   // its client, which nothing will close now
-            if (owned) Release(context);
+            if (owned) Release(context, profile);
             throw new InvalidOperationException($"Chromium would not open a session window (profile '{profile}').", ex);
         }
-        if (owned) browser.WhenClosed(() => Release(context));
+        if (owned) browser.WhenClosed(() => Release(context, profile));
         return window;
     }
 
@@ -340,8 +344,36 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         }
     }
 
-    private static void Release(_cef_request_context_t* context) =>
+    // How long after a profile's context was let go another may be made for it. CEF tears a profile down on its own threads
+    // after the last reference goes, and a context made for the same folder while that runs can read the cookie file
+    // before the old one's last write: a cookie went missing from a recreated panel in 8 of 100 runs (SHENORA_SAMPLE_PANEL_PROBE=5,
+    // another profile's panel opened and closed in between), and from none of 40 with a pause of 250 ms, 40 of 1.5 s, or this
+    // settle. Flushing the cookie store before the release did not change it. CEF reports no end of the teardown, so this
+    // waits a margin.
+    private static readonly TimeSpan ProfileSettle = TimeSpan.FromMilliseconds(500);
+    private readonly Dictionary<string, long> _letGo = new(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
+
+    // An owned context let go, and when.
+    private void Release(_cef_request_context_t* context, string profile)
+    {
+        lock (_letGo) _letGo[profile] = Environment.TickCount64;
         ((_cef_base_ref_counted_t*)context)->release((_cef_base_ref_counted_t*)context);
+    }
+
+    // What is left of the settle after the profile's last context went; zero once it has passed.
+    private TimeSpan SettleLeft(string profile)
+    {
+        long at;
+        lock (_letGo) if (!_letGo.TryGetValue(profile, out at)) return TimeSpan.Zero;
+        var left = ProfileSettle - TimeSpan.FromMilliseconds(Environment.TickCount64 - at);
+        return left > TimeSpan.Zero ? left : TimeSpan.Zero;
+    }
+
+    // The same open, again, once the profile has settled.
+    private static Task<T> Settled<T>(TimeSpan wait, CancellationToken cancellationToken, Func<Task<T>> again) =>
+        Task.Delay(wait, cancellationToken)
+            .ContinueWith(delay => delay.IsCanceled ? Task.FromCanceled<T>(cancellationToken) : again(), TaskScheduler.Default)
+            .Unwrap();
 
     /// <summary>A profile's request context becoming ready, which CEF reports on its UI thread.</summary>
     private sealed class ProfileReady : CefObject<_cef_request_context_handler_t>
@@ -409,7 +441,7 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         {
             IsDisposed = true;
             if (_context == 0) return;
-            Release((_cef_request_context_t*)_context);
+            host.Release((_cef_request_context_t*)_context, _profile!);
             _context = 0;
         }
     }

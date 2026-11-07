@@ -73,9 +73,13 @@ launcher), and a subprocess stays silent. Such a publish starts through `<App>.e
 **What a Windows publish has been seen to do** (the Chromium sample, win-x64, framework-dependent, published to a
 fresh folder outside the build tree on a machine with the .NET 10 runtime, 2026-10-22): flat and with folders, each
 started from the artifact (its window in 3.6 s and 7.6 s, its data folder created beside it) and closed by a posted
-`WM_CLOSE` with exit code 0 and no process left. A self-contained Windows publish is refused by the kit's own check
-(`_ShenoraChromiumSelfContainedCheck`) before the SDK's bare NETSDK1067. Unseen: a machine without the .NET SDK,
-win-arm64, and any macOS or Linux artifact the release built (`TASKS.md`).
+`WM_CLOSE` with exit code 0 and no process left. A self-contained publish (`--self-contained`, flat and with folders) was
+started the same way: `coreclr.dll` loaded from the publish folder (from `lib\` with folders), not the machine's .NET.
+The SDK needs an apphost for a self-contained app, so the kit leaves `UseAppHost` on there and drops the apphost it
+builds from the publish (`_ShenoraChromiumDropApphost`): the exe stays CEF's launcher, and the shim's `get_hostfxr_path`
+finds the `hostfxr.dll` beside the app. Unseen: a machine without any .NET installed (this one has one, which the
+published app did not use), a machine without the .NET SDK, win-arm64, and any macOS or Linux artifact the release built
+(`TASKS.md`).
 
 ## The Chromium hosts
 
@@ -368,7 +372,10 @@ Run: gate          ← a launch turned away shows nothing
   (`DWMWA_TRANSITIONS_FORCEDISABLED`): with them, its pixels came 110 ms after it showed and it faded out over the
   window's colours. It goes at the page's first paint, which `ChromiumBrowser.WatchFirstPaint` learns from Chromium
   over the in-process DevTools protocol (`Page.lifecycleEvent`, within ~35 ms of the pixels) and two animation frames
-  after, or at the lift. Measured: light only in the window's first ~0.1–0.15 s, during its own open animation, and
+  after, or at the lift. Without a first paint it stays until the splash's fade ends and goes in one step, to the window
+  as it is then: fading it would only fade to Chromium's own colours, which it exists to hide. Its glyphs are drawn
+  dimmed when the window is not the foreground, as the window's own are, and again on the next move or resize that finds
+  that changed (not on the activation itself, which the cover is not told of). Measured: light only in the window's first ~0.1–0.15 s, during its own open animation, and
   none after. That animation is the app's to keep or drop (`ChromiumWindowOptions.Animations`, `WindowAnimations`,
   the system's by default): off, the cover's pixels came ~40 ms after the show instead of ~130 ms (one A/B, three runs
   each, before the setting existed).
@@ -517,6 +524,25 @@ its page's, a click and keys posted to the shell's window reach the panel's page
 `SetBounds` move what is on screen, two profiles keep separate cookies, and across a restart the session cookie stays
 with `PersistSessionCookies` true and goes with false (the persistent one stays either way). Its `ISessionBrowser`
 members must be called on the shell's UI thread: from another, CEF refuses the DevTools calls behind script and cookies.
+
+A profile's context is let go as its panel (or window) closes, and CEF tears the profile down on its own threads after
+that. A context made for the same folder meanwhile read the cookie file early: a recreated panel lost a cookie in 8 of 100
+runs of `PanelProbe` 5 (another profile's panel opened and closed in between; without it, none in 6), and in none of 40
+with a pause of 250 ms, or of 40 with 1.5 s. Flushing the cookie store before the release changed nothing. So the host
+waits 500 ms after a profile's last release before it makes another context for it (`ChromiumSessionHost.ProfileSettle`),
+because CEF reports no end of the teardown; a pool's context, made on the UI thread, does not wait.
+
+**The app's hooks on what a window's page asks of the shell** (`ChromiumHostOptions.OnDownloadStarting`,
+`OnPermissionRequested`, `OnProcessFailed`; D84's defaults stand where an app sets none, or answers false). Run for real
+(`SHENORA_SAMPLE_HOOKS_PROBE=1` and `2`, Chromium sample, Windows, a click posted to the window starting each download):
+a download the hook gave a path was written there with its content, one handled with no path and one declined were
+cancelled; the hook's grant of notifications settled the page's promise as `granted`, and a request it declined got the
+default (the position: denied, code 1); a killed renderer reached the hook as `Crashed`, and with `true` the page was
+not reloaded, with `false` it was, once. ⚠ CEF reaches `on_before_download` only when the handler also sets
+`can_download`, which the kit does. ⚠ A page's later automatic downloads raise a `MultipleDownloads` permission, which the
+default policy denies: an app that takes downloads allows it in `OnPermissionRequested`. Not seen: that prompt itself (the
+probe's downloads each followed a click), and a download's progress or completion, which the hook does not report.
+They cover the shell's windows, not the pages of `ChromiumEngine` (the WinForms host's).
 
 ## What is deliberately absent
 

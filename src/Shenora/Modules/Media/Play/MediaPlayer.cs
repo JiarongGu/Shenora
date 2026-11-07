@@ -109,6 +109,8 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     private bool _held;
     private TaskCompletionSource? _opening;
     private double _rate = 1.0;
+    // The rate a playing position is carried forward at: the one asked for, until the page reports the element's own.
+    private double _carryRate = 1.0;
     private bool _disposed;
 
     /// <param name="events">The bus the page listens on.</param>
@@ -145,7 +147,8 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     /// </para>
     /// <para>
     /// While <see cref="MediaPlayerState.Playing"/>, <see cref="MediaPlayerStatus.Position"/> is the page's last
-    /// report carried forward at the rate asked for and held at the duration — an ESTIMATE, because the page
+    /// report carried forward at the element's own rate that report named (the rate asked for when it named none) and
+    /// held at the duration — an ESTIMATE, because the page
     /// reports on transitions only, and its next report replaces it. <c>BackgroundPlaybackTransfer</c> reads it
     /// at <c>Window.Stopped</c>, which can come before the page's hidden-time report. A hidden page still reads
     /// <c>Playing</c> after the platform stops its element (<c>useMediaPlayer</c> keeps the user's intent), so the page
@@ -171,6 +174,7 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
             // The time played so far ran at the OLD rate; carrying it forward at the new one would move the past.
             var now = Current();
             _rate = rate;
+            _carryRate = rate;
             Set(now with { Rate = rate }, _held);
         }
         Send(MediaPlayerEvents.Rate, new { rate });
@@ -192,6 +196,7 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
             _opening?.TrySetCanceled();
             _opening = opening;
             rate = _rate;
+            _carryRate = _rate;
             Set(new MediaPlayerStatus { State = MediaPlayerState.Opening, Rate = _rate });
         }
         Raise();
@@ -323,7 +328,7 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     /// come from HERE: between reports, a playing position is only carried forward (see <see cref="Status"/>).
     /// <para>
     /// ⚠ <b>Report on TRANSITIONS, not on a timer</b> — <c>loadedmetadata</c>, <c>canplay</c>, <c>play</c>,
-    /// <c>pause</c>, <c>waiting</c>, <c>seeked</c>, <c>ended</c>, <c>error</c>, and no more.
+    /// <c>pause</c>, <c>waiting</c>, <c>seeked</c>, <c>ratechange</c>, <c>ended</c>, <c>error</c>, and no more.
     /// </para>
     /// </summary>
     public void Report(MediaPlayerStatus status) => ApplyReport(status, held: false);
@@ -331,7 +336,10 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     /// <param name="status">What the element is doing.</param>
     /// <param name="held">The platform has stopped the element of a hidden page (<c>hidden</c> on the wire), which the
     /// page reports as the state the host holds: its position is held rather than carried forward.</param>
-    internal void ApplyReport(MediaPlayerStatus status, bool held)
+    /// <param name="elementRate">The element's own <c>playbackRate</c> (<c>rate</c> on the wire), which a playing position is
+    /// carried forward at; null, or not above zero, is the rate asked for. <see cref="MediaPlayerStatus.Rate"/> stays the
+    /// rate asked for.</param>
+    internal void ApplyReport(MediaPlayerStatus status, bool held, double? elementRate = null)
     {
         ArgumentNullException.ThrowIfNull(status);
 
@@ -340,6 +348,7 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
         {
             // ⚠ The rate stays the player's: taking the page's verbatim silently resets a configured 1.5x
             // on the first report from a page that does not carry one.
+            _carryRate = elementRate is { } own && double.IsFinite(own) && own > 0 ? own : _rate;
             Set(status with { Rate = _rate }, held);
             opening = _opening;
 
@@ -391,7 +400,7 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     {
         if (_status.State is not MediaPlayerState.Playing || _held) return _status;
         // In seconds, so an absurd rate saturates rather than overflowing TimeSpan inside a property getter.
-        var seconds = _status.Position.TotalSeconds + _clock.GetElapsedTime(_statusAt).TotalSeconds * _rate;
+        var seconds = _status.Position.TotalSeconds + _clock.GetElapsedTime(_statusAt).TotalSeconds * _carryRate;
         var position = seconds < TimeSpan.MaxValue.TotalSeconds ? TimeSpan.FromSeconds(seconds) : TimeSpan.MaxValue;
         if (_status.Duration is { } duration && duration > TimeSpan.Zero && position > duration) position = duration;
         return _status with { Position = position };

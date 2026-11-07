@@ -22,8 +22,9 @@ namespace Shenora.Modules.Media;
 public sealed class MediaPlayerModule : ModuleBase
 {
     /// <summary>Route: the page describing what its element is doing. Payload
-    /// <c>{ state, position, duration, error?, hidden? }</c>, positions in SECONDS; <c>hidden</c> says the platform has
-    /// stopped a hidden page's element, so the host holds that position rather than carrying it forward.</summary>
+    /// <c>{ state, position, duration, error?, hidden?, rate? }</c>, positions in SECONDS; <c>hidden</c> says the platform has
+    /// stopped a hidden page's element, so the host holds that position rather than carrying it forward; <c>rate</c> is the
+    /// element's own <c>playbackRate</c>, which a playing position is carried forward at.</summary>
     public const string ReportType = "PLAYER_REPORT";
 
     /// <summary>Route: what is the host's player doing right now? No payload; answers like a drive
@@ -116,7 +117,8 @@ public sealed class MediaPlayerModule : ModuleBase
             Position = Seconds(PayloadHelper.GetOptionalValue<double>(request.Payload, "position")) ?? TimeSpan.Zero,
             Duration = Seconds(PayloadHelper.GetOptionalValue<double?>(request.Payload, "duration")),
             Error = PayloadHelper.GetOptionalValue<string>(request.Payload, "error"),
-        }, held: PayloadHelper.GetOptionalValue<bool?>(request.Payload, "hidden") ?? false);
+        }, held: PayloadHelper.GetOptionalValue<bool?>(request.Payload, "hidden") ?? false,
+            elementRate: PayloadHelper.GetOptionalValue<double?>(request.Payload, "rate"));
         return Done();
     }
 

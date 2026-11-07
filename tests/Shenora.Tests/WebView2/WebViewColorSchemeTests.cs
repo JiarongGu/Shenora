@@ -46,7 +46,7 @@ public class WebViewColorSchemeTests
         _ = new WebViewHost(webView, new WebViewHostOptions
         {
             Environment = new WebViewEnvironmentOptions { UserDataFolder = Path.GetTempPath() },
-            ColorScheme = scheme,
+            ColorSchemeSetting = scheme,
         });
         Assert.Equal(1, scheme.Listeners);
 
@@ -76,7 +76,7 @@ public class WebViewColorSchemeTests
         _ = new WebViewHost(webView, new WebViewHostOptions
         {
             Environment = new WebViewEnvironmentOptions { UserDataFolder = Path.GetTempPath() },
-            ColorScheme = new ThrowingScheme(),
+            ColorSchemeSetting = new ThrowingScheme(),
         });
 
         webView.Dispose();   // WinForms' own dispose path: an exception here escapes into the app's teardown

@@ -52,7 +52,7 @@ void Report(const wchar_t* text) {
 
 int Fail(const wchar_t* what, int code) {
   wchar_t text[512];
-  // No "or publish it self-contained": the SDK refuses that for a Windows Chromium app (NETSDK1067, UseAppHost=false).
+  // A self-contained publish carries its own runtime, found beside the app: reaching here from one means its folder lost it.
   swprintf_s(text, L"The app could not start .NET: %s (0x%08X). Install the .NET runtime it targets.", what,
              static_cast<unsigned>(code));
   Report(text);

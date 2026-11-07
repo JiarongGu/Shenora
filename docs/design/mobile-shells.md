@@ -722,6 +722,12 @@ iOS      LAZY-ABANDON: handed=712 drained=712 disposed=0 | fds(before=-1 after=-
     window plays on while hidden and drops no pause, so nothing there is held. Measured after (6 runs): the marked
     report came 22–55 ms after the hidden-time report, once before `Stopped` (held) and five times during the
     native open (handed over from it); each of the 5 readable handoffs was exactly where the element stopped.
+  - **The position runs at the element's own rate, not the one asked for.** A speed picked from the element's controls,
+    or one Chromium refuses (outside 0.0625–16), would otherwise leave the estimate running at the wrong one. Every
+    report carries `element.playbackRate` (`rate`, optional on the wire), `ratechange` sends one once the host has
+    heard a state (a load's own reset, before any, would complete an open), and a report with none or a nonsense one
+    falls back to the rate asked for. `Status.Rate` stays the rate asked for. Unit-tested on both halves; no element
+    was driven here.
   - 🔴 **TWO OWNERS OF ONE ELEMENT LOSE.** The page's own JS handoff also called `vid.pause()`, which
     destroyed the very state the host needed. Only one side may drive the element per transition — the page
     hands off, the HOST hands back.

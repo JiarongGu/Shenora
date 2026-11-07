@@ -231,5 +231,5 @@ public sealed class WebViewHostOptions
     /// profile as it initializes and after each change, so the page's <c>prefers-color-scheme</c> and the browser's own
     /// UI follow it. Pass <c>sp.GetService&lt;IColorScheme&gt;()</c>. Null leaves the profile following the OS.
     /// </summary>
-    public IColorScheme? ColorScheme { get; init; }
+    public IColorScheme? ColorSchemeSetting { get; init; }
 }

@@ -68,10 +68,6 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   keeps no EWMH stacking list, so its order was not seen. Mutter and KWin are compositing managers, where the one-row
   gap a framed window's splash leaves should not be needed; confirm it does no harm there, that they keep a transient
   splash above its owner, and that they carry out the strip's `_NET_WM_MOVERESIZE`.
-- [ ] **Two small points the colour scheme and cover review left (D93, D92)**, neither a defect in normal use:
-  `WindowsHostOptions.ColorScheme` (the enum) and `WebViewHostOptions.ColorScheme` (the `IColorScheme`) share a name
-  and not a type; and without a first paint the cover stays until the lift, snaps away at the end of the fade, and
-  always draws the active glyphs.
 - [ ] 🅿️ **The macOS splash's PIXELS and real input.** Its presence, order, bounds and lift are measured through the
   window server's list; a screen capture needs Screen Recording permission on the build Mac (without it `screencapture`
   shows only the wallpaper), which a person grants. Then: CJK through CoreText, the splash's rounded bottom corners
@@ -84,10 +80,6 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   of the app (D94).
 - [ ] **The Chromium shell's folders publish on Linux (D96):** the same `engine/` and `lib/` shape, through the
   helper's and `libcef.so`'s library search paths (rpath). A spike first.
-- [ ] **A self-contained Windows Chromium publish.** Refused today, by the kit's own check with the way out: the kit
-  sets `UseAppHost=false` (CEF's launcher is the exe) and the SDK needs an apphost to be self-contained, so only
-  macOS and Linux publish self-contained. With it
-  enabled, the shim would find `hostfxr.dll` beside the app (`lib\` in a folders publish), a path never run.
 - [ ] 🅿️ **Whether a later launch's window takes the foreground on Linux and macOS.** Not observed: WSL's desktop and
   Xvfb enforce no focus-stealing prevention, so they cannot show it. On Linux a later launch could hand over its
   activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands over the foreground; it needs a
@@ -128,8 +120,10 @@ is left is mostly measurement that needs hardware or a person.
   must not act on the taskbar, another app's window.
 - [ ] 🅿️ **With a real pointer:** whether either caption-button mode shows the system's caption tooltips, and two of a
   frameless window's four corner resizes.
-- [ ] **App hooks for downloads, permissions and renderer failure**, when an app asks for them; the defaults are the
-  WebView2 shell's (D84).
+- [ ] **The download, permission and renderer-failure hooks' other half.** The shell's windows have them
+  (`ChromiumHostOptions.OnDownloadStarting` and its two); not yet: the same on `ChromiumEngineOptions` for the WinForms
+  host's pages, a download's progress and completion (CEF's `on_download_updated`; today the app watches the file), and
+  the `MultipleDownloads` prompt itself, which the probe's click-started downloads never raised.
 
 **macOS**
 - [ ] 🅿️ **osx-arm64 has never run** (no Apple Silicon Mac here), for the shell or for `ChromiumBrowserProcess` (D86):
@@ -164,11 +158,6 @@ is left is mostly measurement that needs hardware or a person.
 It has run on real CEF (the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`; how it works and what was seen:
 `docs/design/shells.md`).
 
-- [ ] 🟡 **A session cookie was missing from a panel recreated in the same process, twice in seven runs.** The
-  sequence: a panel in profile A, a panel in profile B opened and closed, A disposed, a new panel in A at once —
-  `persist` came back, `session` did not (`SHENORA_SAMPLE_PANEL_PROBE=5`). Without the B panel it kept both, 6 of 6;
-  across a restart it kept both every time. A lead, not a cause: count it again before changing anything (flushing
-  the context's cookie store on close is the first thing to A/B).
 - [ ] **Decide whether history nav generalises onto `ISessionBrowser`.** `GoBack`/`GoForward`/`Reload`/`Stop` are on the
   panel today (Chromium-only, no Core or WebView2 change); WebView2's `CoreWebView2` has the same four, so they could
   move to the shared session contract if a second consumer wants them there.
@@ -240,15 +229,6 @@ tried.
 
 - [ ] On a Mac, with an interactive session's window showing, close the main window from its title bar: it stays; and
   the app's own close (`ChromiumWindows.Close("main")`, the tray's Exit) still ends it.
-
-### 🟡 What the page player's carried-forward position cannot see
-
-`MediaPlayer.Status` carries a playing position forward from the page's last report (`docs/design/mobile-shells.md`).
-
-- [ ] **A rate the element changes by itself is not reported**: a speed picked from the element's own controls, or
-  one Chromium refuses (outside 0.0625–16). The position is then carried forward at the rate the host asked for.
-  The fix is the hook reporting `ratechange` with `element.playbackRate` (a new optional report field), the estimate
-  running at that and `Status.Rate` staying the rate asked for.
 
 ### 📱 WHAT IS LEFT ON ANDROID NEEDS A PHONE'S ENCODER, NOT AN EMULATOR'S
 
