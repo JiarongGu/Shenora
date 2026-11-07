@@ -542,7 +542,9 @@ not reloaded, with `false` it was, once. ⚠ CEF reaches `on_before_download` on
 `can_download`, which the kit does. ⚠ A page's later automatic downloads raise a `MultipleDownloads` permission, which the
 default policy denies: an app that takes downloads allows it in `OnPermissionRequested`. Not seen: that prompt itself (the
 probe's downloads each followed a click), and a download's progress or completion, which the hook does not report.
-They cover the shell's windows, not the pages of `ChromiumEngine` (the WinForms host's).
+`ChromiumEngineOptions` carries the same three for the WinForms host's pages (`ChromiumChildBrowser`): they reach the same
+`ChromiumBrowser` handlers through `ChromiumPages`, and are proven by unit test only; the probe above ran on the shell's
+windows, not on an engine page.
 
 ## What is deliberately absent
 

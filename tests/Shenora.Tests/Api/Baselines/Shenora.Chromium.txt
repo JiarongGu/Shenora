@@ -55,6 +55,9 @@ sealed class Shenora.Chromium.ChromiumEngineOptions
   public .ctor()
   public Shenora.Core.Ipc.ShellInfo? Shell { get; init; }
   public Shenora.Core.WebView.IWebViewResourceProvider? ResourceProvider { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumDownloadRequest, bool>? OnDownloadStarting { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumPermissionRequest, bool>? OnPermissionRequested { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
   public bool? IsDevelopment { get; init; }
   public int DevToolsPort { get; init; }
   public string VirtualHost { get; init; }

@@ -26,6 +26,18 @@ public class ChromiumPageHooksTests
     }
 
     [Fact]
+    public void The_engines_hooks_are_the_same_hooks()
+    {
+        Assert.Null(ChromiumPageHooks.From(new ChromiumEngineOptions()));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnDownloadStarting = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnPermissionRequested = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnProcessFailed = _ => false }));
+
+        var hooks = ChromiumPageHooks.From(new ChromiumEngineOptions { OnDownloadStarting = d => { d.ResultFilePath = @"C:\out\a.txt"; return true; } })!;
+        Assert.Equal(@"C:\out\a.txt", hooks.Download("https://app.local/a.txt", "a.txt", "", null));
+    }
+
+    [Fact]
     public void The_permission_flags_are_CEFs()
     {
         var cef = Enum.GetValues<cef_permission_request_types_t>().Select(v => (int)v).Order();

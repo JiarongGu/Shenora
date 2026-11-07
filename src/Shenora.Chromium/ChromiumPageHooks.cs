@@ -160,9 +160,15 @@ internal sealed class ChromiumPageHooks(Func<ChromiumDownloadRequest, bool>? dow
 {
     /// <summary>The hooks the app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumHostOptions options) =>
-        options.OnDownloadStarting is null && options.OnPermissionRequested is null && options.OnProcessFailed is null
-            ? null
-            : new ChromiumPageHooks(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed);
+        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed);
+
+    /// <summary>The hooks the engine's app set, or null when it set none.</summary>
+    public static ChromiumPageHooks? From(ChromiumEngineOptions options) =>
+        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed);
+
+    private static ChromiumPageHooks? From(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
+        Func<ChromiumProcessReport, bool>? failed) =>
+        download is null && permission is null && failed is null ? null : new ChromiumPageHooks(download, permission, failed);
 
     public bool HandlesDownloads => download is not null;
 
