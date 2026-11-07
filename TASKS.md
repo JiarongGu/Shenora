@@ -213,8 +213,6 @@ Still uncovered:
   cannot reference; its gate never closes on a document change (by design). A MAUI-free seam or a device probe.
 - [ ] **A request in flight across a reload, on the host.** Nothing cancels it on navigation (only disposing the bridge
   does), and its response goes into the new document, whose client drops the unknown id. Pinned on the client only.
-- [ ] **`NotificationPump.Enqueue` after dispose still queues** (no disposed check); bounded and never drained, so
-  memory only. WebView2's and the mobile bridge's `SendNotification` reach it; Chromium's `Notify` checks first.
 
 ### 🔴 `verify` cannot pass since the knowledge moved to `.agents/`
 

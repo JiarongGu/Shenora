@@ -215,6 +215,20 @@ public class NotificationPumpTests
         Assert.Equal(1, pump.PendingCount);
     }
 
+    [Fact]
+    public void Enqueue_after_dispose_queues_nothing_and_counts_nothing()
+    {
+        // WebView2's and the mobile bridge's SendNotification reach Enqueue directly, and a disposed
+        // pump is never drained again — so a queued notification would be memory held for nothing.
+        var pump = Pump();
+        pump.Dispose();
+
+        pump.Enqueue(Note());
+
+        Assert.Equal(0, pump.PendingCount);
+        Assert.Equal(0, pump.Report().Accepted);
+    }
+
     /// <summary>
     /// 🔴 The batch has always coalesced ROUND TRIPS; this is what makes it coalesce PAYLOADS. A request
     /// reporting a hundred times inside one 50 ms window used to put a hundred snapshots in one message
