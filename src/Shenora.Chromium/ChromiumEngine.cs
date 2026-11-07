@@ -59,6 +59,24 @@ public sealed class ChromiumEngineOptions
 
     /// <summary>What the ready handshake tells each page this host is and can do (D36).</summary>
     public ShellInfo? Shell { get; init; }
+
+    /// <summary>
+    /// Replaces the default download policy for every page (downloads are CANCELED and logged, D84): the same hook, and the
+    /// same contract, as <see cref="ChromiumHostOptions.OnDownloadStarting"/>. CEF's UI thread: answer at once.
+    /// </summary>
+    public Func<ChromiumDownloadRequest, bool>? OnDownloadStarting { get; init; }
+
+    /// <summary>
+    /// Replaces the default permission policy for every page: the same hook, and the same contract, as
+    /// <see cref="ChromiumHostOptions.OnPermissionRequested"/>. CEF's UI thread: answer at once.
+    /// </summary>
+    public Func<ChromiumPermissionRequest, bool>? OnPermissionRequested { get; init; }
+
+    /// <summary>
+    /// Told when a page's renderer process ends: the same hook, and the same contract, as
+    /// <see cref="ChromiumHostOptions.OnProcessFailed"/>. CEF's UI thread.
+    /// </summary>
+    public Func<ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
 }
 
 /// <summary>
@@ -217,7 +235,8 @@ public sealed class ChromiumEngine
             dispatcher.TryMapModule(new ChromiumDropZones(() => ChromiumBrowserContext.Current));
             var root = _isDevelopment && _options.DevUrl is not null ? new Uri(_options.DevUrl) : origins.App;
             return _pages = new ChromiumPages(origins, serving, root, dispatcher, services.GetRequiredService<IUiDispatcher>(),
-                services.GetService<IEventBus>(), services.GetService<IUrlLauncher>(), _options.Shell, _log);
+                services.GetService<IEventBus>(), services.GetService<IUrlLauncher>(), _options.Shell, _log,
+                ChromiumPageHooks.From(_options));
         }
     }
 
@@ -229,4 +248,4 @@ public sealed class ChromiumEngine
 /// <summary>What every page of a <see cref="ChromiumEngine"/> shares. <c>Root</c> is where a page's path is resolved:
 /// the dev server in development, else the app's origin.</summary>
 internal sealed record ChromiumPages(ChromiumOrigins Origins, ChromiumServing Serving, Uri Root, IMessageDispatcher Dispatcher,
-    IUiDispatcher Ui, IEventBus? Events, IUrlLauncher? Urls, ShellInfo? Shell, ILogger? Log);
+    IUiDispatcher Ui, IEventBus? Events, IUrlLauncher? Urls, ShellInfo? Shell, ILogger? Log, ChromiumPageHooks? Hooks = null);

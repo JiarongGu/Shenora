@@ -42,12 +42,12 @@ at the first list and missed five more breaking changes.
 - **`FileUpdateQueueOptions.DefaultJournal` — `UseFileSystem` can now run without an update journal.** `x.Journal = null`
   cannot say it, because `UseFileSystem` fills a null journal; set `x.DefaultJournal = false` for in-memory rollback only
   (default `true`, so nothing changes). No journal directory is created. A `Journal` you set is still used as it is.
-- **An app answers a Chromium window's downloads, permission prompts and renderer failures.**
+- **An app answers a Chromium page's downloads, permission prompts and renderer failures.**
   `ChromiumHostOptions.OnDownloadStarting` (set `ResultFilePath` to save a download there; handled with none cancels it),
   `OnPermissionRequested` (set `Allow`) and `OnProcessFailed` (`true` skips the shell's reload), with the WebView2 host's
   names and its rule: return `true` when handled, and `false`, or a throw, leaves the shell's default (downloads cancelled,
-  a clipboard read from the app's page allowed and the rest denied, a renderer reloaded). They cover the shell's windows,
-  not the pages of `ChromiumEngine`.
+  a clipboard read from the app's page allowed and the rest denied, a renderer reloaded). `ChromiumEngineOptions` has the
+  same three, with the same contract, for the pages of a WinForms host (`ChromiumView`, `ChromiumChildBrowser`).
 - **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
   `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
   `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe
