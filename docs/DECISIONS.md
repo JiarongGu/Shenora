@@ -156,6 +156,9 @@ docs cite them — so the number is the column to scan.
 | **D97** | THE CHROMIUM SHELL EMBEDS A WEB PANEL: A CHILD BROWSER IN A SHELL WINDOW, IN A CHOSEN PROFILE. |
 | **D98** | THE README IS THE LANDING PAGE EVERY PACKAGE SHIPS, AND THE FILES WRITTEN FOR CODING AGENTS ARE KEPT AS STATE, NOT AS COPIES. |
 | **D99** | THE CHROMIUM ENGINE CARRIES H.264, AAC AND HEVC AS A PACKAGE OF ITS OWN, BUILT AND PUBLISHED BY THE KIT. |
+| **D100** | PROPOSED: HISTORY NAVIGATION STAYS ON THE CHROMIUM WEB PANEL; `ISessionBrowser` GAINS NONE OF IT UNTIL A SECOND SHELL WANTS IT, AND THEN AS AN OPTIONAL INTERFACE. |
+| **D101** | PROPOSED: THE KIT TAKES ONE PLAYBACK-HEALTH FIGURE — DROPPED PICTURES, ABSENT WHEN UNKNOWN — AND ONLY WHERE ITS OWN PLAYERS CAN READ IT. |
+| **D102** | PROPOSED: ASK THE ANDROID ENCODER NOT TO REORDER, KEEP THE WRITER'S DROP AS THE BACKSTOP, AND BUILD THE REORDERING WRITER ONLY IF THE LOSS SURVIVES IT. |
 
 <!-- decisions-index:end -->
 
@@ -1411,6 +1414,96 @@ docs cite them — so the number is the column to scan.
   - **Rejected:** the codecs inside `Shenora.Chromium` (D81's 350 MB, again); on by default; a download from a release of this repository,
     the first shape, which made the targets a second transport with its own pin; a third party's hand-built CEF (no HEVC, one person's
     binaries in a public package); sending each video to Edge.
+
+- **D100 — PROPOSED: HISTORY NAVIGATION STAYS ON THE CHROMIUM WEB PANEL; `ISessionBrowser` GAINS NONE OF IT UNTIL A SECOND
+  SHELL WANTS IT, AND THEN AS AN OPTIONAL INTERFACE.**
+  **Status: PROPOSED, not accepted** — the owner's call; it answers the TASKS row "Decide whether history nav generalises
+  onto `ISessionBrowser`". `GoBack`/`GoForward`/`Reload`/`Stop` are on `ChromiumWebPanel` only (D97), and call
+  `ChromiumSessionBrowser`'s `internal` methods (`can_go_back` → `go_back`, `reload`, `stop_load`).
+  - **Options.** (A) Leave them on the panel. (B) Add the four to `ISessionBrowser`, abstract or as default interface
+    members. (C) A separate `ISessionBrowserHistory` the Chromium browser (and later WebView2's) implements, found by
+    `is`; the panel's four become sugar over it.
+  - **Evidence.** *No second consumer.* The only caller is the Chromium sample's `PanelProbe`. WebView2 has no web panel
+    at all (`CreateWebPanelAsync` is Chromium-only), and nothing in `Shenora.Core.Sessions` navigates history: the pool
+    resets to a blank page between leases, `StreamingSession` and `InteractiveSession` drive a page with input, not with
+    back. None of the sibling apps' sources on this machine names `ChromiumWebPanel` or `ISessionBrowser`.
+    *The interface is implemented outside the kit's shells*: the test fake `FakeSessionBrowser` does, and the changelog tells
+    an app that writes its own `ISessionBrowser` to honour `NavigationCompleted`'s replaced-navigation rule. Four abstract
+    members break each of them (pre-1.0, so allowed, but it is `### Breaking`); a default member does not break them and
+    silently does nothing, which is the failure D91's fail-closed rules argue against. *WebView2 would be cheap*:
+    `CoreWebView2` has `GoBack`/`GoForward`/`Reload`/`Stop` and `CanGoBack`/`CanGoForward` one for one.
+  - **Costs and constraints.** (A) costs nothing and promises nothing; the price is that a host holding only an
+    `ISessionBrowser` cannot go back, which no one has asked for. (B) widens D91's one-implementation contract for a
+    capability the pooled and streamed browsers never use, and a history step on a pooled browser would be a navigation
+    the lease did not ask for. Whether CEF raises `on_before_browse` (so `CancelNavigation` applies) for a history step is
+    **not measured** — (B) would need that measured first. (C) is additive, lets the promotion wait without a breaking
+    change later, and keeps D91's contract to what every browser does.
+  - ⚠ **A gap whichever is chosen:** the panel exposes no `CanGoBack`/`CanGoForward`, and `GoBack` is a silent no-op
+    when there is nowhere to go. A host that draws its own chrome (D97's reason for the four) cannot grey its buttons. That
+    is the first thing a real consumer will need, and it is part of the shape (C) should carry.
+  - **Recommended: (A) now, (C) when a second shell or a consumer holding only an `ISessionBrowser` asks** (D15: promote on
+    proof, and there is none). (B) is the option to refuse: it is the breaking one and the least earned.
+
+- **D101 — PROPOSED: THE KIT TAKES ONE PLAYBACK-HEALTH FIGURE — DROPPED PICTURES, ABSENT WHEN UNKNOWN — AND ONLY WHERE ITS OWN
+  PLAYERS CAN READ IT.**
+  **Status: PROPOSED, not accepted** — the owner's call; it answers the TASKS row "Decide whether the kit takes them
+  (D15)". `MediaPlayerStatus` carries state, position, duration, rate, error and `Engine` (which player), never *how well*.
+  An adopter has since built two health readings against its own engines (a lost-pictures count, and a pause the app did
+  not ask for).
+  - **Options.** (A) Do not take them: an app that supplies its own player (D80) keeps its figures on its own side
+    channel. (B) Take the SHAPE and every figure the adopter has — lost pictures, stalls, system pauses. (C) Take the shape
+    narrowly: a single optional dropped-pictures figure, filled by the kit's own players where the platform gives one, and
+    nothing derived from what the page already receives.
+  - **Evidence.** *Stalls and system pauses need no new field.* The kit's players already report a stall as `Buffering`
+    (`AndroidMediaPlayer`'s Info start/end, `IosMediaPlayer`'s `playbackBufferEmpty`/`playbackLikelyToKeepUp`), and a pause
+    the app did not ask for as `Paused` (`IosMediaPlayer.OnRateChanged`, measured on an iPhone: a refused start left the
+    rate 0 while `Status` read `Playing`). A page counts either from the event stream, which is exactly the D54 test —
+    *React can already do it* — so a counter on the record would only duplicate it. *Lost pictures cannot be derived from
+    events*, and on mobile the page does not own the player (it is the host's, D54), so the page cannot read a
+    `<video>`'s `getVideoPlaybackQuality()` either; this is the one figure only the host sees. On desktop the page plays the
+    element itself and has that API already. *The shape is not yet proven by the kit's engines*: the adopter's figures
+    come from LibVLC and its own iOS player, the kit's are `android.media.MediaPlayer` and `AVPlayer`. I measured none
+    of this; the platform APIs I would reach for (an `AVPlayerItem` access log's dropped-frame count, `MediaPlayer`'s
+    metrics bundle on API 26+) are named from memory and unchecked in this tree.
+  - **Costs and constraints.** (A) is free and leaves a gap the adopter already filled once. (B) copies the adopter's
+    engine-specific code into players that read different APIs, and adds `Stalls` that LibVLC itself has no counter for —
+    the adopter keeps it -1 on purpose. (C) adds one property to a sealed record (an additive change; the API baseline
+    moves) and one wire field, and needs a device reading per shell before it ships, since a player that returns a figure
+    the platform does not mean is worse than none.
+  - 🔴 **Whatever is taken: "no figure" is ABSENT, never 0.** A 0 claims a clean play. The adopter's encoding is -1; the
+    kit's records already use null for "not known" (`Duration`), so the kit's form is `long?` and an absent wire field, and
+    -1 stays the adopter's own.
+  - **Recommended: (C), implemented only after a device reads it** — iOS and Android each, since a figure the kit cannot
+    measure on a shell stays null there. Not (B): the stall and pause halves duplicate what the status events already say.
+    If the owner reads D15's bar as needing a second adopter, (A) until then.
+
+- **D102 — PROPOSED: ASK THE ANDROID ENCODER NOT TO REORDER, KEEP THE WRITER'S DROP AS THE BACKSTOP, AND BUILD THE REORDERING
+  WRITER ONLY IF THE LOSS SURVIVES IT.**
+  **Status: PROPOSED, not accepted** — the owner's call; it answers the TASKS row "Decide what the writer should do with a
+  REORDERED encoder". `SegmentRunWriter.Accept` drops a converted frame whose presentation time is earlier than the last
+  accepted one, warns once, and cuts short segments rather than wrong ones.
+  - **Options.** (A) Keep dropping. (B) Ask the encoder for no B-frames, as the iOS conversion does, and keep (A)'s drop
+    behind it. (C) Make the writer tolerate reordering: buffer a segment's frames and derive decode times and composition
+    offsets with `SampleTiming.Derive`, as `Mp4Remuxer` does for the whole-file converted picture and `SegmentRunWriter`
+    already does per chunk for a COPIED channel. (D) Fail the run on the first reorder.
+  - **Evidence.** On the API 36 AVD, a software encoder lost 1–6 frames of 149 per run (`read=149 emitted=148` twice,
+    `emitted=143` once). The iPhone measured 60 of 60 (2026-08-15) — but `IosMediaVideoConversion` sets
+    `AllowFrameReordering` false, so that is a configuration, not luck. `AndroidMediaVideoConversion` configures bit rate,
+    frame rate and a 1 s key-frame interval and nothing about B-frames. *Which side reorders is not established*: no
+    timestamp sequence was logged. A software AVC encoder is baseline by default and would not emit B-frames, which makes
+    timestamp jitter on the decoder-to-surface path the other candidate — I have not checked either. The whole-file path
+    already survives a reordering encoder (it sorts every presentation time), so only the streaming writer loses frames.
+  - **Costs and constraints.** (A) is safe — a dropped non-reference frame is a hold, and times stay true — but lossy, and
+    unsafe if the dropped frame is a reference. (B) is one format key per shell, symmetric with iOS, and costs nothing at
+    run time; the key is API 29+ as far as I recall (unchecked here), is ignored elsewhere, and fixes only the B-frame
+    cause. (C) is lossless and covers both causes, but it is the option that can write a segment that appends without error
+    and plays wrongly — the failure this writer was built to avoid — and it needs a fixture of a reordering encoder, which
+    no device has produced; a fake conversion run emitting reordered times would prove it without a phone. (D) turns a 1–4 %
+    loss into a broken stream and is rejected.
+  - **Recommended: (B) with (A) behind it, and a one-line diagnostic first** (log the out-of-order pair's times on the first
+    reorder), so the re-measure on a phone says which cause it is. Build (C) only if the loss remains with B-frames off: it
+    is the right end state if the encoder reorders in the field, and a bigger risk than the problem seen so far, which is
+    one emulator's software encoder. The row's own condition stands: the phone number is re-measured before anything is built.
 
 ## Anti-goals — deliberately NOT built
 
