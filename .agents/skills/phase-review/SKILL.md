@@ -55,7 +55,7 @@ The standing rule: every phase gets an adversarial review before its commit.
    `CHANGELOG.md` (if surface
    changed), `docs/REVIEW-GUIDE.md` if an invariant or settled-decision changed, and rules — a new
    invariant defaults to on-demand `.agents/knowledge/` via `node devtools/dev.mjs knowledge new
-   <name>` (only universal ones go core with `--core`); then `… knowledge check`. A non-trivial fix's
+   <name>`, then `daoris sync` for its index row and `… knowledge check`. A non-trivial fix's
    root cause goes in the COMMIT MESSAGE — there is no fix log.
    **`TASKS.md` is pruned by DELETING finished entries, never by ticking them
    in place** (standing user rule; git is the archive since 2026-08-07) — the file's length is the size
