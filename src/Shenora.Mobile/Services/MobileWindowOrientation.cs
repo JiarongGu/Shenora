@@ -25,7 +25,7 @@ namespace Shenora.Mobile;
 /// </code>
 /// <b>That method IS the opt-in</b> — <see cref="IsSupported"/> goes true once UIKit has asked, so an
 /// app that has not wired it advertises the capability as absent rather than accepting a lock it cannot
-/// hold (D39/D36).
+/// hold (D36).
 /// </para>
 /// <para>
 /// ⚠ <b><c>Info.plist</c> is still the ceiling.</b> UIKit intersects this mask with

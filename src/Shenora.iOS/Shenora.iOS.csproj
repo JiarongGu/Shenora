@@ -2,9 +2,8 @@
 
   <!--
     The iOS face of the mobile shell — the peer of Shenora.Android, sharing its source verbatim via
-    the import below. Today the two differ in nothing but their TFM; the first real divergence is
-    expected in the save picker (Android needs SAF, iOS needs UIDocumentPickerViewController), and it
-    will land in `Platforms/` on each side rather than behind an #if.
+    the import below. What differs is each side's platform code, in its own `Services/` (the save
+    picker, the media player, live activities): it lives there rather than behind an #if.
 
     ⚠ It BUILDS ON WINDOWS and `dev.mjs verify` COMPILES IT. A `net10.0-ios` LIBRARY needs only the
     maui-ios workload and the Microsoft.iOS reference assemblies; a Mac is required to produce and run an

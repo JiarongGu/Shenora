@@ -16,7 +16,7 @@
     <Project Path="src/Shenora.Android/Shenora.Android.csproj" />
     <Project Path="src/Shenora.iOS/Shenora.iOS.csproj" />
     <Project Path="src/Shenora.Windows/Shenora.Windows.csproj" />
-    <!-- The Chromium shell (D82). Not packable yet; in the gate so the generated binding always compiles. -->
+    <!-- The Chromium shell (D82). Packable; in the gate so the generated binding always compiles. -->
     <Project Path="src/Shenora.Chromium/Shenora.Chromium.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -27,7 +27,7 @@
        the sample could be red while `verify` reported green. Never packable (see their csproj). -->
   <Folder Name="/samples/">
     <Project Path="samples/Shenora.Sample.Desktop/Shenora.Sample.Desktop.csproj" />
-    <!-- The D20 portability guard: plain net10.0, Core + Ipc only. It must be in the solution or the
+    <!-- The D20 portability guard: plain net10.0, referencing only Shenora. It must be in the solution or the
          guard never runs (P5.5 H4.3). -->
     <Project Path="samples/Shenora.Sample.Logic/Shenora.Sample.Logic.csproj" />
     <!-- The MAUI head, hosting the SAME Shenora.Sample.Logic as the desktop sample. In the gate for
