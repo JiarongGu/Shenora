@@ -163,11 +163,6 @@ is left is mostly measurement that needs hardware or a person.
 It has run on real CEF (the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`; how it works and what was seen:
 `docs/design/shells.md`).
 
-- [ ] 🟡 **A session cookie was missing from a panel recreated in the same process, twice in seven runs.** The
-  sequence: a panel in profile A, a panel in profile B opened and closed, A disposed, a new panel in A at once —
-  `persist` came back, `session` did not (`SHENORA_SAMPLE_PANEL_PROBE=5`). Without the B panel it kept both, 6 of 6;
-  across a restart it kept both every time. A lead, not a cause: count it again before changing anything (flushing
-  the context's cookie store on close is the first thing to A/B).
 - [ ] **Decide whether history nav generalises onto `ISessionBrowser`.** `GoBack`/`GoForward`/`Reload`/`Stop` are on the
   panel today (Chromium-only, no Core or WebView2 change); WebView2's `CoreWebView2` has the same four, so they could
   move to the shared session contract if a second consumer wants them there.

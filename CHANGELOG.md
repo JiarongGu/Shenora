@@ -39,6 +39,11 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **A panel or window recreated at once for a profile could come up without its cookies.** CEF tears a profile down on its
+  own threads after the last reference goes, and a context made for the same folder meanwhile could read the cookie file
+  early (a cookie was missing from a recreated panel in 8 of 100 runs of the panel probe, with another profile's panel
+  opened and closed between). The host now waits 500 ms after a profile's context was let go before it makes another for
+  it; none of 40 runs with it lost one.
 - **The page player's position follows a speed the element changed itself.** `MediaPlayer.Status` carried a playing
   position forward at the rate the host asked for, so a speed picked from the element's own controls, or one Chromium
   refused (outside 0.0625–16), left it running at the wrong one. `useMediaPlayer` now sends the element's own

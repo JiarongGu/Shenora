@@ -518,6 +518,13 @@ its page's, a click and keys posted to the shell's window reach the panel's page
 with `PersistSessionCookies` true and goes with false (the persistent one stays either way). Its `ISessionBrowser`
 members must be called on the shell's UI thread: from another, CEF refuses the DevTools calls behind script and cookies.
 
+A profile's context is let go as its panel (or window) closes, and CEF tears the profile down on its own threads after
+that. A context made for the same folder meanwhile read the cookie file early: a recreated panel lost a cookie in 8 of 100
+runs of `PanelProbe` 5 (another profile's panel opened and closed in between; without it, none in 6), and in none of 40
+with a pause of 250 ms, or of 40 with 1.5 s. Flushing the cookie store before the release changed nothing. So the host
+waits 500 ms after a profile's last release before it makes another context for it (`ChromiumSessionHost.ProfileSettle`),
+because CEF reports no end of the teardown; a pool's context, made on the UI thread, does not wait.
+
 ## What is deliberately absent
 
 - **No UI component library, ever** (D13). The splash, the tray menu palette and the drop-zone hover
