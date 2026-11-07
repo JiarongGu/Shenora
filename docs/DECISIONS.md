@@ -1183,7 +1183,9 @@ docs cite them — so the number is the column to scan.
     cancels one no handler takes), as the WebView2 shell's policy does, and every permission prompt gets the
     WebView2 shell's default (a clipboard read from the app's page allowed, everything else denied), because a
     prompt left to CEF is IGNORED and the page's promise never settles. Fullscreen stays inside the page unless
-    the host triggers it, and an unresponsive renderer gets no dialog.
+    the host triggers it, and an unresponsive renderer gets no dialog. These are the defaults: the app's
+    `OnDownloadStarting`, `OnPermissionRequested` and `OnProcessFailed` (the WebView2 host's names and "return true when
+    handled") replace them per kind.
   - ⚠ **Alloy changes the frame's hit-test** (the render widget answers HTCLIENT over the page's drag area, so
     the window's child subclass defers every non-client answer to CEF's top-level window), and any other
     behaviour measured under Chrome style is re-measured before it is relied on.

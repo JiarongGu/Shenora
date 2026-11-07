@@ -529,6 +529,18 @@ with a pause of 250 ms, or of 40 with 1.5 s. Flushing the cookie store before th
 waits 500 ms after a profile's last release before it makes another context for it (`ChromiumSessionHost.ProfileSettle`),
 because CEF reports no end of the teardown; a pool's context, made on the UI thread, does not wait.
 
+**The app's hooks on what a window's page asks of the shell** (`ChromiumHostOptions.OnDownloadStarting`,
+`OnPermissionRequested`, `OnProcessFailed`; D84's defaults stand where an app sets none, or answers false). Run for real
+(`SHENORA_SAMPLE_HOOKS_PROBE=1` and `2`, Chromium sample, Windows, a click posted to the window starting each download):
+a download the hook gave a path was written there with its content, one handled with no path and one declined were
+cancelled; the hook's grant of notifications settled the page's promise as `granted`, and a request it declined got the
+default (the position: denied, code 1); a killed renderer reached the hook as `Crashed`, and with `true` the page was
+not reloaded, with `false` it was, once. ⚠ CEF reaches `on_before_download` only when the handler also sets
+`can_download`, which the kit does. ⚠ A page's later automatic downloads raise a `MultipleDownloads` permission, which the
+default policy denies: an app that takes downloads allows it in `OnPermissionRequested`. Not seen: that prompt itself (the
+probe's downloads each followed a click), and a download's progress or completion, which the hook does not report.
+They cover the shell's windows, not the pages of `ChromiumEngine` (the WinForms host's).
+
 ## What is deliberately absent
 
 - **No UI component library, ever** (D13). The splash, the tray menu palette and the drop-zone hover

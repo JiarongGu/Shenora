@@ -39,6 +39,12 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **An app answers a Chromium window's downloads, permission prompts and renderer failures.**
+  `ChromiumHostOptions.OnDownloadStarting` (set `ResultFilePath` to save a download there; handled with none cancels it),
+  `OnPermissionRequested` (set `Allow`) and `OnProcessFailed` (`true` skips the shell's reload), with the WebView2 host's
+  names and its rule: return `true` when handled, and `false`, or a throw, leaves the shell's default (downloads cancelled,
+  a clipboard read from the app's page allowed and the rest denied, a renderer reloaded). They cover the shell's windows,
+  not the pages of `ChromiumEngine`.
 - **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
   `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
   `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe
