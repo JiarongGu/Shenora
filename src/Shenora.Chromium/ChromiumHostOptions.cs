@@ -134,10 +134,23 @@ public sealed class ChromiumHostOptions
     /// <para>
     /// ⚠ <b>Return <c>true</c> when you have handled it</b>: handled with no path cancels it, and <c>false</c>, like a
     /// throw (which is logged), falls through to the default. Chromium reports nothing more about a download the app
-    /// takes: the file's own completion is the app's to watch. CEF's UI thread: answer at once.
+    /// takes: its progress and completion are <see cref="OnDownloadProgress"/>'s. CEF's UI thread: answer at once.
     /// </para>
     /// </summary>
     public Func<ChromiumDownloadRequest, bool>? OnDownloadStarting { get; init; }
+
+    /// <summary>
+    /// Tells the app how the page's downloads are going: each change in the bytes written or the state, and the last one,
+    /// which is <see cref="ChromiumDownloadState.Complete"/>, <see cref="ChromiumDownloadState.Canceled"/> or
+    /// <see cref="ChromiumDownloadState.Interrupted"/>. It never takes or refuses a download.
+    /// <para>
+    /// ⚠ A download <see cref="OnDownloadStarting"/> cancelled also reports, as <see cref="ChromiumDownloadState.Canceled"/>
+    /// with an empty <see cref="ChromiumDownloadProgress.FilePath"/>, and the first update of any download can arrive before
+    /// that hook runs. Tell yours apart by <see cref="ChromiumDownloadProgress.Id"/> and a path. A throw is logged and
+    /// ignored. CEF's UI thread: return at once.
+    /// </para>
+    /// </summary>
+    public Action<ChromiumDownloadProgress>? OnDownloadProgress { get; init; }
 
     /// <summary>
     /// Replaces the default permission policy for the shell's windows (a clipboard read from the app's own page is allowed

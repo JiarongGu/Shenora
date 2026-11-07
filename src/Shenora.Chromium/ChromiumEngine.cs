@@ -67,6 +67,19 @@ public sealed class ChromiumEngineOptions
     public Func<ChromiumDownloadRequest, bool>? OnDownloadStarting { get; init; }
 
     /// <summary>
+    /// Tells the app how the page's downloads are going: each change in the bytes written or the state, and the last one,
+    /// which is <see cref="ChromiumDownloadState.Complete"/>, <see cref="ChromiumDownloadState.Canceled"/> or
+    /// <see cref="ChromiumDownloadState.Interrupted"/>. It never takes or refuses a download.
+    /// <para>
+    /// ⚠ A download <see cref="OnDownloadStarting"/> cancelled also reports, as <see cref="ChromiumDownloadState.Canceled"/>
+    /// with an empty <see cref="ChromiumDownloadProgress.FilePath"/>, and the first update of any download can arrive before
+    /// that hook runs. Tell yours apart by <see cref="ChromiumDownloadProgress.Id"/> and a path. A throw is logged and
+    /// ignored. CEF's UI thread: return at once.
+    /// </para>
+    /// </summary>
+    public Action<ChromiumDownloadProgress>? OnDownloadProgress { get; init; }
+
+    /// <summary>
     /// Replaces the default permission policy for every page: the same hook, and the same contract, as
     /// <see cref="ChromiumHostOptions.OnPermissionRequested"/>. CEF's UI thread: answer at once.
     /// </summary>

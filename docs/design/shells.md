@@ -533,7 +533,7 @@ waits 500 ms after a profile's last release before it makes another context for 
 because CEF reports no end of the teardown; a pool's context, made on the UI thread, does not wait.
 
 **The app's hooks on what a window's page asks of the shell** (`ChromiumHostOptions.OnDownloadStarting`,
-`OnPermissionRequested`, `OnProcessFailed`; D84's defaults stand where an app sets none, or answers false). Run for real
+`OnPermissionRequested`, `OnProcessFailed`, and `OnDownloadProgress`, which only watches; D84's defaults stand where an app sets none, or answers false). Run for real
 (`SHENORA_SAMPLE_HOOKS_PROBE=1` and `2`, Chromium sample, Windows, a click posted to the window starting each download):
 a download the hook gave a path was written there with its content, one handled with no path and one declined were
 cancelled; the hook's grant of notifications settled the page's promise as `granted`, and a request it declined got the
@@ -541,7 +541,13 @@ default (the position: denied, code 1); a killed renderer reached the hook as `C
 not reloaded, with `false` it was, once. ⚠ CEF reaches `on_before_download` only when the handler also sets
 `can_download`, which the kit does. ⚠ A page's later automatic downloads raise a `MultipleDownloads` permission, which the
 default policy denies: an app that takes downloads allows it in `OnPermissionRequested`. Not seen: that prompt itself (the
-probe's downloads each followed a click), and a download's progress or completion, which the hook does not report.
+probe's downloads each followed a click).
+`OnDownloadProgress` (CEF's `on_download_updated`) was run the same way: the saved download reported `InProgress` several
+times with its bytes (18 of 18) and ended `Complete`; the one the hook cancelled reported `Canceled` with an empty path. ⚠ The
+first update of a download arrived before `OnDownloadStarting` ran, with no path yet, and the handler is given to CEF
+whenever either hook is set. ⚠ Only 2 of the probe's 3 posted clicks reached the page in 10 of 12 runs, with and without the progress hook
+(the runs read in full lacked the third, so `decline.txt` never started): not attributed, and the same with the hook off, so
+not the hook's.
 `ChromiumEngineOptions` carries the same three for the WinForms host's pages (`ChromiumChildBrowser`): they reach the same
 `ChromiumBrowser` handlers through `ChromiumPages`, and are proven by unit test only; the probe above ran on the shell's
 windows, not on an engine page.

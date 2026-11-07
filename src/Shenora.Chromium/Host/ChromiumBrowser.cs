@@ -461,6 +461,7 @@ internal sealed unsafe class ChromiumBrowser
             _owner = owner;
             Struct->can_download = &CanDownload;
             Struct->on_before_download = &BeforeDownload;
+            Struct->on_download_updated = &DownloadUpdated;
         }
 
         // Left unset, CEF never asks the hook (measured): it is OnBeforeDownload that decides.
@@ -494,6 +495,23 @@ internal sealed unsafe class ChromiumBrowser
                 callback->cont(callback, &target, 0);
             }
             return 1;
+        }
+
+        // Every download reports, the ones the app cancelled too (Canceled, no path), and the first update can precede BeforeDownload (measured).
+        [UnmanagedCallersOnly]
+        private static void DownloadUpdated(_cef_download_handler_t* self, _cef_browser_t* browser, _cef_download_item_t* item,
+            _cef_download_item_callback_t* callback)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var i = new CefRef<_cef_download_item_t>(item);
+            using var c = new CefRef<_cef_download_item_callback_t>(callback);
+            var owner = From<Downloads>(self)._owner;
+            if (owner._hooks is null) return;
+            var update = new ChromiumDownloadProgress(item->get_id(item), CefStrings.TakeUserFree(item->get_url(item)),
+                CefStrings.TakeUserFree(item->get_full_path(item)),
+                ChromiumPageHooks.DownloadState(item->is_canceled(item) != 0, item->is_complete(item) != 0, item->is_interrupted(item) != 0),
+                item->get_received_bytes(item), item->get_total_bytes(item));
+            owner._hooks.DownloadUpdated(update, owner.Log);
         }
     }
 

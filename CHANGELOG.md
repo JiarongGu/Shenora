@@ -48,6 +48,11 @@ at the first list and missed five more breaking changes.
   names and its rule: return `true` when handled, and `false`, or a throw, leaves the shell's default (downloads cancelled,
   a clipboard read from the app's page allowed and the rest denied, a renderer reloaded). `ChromiumEngineOptions` has the
   same three, with the same contract, for the pages of a WinForms host (`ChromiumView`, `ChromiumChildBrowser`).
+- **An app watches a Chromium page's downloads: `OnDownloadProgress`** on `ChromiumHostOptions` and `ChromiumEngineOptions`
+  reports each change as a `ChromiumDownloadProgress` (`Id`, `Url`, `FilePath`, `State`, `ReceivedBytes`, `TotalBytes`, where
+  `-1` means the server announced no size) and ends in `Complete`, `Canceled` or `Interrupted` (`ChromiumDownloadState`). It only
+  observes. A download `OnDownloadStarting` cancelled reports too, as `Canceled` with no path, and a download's first update can
+  come before that hook runs: tell yours apart by `Id` and a path.
 - **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
   `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
   `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe

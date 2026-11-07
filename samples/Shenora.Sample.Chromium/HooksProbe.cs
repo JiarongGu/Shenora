@@ -16,7 +16,8 @@ namespace Shenora.Sample.Chromium;
 /// app closes. In <c>1</c> the renderer hook answers "handled", so the page is NOT reloaded; in <c>2</c> it only observes, so
 /// the shell's own reload runs and the page loads a second time.
 /// <list type="bullet">
-/// <item><c>yes.txt</c> — the download hook names a path: the file must be there afterwards, with the page's content.</item>
+/// <item><c>yes.txt</c> — the download hook names a path: the file must be there afterwards, with the page's content, and
+/// <c>PROGRESS</c> lines must end in <c>Complete</c> (a cancelled download ends in <c>Canceled</c>).</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -55,6 +56,9 @@ internal static class HooksProbe
             default: download.ResultFilePath = Path.Combine(Folder, download.SuggestedName); return false;   // declined: a path set is ignored
         }
     };
+
+    public static Action<ChromiumDownloadProgress>? OnDownloadProgress => !On ? null : progress =>
+        Log($"PROGRESS {Path.GetFileName(progress.FilePath)}: {progress.State} {progress.ReceivedBytes}/{progress.TotalBytes} (id {progress.Id})");
 
     public static Func<ChromiumPermissionRequest, bool>? OnPermissionRequested => !On ? null : request =>
     {

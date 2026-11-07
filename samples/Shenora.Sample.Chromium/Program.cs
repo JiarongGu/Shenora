@@ -80,6 +80,7 @@ internal static class Program
             // What the page may download and be granted, and what happens when its renderer goes: the shell's defaults, except in
             // HooksProbe, which sets all three (null otherwise).
             OnDownloadStarting = HooksProbe.OnDownloadStarting,
+            OnDownloadProgress = HooksProbe.OnDownloadProgress,
             OnPermissionRequested = HooksProbe.OnPermissionRequested,
             OnProcessFailed = HooksProbe.OnProcessFailed,
             // A splash in the window's render area while the page loads, drawn by the OS rather than Chromium: a skeleton of
