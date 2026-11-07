@@ -120,9 +120,6 @@ package's Linux helper has not run: see below); how it works is `docs/design/she
 is left is mostly measurement that needs hardware or a person.
 
 **Windows**
-- [ ] **The app's icon on the D86 browser process's windows, and after a navigation.** Same probe
-  (`input icons --proc <App>` while `ChromiumBrowserProcess` runs, and again after the page navigates); only the
-  shell's main window was measured. Chrome's own tabbed windows may send `WM_SETICON` themselves.
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out
   an ARM64 launcher, shim and `libcef.dll`; running it needs ARM64 hardware or a `windows-11-arm` CI runner. ⚠ The
   release job builds the ARM64 shim (the 0.23.2 package's is PE machine `0xaa64`); it has never been loaded.
