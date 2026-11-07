@@ -28,10 +28,19 @@ public sealed class FileUpdateQueueOptions
     /// for a failed change, absent after a power cut. Only <see cref="FileAtomicity.AllOrNothing"/>
     /// updates are journalled.
     /// <para>
-    /// ⚠ Supplying one means calling <see cref="FileUpdateQueue.RecoverAsync"/> at startup.
+    /// ⚠ Supplying one means calling <see cref="FileUpdateQueue.RecoverAsync"/> at startup. Through
+    /// <c>UseFileSystem</c> a null here is filled with the default journal; set
+    /// <see cref="DefaultJournal"/> to false to have none.
     /// </para>
     /// </summary>
     public IFileUpdateJournal? Journal { get; set; }
+
+    /// <summary>
+    /// <c>UseFileSystem</c> only: fill a null <see cref="Journal"/> with a journal under the app's data
+    /// area. Set false for in-memory rollback only. Ignored when <see cref="Journal"/> is set, and by a
+    /// queue you construct yourself.
+    /// </summary>
+    public bool DefaultJournal { get; set; } = true;
 
     /// <summary>Diagnostics sink, guarded through <see cref="AppCallback.Log"/>.</summary>
     public ILogger? Log { get; set; }

@@ -39,6 +39,9 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`FileUpdateQueueOptions.DefaultJournal` — `UseFileSystem` can now run without an update journal.** `x.Journal = null`
+  cannot say it, because `UseFileSystem` fills a null journal; set `x.DefaultJournal = false` for in-memory rollback only
+  (default `true`, so nothing changes). No journal directory is created. A `Journal` you set is still used as it is.
 - **An app answers a Chromium window's downloads, permission prompts and renderer failures.**
   `ChromiumHostOptions.OnDownloadStarting` (set `ResultFilePath` to save a download there; handled with none cancels it),
   `OnPermissionRequested` (set `Allow`) and `OnProcessFailed` (`true` skips the shell's reload), with the WebView2 host's

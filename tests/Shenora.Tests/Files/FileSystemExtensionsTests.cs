@@ -65,6 +65,49 @@ public class FileSystemExtensionsTests
         Assert.NotNull(options.Locker);
     }
 
+    /// <summary>
+    /// <c>x.Journal = null</c> is indistinguishable from "unset", so the opt-out is its own switch — and
+    /// choosing it must also leave the journal directory uncreated.
+    /// </summary>
+    [Fact]
+    public void DefaultJournal_false_runs_the_queue_without_a_journal()
+    {
+        using var root = TempDir.Create();
+        var builder = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions
+        {
+            ApplicationName = "probe",
+            Paths = new ShenoraPathsOptions { ExplicitRoot = root.Root },
+        });
+
+        builder.UseFileSystem(x => x.DefaultJournal = false);
+        using var app = builder.Build();
+
+        _ = app.Services.GetRequiredService<IFileUpdateQueue>();
+
+        Assert.Null(app.Services.GetRequiredService<FileUpdateQueueOptions>().Journal);
+        Assert.False(Directory.Exists(Path.Combine(root.Root, "journal")));
+    }
+
+    /// <summary>A journal the app supplies is the one the queue uses, never replaced by the default.</summary>
+    [Fact]
+    public void A_supplied_journal_is_kept()
+    {
+        using var root = TempDir.Create();
+        var builder = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions
+        {
+            ApplicationName = "probe",
+            Paths = new ShenoraPathsOptions { ExplicitRoot = root.Root },
+        });
+
+        var mine = new FileUpdateJournal(new FileUpdateJournalOptions { Directory = Path.Combine(root.Root, "mine") });
+        builder.UseFileSystem(x => x.Journal = mine);
+        using var app = builder.Build();
+
+        _ = app.Services.GetRequiredService<IFileUpdateQueue>();
+
+        Assert.Same(mine, app.Services.GetRequiredService<FileUpdateQueueOptions>().Journal);
+    }
+
     /// <summary>An explicit value survives — defaults are applied AFTER `configure`, never over it.</summary>
     [Fact]
     public void An_explicit_setting_is_not_overwritten_by_a_default()

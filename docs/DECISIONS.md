@@ -23,7 +23,8 @@ that landed it, not here.
 > **There are six packable projects, plus 2 npm packages.** Verify with `node devtools/dev.mjs doctor`,
 > which prints the real count. ⚠ **That sentence's WORDING is load-bearing** — `doc-drift` reads
 > "there are `<n>` packable projects" from this file and fails closed if it is reworded away, because a
-> count-check that silently stops finding its subject passes forever while checking nothing.
+> count-check that silently stops finding its subject passes forever while checking nothing. The count is of
+> `src/`; one more package, `Shenora.Chromium.Codecs.win-x64`, builds from `engines/` and is outside it (D99).
 >
 > | | | |
 > |---|---|---|
@@ -31,6 +32,7 @@ that landed it, not here.
 > | **shells** (D37) | `Shenora.Windows` · `Shenora.Android` · `Shenora.iOS` | one per platform; each implements the cores and its modules' platform halves |
 > | **engine** (D81) | `Shenora.Chromium` | Chromium through CEF: a shell of its own, and the embedding `Shenora.Windows` hosts; CEF's bytes arrive through the app's build, never in the package |
 > | **native** (D50) | `Shenora.Launcher` | C++ sources + per-RID binaries; NO managed surface |
+> | **codecs** (D99) | `Shenora.Chromium.Codecs.win-x64` | the kit's CEF build with H.264, AAC and HEVC, from `engines/`; an app references it beside `Shenora.Chromium` |
 > | **npm** | `@shenora/react` | what the app imports |
 > | **npm** (D67) | `@shenora/cli` | build-time only — the `shenora` binary, a `devDependency`, in NO shipped artifact |
 >

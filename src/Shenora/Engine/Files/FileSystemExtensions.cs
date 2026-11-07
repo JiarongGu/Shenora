@@ -61,11 +61,14 @@ public static class FileSystemExtensions
 
             // 🔴 `Paths.DataArea` CREATES the directory it names, so the journal and locker are built
             // here and never at `Use…` time — registration must not touch a disk.
-            resolved.Journal ??= new FileUpdateJournal(new FileUpdateJournalOptions
+            if (resolved.DefaultJournal)
             {
-                Directory = paths.DataArea("journal"),
-                Log = resolved.Log,
-            });
+                resolved.Journal ??= new FileUpdateJournal(new FileUpdateJournalOptions
+                {
+                    Directory = paths.DataArea("journal"),
+                    Log = resolved.Log,
+                });
+            }
             resolved.Locker ??= new FilePathLocker(new FilePathLockerOptions
             {
                 // ⚠ NOT inside the tree being managed: a sidecar lock there gets synced, committed and

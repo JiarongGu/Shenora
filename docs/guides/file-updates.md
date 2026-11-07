@@ -77,9 +77,8 @@ await app.Services.GetRequiredService<IFileUpdateQueue>().RecoverAsync();   // B
 ```
 
 Configure it through the same `Use…` call as everything else — `x.Journal = new FileUpdateJournal(…)` puts it
-elsewhere. `UseFileSystem` fills a `null` journal, so `x.Journal = null` does NOT turn it off; for in-process
-rollback only (a failed change, not a dead process) construct `new FileUpdateQueue(new FileUpdateQueueOptions { … })`
-yourself and register it as `IFileUpdateQueue`.
+elsewhere. `UseFileSystem` fills a `null` journal, so `x.Journal = null` does NOT turn it off; `x.DefaultJournal =
+false` does, leaving rollback in-process only (a failed change, not a dead process) and creating no journal directory.
 
 An update interrupted while applying is rolled back; one interrupted after every change landed (only
 staged deletions left) is finished instead — rolling that back would undo a success. Recovery is safe
