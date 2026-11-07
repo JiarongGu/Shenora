@@ -73,9 +73,13 @@ launcher), and a subprocess stays silent. Such a publish starts through `<App>.e
 **What a Windows publish has been seen to do** (the Chromium sample, win-x64, framework-dependent, published to a
 fresh folder outside the build tree on a machine with the .NET 10 runtime, 2026-10-22): flat and with folders, each
 started from the artifact (its window in 3.6 s and 7.6 s, its data folder created beside it) and closed by a posted
-`WM_CLOSE` with exit code 0 and no process left. A self-contained Windows publish is refused by the kit's own check
-(`_ShenoraChromiumSelfContainedCheck`) before the SDK's bare NETSDK1067. Unseen: a machine without the .NET SDK,
-win-arm64, and any macOS or Linux artifact the release built (`TASKS.md`).
+`WM_CLOSE` with exit code 0 and no process left. A self-contained publish (`--self-contained`, flat and with folders) was
+started the same way: `coreclr.dll` loaded from the publish folder (from `lib\` with folders), not the machine's .NET.
+The SDK needs an apphost for a self-contained app, so the kit leaves `UseAppHost` on there and drops the apphost it
+builds from the publish (`_ShenoraChromiumDropApphost`): the exe stays CEF's launcher, and the shim's `get_hostfxr_path`
+finds the `hostfxr.dll` beside the app. Unseen: a machine without any .NET installed (this one has one, which the
+published app did not use), a machine without the .NET SDK, win-arm64, and any macOS or Linux artifact the release built
+(`TASKS.md`).
 
 ## The Chromium hosts
 

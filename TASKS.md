@@ -80,10 +80,6 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   of the app (D94).
 - [ ] **The Chromium shell's folders publish on Linux (D96):** the same `engine/` and `lib/` shape, through the
   helper's and `libcef.so`'s library search paths (rpath). A spike first.
-- [ ] **A self-contained Windows Chromium publish.** Refused today, by the kit's own check with the way out: the kit
-  sets `UseAppHost=false` (CEF's launcher is the exe) and the SDK needs an apphost to be self-contained, so only
-  macOS and Linux publish self-contained. With it
-  enabled, the shim would find `hostfxr.dll` beside the app (`lib\` in a folders publish), a path never run.
 - [ ] 🅿️ **Whether a later launch's window takes the foreground on Linux and macOS.** Not observed: WSL's desktop and
   Xvfb enforce no focus-stealing prevention, so they cannot show it. On Linux a later launch could hand over its
   activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands over the foreground; it needs a

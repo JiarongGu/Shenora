@@ -37,6 +37,13 @@ at the first list and missed five more breaking changes.
   name meant two types across the options. Rename the property where `WebViewHostOptions` is built; the value passed is
   unchanged.
 
+### Added
+
+- **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
+  `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
+  `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe
+  is still CEF's launcher: the SDK's apphost, which a self-contained build needs, is built and left out of the publish.
+
 ### Fixed
 
 - **A panel or window recreated at once for a profile could come up without its cookies.** CEF tears a profile down on its

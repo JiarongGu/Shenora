@@ -37,8 +37,9 @@
   <PropertyGroup>
     <ShenoraChromiumLayout Condition="'$(ShenoraChromiumLayout)' == ''">true</ShenoraChromiumLayout>
     <!-- On Windows CEF's bootstrap.exe IS the app's exe, so the .NET apphost would be a second, wrong one. On macOS
-         the apphost is the bundle's executable. -->
-    <UseAppHost Condition="'$(ShenoraChromiumLayout)' == 'true' and $(RuntimeIdentifier.StartsWith('win'))">false</UseAppHost>
+         the apphost is the bundle's executable. A self-contained app keeps it: the SDK refuses one without (NETSDK1067),
+         and what it publishes is the runtime beside the app, which is all that publish takes from it. -->
+    <UseAppHost Condition="'$(ShenoraChromiumLayout)' == 'true' and $(RuntimeIdentifier.StartsWith('win')) and '$(SelfContained)' != 'true'">false</UseAppHost>
 
     <ShenoraCefPlatform Condition="'$(RuntimeIdentifier)' == 'win-x64'">windows64</ShenoraCefPlatform>
     <ShenoraCefPlatform Condition="'$(RuntimeIdentifier)' == 'win-arm64'">windowsarm64</ShenoraCefPlatform>
@@ -308,13 +309,6 @@ public sealed class ShenoraChromiumStampLauncher : Task
     </Task>
   </UsingTask>
 
-  <!-- Ahead of the SDK's own refusal (NETSDK1067, "self-contained requires the apphost"), which names neither CEF nor
-       the way out: on Windows the kit turns the apphost off because CEF's launcher is the app's exe. -->
-  <Target Name="_ShenoraChromiumSelfContainedCheck" BeforeTargets="_CheckForUnsupportedAppHostUsage"
-          Condition="'$(ShenoraChromiumLayout)' == 'true' and $(RuntimeIdentifier.StartsWith('win')) and '$(SelfContained)' == 'true'">
-    <Error Text="A Windows Shenora.Chromium app cannot be self-contained yet: CEF's launcher is the app's exe, so the kit turns the .NET apphost off (UseAppHost=false), and the SDK needs one for a self-contained app. Publish framework-dependent (--self-contained false, or &lt;SelfContained&gt;false&lt;/SelfContained&gt;); the machine then needs the .NET 10 runtime. macOS and Linux publish self-contained." />
-  </Target>
-
   <!-- Every refusal runs BEFORE the fetch, so a build that cannot be laid out never downloads 165 MB first. -->
   <Target Name="_ShenoraChromiumCheck">
     <Error Condition="'$(ShenoraChromiumEnginePath)' != '' and '$(ShenoraChromiumEnginePlatform)' != '' and '$(ShenoraChromiumEnginePlatform)' != '$(ShenoraCefPlatform)'"
@@ -452,6 +446,16 @@ public sealed class ShenoraChromiumStampLauncher : Task
     <Copy SourceFiles="$(ShenoraCefDist)\Release\$(_ShenoraBootstrap)" DestinationFiles="$(_ShenoraWindowsInto)$(_ShenoraAppExe).exe" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(_ShenoraWindowsInto)$(_ShenoraAppExe).dll" SkipUnchangedFiles="true" />
     <ShenoraChromiumStampLauncher Executable="$(_ShenoraWindowsInto)$(_ShenoraAppExe).exe" From="$(_ShenoraAppInto)$(AssemblyName).dll" />
+  </Target>
+
+  <!-- A self-contained app is built with the .NET apphost, because the SDK requires one; it is not published, since the
+       app's exe is CEF's launcher and an apphost beside it would start the app with no Chromium sandbox. Declared ahead of
+       the folders target below, so it never moves into lib\. -->
+  <Target Name="_ShenoraChromiumDropApphost" AfterTargets="ComputeFilesToPublish"
+          Condition="'$(ShenoraChromiumLayout)' == 'true' and '$(SelfContained)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.RelativePath)' == '$(AssemblyName).exe'" />
+    </ItemGroup>
   </Target>
 
   <!-- ShenoraChromiumPublishFolders: everything the SDK publishes goes into lib\. Its own item list, rewritten once the

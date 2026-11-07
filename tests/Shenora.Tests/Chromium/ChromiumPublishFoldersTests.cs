@@ -140,22 +140,25 @@ public class ChromiumPublishFoldersTests
     }
 
     /// <summary>
-    /// A self-contained Windows publish is refused by the KIT, naming CEF's launcher and the way out, before the SDK's
-    /// own NETSDK1067 — which says only that self-contained needs an apphost the kit had turned off.
+    /// A self-contained Windows publish carries the runtime (in lib\ with the folders) and keeps CEF's launcher as the exe:
+    /// the SDK needs a .NET apphost to be self-contained, which the kit builds and leaves out of the publish.
     /// </summary>
     [Fact]
-    public void A_self_contained_Windows_publish_is_refused_with_the_way_out()
+    public void A_self_contained_Windows_publish_carries_the_runtime_and_keeps_CEFs_launcher()
     {
         var root = NewRoot();
         try
         {
-            var (project, dist) = App(root, folders: false);
-            var output = Run("dotnet", ["publish", project, "-o", Path.Combine(root, "publish"), $"-p:ShenoraCefDist={dist}",
-                "--self-contained", "true", "--disable-build-servers", "-nologo", "-v:minimal"], expectSuccess: false);
+            var (project, dist) = App(root, folders: true);
+            Run("dotnet", ["publish", project, "-o", Path.Combine(root, "publish"), $"-p:ShenoraCefDist={dist}",
+                "--self-contained", "true", "--disable-build-servers", "-nologo", "-v:minimal"]);
+            var tree = Tree(Path.Combine(root, "publish"));
 
-            Assert.Contains("cannot be self-contained yet", output, StringComparison.Ordinal);
-            Assert.Contains("--self-contained false", output, StringComparison.Ordinal);
-            Assert.DoesNotContain("NETSDK1067", output, StringComparison.Ordinal);
+            Assert.Equal(["MyApp.dll", "MyApp.exe", "chrome_elf.dll"], tree.Where(f => !f.Contains('/')));
+            Assert.Contains("lib/hostfxr.dll", tree);
+            Assert.Contains("lib/coreclr.dll", tree);
+            Assert.Contains("lib/MyApp.App.dll", tree);
+            Assert.DoesNotContain(tree, f => f.EndsWith("MyApp.App.exe", StringComparison.Ordinal));
         }
         finally { Directory.Delete(root, recursive: true); }
     }
