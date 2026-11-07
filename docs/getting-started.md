@@ -254,7 +254,7 @@ npx shenora ios deploy           # build → sign → verify extensions → inst
 npx shenora ios log              # your app's own output, off the device
 ```
 
-**Android is the same four verbs, and they run on WINDOWS** — which is where most .NET Android work
+**Android has the same verbs (plus `devices` and `build`), and they run on WINDOWS** — which is where most .NET Android work
 happens, so this half is not a Mac story at all:
 
 ```bash
