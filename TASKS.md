@@ -160,7 +160,7 @@ It has run on real CEF (the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`;
 
 - [ ] **Decide whether history nav generalises onto `ISessionBrowser`.** `GoBack`/`GoForward`/`Reload`/`Stop` are on the
   panel today (Chromium-only, no Core or WebView2 change); WebView2's `CoreWebView2` has the same four, so they could
-  move to the shared session contract if a second consumer wants them there.
+  move to the shared session contract if a second consumer wants them there. **Proposed as D100, awaiting the owner.**
 - [ ] **macOS/Linux panels.** Windows only today: `ChromiumSessionHost.CreateChild` throws `PlatformNotSupportedException`
   in the macOS and Linux builds, while the overlay it builds is Views on every OS. Lift the guard and run the probe on
   Linux first (WSL can).
@@ -176,7 +176,7 @@ no counters"* comment was false.
   reads a different platform API, and theirs are LibVLC/ExoPlayer while the kit's are `AVPlayer` and
   `android.media.MediaPlayer` — so the SHAPE harvests, the implementation does not.
   ⚠ **-1 means "no figure" and must never be 0**, which claims a clean play; confirmed on their side too
-  (`Stalls` stays -1 deliberately — LibVLC has no stall counter).
+  (`Stalls` stays -1 deliberately — LibVLC has no stall counter). **Proposed as D101, awaiting the owner.**
 
 ### 🅿️ PARKED: the held seek on an iPhone — the picture is the only witness
 
@@ -245,4 +245,4 @@ mpeg4.
 - [ ] **Decide what the writer should do with a REORDERED encoder.** Same runs lost 1–6 frames of 149: the
   writer fail-closes on a backwards presentation time and drops the frame. The phone measured 60/60, so
   this is per-encoder, not settled. Dropping is safe and lossy; buffering and sorting is neither. **An
-  owner call**, and it needs the phone number re-measured first.
+  owner call**, and it needs the phone number re-measured first. **Proposed as D102, awaiting the owner.**
