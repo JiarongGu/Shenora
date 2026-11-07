@@ -540,8 +540,12 @@ cancelled; the hook's grant of notifications settled the page's promise as `gran
 default (the position: denied, code 1); a killed renderer reached the hook as `Crashed`, and with `true` the page was
 not reloaded, with `false` it was, once. ⚠ CEF reaches `on_before_download` only when the handler also sets
 `can_download`, which the kit does. ⚠ A page's later automatic downloads raise a `MultipleDownloads` permission, which the
-default policy denies: an app that takes downloads allows it in `OnPermissionRequested`. Not seen: that prompt itself (the
-probe's downloads each followed a click).
+default policy denies: an app that takes downloads allows it in `OnPermissionRequested`. Run for real (`SHENORA_SAMPLE_HOOKS_DOWNLOAD=auto`
+and `autodeny`, two scripted downloads with no click, past the last click's user activation, on a fresh profile; the shell sample
+and the `ChromiumView` one alike): the page's FIRST automatic download raised `MultipleDownloads` at the hook once, not the
+second. Allowed, both files were saved; declined, neither was written, and the download hook never ran for them. ⚠ An allow is
+kept in the profile's data folder: in later runs on the same profile no prompt was raised and both downloads were saved, whichever
+way the hook would have answered.
 `OnDownloadProgress` (CEF's `on_download_updated`) was run the same way: the saved download reported `InProgress` several
 times with its bytes (18 of 18) and ended `Complete`; the one the hook cancelled reported `Canceled` with an empty path. ⚠ The
 first update of a download arrived before `OnDownloadStarting` ran, with no path yet, and the handler is given to CEF

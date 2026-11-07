@@ -21,7 +21,11 @@ namespace Shenora.Sample.Chromium;
 /// <c>SHENORA_SAMPLE_HOOKS_DOWNLOAD</c> set to <c>pause</c> or <c>cancel</c> it arrives slowly (about 5 s, no announced size)
 /// and the progress hook acts on it at its first bytes: <c>pause</c> pauses it and resumes it 2.5 s later, so the lines must
 /// show <c>paused</c> and then <c>Complete</c> with the whole file; <c>cancel</c> cancels it, so they must end in
-/// <c>Canceled</c>.</item>
+/// <c>Canceled</c>. <c>SHENORA_SAMPLE_HOOKS_DOWNLOAD=auto</c> or <c>autodeny</c> instead has the page start two downloads
+/// (<c>auto1.txt</c>, <c>auto2.txt</c>) with no click, past the last click's user activation: the page's first automatic download
+/// raises <c>MultipleDownloads</c> at the permission hook, which allows it in <c>auto</c> (both files saved) and declines it in
+/// <c>autodeny</c> (neither). ⚠ Delete the app's <c>data</c> folder between runs: an allow is kept in the profile, and the prompt
+/// is then never raised.</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -58,12 +62,18 @@ internal static class HooksProbe
         {
             case "yes.txt": download.ResultFilePath = Path.Combine(Folder, "yes.txt"); return true;
             case "no.txt": return true;
+            case "auto1.txt" or "auto2.txt": download.ResultFilePath = Path.Combine(Folder, download.SuggestedName); return true;
             default: download.ResultFilePath = Path.Combine(Folder, download.SuggestedName); return false;   // declined: a path set is ignored
         }
     };
 
     private static readonly string? SlowMode = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_DOWNLOAD") switch { "pause" => "pause", "cancel" => "cancel", _ => null };
     private static int _acted;
+
+    // "auto" and "autodeny": after the three clicks the page starts two downloads with no user gesture, the second of which should
+    // raise the MultipleDownloads permission; the hook allows it in "auto" and declines it in "autodeny", where the default denies.
+    private static readonly string? Auto = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_DOWNLOAD") is "auto" or "autodeny"
+        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_DOWNLOAD") : null;
 
     public static Action<ChromiumDownloadProgress>? OnDownloadProgress => !On ? null : progress =>
     {
@@ -78,6 +88,7 @@ internal static class HooksProbe
     public static Func<ChromiumPermissionRequest, bool>? OnPermissionRequested => !On ? null : request =>
     {
         Log($"PERMISSION hook: {request.Kinds} from {request.Origin}");
+        if (request.Kinds is ChromiumPermissionKind.MultipleDownloads && Auto == "autodeny") return false;
         if (request.Kinds is not (ChromiumPermissionKind.Notifications or ChromiumPermissionKind.MultipleDownloads)) return false;
         request.Allow = true;
         return true;
@@ -142,7 +153,7 @@ internal static class HooksProbe
         var finished = await Task.WhenAny(Done.Task, Task.Delay(30_000)) == Done.Task;
         await Task.Delay(1500);   // a download's file lands a moment after its hook answered
         Log($"PAGE finished: {finished}");
-        foreach (var name in new[] { "yes.txt", "no.txt", "decline.txt" })
+        foreach (var name in new[] { "yes.txt", "no.txt", "decline.txt", "auto1.txt", "auto2.txt" })
         {
             var path = Path.Combine(Folder, name);
             var text = File.Exists(path) ? File.ReadAllText(path).Trim() : null;
@@ -216,7 +227,9 @@ internal static class HooksProbe
         lock (Done) File.AppendAllText(LogPath, $"{DateTime.Now:HH:mm:ss.fff} HOOKS: {line}{Environment.NewLine}");
     }
 
-    private const string PageHtml = """
+    private static string PageHtml => PageTemplate.Replace("__AUTO__", Auto is null ? "false" : "true");
+
+    private const string PageTemplate = """
         <!doctype html><meta charset="utf-8"><title>hooks probe</title>
         <script>
         const say = (key, value) => fetch('/report/' + key + '/' + encodeURIComponent(value)).then(r => r.text()).catch(() => '');
@@ -237,6 +250,18 @@ internal static class HooksProbe
           }, 100); }));
           say('ready', '1');
           await finished;
+          if (__AUTO__) {
+            // Past the user activation the last click gave (5 s), so these two downloads follow no gesture.
+            await new Promise(resolve => setTimeout(resolve, 6500));
+            for (const name of ['auto1.txt', 'auto2.txt']) {
+              const a = document.createElement('a');
+              a.href = '/dl/' + name; a.download = name;
+              document.body.append(a);
+              say('auto', name + ' active=' + navigator.userActivation.isActive);
+              a.click();
+              await new Promise(resolve => setTimeout(resolve, 2500));
+            }
+          }
           say('notification', await Notification.requestPermission());
           await new Promise(resolve => navigator.geolocation.getCurrentPosition(
             () => { say('geolocation', 'granted'); resolve(); }, e => { say('geolocation', 'denied ' + e.code); resolve(); }, { timeout: 5000 }));
