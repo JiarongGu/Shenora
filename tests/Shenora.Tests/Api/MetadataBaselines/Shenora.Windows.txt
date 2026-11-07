@@ -256,7 +256,7 @@ Shenora.Windows.WebViewHostOptions
   property AutoReloadCooldown
   property BackgroundColor
   property BlockBrowserShortcutsInProduction
-  property ColorScheme
+  property ColorSchemeSetting
   property ConfigureSettings
   property DeferredSchemes
   property DevUrl

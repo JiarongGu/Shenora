@@ -28,6 +28,20 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Breaking
+
+- **`WebViewHostOptions.ColorScheme` is now `ColorSchemeSetting`.** It holds the app's `IColorScheme`, while
+  `WindowsHostOptions.ColorScheme` and `ChromiumHostOptions.ColorScheme` hold the `ColorScheme` enum that seeds it, so one
+  name meant two types across the options. Rename the property where `WebViewHostOptions` is built; the value passed is
+  unchanged.
+
+### Fixed
+
+- **A frameless Chromium window's cover draws its caption glyphs dimmed when the window is not the foreground.** It always
+  drew the active ones, so a window that opened behind another showed bright glyphs until the page painted.
+
 ## 0.25.0 — 2026-11-04
 
 ### Added

@@ -31,7 +31,7 @@ internal sealed unsafe class WindowsSplashCover
     private GCHandle _self;
     private uint* _bits;
     private Size _size;
-    private (Size Size, float Scale, bool Maximized) _presented;
+    private (Size Size, float Scale, bool Maximized, bool Active) _presented;
     private bool _wanted;   // Show was asked: shown as soon as its window is not minimized
 
     private WindowsSplashCover(nint owner, SplashOverlayLayout layout, uint background)
@@ -96,8 +96,9 @@ internal sealed unsafe class WindowsSplashCover
         {
             var client = ClientBounds(_owner);
             SetWindowPos(_hwnd, 0, client.X, client.Y, client.Width, client.Height, SWP_NOZORDER | SWP_NOACTIVATE);
-            // A layered window keeps its bitmap as it moves: drawn again only for a new size, scale or maximize glyph.
-            if (_presented != (client.Size, Scale(), IsZoomed(_owner) != 0)) Present();
+            // A layered window keeps its bitmap as it moves: drawn again only for a new size, scale, maximize glyph or
+            // activation (the window's own glyphs dim when it is not the foreground).
+            if (_presented != (client.Size, Scale(), IsZoomed(_owner) != 0, Active())) Present();
             // Asked to show while its window was minimized: the OS does not show it with its owner.
             if (_wanted && IsWindowVisible(_hwnd) == 0) ShowWindow(_hwnd, SW_SHOWNOACTIVATE);
         }
@@ -154,6 +155,8 @@ internal sealed unsafe class WindowsSplashCover
     private static uint Over(uint over, uint under, uint alpha, int shift) =>
         ((((over >> shift) & 0xFF) * alpha) + (((under >> shift) & 0xFF) * (255 - alpha))) / 255;
 
+    private bool Active() => GetForegroundWindow() == _owner;
+
     private float Scale()
     {
         var scale = GetDpiForWindow(_hwnd) / 96f;
@@ -167,6 +170,7 @@ internal sealed unsafe class WindowsSplashCover
         var size = new Size(Math.Max(1, r.Right - r.Left), Math.Max(1, r.Bottom - r.Top));
         var scale = Scale();
         var maximized = IsZoomed(_owner) != 0;
+        var active = Active();
         if (!EnsureBitmap(size)) return;
         var palette = CaptionButtonPalette.ForStrip(_layout.TitleBar, CaptionButtonPalette.ForBackground(Color.FromArgb((int)_background)));
         var em = Math.Max(1, (int)Math.Round(NativeCaptionButtons.GlyphDips * scale));
@@ -174,7 +178,7 @@ internal sealed unsafe class WindowsSplashCover
         foreach (var button in SplashGeometry.DefaultCaptionButtons(size.Width, (int)Math.Round(_layout.StripDips * scale), scale))
             if (CaptionGlyphs.Rasterize(NativeCaptionButtons.Glyph(button.Kind, maximized), em) is { } mask)
                 glyphs.Add((new Rectangle(button.X, button.Y, button.Width, button.Height), mask,
-                    palette.For(button.Kind, hot: false, pressed: false, active: true).Glyph));
+                    palette.For(button.Kind, hot: false, pressed: false, active).Glyph));
         // Windows 11 rounds a normal window's corners, as the splash cuts its own; a maximized one is square.
         var rounded = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) && !maximized;
         Paint(new Span<uint>(_bits, size.Width * size.Height), size.Width, _background, glyphs, rounded ? (int)Math.Round(8 * scale) : 0);
@@ -184,7 +188,7 @@ internal sealed unsafe class WindowsSplashCover
         var origin = new POINT();
         var blend = new BLENDFUNCTION { SourceConstantAlpha = 255, AlphaFormat = 1 };
         UpdateLayeredWindow(_hwnd, 0, &at, &extent, _dc, &origin, 0, &blend, ULW_ALPHA);
-        _presented = (size, scale, maximized);
+        _presented = (size, scale, maximized, active);
     }
 
     private bool EnsureBitmap(Size size)
@@ -271,5 +275,6 @@ internal sealed unsafe class WindowsSplashCover
     }
 
     [DllImport("user32")] private static extern int IsZoomed(nint hwnd);
+    [DllImport("user32")] private static extern nint GetForegroundWindow();
 }
 #endif

@@ -365,7 +365,10 @@ Run: gate          ← a launch turned away shows nothing
   (`DWMWA_TRANSITIONS_FORCEDISABLED`): with them, its pixels came 110 ms after it showed and it faded out over the
   window's colours. It goes at the page's first paint, which `ChromiumBrowser.WatchFirstPaint` learns from Chromium
   over the in-process DevTools protocol (`Page.lifecycleEvent`, within ~35 ms of the pixels) and two animation frames
-  after, or at the lift. Measured: light only in the window's first ~0.1–0.15 s, during its own open animation, and
+  after, or at the lift. Without a first paint it stays until the splash's fade ends and goes in one step, to the window
+  as it is then: fading it would only fade to Chromium's own colours, which it exists to hide. Its glyphs are drawn
+  dimmed when the window is not the foreground, as the window's own are, and again on the next move or resize that finds
+  that changed (not on the activation itself, which the cover is not told of). Measured: light only in the window's first ~0.1–0.15 s, during its own open animation, and
   none after. That animation is the app's to keep or drop (`ChromiumWindowOptions.Animations`, `WindowAnimations`,
   the system's by default): off, the cover's pixels came ~40 ms after the show instead of ~130 ms (one A/B, three runs
   each, before the setting existed).

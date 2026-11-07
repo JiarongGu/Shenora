@@ -68,10 +68,6 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   keeps no EWMH stacking list, so its order was not seen. Mutter and KWin are compositing managers, where the one-row
   gap a framed window's splash leaves should not be needed; confirm it does no harm there, that they keep a transient
   splash above its owner, and that they carry out the strip's `_NET_WM_MOVERESIZE`.
-- [ ] **Two small points the colour scheme and cover review left (D93, D92)**, neither a defect in normal use:
-  `WindowsHostOptions.ColorScheme` (the enum) and `WebViewHostOptions.ColorScheme` (the `IColorScheme`) share a name
-  and not a type; and without a first paint the cover stays until the lift, snaps away at the end of the fade, and
-  always draws the active glyphs.
 - [ ] 🅿️ **The macOS splash's PIXELS and real input.** Its presence, order, bounds and lift are measured through the
   window server's list; a screen capture needs Screen Recording permission on the build Mac (without it `screencapture`
   shows only the wallpaper), which a person grants. Then: CJK through CoreText, the splash's rounded bottom corners
