@@ -1,147 +1,145 @@
-// Knowledge-base doctor — keeps the two-tier rule system consistent and the always-loaded base lean
-// as it grows (core `.claude/rules/` auto-loads; `.claude/knowledge/` is read on demand via the index).
-//   knowledge check               - RULES_INDEX <-> rules, and skill-loader <-> skills (dev gate)
-//   knowledge footprint           - always-loaded byte budget (core rules + index vs a cap)
-//   knowledge new <name> [--core] - scaffold a rule from TEMPLATE.md + append an index row
+// Knowledge-base doctor — keeps the on-demand knowledge, the skills and their generated index consistent,
+// and the always-loaded brief from growing unnoticed. The always-loaded text is `AGENTS.md` (CLAUDE.md
+// imports it); `.agents/knowledge/` and `.agents/skills/` are read on demand through `.agents/INDEX.md`,
+// which `daoris sync` generates from the files' own frontmatter. This script never writes that index.
+//   knowledge check               - INDEX <-> knowledge and skills, frontmatter, and skill-loader <-> skills (dev gate)
+//   knowledge footprint           - the always-loaded byte budget (AGENTS.md vs a cap), reported and never fatal
+//   knowledge new <name>          - scaffold a knowledge document with its frontmatter
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const rulesDir = path.join(repo, '.claude', 'rules');
-const knowledgeDir = path.join(repo, '.claude', 'knowledge');
-const skillsDir = path.join(repo, '.claude', 'skills');
-const indexPath = path.join(rulesDir, 'RULES_INDEX.md');
-// In `.claude/knowledge/`, NOT `.claude/rules/`, since 2026-08-05 — and the move is the budget's own
-// advice applied honestly. `rules/` auto-loads WHOLESALE, so this 0.9 KB template was in every
-// session's context despite being needed only when AUTHORING a rule, and it was what pushed the core
-// budget over. The comment below says "trim the index or move a rule"; deleting a file that is not a
-// rule at all beats shrinking one someone earned. Nothing else changes — `knowledge new` copies it
-// from here, and `NON_RULES` already exempted it from needing an index row in either directory.
-const templatePath = path.join(knowledgeDir, 'TEMPLATE.md');
-// skill-loader's own table is the skills index, exactly as RULES_INDEX is the rules index.
+const knowledgeDir = path.join(repo, '.agents', 'knowledge');
+// `.agents/skills/` is the source; `.claude/skills/` is its generated mirror, so only the source is read.
+const skillsDir = path.join(repo, '.agents', 'skills');
+const indexPath = path.join(repo, '.agents', 'INDEX.md');
+// skill-loader's own table lists Shenora's skills, the ones the index marks `_(local)_`; the shared ones
+// arrive from the canon and are listed in the index alone.
 const skillIndexPath = path.join(skillsDir, 'skill-loader', 'SKILL.md');
-const claudeMd = path.join(repo, 'CLAUDE.md');
+const briefPath = path.join(repo, 'AGENTS.md');
 
-// Core rules + index; keeps the auto-loaded base small. (It used to include TEMPLATE.md, which moved
-// to `.claude/knowledge/` on 2026-08-05 — see templatePath above. That is a TRIM, not a raise: the
-// budget went 18.5 -> 17.6 KB and back under the cap without touching a single rule.)
-// Raised 16 -> 17 KB on 2026-08-02,
-// deliberately and with the reasoning recorded, because the alternative was leaving the warning
-// permanently lit — and a warning that is always on is one nobody reads.
+// The always-loaded brief only: `.agents/INDEX.md` and the knowledge are read on demand, so counting them
+// would report context nobody pays for on every session.
 //
-// What the extra kilobyte bought: the `doc-claims` rule's index row, and two clauses in
-// `phase-workflow.md` earned by gates that broke a release (test where a check must stay QUIET;
-// keep a gate proportionate). Both are things a session needs BEFORE it builds, which is what
-// "always loaded" is for.
-//
-// TRIM FIRST, RAISE SECOND. Each raise should stay rare enough to carry a note like this. If the
-// number climbs without the always-loaded files getting more useful, that is the drift the budget
-// exists to surface.
-//
-// Raised 17 -> 18 KB on 2026-08-02 (second raise, same day as the first — noted, because two in one
-// day is exactly the pattern this comment is meant to make visible; both came from a single unusually
-// large session rather than from steady creep).
-//
-// What it bought: the `mobile-shells` index row. TRIM WAS TRIED FIRST and rejected on inspection —
-// at 343 bytes that row is mid-pack against the other six (312–395), every row is already the
-// mandated single clause, and shrinking a rule someone earned to make room for a new one is a shell
-// game rather than a saving. The row routes a whole new platform line (two mobile shells, both proven
-// on device), which is the kind of growth the cap is supposed to permit rather than the kind it is
-// supposed to catch.
-// 🔴 Raised 18 -> 32 KB on 2026-08-07, and the SIZE of the jump is the point: core size stopped being
-// something to care much about, after a session where this cap consumed real time three separate
-// ways: a trim of the index's `Enforces` column (which did land, 205 bytes, and was still not enough),
-// then a raise, then a correction to the raise-count claim in the index. That is a lot of ceremony to
-// admit one rule.
-//
-// The rule it was blocking is D63 — *an extension point is done when something ASKS for it, not when the
-// interface compiles* — the write-up of a defect class that hit THREE times in one fortnight and whose
-// defining property is that it produces NO SIGNAL. A cap that makes someone argue for a rule like that is
-// not paying for itself.
-//
-// ⚠ WHAT THIS CHECK IS FOR, now that it is not a squeeze: noticing DRIFT. A core rule base that doubles
-// is worth a look; one that grows by a paragraph is not. It still prints every run, and the earlier
-// raises (16→17→18) are recorded in git with their reasons if the history is ever wanted.
+// 🔴 A budget exists to notice DRIFT, not to make anyone argue for a rule. It was raised 16 -> 17 -> 18 -> 32 KB
+// while it counted a rules folder, and the lesson stands: a warning that is always lit is one nobody reads, and a
+// rule that guards a defect class which produces NO SIGNAL (D63) is worth more than the kilobyte it costs.
+// Trim first, raise second, and say why in the commit.
 const CORE_BUDGET = 32 * 1024;
 
 const rel = (p) => path.relative(repo, p).replace(/\\/g, '/');
-const NON_RULES = new Set(['RULES_INDEX.md', 'TEMPLATE.md']);
 const mdFiles = (dir) =>
-  fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md') && !NON_RULES.has(f)) : [];
+  fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort() : [];
 // Measure CONTENT, not the checkout. `fs.statSync().size` counts CRLF as two bytes, so the same
 // files measured 16.0 KB on a dev box (LF working tree) and 16.2 KB on the Windows CI runner
 // (autocrlf checkout) — which failed a release at the footprint gate while every local run was
-// green. The budget is a proxy for how much context these files cost a session; a line ending is
-// not context. Normalising here makes the number identical everywhere.
+// green. The budget is a proxy for how much context these files cost a session; a line ending
+// is not context. Normalising here makes the number identical everywhere.
 const size = (p) => {
   if (!fs.existsSync(p)) return 0;
   return Buffer.byteLength(fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n'), 'utf8');
 };
 const kb = (n) => (n / 1024).toFixed(1) + ' KB';
-const indexLinks = () =>
-  [...fs.readFileSync(indexPath, 'utf8').matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)].map((m) => ({ name: m[1], target: m[2] }));
+const read = (p) => fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
 
-// A skill is a directory holding a SKILL.md.
+// The generated index's rows: `| \`path\` _(local)_ | … |`. The path is the first backticked span of a row.
+const indexRows = () =>
+  read(indexPath).split('\n')
+    .filter((line) => line.startsWith('| `'))
+    .map((line) => ({ target: line.match(/^\| `([^`]+)`/)[1], local: /^\| `[^`]+` _\(local\)_/.test(line) }));
+
 const skillDirs = () =>
   fs.existsSync(skillsDir)
-    ? fs.readdirSync(skillsDir).filter((d) => fs.existsSync(path.join(skillsDir, d, 'SKILL.md')))
+    ? fs.readdirSync(skillsDir).filter((d) => fs.existsSync(path.join(skillsDir, d, 'SKILL.md'))).sort()
     : [];
 // TABLE rows only (`| \`/name\` | … |`), never the whole file: skill-loader's Steps section names
 // skills in prose too, and a skill mentioned only in passing is exactly the one that is NOT listed
 // where the table is read. Matching prose would let it pass.
 const listedSkills = () =>
-  fs.readFileSync(skillIndexPath, 'utf8').split('\n')
+  read(skillIndexPath).split('\n')
     .filter((line) => line.startsWith('|'))
     .map((line) => line.match(/`\/([a-z0-9-]+)`/))
     .filter(Boolean)
     .map((m) => m[1]);
+
+// The frontmatter a knowledge document must carry (AGENTS.md: `name` / `applies_when` / `enforces`).
+const frontmatter = (text) => {
+  const m = text.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
+  if (!m) return null;
+  const fields = new Map();
+  for (const line of m[1].split('\n')) {
+    const kv = line.match(/^([a-z_]+):\s*(.*)$/);
+    if (kv) fields.set(kv[1], kv[2].trim());
+  }
+  return fields;
+};
 
 const [sub, ...rest] = process.argv.slice(2);
 
 if (sub === 'check') {
   let problems = 0;
   const fail = (msg) => { problems++; console.error('  FAIL ' + msg); };
-  const indexed = new Set();
-  for (const { name, target } of indexLinks()) {
-    const abs = path.resolve(rulesDir, target); // index rows are relative to .claude/rules/
-    if (!fs.existsSync(abs)) fail(`index row [${name}] -> ${target} (missing file)`);
-    else indexed.add(abs);
-  }
-  for (const dir of [rulesDir, knowledgeDir])
-    for (const f of mdFiles(dir))
-      if (!indexed.has(path.join(dir, f))) fail(`${rel(path.join(dir, f))} has no RULES_INDEX row`);
-  if (problems === 0) console.log(`  ok  RULES_INDEX: rows resolve + every rule indexed`);
 
-  // The same consistency, for skills. `skill-loader`'s table is the one place a session looks to
-  // pick a skill, so a SKILL.md missing from it never triggers — the failure is silent and looks
-  // like the skill simply not existing. That was guarded only by a sentence in skill-loader asking
-  // the next session to remember, which is the gap RULES_INDEX already had a check for.
+  // The index is `daoris sync`'s to write; this asks only whether it is true of the files, so a document
+  // added without a sync is named here, in this repository's own gate, and not only by `daoris check`.
+  if (!fs.existsSync(indexPath)) {
+    fail(`${rel(indexPath)} does not exist — run 'daoris sync'`);
+  } else {
+    const indexed = new Set();
+    for (const { target } of indexRows()) {
+      if (!fs.existsSync(path.join(repo, target))) fail(`index row \`${target}\` -> missing file`);
+      else indexed.add(target);
+    }
+    for (const f of mdFiles(knowledgeDir)) {
+      const target = rel(path.join(knowledgeDir, f));
+      if (!indexed.has(target)) fail(`${target} has no row in ${rel(indexPath)} — run 'daoris sync'`);
+    }
+    for (const name of skillDirs()) {
+      const target = rel(path.join(skillsDir, name, 'SKILL.md'));
+      if (!indexed.has(target)) fail(`${target} has no row in ${rel(indexPath)} — run 'daoris sync'`);
+    }
+  }
+  if (problems === 0) console.log(`  ok  INDEX: rows resolve + every knowledge document and skill indexed`);
+
+  // A knowledge document is found by the index's `applies_when`, so one without it is never matched.
+  const beforeFront = problems;
+  for (const f of mdFiles(knowledgeDir)) {
+    const fields = frontmatter(read(path.join(knowledgeDir, f)));
+    const target = rel(path.join(knowledgeDir, f));
+    if (!fields) { fail(`${target} has no frontmatter`); continue; }
+    for (const key of ['name', 'applies_when', 'enforces']) {
+      if (!fields.get(key)) fail(`${target} frontmatter has no \`${key}\``);
+    }
+    if (fields.get('name') && fields.get('name') !== f.replace(/\.md$/, ''))
+      fail(`${target} frontmatter name is \`${fields.get('name')}\`, not \`${f.replace(/\.md$/, '')}\``);
+  }
+  if (problems === beforeFront) console.log(`  ok  knowledge: every document carries name / applies_when / enforces`);
+
+  // The same consistency, for skills. `skill-loader`'s table is the one place a session looks to pick
+  // Shenora's own skill, so a local SKILL.md missing from it never triggers — the failure is silent and
+  // looks like the skill simply not existing. Shared skills are in the generated index alone.
   const beforeSkills = problems;
   const listed = new Set(listedSkills());
-  for (const name of skillDirs())
-    if (!listed.has(name)) fail(`.claude/skills/${name}/ has no row in ${rel(skillIndexPath)} — it will never be picked`);
+  const localSkills = new Set(
+    fs.existsSync(indexPath)
+      ? indexRows().filter((r) => r.local).map((r) => r.target.match(/^\.agents\/skills\/([^/]+)\/SKILL\.md$/)?.[1]).filter(Boolean)
+      : []);
+  for (const name of localSkills)
+    if (!listed.has(name)) fail(`${rel(path.join(skillsDir, name, 'SKILL.md'))} is a local skill with no row in ${rel(skillIndexPath)} — it will never be picked`);
   for (const name of listed)
     if (!fs.existsSync(path.join(skillsDir, name, 'SKILL.md')))
-      fail(`${rel(skillIndexPath)} lists /${name}, but .claude/skills/${name}/SKILL.md does not exist`);
-  if (problems === beforeSkills) console.log(`  ok  skill-loader: rows resolve + every skill listed`);
+      fail(`${rel(skillIndexPath)} lists /${name}, but .agents/skills/${name}/SKILL.md does not exist`);
+  if (problems === beforeSkills) console.log(`  ok  skill-loader: rows resolve + every local skill listed`);
 
-  process.exit(problems ? 1 : 0);
-}
-
-if (sub === 'footprint') {
-  // The template is NOT in this sum any more: it lives in `.claude/knowledge/`, which is not
-  // auto-loaded, so counting it would report context nobody pays for. Measure what the harness
-  // actually injects — everything in `.claude/rules/`, and nothing else.
-  const coreBytes = size(indexPath)
-    + mdFiles(rulesDir).reduce((n, f) => n + size(path.join(rulesDir, f)), 0);
-  const onDemand = [...mdFiles(knowledgeDir), 'TEMPLATE.md']
-    .filter((f) => fs.existsSync(path.join(knowledgeDir, f)));
-  const knowledgeBytes = onDemand.reduce((n, f) => n + size(path.join(knowledgeDir, f)), 0);
-  console.log(`always-loaded: CLAUDE.md ${kb(size(claudeMd))} + core rules/index ${kb(coreBytes)} = ${kb(size(claudeMd) + coreBytes)}`);
-  console.log(`on-demand:     .claude/knowledge/ ${kb(knowledgeBytes)} (${onDemand.length} files, read only when a task matches)`);
-  const over = coreBytes > CORE_BUDGET;
-  console.log(`core budget:   ${kb(coreBytes)} / ${kb(CORE_BUDGET)} — ${over ? '⚠ OVER: trim the index or move a rule to .claude/knowledge/' : 'ok'}`);
+  process.exitCode = problems ? 1 : 0;
+} else if (sub === 'footprint') {
+  const briefBytes = size(briefPath);
+  const knowledgeBytes = mdFiles(knowledgeDir).reduce((n, f) => n + size(path.join(knowledgeDir, f)), 0);
+  console.log(`always-loaded: AGENTS.md ${kb(briefBytes)} (CLAUDE.md only imports it)`);
+  console.log(`on-demand:     .agents/knowledge/ ${kb(knowledgeBytes)} (${mdFiles(knowledgeDir).length} files) + .agents/INDEX.md ${kb(size(indexPath))}, read only when a task matches`);
+  const over = briefBytes > CORE_BUDGET;
+  console.log(`core budget:   ${kb(briefBytes)} / ${kb(CORE_BUDGET)} — ${over ? '⚠ OVER: trim the brief or move a section to .agents/knowledge/' : 'ok'}`);
 
   // ADVISORY, NOT FATAL — corrected 2026-08-02 after this blocked a release by 0.2 KB.
   //
@@ -151,34 +149,36 @@ if (sub === 'footprint') {
   // the same morning with the argument "an unenforced budget is not a budget", which mistook the
   // problem: the budget had drifted because nothing ever PRINTED it, and visibility was the fix.
   // `verify` still runs this, so the number is in every gate log where drift gets noticed.
-  process.exit(0);
-}
-
-if (sub === 'new') {
-  const core = rest.includes('--core');
+} else if (sub === 'new') {
   const name = rest.find((a) => !a.startsWith('--'));
-  if (!name || !/^[a-z0-9-]+$/.test(name)) { console.error('usage: knowledge new <kebab-name> [--core]'); process.exit(1); }
-  const dest = path.join(core ? rulesDir : knowledgeDir, name + '.md');
-  if (fs.existsSync(dest)) { console.error(`${rel(dest)} already exists`); process.exit(1); }
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(templatePath, dest);
-
-  // Append a row into the matching section's table (after its last `|` row, before the next `##`).
-  const target = core ? `${name}.md` : `../knowledge/${name}.md`;
-  const row = `| [${name}](${target}) | TODO: applies when | TODO: enforces |`;
-  const section = core ? '## Core' : '## Knowledge';
-  const lines = fs.readFileSync(indexPath, 'utf8').split('\n');
-  let anchor = lines.findIndex((l) => l.startsWith(section));
-  let lastRow = anchor;
-  for (let k = anchor + 1; k < lines.length && !lines[k].startsWith('## '); k++)
-    if (lines[k].startsWith('|')) lastRow = k;
-  lines.splice(lastRow + 1, 0, row);
-  fs.writeFileSync(indexPath, lines.join('\n'));
-
-  console.log(`created ${rel(dest)} (${core ? 'core — auto-loaded' : 'knowledge — on-demand'}) + a RULES_INDEX row.`);
-  console.log('next: fill the rule body + the row\'s "applies when"/"enforces", then `knowledge check`.');
-  process.exit(0);
+  if (rest.includes('--core')) {
+    console.error('--core is gone: the always-loaded text is the canon-generated region of AGENTS.md, which a repository does not extend; a rule it must hold goes to the canon.');
+    process.exitCode = 1;
+  } else if (!name || !/^[a-z0-9-]+$/.test(name)) {
+    console.error('usage: knowledge new <kebab-name>');
+    process.exitCode = 1;
+  } else {
+    const dest = path.join(knowledgeDir, name + '.md');
+    if (fs.existsSync(dest)) { console.error(`${rel(dest)} already exists`); process.exitCode = 1; }
+    else {
+      fs.mkdirSync(knowledgeDir, { recursive: true });
+      fs.writeFileSync(dest, [
+        '---',
+        `name: ${name}`,
+        'applies_when: TODO: the task that should load this document',
+        'enforces: TODO: the invariant, in one clause',
+        '---',
+        '',
+        `# ${name}`,
+        '',
+        'TODO: the invariant, why it holds, and what a session does about it.',
+        '',
+      ].join('\n'));
+      console.log(`created ${rel(dest)} (on-demand).`);
+      console.log('next: fill the body and the frontmatter, run `daoris sync` for the index row, then `knowledge check`.');
+    }
+  }
+} else {
+  console.error('usage: knowledge <check | footprint | new <kebab-name>>');
+  process.exitCode = 1;
 }
-
-console.error('usage: knowledge <check | footprint | new <kebab-name> [--core]>');
-process.exit(1);

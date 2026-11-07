@@ -540,7 +540,7 @@ const unreleasedHeading =
 // tree is not the one the author was working in.
 //
 // It FAILS rather than warns, deliberately, and that is a different judgement from the size/style
-// budgets this repo keeps non-fatal (`RULES_INDEX.md`: "correctness stops a release; style warns").
+// budgets this repo keeps non-fatal (`work-loop`: "correctness stops a release; style warns").
 // Publishing the wrong code is correctness. The asymmetry decides it: a false stop costs one changelog
 // line and always has an obvious fix, while a miss burns a version number — which this repo has now
 // done twice (0.2.0 consumed without shipping, 0.6.0 released stale). There is no override flag on

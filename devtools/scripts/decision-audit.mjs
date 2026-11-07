@@ -294,7 +294,7 @@ const rows = entries.map(scan);
 // The unit is the FILE, because that is what gets loaded and what gets rewritten. Everything else is
 // shared with the entries above, deliberately: the history/negation/adjacency care took several rounds
 // to get right and a second copy of these checks would not inherit any of it.
-const ruleDirs = ['.claude/rules', '.claude/knowledge'];
+const ruleDirs = ['.agents/knowledge'];
 const ruleUnits = [];
 for (const dir of ruleDirs) {
   const full = path.join(repo, dir);

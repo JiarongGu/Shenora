@@ -73,8 +73,7 @@ So, in order: **(1) can a gate or a test catch it?** Then write that and nothing
 message carries the root cause. **(2) Can the code make it unrepresentable?** Closing a type, deleting
 the seam. **(3) Only if neither** — a rule, and prefer on-demand `.agents/knowledge/` over the brief in
 `AGENTS.md`, because what is always loaded is paid on every session forever. (`dev.mjs knowledge new
-<name> [--core]` still writes to the old `.claude/` folders until `devtools/scripts/knowledge.mjs` is
-repointed.)
+<name>` scaffolds one; `daoris sync` writes its index row.)
 
 ## Prose, and where a fix's reason goes
 
