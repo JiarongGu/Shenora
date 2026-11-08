@@ -120,6 +120,12 @@ public sealed class ChromiumEngineOptions
     /// <see cref="ChromiumHostOptions.OnClientCertificateRequest"/>. CEF's UI thread: answer at once.
     /// </summary>
     public Func<ChromiumClientCertificateRequest, bool>? OnClientCertificateRequest { get; init; }
+
+    /// <summary>
+    /// Asked when a page tries to open a window of its own: the same hook, and the same contract, as
+    /// <see cref="ChromiumHostOptions.OnPopupRequested"/>. CEF's UI thread: answer at once.
+    /// </summary>
+    public Func<ChromiumPopupRequest, bool>? OnPopupRequested { get; init; }
 }
 
 /// <summary>

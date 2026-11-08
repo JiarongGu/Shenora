@@ -118,6 +118,9 @@ is left is mostly measurement that needs hardware or a person.
   offered list is the user's certificate store; a proxy that asks, a server naming its acceptable authorities, a decline (Chromium's
   own picker) and a hardware token are not run, nor is what macOS's keychain and Linux's NSS database offer
   (`docs/design/shells.md`, the hooks paragraph).
+- [ ] 🅿️ **`OnPopupRequested` on macOS and Linux, and what the Windows probe did not reach.** Run on Windows only; a popup with no user
+  gesture (the blocker may refuse it before the hook), one a frame raises, and `Disposition`/window features CEF gives are not run or offered
+  (`docs/design/shells.md`, the hooks paragraph).
 - [ ] 🅿️ **`OnAuthRequest` on macOS and Linux, and what the Windows probe did not reach.** The code is shared (the browser's
   own DevTools channel) and was run on Windows only; a proxy's challenge, a frame's, a popup's and a window's first navigation
   are not run (`docs/design/shells.md`, the hooks paragraph), nor is whether a Linux/macOS CEF raises `Fetch.authRequired` the same.

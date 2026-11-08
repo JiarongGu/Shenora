@@ -1069,8 +1069,9 @@ internal sealed unsafe class ChromiumBrowser
             return AppCallback.RunOrDefault(() => host?.CloseRequested() == true, fallback: false) ? 1 : 0;
         }
 
-        // window.open and target=_blank: never a bare Chromium window onto whatever the page named. An http/https
-        // URL goes to the user's browser, as on the WebView2 shell; anything else is dropped. Returning 1 cancels.
+        // window.open and target=_blank: never a bare Chromium window onto whatever the page named. The app's hook may take it;
+        // otherwise an http/https URL goes to the user's browser, as on the WebView2 shell, and anything else is dropped.
+        // Returning 1 cancels.
         [UnmanagedCallersOnly]
         private static int BeforePopup(_cef_life_span_handler_t* self, _cef_browser_t* browser, _cef_frame_t* frame, int popupId,
             _cef_string_utf16_t* targetUrl, _cef_string_utf16_t* targetFrameName, cef_window_open_disposition_t disposition, int userGesture,
@@ -1084,8 +1085,10 @@ internal sealed unsafe class ChromiumBrowser
             using var c = new CefRef<_cef_client_t>(client == null ? null : *client);
             var owner = From<LifeSpan>(self)._owner;
             var url = CefStrings.Read(targetUrl);
+            var frameName = CefStrings.Read(targetFrameName);
             AppCallback.Run(() =>
             {
+                if (owner._hooks?.Popup(url, frameName, userGesture != 0, owner.Log) == true) return;   // the app took it
                 if (owner._urls is null) return;
                 try { owner._urls.OpenUrl(url); }
                 catch (ArgumentException) { AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': dropped a popup to a non-web URL"); }

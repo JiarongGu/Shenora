@@ -88,6 +88,11 @@ at the first list and missed five more breaking changes.
   return `true` to present that certificate with no picker, or return `true` with none to present none; `false`, a throw or no hook leaves
   Chromium's own picker, and CEF is only given the handler when the hook is set. Choose by `Sha256`, not by position. Measured on
   Windows only, where the list is the current user's certificate store.
+- **An app decides what a page's `window.open` and `target="_blank"` do: `OnPopupRequested`** on `ChromiumHostOptions` and
+  `ChromiumEngineOptions`. It gets a `ChromiumPopupRequest` (`Url`, `FrameName`, `IsUserGesture`); return `true` to take it, which leaves
+  the shell nothing to do (the hook opens what the app wants, or nothing, which blocks it). `false`, a throw or no hook keeps the policy
+  the shell always had: an http or https address opens in the user's browser and any other is dropped; a popup never becomes a Chromium
+  window of its own. Check the address's scheme before handing it to the system. Measured on Windows only.
 - **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
   `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
   `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe
