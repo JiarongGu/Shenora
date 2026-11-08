@@ -778,7 +778,7 @@ internal sealed unsafe class ChromiumBrowser
             if (owner._hooks is { HandlesClientCertificates: true }) Struct->on_select_client_certificate = &SelectClientCertificate;
         }
 
-        // UI thread. Returning 0 leaves it to Chromium's own picker; 1 means the callback is answered before returning, with the app's
+        // UI thread. Returning 0 leaves it to CEF's default (its own pick from the list); 1 means the callback is answered before returning, with the app's
         // choice or none. Each certificate offered carries a reference this callback releases, as every pointer parameter does.
         [UnmanagedCallersOnly]
         private static int SelectClientCertificate(_cef_request_handler_t* self, _cef_browser_t* browser, int isProxy, _cef_string_utf16_t* host, int port,

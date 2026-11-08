@@ -18,12 +18,7 @@ internal sealed unsafe class ChromiumPageAuth : IDisposable
     {
         _channel = new DevToolsChannel(host);
         _subscription = _channel.Subscribe("Fetch.authRequired", json =>
-        {
-            var (requestId, request) = Challenge(json);
-            var answer = hooks.Authenticate(request, log);
-            AppCallback.Log(log, () => $"[Shenora.Chromium] Window '{windowName}': {(answer is null ? "left" : answer.Value.UserName is null ? "cancelled" : "answered")} a {request.Scheme} challenge of {request.Origin}");
-            _ = Observe(_channel.CallAsync("Fetch.continueWithAuth", Answer(requestId, answer)), log);
-        });
+            _ = Observe(_channel.CallAsync("Fetch.continueWithAuth", Respond(json, hooks, windowName, log)), log));
         // Pausing is what makes Chromium raise a challenge at all (measured: with no pattern matching, no event came, and an empty list
         // is refused alongside handleAuthRequests), so the pattern is the cost. Documents only, a page's navigations and frames: one
         // pause each, where "*" would pause every script, image and fetch.
@@ -48,6 +43,36 @@ internal sealed unsafe class ChromiumPageAuth : IDisposable
     private static Task Observe(Task call, ILogger? log) => call.ContinueWith(
         t => AppCallback.Log(log, () => "[Shenora.Chromium] An authentication DevTools call failed", LogLevel.Warning, t.Exception?.GetBaseException()),
         CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+
+    /// <summary>
+    /// The <c>Fetch.continueWithAuth</c> parameters for one <c>Fetch.authRequired</c> event: the app's answer, or <c>Default</c> when
+    /// the event cannot be read as a challenge, since the request stays paused until something answers it. Internal: tested.
+    /// </summary>
+    internal static string Respond(string authRequiredJson, ChromiumPageHooks hooks, string windowName, ILogger? log)
+    {
+        string requestId, scheme, origin;
+        (string? UserName, string? Password)? answer;
+        try
+        {
+            ChromiumAuthRequest request;
+            (requestId, request) = Challenge(authRequiredJson);
+            (scheme, origin) = (request.Scheme, request.Origin);
+            answer = hooks.Authenticate(request, log);
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            AppCallback.Log(log, () => $"[Shenora.Chromium] Window '{windowName}': an authentication challenge could not be read; it is left as it was", LogLevel.Warning, ex);
+            return Answer(RequestIdOrEmpty(authRequiredJson), null);
+        }
+        AppCallback.Log(log, () => $"[Shenora.Chromium] Window '{windowName}': {(answer is null ? "left" : answer.Value.UserName is null ? "cancelled" : "answered")} a {scheme} challenge of {origin}");
+        return Answer(requestId, answer);
+    }
+
+    private static string RequestIdOrEmpty(string json)
+    {
+        try { return RequestId(json); }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { return string.Empty; }
+    }
 
     /// <summary>A <c>Fetch.authRequired</c> event as the request id to answer and the challenge the app is asked. Internal: tested.</summary>
     internal static (string RequestId, ChromiumAuthRequest Request) Challenge(string authRequiredJson)

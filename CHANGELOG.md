@@ -85,9 +85,10 @@ at the first list and missed five more breaking changes.
 - **An app answers a server's request for a client certificate: `OnClientCertificateRequest`** on `ChromiumHostOptions` and
   `ChromiumEngineOptions`, for a device or an intranet that wants mutual TLS. It gets a `ChromiumClientCertificateRequest` (`Host`,
   `Port`, `IsProxy`, and `Certificates`, each with `Subject`, `Issuer`, `Sha256`, `ValidFrom`, `ValidUntil`); set `SelectedIndex` and
-  return `true` to present that certificate with no picker, or return `true` with none to present none; `false`, a throw or no hook leaves
-  Chromium's own picker, and CEF is only given the handler when the hook is set. Choose by `Sha256`, not by position. Measured on
-  Windows only, where the list is the current user's certificate store.
+  return `true` to present that certificate, or return `true` with none to present none; a throw presents none; `false` or no hook leaves
+  CEF's own default (its documentation says the first certificate of the list; a run with `false` showed the server no request), and CEF is only given the handler
+  when the hook is set. Choose by `Sha256`, not by position. Measured on Windows only, where the list is the current user's certificate
+  store.
 - **An app decides what a page's `window.open` and `target="_blank"` do: `OnPopupRequested`** on `ChromiumHostOptions` and
   `ChromiumEngineOptions`. It gets a `ChromiumPopupRequest` (`Url`, `FrameName`, `IsUserGesture`); return `true` to take it, which leaves
   the shell nothing to do (the hook opens what the app wants, or nothing, which blocks it). `false`, a throw or no hook keeps the policy

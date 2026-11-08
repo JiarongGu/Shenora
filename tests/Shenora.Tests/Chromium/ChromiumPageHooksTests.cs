@@ -269,10 +269,10 @@ public class ChromiumPageHooksTests
     public void A_file_dialog_the_app_handled_is_answered_with_its_paths_and_sees_what_the_page_asked_for()
     {
         ChromiumFileDialogRequest? seen = null;
-        var hooks = Hooks(fileDialog: r => { seen = r; r.Paths = [@"C:ina.png", @"C:in.png"]; return true; });
+        var hooks = Hooks(fileDialog: r => { seen = r; r.Paths = [@"C:\in\a.png", @"C:\in\b.png"]; return true; });
 
-        Assert.Equal([@"C:ina.png", @"C:in.png"], hooks.FileDialog(ChromiumFileDialogMode.OpenMultiple, "Open", @"C:in", ["image/*", ".png"], null));
-        Assert.Equal((ChromiumFileDialogMode.OpenMultiple, "Open", @"C:in", 2), (seen!.Mode, seen.Title, seen.DefaultPath, seen.Accept.Count));
+        Assert.Equal([@"C:\in\a.png", @"C:\in\b.png"], hooks.FileDialog(ChromiumFileDialogMode.OpenMultiple, "Open", @"C:\in", ["image/*", ".png"], null)!);
+        Assert.Equal((ChromiumFileDialogMode.OpenMultiple, "Open", @"C:\in", 2), (seen!.Mode, seen.Title, seen.DefaultPath, seen.Accept.Count));
     }
 
     [Theory]
@@ -281,8 +281,8 @@ public class ChromiumPageHooksTests
     [InlineData(ChromiumFileDialogMode.Save)]
     public void A_dialog_for_one_path_is_given_the_first_only(ChromiumFileDialogMode mode)
     {
-        var hooks = Hooks(fileDialog: r => { r.Paths = [@"C:ina", "  ", @"C:in"]; return true; });
-        Assert.Equal([@"C:ina"], hooks.FileDialog(mode, "", "", [], null));
+        var hooks = Hooks(fileDialog: r => { r.Paths = [@"C:\in\a", "  ", @"C:\in\b"]; return true; });
+        Assert.Equal([@"C:\in\a"], hooks.FileDialog(mode, "", "", [], null)!);
     }
 
     [Fact]
@@ -398,11 +398,21 @@ public class ChromiumPageHooksTests
         Assert.Equal(-1, Hooks(clientCertificate: r => { r.SelectedIndex = index; return true; }).ClientCertificate("h", 443, false, Offered(2), null));
 
     [Fact]
-    public void A_request_the_app_declined_or_threw_on_is_CEFs_own_picker()
+    public void A_request_the_app_declined_or_set_no_hook_for_is_CEFs_default()
     {
         Assert.Null(Hooks(clientCertificate: r => { r.SelectedIndex = 0; return false; }).ClientCertificate("h", 443, false, Offered(2), null));
-        Assert.Null(Hooks(clientCertificate: _ => throw new InvalidOperationException("app bug")).ClientCertificate("h", 443, false, Offered(2), null));
         Assert.Null(Hooks(download: _ => false).ClientCertificate("h", 443, false, Offered(2), null));
+    }
+
+    // CEF's default for an unanswered request is its own pick from the list (documented as the first certificate), so a hook that
+    // failed would hand the user's certificate to whoever asked, by position, which is what the hook exists to stop.
+    [Fact]
+    public void A_request_the_app_threw_on_presents_none_rather_than_a_certificate_it_never_chose()
+    {
+        ChromiumClientCertificateRequest? seen = null;
+        var hooks = Hooks(clientCertificate: r => { seen = r; r.SelectedIndex = 0; throw new InvalidOperationException("app bug"); });
+        Assert.Equal(-1, hooks.ClientCertificate("h", 443, false, Offered(2), null));
+        Assert.NotNull(seen);
     }
 
     [Fact]

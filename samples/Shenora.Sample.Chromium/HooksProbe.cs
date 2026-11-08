@@ -52,7 +52,8 @@ namespace Shenora.Sample.Chromium;
 /// the run (it is removed, with its key, as the run ends and before the next one starts; <c>CLIENT certificate … removed</c> is the line to
 /// look for, and a run killed before it leaves the certificate, which the next run removes). The page navigates itself to the server, and the
 /// hook is asked (<c>CLIENTCERT</c>, with every certificate of the store Chromium offered): <c>select</c> picks the probe's by its SHA-256,
-/// so the server must report that certificate; <c>none</c> picks none, so it must report none.</item>
+/// so the server must report that certificate; <c>none</c> picks none, so it must report none; <c>decline</c> returns false, which leaves
+/// CEF's default (read the server's line and the windows on screen for what it did), and <c>throw</c> fails the hook, so it must report none.</item>
 /// <item><c>SHENORA_SAMPLE_HOOKS_POPUP=take</c>, <c>decline</c> or <c>browser</c> starts the loopback HTTP server of the auth probe (<c>POPUP</c>, no
 /// challenge) and has the page, inside the last click's user activation, call <c>window.open</c> and then click a
 /// <c>target="_blank"</c> link, both to an address of the server in <c>take</c> and to an <c>ftp:</c> one in <c>decline</c>. The hook is
@@ -132,12 +133,12 @@ internal static class HooksProbe
     // allows when the certificate is the server's own (pinned by its SHA-256) and declines in "deny".
     // A mutual-TLS run needs the same server, whose own certificate the certificate hook then allows.
     private static readonly string? Cert = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CERT") is "allow" or "deny"
-        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CERT") : Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CLIENTCERT") is "select" or "none" ? "allow" : null;
+        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CERT") : Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CLIENTCERT") is "select" or "none" or "decline" or "throw" ? "allow" : null;
     private static readonly Lazy<CertServer?> Server = new(() => On && Cert is not null ? new CertServer(Log, requireClientCertificate: ClientCert is not null) : null);
 
     // "select" and "none": the server wants a client certificate, which the hook answers with the probe's own, put in the current user's
     // store for the run and taken out after, or with none.
-    private static readonly string? ClientCert = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CLIENTCERT") is "select" or "none"
+    private static readonly string? ClientCert = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CLIENTCERT") is "select" or "none" or "decline" or "throw"
         ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CLIENTCERT") : null;
     private static readonly Lazy<ProbeClientCertificate?> Mine = new(() => On && ClientCert is not null ? new ProbeClientCertificate(Log) : null);
     private static int _askedForCertificate;
@@ -147,6 +148,8 @@ internal static class HooksProbe
         Interlocked.Increment(ref _askedForCertificate);
         Log($"CLIENTCERT hook: {request.Host}:{request.Port}, proxy {request.IsProxy}, {request.Certificates.Count} on offer: "
             + string.Join("; ", request.Certificates.Select(c => $"'{c.Subject}' by '{c.Issuer}' {c.ValidFrom:u}..{c.ValidUntil:u} sha256 {c.Sha256}")));
+        if (ClientCert == "throw") throw new InvalidOperationException("the probe's hook failed");
+        if (ClientCert == "decline") return false;
         if (ClientCert == "select")
             request.SelectedIndex = request.Certificates.Select((c, i) => (c, i)).Where(p => p.c.Sha256 == Mine.Value?.Sha256).Select(p => (int?)p.i).FirstOrDefault();
         return true;
