@@ -19,6 +19,8 @@
     cannot start. Set ShenoraChromiumLayout=false to build without the engine (a compile-only CI step), and
     ShenoraChromiumLocales (such as "zh-CN;fr") to lay out only those of CEF's locales, and en-US. The app's own
     icon: ApplicationIcon (.ico) on Windows, ShenoraChromiumBundleIcon (.icns) for the macOS bundle.
+    ShenoraChromiumRelaxContextIp=false (Windows) keeps CEF's strict context-IP validation in the launcher: by default the
+    layout relaxes it (shadow stack stays on), so a shell extension's handled exception does not end the app.
     ShenoraChromiumPublishFolders=true (Windows, publish only; off by default) publishes MyApp.exe, MyApp.dll and
     chrome_elf.dll at the root, CEF in engine\ and everything the SDK publishes in lib\, instead of all side by side.
 
@@ -369,6 +371,98 @@ public sealed class ShenoraChromiumStampLauncher : Task
     </Task>
   </UsingTask>
 
+  <!-- Windows: CEF's launcher is built CET-compatible, with strict context-IP validation, so a shell extension that raises
+       and handles its own exception under the app (a context-menu handler, on a right-click in a file picker) resumes at
+       an address the shadow-stack check refuses, and Windows ends the whole process: fail-fast 0xc0000409, parameter 0x30
+       (FAST_FAIL_SET_CONTEXT_DENIED). The PE's extended DLL characteristics, a 4-byte payload of its debug directory
+       (IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS), take IMAGE_DLLCHARACTERISTICS_EX_CET_SET_CONTEXT_IP_VALIDATION_RELAXED_MODE
+       (0x4): the shadow stack stays on, only that check is relaxed. A launcher with no such entry is not CET-compatible,
+       has no strict mode to relax, and is left as it is. Written in place, so the file's size and layout do not change. -->
+  <UsingTask TaskName="ShenoraChromiumRelaxContextIp" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Executable ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <!-- A method, not a fragment: a fragment cannot return early. -->
+      <Code Type="Method" Language="cs"><![CDATA[
+      public override bool Execute()
+      {
+        const uint RelaxedMode = 0x4;
+        const int ExDllCharacteristics = 20;   // IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS
+        var path = System.IO.Path.GetFullPath(Executable);
+        if (!System.IO.File.Exists(path)) { Log.LogMessage(MessageImportance.Low, "Nothing to relax: {0} is missing.", path); return true; }
+        // A file just stamped can be held for a moment by whatever scans new executables; only that is retried.
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using (var stream = new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.ReadWrite, System.IO.FileShare.Read))
+                using (var reader = new System.IO.BinaryReader(stream))
+                {
+                    stream.Position = 0x3c;
+                    var pe = reader.ReadInt32();
+                    stream.Position = pe;
+                    if (reader.ReadUInt32() != 0x4550) { Log.LogWarning("{0} is not a PE file; its context-IP validation was left as it is.", path); return true; }
+                    stream.Position = pe + 6;
+                    var sections = reader.ReadUInt16();
+                    stream.Position = pe + 20;
+                    var optionalSize = reader.ReadUInt16();
+                    var optional = pe + 24;
+                    stream.Position = optional;
+                    var magic = reader.ReadUInt16();
+                    var directories = optional + (magic == 0x20b ? 112 : 96);
+                    stream.Position = directories + 6 * 8;   // the debug directory
+                    var debugRva = reader.ReadUInt32();
+                    var debugSize = reader.ReadUInt32();
+                    if (debugRva == 0) return true;
+
+                    var table = optional + optionalSize;
+                    long Offset(uint rva)
+                    {
+                        for (var i = 0; i < sections; i++)
+                        {
+                            stream.Position = table + i * 40 + 8;
+                            var virtualSize = reader.ReadUInt32();
+                            var virtualAddress = reader.ReadUInt32();
+                            var rawSize = reader.ReadUInt32();
+                            var rawPointer = reader.ReadUInt32();
+                            if (rva >= virtualAddress && rva < virtualAddress + System.Math.Max(virtualSize, rawSize)) return rva - virtualAddress + rawPointer;
+                        }
+                        return -1;
+                    }
+                    var entries = Offset(debugRva);
+                    if (entries < 0) return true;
+                    for (var i = 0; i < debugSize / 28; i++)
+                    {
+                        stream.Position = entries + i * 28 + 12;
+                        var type = reader.ReadUInt32();
+                        var size = reader.ReadUInt32();
+                        stream.Position += 4;   // AddressOfRawData
+                        var data = reader.ReadUInt32();
+                        if (type != ExDllCharacteristics || size < 4 || data == 0) continue;
+                        stream.Position = data;
+                        var flags = reader.ReadUInt32();
+                        if ((flags & RelaxedMode) == 0)
+                        {
+                            stream.Position = data;
+                            new System.IO.BinaryWriter(stream).Write(flags | RelaxedMode);
+                        }
+                        Log.LogMessage(MessageImportance.Low, "{0} has its context-IP validation relaxed (extended DLL characteristics 0x{1:X}).", System.IO.Path.GetFileName(path), flags | RelaxedMode);
+                        return true;
+                    }
+                }
+                return true;
+            }
+            catch (System.IO.IOException) when (attempt < 5)
+            {
+                System.Threading.Thread.Sleep(200 * attempt);
+            }
+        }
+      }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
   <!-- Every refusal runs BEFORE the fetch, so a build that cannot be laid out never downloads 165 MB first. -->
   <Target Name="_ShenoraChromiumCheck">
     <Error Condition="'$(ShenoraChromiumEnginePath)' != '' and '$(ShenoraChromiumEnginePlatform)' != '' and '$(ShenoraChromiumEnginePlatform)' != '$(ShenoraCefPlatform)'"
@@ -533,6 +627,8 @@ public sealed class ShenoraChromiumStampLauncher : Task
                                   StartupScreenProgressBar="$(ShenoraChromiumStartupScreenProgressBar)" StartupScreenProgressColor="$(ShenoraChromiumStartupScreenProgressColor)"
                                   StartupScreenCorners="$(ShenoraChromiumStartupScreenCorners)" StartupScreenMonitor="$(ShenoraChromiumStartupScreenMonitor)"
                                   StartupScreenTimeoutSeconds="$(ShenoraChromiumStartupScreenTimeoutSeconds)" />
+    <!-- After the stamp, which rewrites the file. ShenoraChromiumRelaxContextIp=false keeps CEF's strict validation. -->
+    <ShenoraChromiumRelaxContextIp Condition="'$(ShenoraChromiumRelaxContextIp)' != 'false'" Executable="$(_ShenoraWindowsInto)$(_ShenoraAppExe).exe" />
   </Target>
 
   <!-- A self-contained app is built with the .NET apphost, because the SDK requires one; it is not published, since the

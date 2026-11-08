@@ -47,6 +47,10 @@ public static class WinFormsBootstrap
     /// </summary>
     internal static Action<string, string>? ShowDialogOverride;
 
+    /// <summary>The options <see cref="Initialize"/> took, which every other window thread's exceptions are reported
+    /// through (<see cref="WindowThreadExceptions"/>); null until it has run. Settable for tests.</summary>
+    internal static WinFormsBootstrapOptions? Current { get; set; }
+
     /// <summary>
     /// Initialize WinForms (visual styles, GDI+ text rendering, DPI mode, catch-mode for UI exceptions)
     /// and wire the three global exception channels to
@@ -80,6 +84,7 @@ public static class WinFormsBootstrap
         // Interlocked, not a plain bool: nothing stops a library from calling this on another thread.
         if (Interlocked.Exchange(ref _initialized, 1) != 0) return;
 
+        Current = opt;
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         Application.SetHighDpiMode(opt.HighDpiMode);

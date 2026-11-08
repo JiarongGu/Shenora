@@ -83,6 +83,7 @@ internal static class StaThread
             var ready = new TaskCompletionSource<Control>(TaskCreationOptions.RunContinuationsAsynchronously);
             var thread = new Thread(() =>
             {
+                using var catching = WindowThreadExceptions.Enter("the shared STA apartment", logger: null);
                 var control = new Control();
                 control.CreateControl();        // realize the handle BEFORE anyone can post to it
                 ready.SetResult(control);

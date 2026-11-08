@@ -132,6 +132,14 @@ UI-thread channel is the dispatcher's: work posted to CEF's UI thread, an `async
 is caught and the loop goes on, as WinForms' `CatchException` mode does. There is no last-resort dialog: the shell has
 no portable one, and what the user sees is the app's.
 
+**Every pump the kit starts catches for itself.** `Application.ThreadException` is a PER-THREAD event, so the handler
+`Initialize` adds covers the main window's thread only; on another pump WinForms finds none and shows its own dialog or
+ends the process with no record. `SecondaryWindows` threads and the shared STA apartment therefore enter
+`WindowThreadExceptions` before they make a control: per-thread `CatchException`, and a handler that reports as the main
+window's does (`OnUnhandledException`, then the dialog), through the options `Initialize` took, or to the
+`SecondaryWindows` logger when it never ran. `StaThread.RunAsync` is left alone: its thread runs one call, and an exception
+there reaches the caller through the task.
+
 ⚠ **The last-resort dialog has a per-thread re-entrancy guard.** `MessageBox.Show` runs its own message
 loop, so a recurring UI-thread exception is dispatched again while the dialog is up; without the guard
 the app accumulates modal dialogs faster than a user can dismiss them.
