@@ -31,6 +31,10 @@ namespace Shenora.Sample.Chromium;
 /// certificate hook is asked, and in <c>allow</c> it pins the server's SHA-256 (<c>pinned True</c>) and the server must report a request
 /// served, while in <c>deny</c> it must report none. ⚠ The page is then the server's: in this mode read the <c>RENDERER</c> and
 /// <c>RELOAD</c> lines as the reload of that page, not the probe's.</item>
+/// <item><c>SHENORA_SAMPLE_HOOKS_FILE=answer</c> or <c>cancel</c>: once the clicks are done the page opens a file dialog
+/// (<c>input.click()</c> within the last click's user activation). The hook is asked (<c>FILEDIALOG</c>) and in <c>answer</c> names
+/// <c>picked.txt</c>, which the page must then read (<c>PAGE file: picked.txt …</c>, with the file's content); in <c>cancel</c> it
+/// names none and the page must see a <c>cancel</c> event, with no dialog window of Chromium's on screen either way.</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -111,6 +115,21 @@ internal static class HooksProbe
         Log($"CERTIFICATE hook: {error.ErrorName} ({error.ErrorCode}) for {error.Url}, subject '{error.Subject}', issuer '{error.Issuer}', sha256 {error.Sha256}, pinned {pinned}");
         if (Cert == "deny" || !pinned) return false;
         error.Allow = true;
+        return true;
+    };
+
+    // "answer" and "cancel": the page opens a file dialog, which the hook answers with a file of the probe's or with none.
+    private static readonly string? Pick = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_FILE") is "answer" or "cancel"
+        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_FILE") : null;
+
+    public static Func<ChromiumFileDialogRequest, bool>? OnFileDialog => !On || Pick is null ? null : request =>
+    {
+        Log($"FILEDIALOG hook: {request.Mode}, title '{request.Title}', default '{request.DefaultPath}', accept [{string.Join(", ", request.Accept)}]");
+        if (Pick == "cancel") return true;
+        Directory.CreateDirectory(Folder);
+        var picked = Path.Combine(Folder, "picked.txt");
+        File.WriteAllText(picked, "picked by the hook");
+        request.Paths = [picked];
         return true;
     };
 
@@ -248,7 +267,7 @@ internal static class HooksProbe
     }
 
     private static string PageHtml => PageTemplate.Replace("__AUTO__", Auto is null ? "false" : "true")
-        .Replace("__CERTPORT__", (Server.Value?.Port ?? 0).ToString());
+        .Replace("__CERTPORT__", (Server.Value?.Port ?? 0).ToString()).Replace("__FILE__", Pick is null ? "false" : "true");
 
     private const string PageTemplate = """
         <!doctype html><meta charset="utf-8"><title>hooks probe</title>
@@ -271,6 +290,18 @@ internal static class HooksProbe
           }, 100); }));
           say('ready', '1');
           await finished;
+          if (__FILE__) {
+            // Inside the last click's user activation (5 s), which a page's own file dialog needs.
+            const input = document.createElement('input');
+            input.type = 'file'; input.accept = 'text/plain,.txt';
+            const answered = new Promise(resolve => {
+              input.addEventListener('change', async () => { const f = input.files[0]; say('file', f.name + ' ' + f.size + ' bytes: ' + await f.text()).then(resolve); });
+              input.addEventListener('cancel', () => say('file', 'cancelled').then(resolve));
+            });
+            say('filedialog', 'active=' + navigator.userActivation.isActive);
+            input.click();
+            await Promise.race([answered, new Promise(resolve => setTimeout(resolve, 4000))]);
+          }
           if (__AUTO__) {
             // Past the user activation the last click gave (5 s), so these two downloads follow no gesture.
             await new Promise(resolve => setTimeout(resolve, 6500));

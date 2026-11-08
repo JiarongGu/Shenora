@@ -189,6 +189,18 @@ public sealed class ChromiumHostOptions
     /// </para>
     /// </summary>
     public Func<ChromiumCertificateError, bool>? OnCertificateError { get; init; }
+
+    /// <summary>
+    /// Asked when a window's page opens a file dialog (<c>&lt;input type="file"&gt;</c>, its folder variant, a picker the page
+    /// calls). Set <see cref="ChromiumFileDialogRequest.Paths"/> and return <c>true</c> to answer it yourself, with no dialog:
+    /// the page gets those files, or none (a cancel) when <c>Paths</c> is empty. Return <c>false</c>, throw, or set no hook and
+    /// Chromium's own dialog shows, as it always has. A single-file dialog is given one path, the first.
+    /// <para>
+    /// ⚠ The page is handed the real paths, so name only files the app means the page to read. CEF's UI thread: answer at
+    /// once, which means a dialog of the app's own is not shown from here.
+    /// </para>
+    /// </summary>
+    public Func<ChromiumFileDialogRequest, bool>? OnFileDialog { get; init; }
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

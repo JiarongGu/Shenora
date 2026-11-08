@@ -11,8 +11,9 @@ public class ChromiumPageHooksTests
 {
     private static ChromiumPageHooks Hooks(Func<ChromiumDownloadRequest, bool>? download = null,
         Func<ChromiumPermissionRequest, bool>? permission = null, Func<ChromiumProcessReport, bool>? failed = null,
-        Action<ChromiumDownloadProgress>? progress = null, Func<ChromiumCertificateError, bool>? certificate = null) =>
-        new(download, permission, failed, progress, certificate);
+        Action<ChromiumDownloadProgress>? progress = null, Func<ChromiumCertificateError, bool>? certificate = null,
+        Func<ChromiumFileDialogRequest, bool>? fileDialog = null) =>
+        new(download, permission, failed, progress, certificate, fileDialog);
 
     [Fact]
     public void No_hook_set_means_no_hooks() =>
@@ -26,6 +27,8 @@ public class ChromiumPageHooksTests
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnProcessFailed = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnCertificateError = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnCertificateError = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnFileDialog = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnFileDialog = _ => false }));
     }
 
     [Fact]
@@ -239,6 +242,45 @@ public class ChromiumPageHooksTests
     [Fact]
     public void Without_a_certificate_hook_the_request_fails() =>
         Assert.False(Hooks(download: _ => false).CertificateError("https://h/", -202, "", "", "", null));
+
+    [Fact]
+    public void Only_a_file_dialog_hook_has_CEF_given_a_dialog_handler()
+    {
+        Assert.True(Hooks(fileDialog: _ => false).HandlesFileDialogs);
+        Assert.False(Hooks(download: _ => false, certificate: _ => false).HandlesFileDialogs);
+    }
+
+    [Fact]
+    public void A_file_dialog_the_app_handled_is_answered_with_its_paths_and_sees_what_the_page_asked_for()
+    {
+        ChromiumFileDialogRequest? seen = null;
+        var hooks = Hooks(fileDialog: r => { seen = r; r.Paths = [@"C:ina.png", @"C:in.png"]; return true; });
+
+        Assert.Equal([@"C:ina.png", @"C:in.png"], hooks.FileDialog(ChromiumFileDialogMode.OpenMultiple, "Open", @"C:in", ["image/*", ".png"], null));
+        Assert.Equal((ChromiumFileDialogMode.OpenMultiple, "Open", @"C:in", 2), (seen!.Mode, seen.Title, seen.DefaultPath, seen.Accept.Count));
+    }
+
+    [Theory]
+    [InlineData(ChromiumFileDialogMode.Open)]
+    [InlineData(ChromiumFileDialogMode.OpenFolder)]
+    [InlineData(ChromiumFileDialogMode.Save)]
+    public void A_dialog_for_one_path_is_given_the_first_only(ChromiumFileDialogMode mode)
+    {
+        var hooks = Hooks(fileDialog: r => { r.Paths = [@"C:ina", "  ", @"C:in"]; return true; });
+        Assert.Equal([@"C:ina"], hooks.FileDialog(mode, "", "", [], null));
+    }
+
+    [Fact]
+    public void A_handled_dialog_with_no_paths_is_a_cancel() =>
+        Assert.Empty(Hooks(fileDialog: _ => true).FileDialog(ChromiumFileDialogMode.Open, "", "", [], null)!);
+
+    [Fact]
+    public void A_file_dialog_the_app_declined_or_threw_on_is_CEFs_own()
+    {
+        Assert.Null(Hooks(fileDialog: r => { r.Paths = [@"C:ina"]; return false; }).FileDialog(ChromiumFileDialogMode.Open, "", "", [], null));
+        Assert.Null(Hooks(fileDialog: _ => throw new InvalidOperationException("app bug")).FileDialog(ChromiumFileDialogMode.Open, "", "", [], null));
+        Assert.Null(Hooks(download: _ => false).FileDialog(ChromiumFileDialogMode.Open, "", "", [], null));
+    }
 
     [Theory]
     [InlineData(-200, "ERR_CERT_COMMON_NAME_INVALID")]

@@ -114,18 +114,13 @@ package's Linux helper has not run: see below); how it works is `docs/design/she
 is left is mostly measurement that needs hardware or a person.
 
 **Every desktop OS**
-- [ ] **Two more asks of a page the app cannot answer yet.** HTTP authentication (a device or proxy that wants a user name and
-  password; the shell answers none today) and the page's own file dialog (`on_file_dialog`). Each as a hook beside
-  `OnCertificateError`, measured on the HooksProbe against a loopback server first. A page's sub-resource with a certificate error
-  is not asked about by CEF at all (measured), so no hook can cover it.
+- [ ] **HTTP authentication of a page (a device or proxy that wants a user name and password; the shell answers none today).**
   ⚠ **`get_auth_credentials` is never called here** (measured, CEF 154, Windows, the Chromium and ChromiumView samples): a
   loopback server answering `401` with `WWW-Authenticate: Basic realm=…` to the page's own navigation reached the server twice
   and then its favicon, all with no credentials, and the request handler's `get_auth_credentials`, set (the struct member
   assigned, the handler given to CEF), was not entered: no call, no Chromium dialog window either, the `401` body just drew.
   So a hook built on it is dead code; what would work is the protocol's `Fetch.authRequired`, as `ChromiumSessionBrowser` does,
   which pauses each request of a page once, so it must be opt-in and measured for that cost on the app's own pages first.
-  The file dialog's probe needs a click with user activation, and the probe's posted clicks did not reach the page in that run
-  either (not one `click` line, with the cert hook's probe too), so check that first.
 
 **Windows**
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out

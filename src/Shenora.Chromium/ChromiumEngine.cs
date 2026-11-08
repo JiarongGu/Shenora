@@ -96,6 +96,12 @@ public sealed class ChromiumEngineOptions
     /// <see cref="ChromiumHostOptions.OnCertificateError"/>. CEF's UI thread: answer at once.
     /// </summary>
     public Func<ChromiumCertificateError, bool>? OnCertificateError { get; init; }
+
+    /// <summary>
+    /// Asked when a page opens a file dialog: the same hook, and the same contract, as
+    /// <see cref="ChromiumHostOptions.OnFileDialog"/>. CEF's UI thread: answer at once.
+    /// </summary>
+    public Func<ChromiumFileDialogRequest, bool>? OnFileDialog { get; init; }
 }
 
 /// <summary>
