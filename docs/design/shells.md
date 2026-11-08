@@ -626,7 +626,12 @@ the server saw none. The certificate hook ran first (the server's own certificat
 that Chromium dropped (its own checks, before the hook) left no request. ⚠ The list is the system's store, not the server's own
 list of authorities: the probe's server named none, so every certificate came, and a server that names its authorities narrows it. Not
 run: a decline (`decline`: the hook was asked once and the server then saw no page request, so CEF's default, which it documents as the first certificate of the list, completed no handshake on that machine; why is not known, and no picker showed), a throw (`throw`: the server saw none, as the code says), a proxy that asks, a server with an acceptable-issuers
-list, a store with one certificate, and a hardware token.
+list, a store with one certificate, and a hardware token. ⚠ A server that names its acceptable issuers could not be made from .NET here: `SslStream` on Windows
+sends a trust list only from a LocalMachine store (`SslCertificateTrust.CreateForX509Collection` throws `PlatformNotSupportedException`, and so does a CurrentUser store),
+and with a store of the probe's own name holding one authority (a client certificate that authority signed in the user's store beside a self-signed decoy), on TLS 1.3 and on TLS 1.2,
+and with the machine's Root store read-only, a .NET client's own `LocalCertificateSelectionCallback` was given no issuers by the handshake, so nothing showed the list was sent. In those runs the
+hook's offer held the signed certificate and the decoy alike (6 of 6 on offer), which therefore says nothing about whether Chromium narrows by a named list. It needs a TLS server that provably sends
+`certificate_authorities`/the CA list (OpenSSL's `s_server -CAfile`, read back by a client first).
 `OnPopupRequested` (CEF's `on_before_popup`, which the shell always handles, so the hook adds a question and no handler) was run on both
 samples (`SHENORA_SAMPLE_HOOKS_POPUP=take`, `decline` or `browser`; inside the last click's user activation the page calls `window.open`
 and clicks a `target="_blank"` link, to a loopback server's address or an `ftp:` one): each reached the hook, `window.open` with
