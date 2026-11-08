@@ -211,7 +211,7 @@ public sealed class ChromiumHostOptions
     /// ⚠ <b>Chromium's own prompt never shows in this shell</b>, so without the hook a page behind a login is its <c>401</c>
     /// body. ⚠ Setting the hook opens the DevTools protocol on every browser of the app and has it pause each document request
     /// (a navigation or a frame, once) to hear a challenge: a script, image or <c>fetch</c> of the page is not paused, and a
-    /// challenge on one is not asked. ⚠ An answer the server refuses is asked about again at once, and again, until the hook
+    /// challenge on one is not asked (its request stays pending). ⚠ An answer the server refuses is asked about again at once, and again, until the hook
     /// cancels: remember what was tried. CEF's UI thread: answer at once.
     /// </para>
     /// </summary>
