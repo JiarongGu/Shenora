@@ -203,6 +203,11 @@ sealed class Shenora.Chromium.ChromiumPermissionRequest
   public string Origin { get; }
 sealed class Shenora.Chromium.ChromiumPopupRequest
   public bool IsUserGesture { get; }
+  public bool IsWindow { get; }
+  public int? Height { get; }
+  public int? Width { get; }
+  public int? X { get; }
+  public int? Y { get; }
   public string FrameName { get; }
   public string Url { get; }
 sealed class Shenora.Chromium.ChromiumProcessReport

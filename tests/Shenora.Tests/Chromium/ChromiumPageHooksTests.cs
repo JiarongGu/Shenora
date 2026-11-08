@@ -420,16 +420,64 @@ public class ChromiumPageHooksTests
     {
         ChromiumPopupRequest? seen = null;
         var hooks = Hooks(popup: r => { seen = r; return true; });
-        Assert.True(hooks.Popup("https://example.com/a", "side", true, null));
+        Assert.True(hooks.Popup("https://example.com/a", "side", true, cef_window_open_disposition_t.CEF_WOD_NEW_FOREGROUND_TAB, null, null));
         Assert.Equal(("https://example.com/a", "side", true), (seen!.Url, seen.FrameName, seen.IsUserGesture));
+    }
+
+    [Fact]
+    public void A_popup_with_no_window_features_is_a_tab_with_no_size()
+    {
+        ChromiumPopupRequest? seen = null;
+        var hooks = Hooks(popup: r => { seen = r; return true; });
+        hooks.Popup("https://example.com/", "", true, cef_window_open_disposition_t.CEF_WOD_NEW_FOREGROUND_TAB, default(_cef_popup_features_t), null);
+        Assert.Equal((false, null, null, null, null), (seen!.IsWindow, seen.X, seen.Y, seen.Width, seen.Height));
+    }
+
+    [Fact]
+    public void A_popup_reports_only_the_features_the_page_set_and_a_window_for_a_window_disposition_or_a_popup_feature()
+    {
+        ChromiumPopupRequest? seen = null;
+        var hooks = Hooks(popup: r => { seen = r; return true; });
+        // Zero is a value the page may set (left=0), so a value is read from its set-flag and never from being non-zero.
+        var features = new _cef_popup_features_t { x = 0, xSet = 1, width = 420, widthSet = 1, y = 99, ySet = 0, height = 7, heightSet = 0, isPopup = 1 };
+        hooks.Popup("https://example.com/", "side", true, cef_window_open_disposition_t.CEF_WOD_NEW_POPUP, features, null);
+        Assert.Equal((true, 0, (int?)null, 420, (int?)null), (seen!.IsWindow, seen.X, seen.Y, seen.Width, seen.Height));
+
+        hooks.Popup("https://example.com/", "", true, cef_window_open_disposition_t.CEF_WOD_NEW_WINDOW, null, null);
+        Assert.True(seen.IsWindow);
+
+        // A feature list that sets isPopup makes a window even when CEF's disposition says tab.
+        hooks.Popup("https://example.com/", "", true, cef_window_open_disposition_t.CEF_WOD_NEW_FOREGROUND_TAB, new _cef_popup_features_t { isPopup = 1 }, null);
+        Assert.True(seen.IsWindow);
+
+        hooks.Popup("https://example.com/", "", true, cef_window_open_disposition_t.CEF_WOD_NEW_BACKGROUND_TAB, null, null);
+        Assert.False(seen.IsWindow);
+    }
+
+    [Fact]
+    public void Only_a_navigation_asking_for_another_tab_or_window_is_taken_from_the_request_handler()
+    {
+        foreach (var taken in new[]
+        {
+            cef_window_open_disposition_t.CEF_WOD_NEW_FOREGROUND_TAB, cef_window_open_disposition_t.CEF_WOD_NEW_BACKGROUND_TAB,
+            cef_window_open_disposition_t.CEF_WOD_NEW_WINDOW, cef_window_open_disposition_t.CEF_WOD_NEW_POPUP,
+        })
+            Assert.True(Shenora.Chromium.Host.ChromiumBrowser.OpensAnotherTabOrWindow(taken), taken.ToString());
+        foreach (var left in new[]
+        {
+            cef_window_open_disposition_t.CEF_WOD_CURRENT_TAB, cef_window_open_disposition_t.CEF_WOD_SAVE_TO_DISK,
+            cef_window_open_disposition_t.CEF_WOD_UNKNOWN,
+        })
+            Assert.False(Shenora.Chromium.Host.ChromiumBrowser.OpensAnotherTabOrWindow(left), left.ToString());
     }
 
     [Fact]
     public void A_popup_the_app_declined_or_threw_on_is_left_to_the_shells_own_policy()
     {
-        Assert.False(Hooks(popup: _ => false).Popup("https://example.com/", "", false, null));
-        Assert.False(Hooks(popup: _ => throw new InvalidOperationException("app bug")).Popup("https://example.com/", "", false, null));
-        Assert.False(Hooks(download: _ => false).Popup("https://example.com/", "", false, null));
+        const cef_window_open_disposition_t tab = cef_window_open_disposition_t.CEF_WOD_NEW_FOREGROUND_TAB;
+        Assert.False(Hooks(popup: _ => false).Popup("https://example.com/", "", false, tab, null, null));
+        Assert.False(Hooks(popup: _ => throw new InvalidOperationException("app bug")).Popup("https://example.com/", "", false, tab, null, null));
+        Assert.False(Hooks(download: _ => false).Popup("https://example.com/", "", false, tab, null, null));
     }
 
     [Fact]

@@ -450,11 +450,16 @@ public sealed class ChromiumClientCertificateRequest
 /// <summary>A window the page asked to open (<c>window.open</c>, a <c>target="_blank"</c> link), offered to <see cref="ChromiumHostOptions.OnPopupRequested"/>.</summary>
 public sealed class ChromiumPopupRequest
 {
-    internal ChromiumPopupRequest(string url, string frameName, bool isUserGesture)
+    internal ChromiumPopupRequest(string url, string frameName, bool isUserGesture, bool isWindow, int? x, int? y, int? width, int? height)
     {
         Url = url;
         FrameName = frameName;
         IsUserGesture = isUserGesture;
+        IsWindow = isWindow;
+        X = x;
+        Y = y;
+        Width = width;
+        Height = height;
     }
 
     /// <summary>The address the page named, resolved against the page: any scheme, and empty or <c>about:blank</c> for a window the page fills itself.</summary>
@@ -465,6 +470,21 @@ public sealed class ChromiumPopupRequest
 
     /// <summary>Whether a click or key of the user started it, rather than the page's own script.</summary>
     public bool IsUserGesture { get; }
+
+    /// <summary>True when the page or the user asked for a window of its own rather than a tab: <c>window.open</c> with window features, or a shift-click on a link.</summary>
+    public bool IsWindow { get; }
+
+    /// <summary>The left edge the page asked for in <c>window.open</c>'s features, in screen coordinates; null when it gave none.</summary>
+    public int? X { get; }
+
+    /// <summary>The top edge the page asked for in <c>window.open</c>'s features, in screen coordinates; null when it gave none.</summary>
+    public int? Y { get; }
+
+    /// <summary>The width the page asked for in <c>window.open</c>'s features; null when it gave none.</summary>
+    public int? Width { get; }
+
+    /// <summary>The height the page asked for in <c>window.open</c>'s features; null when it gave none.</summary>
+    public int? Height { get; }
 }
 
 /// <summary>
@@ -504,10 +524,16 @@ internal sealed class ChromiumPageHooks(Func<ChromiumDownloadRequest, bool>? dow
     /// True when the app took the popup itself, which leaves the shell nothing to do with it. False when it declined, threw or set
     /// no hook: the shell's own policy (the user's browser for an http or https address, nothing for any other) stands.
     /// </summary>
-    public bool Popup(string url, string frameName, bool isUserGesture, ILogger? log)
+    public bool Popup(string url, string frameName, bool isUserGesture, cef_window_open_disposition_t disposition,
+        _cef_popup_features_t? features, ILogger? log)
     {
         if (popup is null) return false;
-        var request = new ChromiumPopupRequest(url, frameName, isUserGesture);
+        // CEF's features carry a set-flag per value: one the page did not give stays null rather than 0.
+        var f = features ?? default;
+        var isWindow = disposition is cef_window_open_disposition_t.CEF_WOD_NEW_POPUP or cef_window_open_disposition_t.CEF_WOD_NEW_WINDOW
+            || f.isPopup != 0;
+        var request = new ChromiumPopupRequest(url, frameName, isUserGesture, isWindow,
+            f.xSet != 0 ? f.x : null, f.ySet != 0 ? f.y : null, f.widthSet != 0 ? f.width : null, f.heightSet != 0 ? f.height : null);
         return AppCallback.RunOrDefault(() => popup(request), false, Failed(log, nameof(ChromiumHostOptions.OnPopupRequested)));
     }
 

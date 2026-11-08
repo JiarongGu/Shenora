@@ -70,7 +70,10 @@ namespace Shenora.Sample.Chromium;
 /// iframe of the page (<c>popup frame active=…</c>), and <c>self</c> navigates the page itself with <c>window.open(url, '_self')</c> (the hook
 /// must not be asked), <c>redirect</c> opens the server's <c>/redirect</c> (the hook is asked with that address, before any hop),
 /// <c>crossframe</c> has an iframe of another origin (the server's <c>/frame</c>) take the last click itself and open the popup, and <c>beforeunload</c>
-/// opens one from the page's <c>beforeunload</c> handler as it reloads.</item>
+/// opens one from the page's <c>beforeunload</c> handler as it reloads, <c>features</c> opens two with window features (<c>popup,width=420,height=310,left=50,top=60</c>,
+/// and <c>popup</c> alone: the <c>POPUP hook</c> line gives the size and place the request carried, <c>-</c> for one not given), and <c>ctrl</c> and <c>shift</c>
+/// click a <c>target="_blank"</c> link with that key held, which reaches the hook through the request handler and not the popup one (the page must
+/// still finish, and the server see nothing).</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -256,7 +259,7 @@ internal static class HooksProbe
 
     // Where the popup is raised: "nogesture" (after the last click's user activation has lapsed), "frame" (by an iframe of the page, inside
     // the activation) or "self" (a `_self` navigation, which is no popup); unset, the page itself raises it inside the activation.
-    private static readonly string? PopupAt = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUPAT") is "nogesture" or "frame" or "self" or "redirect" or "crossframe" or "beforeunload"
+    private static readonly string? PopupAt = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUPAT") is "nogesture" or "frame" or "self" or "redirect" or "crossframe" or "beforeunload" or "features" or "ctrl" or "shift"
         ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUPAT") : null;
     private static readonly TaskCompletionSource CrossReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -278,7 +281,9 @@ internal static class HooksProbe
     public static Func<ChromiumPopupRequest, bool>? OnPopupRequested => !On || Popup is null ? null : request =>
     {
         Interlocked.Increment(ref _popups);
-        Log($"POPUP hook: '{request.Url}' frame '{request.FrameName}', user gesture {request.IsUserGesture}, answering {(Popup == "take" ? "taken" : "declined")}");
+        Log($"POPUP hook: '{request.Url}' frame '{request.FrameName}', user gesture {request.IsUserGesture}, window {request.IsWindow}, "
+            + $"x {request.X?.ToString() ?? "-"} y {request.Y?.ToString() ?? "-"} width {request.Width?.ToString() ?? "-"} height {request.Height?.ToString() ?? "-"}, "
+            + $"answering {(Popup == "take" ? "taken" : "declined")}");
         return Popup == "take";
     };
 
@@ -529,6 +534,17 @@ internal static class HooksProbe
             a.href = __POPUPURL__; a.target = '_blank';
             host.document.body.append(a);
             a.click();
+            if (popupAt === 'features') {
+              // What the page says about the window: sized and placed features, and a feature list with no size.
+              say('popup', 'features sized ' + (window.open(__POPUPURL__, 'probe-sized', 'popup,width=420,height=310,left=50,top=60') === null ? 'null' : 'a window'));
+              say('popup', 'features only-popup ' + (window.open(__POPUPURL__, 'probe-bare', 'popup') === null ? 'null' : 'a window'));
+            } else if (popupAt === 'ctrl' || popupAt === 'shift') {
+              // A link clicked with a modifier: its disposition is the click's, not the page's call, and it does not reach OnBeforePopup.
+              const link = document.createElement('a');
+              link.href = __POPUPURL__; link.target = '_blank';
+              document.body.append(link);
+              link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, ctrlKey: popupAt === 'ctrl', shiftKey: popupAt === 'shift' }));
+            }
             await new Promise(resolve => setTimeout(resolve, 1000));
           }
           if (__FILE__) {
