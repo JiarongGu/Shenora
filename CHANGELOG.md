@@ -49,6 +49,13 @@ at the first list and missed five more breaking changes.
   from a secondary window behind it, or from a hidden main window beside nobody. A window that is closed or hidden falls
   back to the main window; a call from no page is as before. Still on a dedicated STA thread, and a cancelled dialog is
   `FileDialogResult.Cancelled()`, not an exception. The WinForms shell only: the Chromium shell's dialogs are unchanged.
+- **A Windows Chromium app's launcher no longer takes the whole process down with a shell extension's handled exception.**
+  CEF's launcher is built CET-compatible with strict context-IP validation, so a shell extension that raises and handles its
+  own exception inside the app (a context-menu handler, on a right-click in Windows' file picker) resumed where the shadow-stack
+  check refuses, and Windows ended the app with fail-fast `0xc0000409`, parameter `0x30`. The layout, for a build and a publish,
+  now sets the launcher's extended DLL characteristics to the relaxed context-IP mode (`0x4`); the shadow stack stays on.
+  `<ShenoraChromiumRelaxContextIp>false</ShenoraChromiumRelaxContextIp>` keeps CEF's strict validation. A launcher that is not
+  CET-compatible is left as it is. Windows only.
 - **A Windows Chromium app shows a startup screen with no update launcher.** `<ShenoraChromiumStartupScreen>` (a PNG) and its options
   (`…Width`, `…Height`, `…Background`, `…ProgressBar`, `…ProgressColor`, `…Corners`, `…Monitor`, `…TimeoutSeconds`, the values
   `shenora_launcher_startup_screen()` takes; a bad one fails the build by its name, before CEF is fetched) have the app's build
@@ -111,6 +118,12 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **An exception raised on a secondary window's thread ended the app, or raised WinForms' own dialog, with no record.**
+  `Application.ThreadException` is per thread, so the handler `WinFormsBootstrap.Initialize` adds covered only the main
+  window's pump. Each pump the kit starts (`SecondaryWindows`, the shared STA apartment the clipboard uses) now catches its
+  own thread's unhandled exceptions and the pump goes on. They reach `WinFormsBootstrapOptions.OnUnhandledException`
+  (`UnhandledExceptionSource.UiThread`, not terminating) and its crash dialog (`ShowCrashDialog`), as the main window's do;
+  an app that never ran `Initialize` has them in the `SecondaryWindows` logger.
 - **A panel or window recreated at once for a profile could come up without its cookies.** CEF tears a profile down on its
   own threads after the last reference goes, and a context made for the same folder meanwhile could read the cookie file
   early (a cookie was missing from a recreated panel in 8 of 100 runs of the panel probe, with another profile's panel

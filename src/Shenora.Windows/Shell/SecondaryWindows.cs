@@ -95,6 +95,8 @@ public sealed class SecondaryWindows : IDisposable
         // The thread inherits the opener's context, often a page's request: the window is not that page's, and its own
         // pages mark themselves.
         using var nobody = PageSender.Enter(null);
+        // Before any control: an exception raised on this pump is reported and the window goes on, not the process ended.
+        using var catching = WindowThreadExceptions.Enter($"secondary window '{name}'", _logger);
         Form form;
         try
         {

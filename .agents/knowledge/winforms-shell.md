@@ -24,6 +24,9 @@ owner, `IUiDispatcher`) — don't restate it here.
 - **Process-global initialization must be IDEMPOTENT.** A second `Initialize` re-registered all three
   exception channels, so every later exception was reported twice and raised two stacked dialogs. The
   natural way to hit it is a library and its host app both being well-behaved. First call wins.
+- **`Application.ThreadException` is PER THREAD — every pump the kit starts must enter `WindowThreadExceptions` first.**
+  `Initialize`'s handler covers the main window's thread; a `SecondaryWindows` pump with none ended the app (or raised
+  WinForms' own dialog) with no record. A new thread that runs `Application.Run` calls `Enter` before its first control.
 - **Anything that pumps can RE-ENTER you.** `MessageBox.Show` runs its own modal loop, so a UI-thread
   exception that recurs (a broken paint handler, a timer throwing every tick) is dispatched again while
   the dialog is up — re-entering the handler and stacking dialogs unboundedly over a window nobody can
