@@ -304,6 +304,21 @@ internal sealed unsafe class ChromiumBrowser
         _paintWatch = null;
     }
 
+    /// <summary>Whether a navigation CEF reports from a tab asks for another tab or window, which the shell never opens itself.</summary>
+    internal static bool OpensAnotherTabOrWindow(cef_window_open_disposition_t disposition) =>
+        disposition is cef_window_open_disposition_t.CEF_WOD_NEW_FOREGROUND_TAB or cef_window_open_disposition_t.CEF_WOD_NEW_BACKGROUND_TAB
+            or cef_window_open_disposition_t.CEF_WOD_NEW_WINDOW or cef_window_open_disposition_t.CEF_WOD_NEW_POPUP;
+
+    // A window the page or the user asked for: never a bare Chromium window onto whatever was named. The app's hook may take it;
+    // otherwise an http/https URL goes to the user's browser, as on the WebView2 shell, and anything else is dropped.
+    private void RoutePopup(string url, string frameName, bool userGesture, cef_window_open_disposition_t disposition, _cef_popup_features_t? features)
+    {
+        if (_hooks?.Popup(url, frameName, userGesture, disposition, features, Log) == true) return;   // the app took it
+        if (_urls is null) return;
+        try { _urls.OpenUrl(url); }
+        catch (ArgumentException) { AppCallback.Log(Log, () => $"[Shenora.Chromium] Window '{Name}': dropped a popup to a non-web URL"); }
+    }
+
     private void BrowserClosing()
     {
         StopWatchingPaint();
@@ -773,6 +788,7 @@ internal sealed unsafe class ChromiumBrowser
             Struct->get_resource_request_handler = &GetResourceRequestHandler;
             Struct->on_render_process_terminated = &OnRendererGone;
             Struct->on_before_browse = &BeforeBrowse;
+            Struct->on_open_urlfrom_tab = &OpenUrlFromTab;
             // Only with the app's hook: with none CEF is not asked and fails the request itself.
             if (owner._hooks is { HandlesCertificates: true }) Struct->on_certificate_error = &CertificateError;
             if (owner._hooks is { HandlesClientCertificates: true }) Struct->on_select_client_certificate = &SelectClientCertificate;
@@ -884,6 +900,22 @@ internal sealed unsafe class ChromiumBrowser
             var bytes = new byte[(int)der->get_size(der)];
             fixed (byte* data = bytes) der->get_data(der, data, (nuint)bytes.Length, 0);
             return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+        }
+
+        // A link the user clicked with a modifier (ctrl: NEW_FOREGROUND_TAB, shift: NEW_WINDOW, as measured) does not come through
+        // OnBeforePopup but here, and CEF's own answer to it was to navigate THIS window to the address (measured: the page was gone, the
+        // server saw a browser-initiated request). It takes the popup's route instead. 1 cancels the navigation; a click in this tab goes on.
+        [UnmanagedCallersOnly]
+        private static int OpenUrlFromTab(_cef_request_handler_t* self, _cef_browser_t* browser, _cef_frame_t* frame, _cef_string_utf16_t* targetUrl,
+            cef_window_open_disposition_t disposition, int userGesture)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var f = new CefRef<_cef_frame_t>(frame);
+            if (!OpensAnotherTabOrWindow(disposition)) return 0;
+            var owner = From<Requests>(self)._owner;
+            var url = CefStrings.Read(targetUrl);
+            AppCallback.Run(() => owner.RoutePopup(url, "", userGesture != 0, disposition, null));
+            return 1;
         }
 
         // Answering 1 cancels the navigation.
@@ -1069,9 +1101,7 @@ internal sealed unsafe class ChromiumBrowser
             return AppCallback.RunOrDefault(() => host?.CloseRequested() == true, fallback: false) ? 1 : 0;
         }
 
-        // window.open and target=_blank: never a bare Chromium window onto whatever the page named. The app's hook may take it;
-        // otherwise an http/https URL goes to the user's browser, as on the WebView2 shell, and anything else is dropped.
-        // Returning 1 cancels.
+        // window.open and target=_blank, routed by RoutePopup. Returning 1 cancels.
         [UnmanagedCallersOnly]
         private static int BeforePopup(_cef_life_span_handler_t* self, _cef_browser_t* browser, _cef_frame_t* frame, int popupId,
             _cef_string_utf16_t* targetUrl, _cef_string_utf16_t* targetFrameName, cef_window_open_disposition_t disposition, int userGesture,
@@ -1086,13 +1116,8 @@ internal sealed unsafe class ChromiumBrowser
             var owner = From<LifeSpan>(self)._owner;
             var url = CefStrings.Read(targetUrl);
             var frameName = CefStrings.Read(targetFrameName);
-            AppCallback.Run(() =>
-            {
-                if (owner._hooks?.Popup(url, frameName, userGesture != 0, owner.Log) == true) return;   // the app took it
-                if (owner._urls is null) return;
-                try { owner._urls.OpenUrl(url); }
-                catch (ArgumentException) { AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': dropped a popup to a non-web URL"); }
-            });
+            _cef_popup_features_t? popupFeatures = features == null ? null : *features;
+            AppCallback.Run(() => owner.RoutePopup(url, frameName, userGesture != 0, disposition, popupFeatures));
             return 1;
         }
 

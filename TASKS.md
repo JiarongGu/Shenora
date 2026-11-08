@@ -118,7 +118,8 @@ is left is mostly measurement that needs hardware or a person.
   offered list is the user's certificate store; a proxy that asks, a server naming its acceptable authorities (a .NET server could not be made to send the list, so it needs OpenSSL's `s_server -CAfile`: `docs/design/shells.md`), a decline (run once on Windows: the server then saw
   no page request, and why CEF's documented first-certificate default completed no handshake is not known) and a hardware token are not run, nor is what macOS's keychain and Linux's
   NSS database offer (`docs/design/shells.md`, the hooks paragraph).
-- [ ] 🅿️ **`OnPopupRequested` on macOS and Linux, and what the Windows probe did not reach.** Run on Windows only; `Disposition`/window features CEF gives are not run or offered
+- [ ] 🅿️ **`OnPopupRequested` on macOS and Linux, and what the Windows probe did not reach.** Run on Windows only; a middle-click's background tab is not run (a script cannot raise it, so a
+  request says nothing of it), nor is a ctrl or shift click in a session panel, whose request handler has no `on_open_url_from_tab`, so CEF may still navigate the panel itself
   (`docs/design/shells.md`, the hooks paragraph).
 - [ ] 🅿️ **`OnAuthRequest` on macOS and Linux, and what the Windows probe did not reach.** The code is shared (the browser's
   own DevTools channel) and was run on Windows only; a proxy's challenge (a `--proxy-server` try never reached the proxy) and the NTLM and Negotiate schemes

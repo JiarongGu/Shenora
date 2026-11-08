@@ -123,10 +123,12 @@ at the first list and missed five more breaking changes.
   when the hook is set. Choose by `Sha256`, not by position. Measured on Windows only, where the list is the current user's certificate
   store.
 - **An app decides what a page's `window.open` and `target="_blank"` do: `OnPopupRequested`** on `ChromiumHostOptions` and
-  `ChromiumEngineOptions`. It gets a `ChromiumPopupRequest` (`Url`, `FrameName`, `IsUserGesture`); return `true` to take it, which leaves
+  `ChromiumEngineOptions`. It gets a `ChromiumPopupRequest` (`Url`, `FrameName`, `IsUserGesture`, `IsWindow`, and the `X`, `Y`, `Width`
+  and `Height` a `window.open` feature list asked for, each null when the page gave none); return `true` to take it, which leaves
   the shell nothing to do (the hook opens what the app wants, or nothing, which blocks it). `false`, a throw or no hook keeps the policy
   the shell always had: an http or https address opens in the user's browser and any other is dropped; a popup never becomes a Chromium
-  window of its own. Check the address's scheme before handing it to the system. Measured on Windows only.
+  window of its own. A link the user clicked with ctrl or shift is asked about too. Check the address's scheme before handing it to
+  the system. Measured on Windows only.
 - **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
   `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
   `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe
@@ -153,6 +155,11 @@ at the first list and missed five more breaking changes.
   not is carried at the rate asked for, as before.
 - **A frameless Chromium window's cover draws its caption glyphs dimmed when the window is not the foreground.** It always
   drew the active ones, so a window that opened behind another showed bright glyphs until the page painted.
+- **A link clicked with ctrl or shift no longer navigates a Chromium shell window away.** CEF reports such a click to the
+  request handler, not as a popup, and the shell left it to CEF, which loaded the address into the window itself: the app's
+  page was gone, whatever the link's `target` and whatever `OnPopupRequested` said. It now takes the popup's route: the app's hook,
+  else the user's browser for an http or https address and nothing for any other. This covers the shell's windows and a
+  `ChromiumView`; a session panel is unchanged.
 
 ## 0.25.0 — 2026-11-04
 
