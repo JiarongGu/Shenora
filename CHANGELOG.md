@@ -39,6 +39,16 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`PageWindow.Current`: the window of the page that sent the request** (`Shenora.Windows`). The top-level form showing
+  the page whose request a module is handling, still there after an `await`, and on a `SecondaryWindows` window that
+  window, not the main one; null for a send from no page. Until now the kit knew the sending page internally and an app
+  could not ask for it. The window belongs to its own thread: marshal anything but a handle read to it.
+- **`FileDialogs` opens over the window that asked.** `IFileDialogs`' file, folder and save dialogs, from a page's
+  request (the kit's own `FileDialogModule` route, or an app module calling the service), are owned by
+  `PageWindow.Current` and block that window alone, where every dialog was owned by the main window, which opened one
+  from a secondary window behind it, or from a hidden main window beside nobody. A window that is closed or hidden falls
+  back to the main window; a call from no page is as before. Still on a dedicated STA thread, and a cancelled dialog is
+  `FileDialogResult.Cancelled()`, not an exception. The WinForms shell only: the Chromium shell's dialogs are unchanged.
 - **A Windows Chromium app shows a startup screen with no update launcher.** `<ShenoraChromiumStartupScreen>` (a PNG) and its options
   (`…Width`, `…Height`, `…Background`, `…ProgressBar`, `…ProgressColor`, `…Corners`, `…Monitor`, `…TimeoutSeconds`, the values
   `shenora_launcher_startup_screen()` takes; a bad one fails the build by its name, before CEF is fetched) have the app's build

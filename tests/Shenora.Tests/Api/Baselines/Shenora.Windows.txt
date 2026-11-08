@@ -138,6 +138,8 @@ sealed class Shenora.Windows.OptimizedFormOptions
   public bool NativeCaptionButtons { get; init; }
   public bool RoundedCorners { get; init; }
   public int TopResizeBorder { get; init; }
+static class Shenora.Windows.PageWindow
+  public static System.Windows.Forms.Form? Current { get; }
 sealed class Shenora.Windows.SecondaryWindowOptions
   public Shenora.Core.Shell.IWindowStateStore? StateStore { get; init; }
   public Shenora.Core.Shell.WindowStateOptions? StateOptions { get; init; }

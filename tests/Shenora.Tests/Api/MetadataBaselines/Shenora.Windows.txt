@@ -140,6 +140,8 @@ Shenora.Windows.OptimizedFormOptions
   property NativeCaptionButtons
   property RoundedCorners
   property TopResizeBorder
+Shenora.Windows.PageWindow
+  property Current
 Shenora.Windows.SecondaryWindowOptions
   method .ctor
   property CreateForm

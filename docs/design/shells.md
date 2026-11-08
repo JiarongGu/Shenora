@@ -427,6 +427,10 @@ often zero.
 Every dialog and every clipboard operation runs on a dedicated STA thread — **never inline on the
 WebView2's UI thread**, where a dialog conflicts with its message handling.
 
+A dialog opens over the window that asked: `FileDialogs` takes `PageWindow.Current` (the form showing the page whose
+request it is handling, set by the page transports as `PageSender`) while that window is open and shown, else the
+main window, and blocks that window alone. The dialog's thread is still its own; only its owner handle crosses.
+
 `StaThread` has two entry points, and the difference is the apartment's LIFETIME: `RunAsync` gives a call
 its own thread (what a blocking modal dialog wants), `RunSharedAsync` queues onto one long-lived **pumped**
 apartment (`Application.Run`) — required because OLE must service `OleFlushClipboard` on that thread.

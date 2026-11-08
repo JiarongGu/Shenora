@@ -19,9 +19,10 @@ public sealed class FileDialogsOptions
 
 /// <summary>
 /// Native dialogs. 🔴 Every dialog runs on a DEDICATED STA thread, never inline — a dialog on the
-/// WebView2's UI thread conflicts with its message handling. Owned by the main window for correct
-/// z-order, with the main window blocked while up, and per-key last-directory memory through
-/// <see cref="IFileDialogPathStore"/>.
+/// WebView2's UI thread conflicts with its message handling. Owned by the window showing the page that
+/// asked (<see cref="PageWindow"/>), else the main window, for correct z-order, with that window and no other blocked while up,
+/// and per-key last-directory memory through <see cref="IFileDialogPathStore"/>. A cancelled dialog is
+/// <see cref="FileDialogResult.Cancelled"/>, never an exception.
 /// </summary>
 public sealed class FileDialogs : IFileDialogs
 {
@@ -85,24 +86,59 @@ public sealed class FileDialogs : IFileDialogs
             return FileDialogResult.Selected(dialog.FileName);
         });
 
-    /// <summary>The shared flow: resolve start dir → block the window → dedicated STA thread → unblock.</summary>
+    /// <summary>The shared flow: resolve the owner and start dir → block the owner → dedicated STA thread → unblock.</summary>
     private async Task<FileDialogResult> ShowAsync<TOptions>(
         TOptions? options, Func<TOptions?, string, IntPtr, FileDialogResult> show)
         where TOptions : FileDialogOptions
     {
+        // The owner first, before any await: it is read from the request's context, which is the caller's.
+        var owner = ResolveOwner();
         // Load the start directory BEFORE showing (the store may be async I/O).
         var initialPath = await ResolveInitialPathAsync(options).ConfigureAwait(false);
-        var owner = _options.Interaction?.GetMainFormHandle() ?? IntPtr.Zero;
 
-        _options.Interaction?.BlockInteraction();
+        var blocked = Block(owner);
         try
         {
-            return await StaThread.RunAsync(() => show(options, initialPath, owner)).ConfigureAwait(false);
+            return await StaThread.RunAsync(() => show(options, initialPath, owner.Handle)).ConfigureAwait(false);
         }
         finally
         {
-            _options.Interaction?.UnblockInteraction();
+            Unblock(blocked);
         }
+    }
+
+    /// <summary>Who a dialog opens over: the window and its handle (zero for none).</summary>
+    internal readonly record struct DialogOwner(Form? Window, IntPtr Handle);
+
+    /// <summary>
+    /// The window to own a dialog now: the one showing the page that asked (<see cref="PageWindow.Current"/>) while it is
+    /// open and shown, else the main window, else none. A request from a secondary window is answered over that window,
+    /// and a hidden or closed one falls back rather than opening a dialog over nothing.
+    /// </summary>
+    internal DialogOwner ResolveOwner()
+    {
+        if (PageWindow.Current is { IsDisposed: false, IsHandleCreated: true, Visible: true } asking)
+            return new DialogOwner(asking, asking.Handle);
+        return new DialogOwner(_options.Interaction?.GetMainForm(), _options.Interaction?.GetMainFormHandle() ?? IntPtr.Zero);
+    }
+
+    // The main window blocks through the app's IFormInteraction, which may be its own; any other owner, here.
+    private Form? Block(DialogOwner owner)
+    {
+        if (owner.Window is { } window && window != _options.Interaction?.GetMainForm())
+        {
+            WindowBlock.Block(window);
+            return window;
+        }
+
+        _options.Interaction?.BlockInteraction();
+        return null;
+    }
+
+    private void Unblock(Form? other)
+    {
+        if (other is not null) WindowBlock.Unblock(other);
+        else _options.Interaction?.UnblockInteraction();
     }
 
     private FileDialogResult ShowFileOrFolderDialog(OpenFolderOptions opts, string initialPath, IntPtr owner)
