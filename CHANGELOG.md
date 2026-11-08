@@ -71,6 +71,12 @@ at the first list and missed five more breaking changes.
   a `ChromiumFileDialogRequest` (`Mode`, `Title`, `DefaultPath`, `Accept`); set `Paths` and return `true` and the page's
   `<input type="file">` gets those files with no dialog, or none (a cancel) when `Paths` is empty. `false`, a throw or no hook leaves
   Chromium's own dialog, and CEF is only given the handler when the hook is set.
+- **An app answers a Chromium page's HTTP authentication: `OnAuthRequest`** on `ChromiumHostOptions` and `ChromiumEngineOptions`. A
+  device or proxy wanting a user name and password used to leave the page its `401` body, since Chromium's own prompt never shows here.
+  The hook gets a `ChromiumAuthRequest` (`Url`, `Origin`, `Scheme`, `Realm`, `IsProxy`); set `UserName` and `Password` and return `true`
+  to answer, or return `true` with neither to cancel; `false`, a throw or no hook leaves the page as before. ⚠ An app that sets it has
+  each browser's DevTools opened and each document request paused once (a script, image or `fetch` is not), and an answer the server
+  refuses is asked about again at once. Measured on Windows only.
 - **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
   `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
   `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe

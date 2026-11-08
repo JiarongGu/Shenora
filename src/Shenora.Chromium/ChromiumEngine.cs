@@ -102,6 +102,12 @@ public sealed class ChromiumEngineOptions
     /// <see cref="ChromiumHostOptions.OnFileDialog"/>. CEF's UI thread: answer at once.
     /// </summary>
     public Func<ChromiumFileDialogRequest, bool>? OnFileDialog { get; init; }
+
+    /// <summary>
+    /// Asked when a page meets an HTTP authentication challenge: the same hook, and the same contract, as
+    /// <see cref="ChromiumHostOptions.OnAuthRequest"/>. CEF's UI thread: answer at once.
+    /// </summary>
+    public Func<ChromiumAuthRequest, bool>? OnAuthRequest { get; init; }
 }
 
 /// <summary>

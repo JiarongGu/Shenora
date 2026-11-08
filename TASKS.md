@@ -114,13 +114,9 @@ package's Linux helper has not run: see below); how it works is `docs/design/she
 is left is mostly measurement that needs hardware or a person.
 
 **Every desktop OS**
-- [ ] **HTTP authentication of a page (a device or proxy that wants a user name and password; the shell answers none today).**
-  ⚠ **`get_auth_credentials` is never called here** (measured, CEF 154, Windows, the Chromium and ChromiumView samples): a
-  loopback server answering `401` with `WWW-Authenticate: Basic realm=…` to the page's own navigation reached the server twice
-  and then its favicon, all with no credentials, and the request handler's `get_auth_credentials`, set (the struct member
-  assigned, the handler given to CEF), was not entered: no call, no Chromium dialog window either, the `401` body just drew.
-  So a hook built on it is dead code; what would work is the protocol's `Fetch.authRequired`, as `ChromiumSessionBrowser` does,
-  which pauses each request of a page once, so it must be opt-in and measured for that cost on the app's own pages first.
+- [ ] 🅿️ **`OnAuthRequest` on macOS and Linux, and what the Windows probe did not reach.** The code is shared (the browser's
+  own DevTools channel) and was run on Windows only; a proxy's challenge, a frame's, a popup's and a window's first navigation
+  are not run (`docs/design/shells.md`, the hooks paragraph), nor is whether a Linux/macOS CEF raises `Fetch.authRequired` the same.
 
 **Windows**
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out

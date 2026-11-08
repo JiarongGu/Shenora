@@ -201,6 +201,21 @@ public sealed class ChromiumHostOptions
     /// </para>
     /// </summary>
     public Func<ChromiumFileDialogRequest, bool>? OnFileDialog { get; init; }
+
+    /// <summary>
+    /// Asked when a window's page meets an HTTP authentication challenge (a device or proxy that wants a user name and password).
+    /// Set <see cref="ChromiumAuthRequest.UserName"/> and <see cref="ChromiumAuthRequest.Password"/> and return <c>true</c> to
+    /// answer it; return <c>true</c> with neither set to cancel it, which lets the server's <c>401</c> page draw. <c>false</c>, a
+    /// throw, or no hook leaves it as it always was: no credentials, and the same page.
+    /// <para>
+    /// ⚠ <b>Chromium's own prompt never shows in this shell</b>, so without the hook a page behind a login is its <c>401</c>
+    /// body. ⚠ Setting the hook opens the DevTools protocol on every browser of the app and has it pause each document request
+    /// (a navigation or a frame, once) to hear a challenge: a script, image or <c>fetch</c> of the page is not paused, and a
+    /// challenge on one is not asked. ⚠ An answer the server refuses is asked about again at once, and again, until the hook
+    /// cancels: remember what was tried. CEF's UI thread: answer at once.
+    /// </para>
+    /// </summary>
+    public Func<ChromiumAuthRequest, bool>? OnAuthRequest { get; init; }
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

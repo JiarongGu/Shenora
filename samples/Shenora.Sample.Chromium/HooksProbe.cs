@@ -35,6 +35,13 @@ namespace Shenora.Sample.Chromium;
 /// (<c>input.click()</c> within the last click's user activation). The hook is asked (<c>FILEDIALOG</c>) and in <c>answer</c> names
 /// <c>picked.txt</c>, which the page must then read (<c>PAGE file: picked.txt …</c>, with the file's content); in <c>cancel</c> it
 /// names none and the page must see a <c>cancel</c> event, with no dialog window of Chromium's on screen either way.</item>
+/// <item><c>SHENORA_SAMPLE_HOOKS_AUTH=answer</c>, <c>wrong</c>, <c>cancel</c> or <c>decline</c> starts a loopback HTTP server that
+/// answers <c>401</c> (<c>Basic realm="probe"</c>) until a request carries <c>probe:secret</c>, and the page navigates itself to it once it
+/// is done. The auth hook is asked (<c>AUTH</c>): <c>answer</c> gives <c>probe:secret</c>, so the server must report a request
+/// <c>authorized</c>; <c>wrong</c> gives a wrong password for its first three asks and
+/// then cancels, which shows how often the page is asked again; <c>cancel</c> answers with none, and <c>decline</c> returns false: the server
+/// must see one request, with no credentials. ⚠ The page is then the server's: read the
+/// <c>RENDERER</c> and <c>RELOAD</c> lines as the reload of that page.</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -133,6 +140,25 @@ internal static class HooksProbe
         return true;
     };
 
+    // "answer", "wrong", "cancel" and "decline": the page navigates to a loopback server that wants Basic credentials.
+    private static readonly string? Auth = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTH") is "answer" or "wrong" or "cancel" or "decline"
+        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTH") : null;
+    private static readonly Lazy<AuthServer?> Login = new(() => On && Auth is not null ? new AuthServer(Log) : null);
+    private static int _asked;
+
+    public static Func<ChromiumAuthRequest, bool>? OnAuthRequest => !On || Auth is null ? null : request =>
+    {
+        var count = Interlocked.Increment(ref _asked);
+        Log($"AUTH hook #{count}: {request.Scheme} realm '{request.Realm}' of {request.Origin} for {request.Url}, proxy {request.IsProxy}, as text {request}");
+        switch (Auth)
+        {
+            case "answer": request.UserName = "probe"; request.Password = "secret"; return true;
+            case "wrong": if (count <= 3) { request.UserName = "probe"; request.Password = "wrong"; } return true;
+            case "cancel": return true;
+            default: return false;
+        }
+    };
+
     public static Func<ChromiumProcessReport, bool>? OnProcessFailed => !On ? null : failure =>
     {
         Log($"RENDERER hook: {failure.Status} ({failure.ErrorCode}); answering {(Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_PROBE") == "1" ? "handled" : "observed")}");
@@ -192,6 +218,11 @@ internal static class HooksProbe
         var finished = await Task.WhenAny(Done.Task, Task.Delay(30_000)) == Done.Task;
         await Task.Delay(1500);   // a download's file lands a moment after its hook answered
         Log($"PAGE finished: {finished}");
+        if (Login.Value is { } login)
+        {
+            await Task.Delay(3000);   // the page's navigation, and a challenge's answer, settle
+            Log($"AUTH server saw {login.Requests} request(s) for the page, {login.Authorized} authorized; the hook was asked {Volatile.Read(ref _asked)} time(s)");
+        }
         foreach (var name in new[] { "yes.txt", "no.txt", "decline.txt", "auto1.txt", "auto2.txt" })
         {
             var path = Path.Combine(Folder, name);
@@ -267,7 +298,8 @@ internal static class HooksProbe
     }
 
     private static string PageHtml => PageTemplate.Replace("__AUTO__", Auto is null ? "false" : "true")
-        .Replace("__CERTPORT__", (Server.Value?.Port ?? 0).ToString()).Replace("__FILE__", Pick is null ? "false" : "true");
+        .Replace("__CERTPORT__", (Server.Value?.Port ?? 0).ToString()).Replace("__FILE__", Pick is null ? "false" : "true")
+        .Replace("__AUTHPORT__", (Login.Value?.Port ?? 0).ToString());
 
     private const string PageTemplate = """
         <!doctype html><meta charset="utf-8"><title>hooks probe</title>
@@ -322,6 +354,8 @@ internal static class HooksProbe
           say('done', '1');
           // The page itself goes to the server: the one request Chromium asks the certificate hook about.
           if (__CERTPORT__) { await new Promise(resolve => setTimeout(resolve, 300)); location.href = 'https://127.0.0.1:__CERTPORT__/page'; }
+          // The same for a server that wants credentials: the page's own navigation meets the challenge.
+          if (__AUTHPORT__) { await new Promise(resolve => setTimeout(resolve, 300)); location.href = 'http://127.0.0.1:__AUTHPORT__/page'; }
         })();
         </script>
         """;
@@ -375,6 +409,57 @@ internal static class HooksProbe
 
         /// <summary>The certificate's SHA-256 as 64 lowercase hex digits: what the hook pins.</summary>
         public string Sha256 { get; }
+    }
+
+    /// <summary>A loopback HTTP server that answers <c>401</c> with a Basic challenge until a request carries <c>probe:secret</c>.</summary>
+    private sealed class AuthServer
+    {
+        private readonly System.Net.Sockets.TcpListener _listener = new(System.Net.IPAddress.Loopback, 0);
+        private int _requests, _authorized;
+
+        public AuthServer(Action<string> log)
+        {
+            _listener.Start();
+            Port = ((System.Net.IPEndPoint)_listener.LocalEndpoint).Port;
+            log($"AUTH server on {Port}");
+            var expected = "Basic " + Convert.ToBase64String(Encoding.ASCII.GetBytes("probe:secret"));
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    var client = await _listener.AcceptTcpClientAsync();
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            using var tcp = client;
+                            var stream = tcp.GetStream();
+                            var buffer = new byte[8192];
+                            var read = await stream.ReadAsync(buffer);
+                            if (read == 0) return;   // a connection Chromium opened ahead and never used
+                            var head = Encoding.ASCII.GetString(buffer, 0, read);
+                            var path = head.Split(' ', 3)[1];
+                            if (path != "/page") { await Reply(stream, "404 Not Found", ""); return; }   // a favicon
+                            var credentials = head.Split("\r\n").FirstOrDefault(l => l.StartsWith("Authorization:", StringComparison.OrdinalIgnoreCase))?[14..].Trim();
+                            Interlocked.Increment(ref _requests);
+                            var ok = credentials == expected;
+                            if (ok) Interlocked.Increment(ref _authorized);
+                            log($"AUTH server: GET {path} with {(credentials is null ? "no credentials" : ok ? "the right credentials (authorized)" : "wrong credentials")}");
+                            if (ok) await Reply(stream, "200 OK", "<title>authed page</title><p>behind the login");
+                            else await Reply(stream, "401 Unauthorized", "<title>401 body</title><p>login needed", "WWW-Authenticate: Basic realm=\"probe\"\r\n");
+                        }
+                        catch (Exception ex) { log($"AUTH server: the connection ended ({ex.GetType().Name}: {ex.Message})"); }
+                    });
+                }
+            });
+        }
+
+        private static async Task Reply(System.Net.Sockets.NetworkStream stream, string status, string body, string extraHeaders = "") =>
+            await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status}\r\nContent-Type: text/html\r\nContent-Length: {body.Length}\r\n{extraHeaders}Connection: close\r\n\r\n{body}"));
+
+        public int Port { get; }
+        public int Requests => Volatile.Read(ref _requests);
+        public int Authorized => Volatile.Read(ref _authorized);
     }
 
     /// <summary>A body that arrives in 12 chunks, 400 ms apart, with no announced length: a download long enough to be paused.</summary>
