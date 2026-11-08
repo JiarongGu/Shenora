@@ -237,7 +237,7 @@ public sealed class ChromiumHostOptions
     /// hook is set. A hook that throws presents none.
     /// <para>
     /// ⚠ CEF's default is its own pick from the list, not a window this shell shows (its documentation says the first certificate;
-    /// not measured here), so an app that wants a say sets the hook. ⚠ Choose by <see cref="ChromiumClientCertificate.Sha256"/> or
+    /// a decline completed no handshake in the one run), so an app that wants a say sets the hook. ⚠ Choose by <see cref="ChromiumClientCertificate.Sha256"/> or
     /// the issuer, never by position: the store's order is the system's. CEF's UI thread: answer at once, which means a dialog of the
     /// app's own is not shown from here.
     /// </para>

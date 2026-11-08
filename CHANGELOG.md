@@ -86,7 +86,7 @@ at the first list and missed five more breaking changes.
   `ChromiumEngineOptions`, for a device or an intranet that wants mutual TLS. It gets a `ChromiumClientCertificateRequest` (`Host`,
   `Port`, `IsProxy`, and `Certificates`, each with `Subject`, `Issuer`, `Sha256`, `ValidFrom`, `ValidUntil`); set `SelectedIndex` and
   return `true` to present that certificate, or return `true` with none to present none; a throw presents none; `false` or no hook leaves
-  CEF's own default (its documentation says the first certificate of the list; not measured here), and CEF is only given the handler
+  CEF's own default (its documentation says the first certificate of the list; a run with `false` showed the server no request), and CEF is only given the handler
   when the hook is set. Choose by `Sha256`, not by position. Measured on Windows only, where the list is the current user's certificate
   store.
 - **An app decides what a page's `window.open` and `target="_blank"` do: `OnPopupRequested`** on `ChromiumHostOptions` and
