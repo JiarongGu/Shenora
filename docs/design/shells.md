@@ -623,9 +623,14 @@ samples (`SHENORA_SAMPLE_HOOKS_POPUP=take`, `decline` or `browser`; inside the l
 and clicks a `target="_blank"` link, to a loopback server's address or an `ftp:` one): each reached the hook, `window.open` with
 `FrameName` `probe-side` and the link with none, both with `IsUserGesture` true and the page's address as written; `window.open` returned
 `null` in every mode. `take` left the server no request in 3 s; the control, `browser` (the hook declining the same addresses), made the
-shell hand them to the user's browser, which sent two; `decline` with the `ftp:` address opened nothing. ⚠ A popup with no user gesture was
-not run (Chromium's blocker may refuse it before the hook is asked, as it does in a session), nor was one raised by a frame, a redirect
-chain, a `_self`, or `beforeunload`; and the `Disposition` and the window features (size, position) CEF gives are not offered.
+shell hand them to the user's browser, which sent two; `decline` with the `ftp:` address opened nothing. Run too (`SHENORA_SAMPLE_HOOKS_POPUPAT=`,
+`take`, both samples): `nogesture` (the same calls 6.5 s after the last click, `active=false`) never reached the hook, in the one run of each sample, and the
+server saw nothing, so Chromium's blocker refuses a popup with no gesture before the hook is asked and the hook cannot take or decline it; `frame`
+(an iframe that exists before the click, whose own window opens the popup, `active=true` there) reached the hook for `window.open` and the link, 2 of 2 on each
+sample, with the same fields as the page's own and the frame's address not offered. ⚠ An iframe made after the click had `active=false` and its popup never reached the hook:
+a click's activation reaches the frames that exist, so a page that builds its frame late loses its popups to the blocker. `self`
+(`window.open(url, '_self')`) is no popup: the hook was asked 0 times and the page navigated (the server saw it). Not run: a redirect chain or `beforeunload`,
+a frame of another origin, and the `Disposition` and the window features (size, position) CEF gives are not offered.
 Build it like the shell sample
 (`ShenoraChromiumLayout` on, the app laid out beside CEF's launcher) and run `Shenora.Sample.ChromiumView.exe` with the same
 variables. The probe posts clicks until the page has counted three: its first posted click was lost in most runs, not the

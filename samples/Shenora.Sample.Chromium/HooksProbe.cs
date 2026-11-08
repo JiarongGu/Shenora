@@ -62,7 +62,10 @@ namespace Shenora.Sample.Chromium;
 /// asked for each (<c>POPUP hook</c>): <c>take</c> answers true, so the server must see no request (the shell opened nothing, where its
 /// own policy would hand the address to the user's browser), and <c>decline</c> answers false, so the shell's policy drops the
 /// non-web address. <c>browser</c> is the control for <c>take</c>: the hook declines the same server addresses, so the shell hands them to
-/// the user's browser (⚠ which opens on this machine) and the server must see requests. No window of Chromium's may be on screen either way, and <c>window.open</c> must return null.</item>
+/// the user's browser (⚠ which opens on this machine) and the server must see requests. No window of Chromium's may be on screen either way, and <c>window.open</c> must return null.
+/// <c>SHENORA_SAMPLE_HOOKS_POPUPAT=nogesture</c> raises them after the activation has lapsed (<c>popup active=false</c>), <c>frame</c> from an
+/// iframe of the page (<c>popup frame active=…</c>), and <c>self</c> navigates the page itself with <c>window.open(url, '_self')</c> (the hook
+/// must not be asked).</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -223,6 +226,11 @@ internal static class HooksProbe
     private static readonly string? Popup = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUP") is "take" or "decline" or "browser"
         ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUP") : null;
     private static readonly Lazy<AuthServer?> Opened = new(() => On && Popup is not null ? new AuthServer(Log, "POPUP", challenge: false) : null);
+
+    // Where the popup is raised: "nogesture" (after the last click's user activation has lapsed), "frame" (by an iframe of the page, inside
+    // the activation) or "self" (a `_self` navigation, which is no popup); unset, the page itself raises it inside the activation.
+    private static readonly string? PopupAt = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUPAT") is "nogesture" or "frame" or "self"
+        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUPAT") : null;
 
     public static Func<ChromiumPopupRequest, bool>? OnPopupRequested => !On || Popup is null ? null : request =>
     {
@@ -398,7 +406,7 @@ internal static class HooksProbe
     private static string PageHtml => PageTemplate.Replace("__AUTO__", Auto is null ? "false" : "true")
         .Replace("__CERTPORT__", (Server.Value?.Port ?? 0).ToString()).Replace("__FILE__", Pick is null ? "false" : "true")
         .Replace("__AUTHPORT__", (Login.Value?.Port ?? 0).ToString()).Replace("__AUTHFRAME__", AuthAt == "frame" ? "true" : "false").Replace("__DIALOG__", Dialog is null ? "false" : "true")
-        .Replace("__POPUPURL__", Popup is null ? "''" : Popup is "take" or "browser" ? $"'http://127.0.0.1:{Opened.Value?.Port}/page'" : "'ftp://127.0.0.1/popup'");
+        .Replace("__POPUPAT__", PopupAt ?? "").Replace("__POPUPURL__", Popup is null ? "''" : Popup is "take" or "browser" ? $"'http://127.0.0.1:{Opened.Value?.Port}/page'" : "'ftp://127.0.0.1/popup'");
 
     private const string PageTemplate = """
         <!doctype html><meta charset="utf-8"><title>hooks probe</title>
@@ -419,16 +427,27 @@ internal static class HooksProbe
           const finished = new Promise(resolve => link.addEventListener('click', e => { say('click', clicks + 1 + ' trusted=' + e.isTrusted + ' focus=' + document.hasFocus() + ' ' + document.visibilityState); setTimeout(() => {
             if (++clicks === names.length) resolve(); else next(clicks);
           }, 100); }));
+          // "popupat=frame": an iframe of the page, whose own window opens the popup. It exists BEFORE the click: a click's activation
+          // reaches the frames that are there (a srcdoc frame is the page's origin), and a frame made after it starts with none.
+          const popupFrame = '__POPUPAT__' !== 'frame' ? null : new Promise(resolve => {
+            const frame = document.createElement('iframe');
+            frame.srcdoc = '<body>probe frame';
+            frame.addEventListener('load', () => resolve(frame.contentWindow));
+            document.body.append(frame);
+          });
           say('ready', '1');
           await finished;
-          if (__POPUPURL__) {
-            // Inside the last click's user activation, which a popup needs to get past Chromium's blocker to the hook.
-            say('popup', 'active=' + navigator.userActivation.isActive);
-            const opened = window.open(__POPUPURL__, 'probe-side');
+          const popupAt = '__POPUPAT__';
+          if (__POPUPURL__ && popupAt !== 'self') {
+            // Inside the last click's user activation, which a popup needs to get past Chromium's blocker to the hook; "nogesture" waits it out.
+            if (popupAt === 'nogesture') await new Promise(resolve => setTimeout(resolve, 6500));
+            const host = popupFrame ? await popupFrame : window;
+            say('popup', (popupAt === 'frame' ? 'frame ' : '') + 'active=' + host.navigator.userActivation.isActive);
+            const opened = host.open(__POPUPURL__, 'probe-side');
             await say('popup', 'window.open returned ' + (opened === null ? 'null' : 'a window'));
-            const a = document.createElement('a');
+            const a = host.document.createElement('a');
             a.href = __POPUPURL__; a.target = '_blank';
-            document.body.append(a);
+            host.document.body.append(a);
             a.click();
             await new Promise(resolve => setTimeout(resolve, 1000));
           }
@@ -462,6 +481,13 @@ internal static class HooksProbe
           await new Promise(resolve => navigator.geolocation.getCurrentPosition(
             () => { say('geolocation', 'granted'); resolve(); }, e => { say('geolocation', 'denied ' + e.code); resolve(); }, { timeout: 5000 }));
           say('done', '1');
+          if (__POPUPURL__ && popupAt === 'self') {
+            // Not a popup: the page's own navigation, which the hook must not be asked about. The page is the server's afterwards.
+            say('popup', 'self active=' + navigator.userActivation.isActive);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            window.open(__POPUPURL__, '_self');
+            return;
+          }
           if (__DIALOG__) {
             // Each of these blocks the page until the hook answers; with no answer the probe's reports below never come.
             alert('probe alert'); await say('alert', 'returned');
