@@ -610,7 +610,7 @@ dates and SHA-256); `select` chose the probe's by its SHA-256 and the server saw
 the server saw none. The certificate hook ran first (the server's own certificate is self-signed) and the server's earlier handshakes
 that Chromium dropped (its own checks, before the hook) left no request. ⚠ The list is the system's store, not the server's own
 list of authorities: the probe's server named none, so every certificate came, and a server that names its authorities narrows it. Not
-run: a decline, which shows Chromium's own picker (a window a person closes), a proxy that asks, a server with an acceptable-issuers
+run: a decline, which leaves CEF's default (documented as the first certificate of the list; no picker was seen or looked for), a proxy that asks, a server with an acceptable-issuers
 list, a store with one certificate, and a hardware token.
 `OnPopupRequested` (CEF's `on_before_popup`, which the shell always handles, so the hook adds a question and no handler) was run on both
 samples (`SHENORA_SAMPLE_HOOKS_POPUP=take`, `decline` or `browser`; inside the last click's user activation the page calls `window.open`

@@ -398,11 +398,21 @@ public class ChromiumPageHooksTests
         Assert.Equal(-1, Hooks(clientCertificate: r => { r.SelectedIndex = index; return true; }).ClientCertificate("h", 443, false, Offered(2), null));
 
     [Fact]
-    public void A_request_the_app_declined_or_threw_on_is_CEFs_own_picker()
+    public void A_request_the_app_declined_or_set_no_hook_for_is_CEFs_default()
     {
         Assert.Null(Hooks(clientCertificate: r => { r.SelectedIndex = 0; return false; }).ClientCertificate("h", 443, false, Offered(2), null));
-        Assert.Null(Hooks(clientCertificate: _ => throw new InvalidOperationException("app bug")).ClientCertificate("h", 443, false, Offered(2), null));
         Assert.Null(Hooks(download: _ => false).ClientCertificate("h", 443, false, Offered(2), null));
+    }
+
+    // CEF's default for an unanswered request is its own pick from the list (documented as the first certificate), so a hook that
+    // failed would hand the user's certificate to whoever asked, by position, which is what the hook exists to stop.
+    [Fact]
+    public void A_request_the_app_threw_on_presents_none_rather_than_a_certificate_it_never_chose()
+    {
+        ChromiumClientCertificateRequest? seen = null;
+        var hooks = Hooks(clientCertificate: r => { seen = r; r.SelectedIndex = 0; throw new InvalidOperationException("app bug"); });
+        Assert.Equal(-1, hooks.ClientCertificate("h", 443, false, Offered(2), null));
+        Assert.NotNull(seen);
     }
 
     [Fact]

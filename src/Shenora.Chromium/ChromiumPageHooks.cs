@@ -511,18 +511,22 @@ internal sealed class ChromiumPageHooks(Func<ChromiumDownloadRequest, bool>? dow
         return AppCallback.RunOrDefault(() => popup(request), false, Failed(log, nameof(ChromiumHostOptions.OnPopupRequested)));
     }
 
-    /// <summary>Whether the app set a client certificate hook: without one CEF is not asked and Chromium's own picker stands.</summary>
+    /// <summary>Whether the app set a client certificate hook: without one CEF is not asked and its own default stands.</summary>
     public bool HandlesClientCertificates => clientCertificate is not null;
 
     /// <summary>
-    /// The index of the certificate the app chose, or -1 to present none; null when the app declined, threw or set no hook and
-    /// Chromium's own picker stands. An index outside the list presents none.
+    /// The index of the certificate the app chose, or -1 to present none; null when the app declined or set no hook and CEF's own
+    /// default stands. A hook that threw presents none, and so does an index outside the list: the default is CEF's own pick from
+    /// the list, which a failing hook must not fall to.
     /// </summary>
     public int? ClientCertificate(string host, int port, bool isProxy, IReadOnlyList<ChromiumClientCertificate> certificates, ILogger? log)
     {
         if (clientCertificate is null) return null;
         var request = new ChromiumClientCertificateRequest(host, port, isProxy, certificates);
-        var handled = AppCallback.RunOrDefault(() => clientCertificate(request), false, Failed(log, nameof(ChromiumHostOptions.OnClientCertificateRequest)));
+        var failed = Failed(log, nameof(ChromiumHostOptions.OnClientCertificateRequest));
+        var threw = false;
+        var handled = AppCallback.RunOrDefault(() => clientCertificate(request), false, ex => { threw = true; failed(ex); });
+        if (threw) return -1;
         if (!handled) return null;
         return request.SelectedIndex is { } index && index >= 0 && index < certificates.Count ? index : -1;
     }
