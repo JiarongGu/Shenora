@@ -67,6 +67,10 @@ at the first list and missed five more breaking changes.
   the certificate's fingerprint, which is what to pin); set `Allow` and return `true` to carry on, and anything else fails the
   navigation as before. Only the page's own navigation is asked about: a `fetch` or an image with the same error still fails, and
   so does an error Chromium forbids to override. An allow is kept for the host until the app exits.
+- **An app answers a Chromium page's own file dialog: `OnFileDialog`** on `ChromiumHostOptions` and `ChromiumEngineOptions`. It gets
+  a `ChromiumFileDialogRequest` (`Mode`, `Title`, `DefaultPath`, `Accept`); set `Paths` and return `true` and the page's
+  `<input type="file">` gets those files with no dialog, or none (a cancel) when `Paths` is empty. `false`, a throw or no hook leaves
+  Chromium's own dialog, and CEF is only given the handler when the hook is set.
 - **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
   `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
   `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe

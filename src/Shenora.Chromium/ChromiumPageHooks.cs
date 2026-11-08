@@ -260,29 +260,87 @@ public sealed class ChromiumCertificateError
     public bool Allow { get; set; }
 }
 
+/// <summary>What a file dialog asks for: a page's <c>&lt;input type="file"&gt;</c> and its folder variant.</summary>
+public enum ChromiumFileDialogMode
+{
+    /// <summary>One existing file.</summary>
+    Open,
+    /// <summary>One or more existing files.</summary>
+    OpenMultiple,
+    /// <summary>One existing folder.</summary>
+    OpenFolder,
+    /// <summary>A file to be written, which may not exist yet.</summary>
+    Save,
+}
+
+/// <summary>A file dialog the page asked for, offered to <see cref="ChromiumHostOptions.OnFileDialog"/>.</summary>
+public sealed class ChromiumFileDialogRequest
+{
+    internal ChromiumFileDialogRequest(ChromiumFileDialogMode mode, string title, string defaultPath, IReadOnlyList<string> accept)
+    {
+        Mode = mode;
+        Title = title;
+        DefaultPath = defaultPath;
+        Accept = accept;
+    }
+
+    /// <summary>Which kind of dialog the page asked for.</summary>
+    public ChromiumFileDialogMode Mode { get; }
+
+    /// <summary>The title Chromium would give the dialog; empty when it has none.</summary>
+    public string Title { get; }
+
+    /// <summary>The folder or file the dialog would start at; empty when Chromium names none.</summary>
+    public string DefaultPath { get; }
+
+    /// <summary>What the page's <c>accept</c> allows: <c>.ext</c> and MIME patterns (<c>image/*</c>), with the extensions Chromium adds for a MIME type; empty when any file will do.</summary>
+    public IReadOnlyList<string> Accept { get; }
+
+    /// <summary>The full paths the page is given: none cancels the dialog, as a user's cancel does. Empty until set.</summary>
+    public IReadOnlyList<string> Paths { get; set; } = [];
+}
+
 /// <summary>
 /// The app's answers to what a page asks of the shell (<see cref="ChromiumHostOptions.OnDownloadStarting"/>,
 /// <see cref="ChromiumHostOptions.OnPermissionRequested"/>, <see cref="ChromiumHostOptions.OnProcessFailed"/>,
-/// <see cref="ChromiumHostOptions.OnCertificateError"/>, and
+/// <see cref="ChromiumHostOptions.OnCertificateError"/>, <see cref="ChromiumHostOptions.OnFileDialog"/>, and
 /// <see cref="ChromiumHostOptions.OnDownloadProgress"/>, which only observes), and the
 /// shell's default for each when the app has none or declines. A hook that throws is logged and declines. CEF's UI thread.
 /// </summary>
 internal sealed class ChromiumPageHooks(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
     Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress = null,
-    Func<ChromiumCertificateError, bool>? certificate = null)
+    Func<ChromiumCertificateError, bool>? certificate = null, Func<ChromiumFileDialogRequest, bool>? fileDialog = null)
 {
     /// <summary>The hooks the app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumHostOptions options) =>
-        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError);
+        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError,
+            options.OnFileDialog);
 
     /// <summary>The hooks the engine's app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumEngineOptions options) =>
-        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError);
+        From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError,
+            options.OnFileDialog);
 
     private static ChromiumPageHooks? From(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
-        Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress, Func<ChromiumCertificateError, bool>? certificate) =>
-        download is null && permission is null && failed is null && progress is null && certificate is null
-            ? null : new ChromiumPageHooks(download, permission, failed, progress, certificate);
+        Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress, Func<ChromiumCertificateError, bool>? certificate,
+        Func<ChromiumFileDialogRequest, bool>? fileDialog) =>
+        download is null && permission is null && failed is null && progress is null && certificate is null && fileDialog is null
+            ? null : new ChromiumPageHooks(download, permission, failed, progress, certificate, fileDialog);
+
+    /// <summary>Whether the app set a file dialog hook: without one CEF is not given a dialog handler and shows its own dialog.</summary>
+    public bool HandlesFileDialogs => fileDialog is not null;
+
+    /// <summary>The paths the app answered the dialog with (none cancels it), or null when it declined, threw or set no hook and CEF's own dialog stands.</summary>
+    public string[]? FileDialog(ChromiumFileDialogMode mode, string title, string defaultPath, IReadOnlyList<string> accept, ILogger? log)
+    {
+        if (fileDialog is null) return null;
+        var request = new ChromiumFileDialogRequest(mode, title, defaultPath, accept);
+        var handled = AppCallback.RunOrDefault(() => fileDialog(request), false, Failed(log, nameof(ChromiumHostOptions.OnFileDialog)));
+        if (!handled) return null;
+        var paths = (request.Paths ?? []).Where(p => !string.IsNullOrWhiteSpace(p)).ToArray();
+        // A single-file dialog takes one path whatever the app named.
+        return mode == ChromiumFileDialogMode.OpenMultiple ? paths : paths.Take(1).ToArray();
+    }
 
     /// <summary>Whether the app set a certificate hook: without one CEF is not asked, and its own policy (the navigation fails) stands.</summary>
     public bool HandlesCertificates => certificate is not null;

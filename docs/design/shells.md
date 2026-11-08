@@ -534,7 +534,7 @@ waits 500 ms after a profile's last release before it makes another context for 
 because CEF reports no end of the teardown; a pool's context, made on the UI thread, does not wait.
 
 **The app's hooks on what a window's page asks of the shell** (`ChromiumHostOptions.OnDownloadStarting`,
-`OnPermissionRequested`, `OnProcessFailed`, `OnCertificateError`, and `OnDownloadProgress`, which only watches; D84's defaults stand where an app sets none, or answers false). Run for real
+`OnPermissionRequested`, `OnProcessFailed`, `OnCertificateError`, `OnFileDialog`, and `OnDownloadProgress`, which only watches; D84's defaults stand where an app sets none, or answers false). Run for real
 (`SHENORA_SAMPLE_HOOKS_PROBE=1` and `2`, Chromium sample, Windows, a click posted to the window starting each download):
 a download the hook gave a path was written there with its content, one handled with no path and one declined were
 cancelled; the hook's grant of notifications settled the page's promise as `granted`, and a request it declined got the
@@ -575,6 +575,13 @@ and the server certificate's own fingerprint; allowed, the server saw a request 
 again on the next navigation. ⚠ CEF asks only about a navigation of the page: a `fetch` of the same server failed with no call to
 the hook. ⚠ After an allow the host's later requests (a favicon) reached the server with no second call: Chromium keeps the allow for
 the host for the run. Not run: an error Chromium refuses to let an app override (it passes no callback, and the hook is skipped).
+`OnFileDialog` (CEF's `on_file_dialog`, given to CEF only when the hook is set) was run on both samples too
+(`SHENORA_SAMPLE_HOOKS_FILE=answer` or `cancel`; the page calls `input.click()` inside the last posted click's user activation):
+the hook was asked as `Open` with `accept` `[text/plain, .txt, .text;.txt]` (Chromium adds the MIME type's extensions as one
+`;`-joined entry) and a default path of the user's profile folder, and no title; answering with a file, the page's `change` event gave
+it that file with its content read; answering with none, the page got `cancel`. The probe's posted clicks reached the page in every run
+(three `click` lines, `trusted=true`), so the earlier run that lost them was that run's. Not run: a decline, which shows Chromium's own
+dialog (a window a person closes), the folder and save modes, and a multiple-file dialog.
 Build it like the shell sample
 (`ShenoraChromiumLayout` on, the app laid out beside CEF's launcher) and run `Shenora.Sample.ChromiumView.exe` with the same
 variables. The probe posts clicks until the page has counted three: its first posted click was lost in most runs, not the

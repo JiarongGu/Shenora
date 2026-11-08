@@ -383,6 +383,7 @@ internal sealed unsafe class ChromiumBrowser
         private readonly Display _display;
         private readonly Permissions _permissions;
         private readonly Downloads? _downloads;   // only with the app's hook: with none, CEF cancels every download itself
+        private readonly FileDialogs? _dialogs;   // only with the app's hook: with none, CEF shows its own dialog
         private readonly FocusHandler _focus;
 
         public Client(ChromiumBrowser owner)
@@ -394,6 +395,7 @@ internal sealed unsafe class ChromiumBrowser
             _display = new Display(owner);
             _permissions = new Permissions(owner);
             _downloads = owner._hooks is { HandlesDownloads: true } ? new Downloads(owner) : null;
+            _dialogs = owner._hooks is { HandlesFileDialogs: true } ? new FileDialogs(owner) : null;
             _focus = new FocusHandler(owner);
             Struct->get_request_handler = &GetRequests;
             Struct->get_life_span_handler = &GetLifeSpan;
@@ -402,6 +404,7 @@ internal sealed unsafe class ChromiumBrowser
             Struct->get_display_handler = &GetDisplay;
             Struct->get_permission_handler = &GetPermissions;
             Struct->get_download_handler = &GetDownloads;
+            Struct->get_dialog_handler = &GetDialogs;
             Struct->get_focus_handler = &GetFocus;
         }
 
@@ -415,6 +418,7 @@ internal sealed unsafe class ChromiumBrowser
             _display.Release();
             _permissions.Release();
             _downloads?.Release();
+            _dialogs?.Release();
             _focus.Release();
         }
 
@@ -426,7 +430,76 @@ internal sealed unsafe class ChromiumBrowser
         [UnmanagedCallersOnly] private static _cef_display_handler_t* GetDisplay(_cef_client_t* self) => From<Client>(self)._display.ForCef();
         [UnmanagedCallersOnly] private static _cef_permission_handler_t* GetPermissions(_cef_client_t* self) => From<Client>(self)._permissions.ForCef();
         [UnmanagedCallersOnly] private static _cef_download_handler_t* GetDownloads(_cef_client_t* self) => From<Client>(self)._downloads is { } downloads ? downloads.ForCef() : null;
+        [UnmanagedCallersOnly] private static _cef_dialog_handler_t* GetDialogs(_cef_client_t* self) => From<Client>(self)._dialogs is { } dialogs ? dialogs.ForCef() : null;
         [UnmanagedCallersOnly] private static _cef_focus_handler_t* GetFocus(_cef_client_t* self) => From<Client>(self)._focus.ForCef();
+    }
+
+    /// <summary>The page's own file dialog (<c>&lt;input type="file"&gt;</c>), answered by the app's
+    /// <see cref="ChromiumHostOptions.OnFileDialog"/> when it takes it; given to CEF only when that hook is set.</summary>
+    private sealed class FileDialogs : CefObject<_cef_dialog_handler_t>
+    {
+        private readonly ChromiumBrowser _owner;
+
+        public FileDialogs(ChromiumBrowser owner)
+        {
+            _owner = owner;
+            Struct->on_file_dialog = &OnFileDialog;
+        }
+
+        // UI thread. Returning 1 takes the dialog and answers the callback before returning; 0 is CEF's own dialog.
+        [UnmanagedCallersOnly]
+        private static int OnFileDialog(_cef_dialog_handler_t* self, _cef_browser_t* browser, cef_file_dialog_mode_t mode, _cef_string_utf16_t* title,
+            _cef_string_utf16_t* defaultPath, _cef_string_list_t* acceptFilters, _cef_string_list_t* acceptExtensions, _cef_string_list_t* acceptDescriptions,
+            _cef_file_dialog_callback_t* callback)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var c = new CefRef<_cef_file_dialog_callback_t>(callback);
+            var owner = From<FileDialogs>(self)._owner;
+            if (callback == null || owner._hooks is null) return 0;
+            // The page's accept="" arrives as MIME patterns and extensions: the list the page wrote, in both.
+            var accept = Strings(acceptFilters).Concat(Strings(acceptExtensions)).Distinct().ToArray();
+            var kind = mode switch
+            {
+                cef_file_dialog_mode_t.FILE_DIALOG_OPEN_MULTIPLE => ChromiumFileDialogMode.OpenMultiple,
+                cef_file_dialog_mode_t.FILE_DIALOG_OPEN_FOLDER => ChromiumFileDialogMode.OpenFolder,
+                cef_file_dialog_mode_t.FILE_DIALOG_SAVE => ChromiumFileDialogMode.Save,
+                _ => ChromiumFileDialogMode.Open,
+            };
+            var paths = owner._hooks.FileDialog(kind, CefStrings.Read(title), CefStrings.Read(defaultPath), accept, owner.Log);
+            if (paths is null) return 0;
+            if (paths.Length == 0) callback->cancel(callback);
+            else
+            {
+                var list = Cef.cef_string_list_alloc();
+                try
+                {
+                    foreach (var path in paths)
+                        fixed (char* p = path)
+                        {
+                            var s = CefStrings.View(p, path.Length);
+                            Cef.cef_string_list_append(list, &s);
+                        }
+                    callback->cont(callback, list);
+                }
+                finally { Cef.cef_string_list_free(list); }
+            }
+            AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': the app answered a {kind} file dialog with {paths.Length} path(s)");
+            return 1;
+        }
+
+        private static string[] Strings(_cef_string_list_t* list)
+        {
+            if (list == null) return [];
+            var texts = new string[(int)Cef.cef_string_list_size(list)];
+            for (var i = 0; i < texts.Length; i++)
+            {
+                var value = default(_cef_string_utf16_t);
+                Cef.cef_string_list_value(list, (nuint)i, &value);
+                texts[i] = CefStrings.Read(&value);
+                Cef.cef_string_utf16_clear(&value);
+            }
+            return texts;
+        }
     }
 
     /// <summary>CEF hands the keyboard focus back to the host when Tab leaves the page; left unanswered, it stayed in
