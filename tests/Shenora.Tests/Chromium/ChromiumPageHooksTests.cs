@@ -269,10 +269,10 @@ public class ChromiumPageHooksTests
     public void A_file_dialog_the_app_handled_is_answered_with_its_paths_and_sees_what_the_page_asked_for()
     {
         ChromiumFileDialogRequest? seen = null;
-        var hooks = Hooks(fileDialog: r => { seen = r; r.Paths = [@"C:ina.png", @"C:in.png"]; return true; });
+        var hooks = Hooks(fileDialog: r => { seen = r; r.Paths = [@"C:\in\a.png", @"C:\in\b.png"]; return true; });
 
-        Assert.Equal([@"C:ina.png", @"C:in.png"], hooks.FileDialog(ChromiumFileDialogMode.OpenMultiple, "Open", @"C:in", ["image/*", ".png"], null));
-        Assert.Equal((ChromiumFileDialogMode.OpenMultiple, "Open", @"C:in", 2), (seen!.Mode, seen.Title, seen.DefaultPath, seen.Accept.Count));
+        Assert.Equal([@"C:\in\a.png", @"C:\in\b.png"], hooks.FileDialog(ChromiumFileDialogMode.OpenMultiple, "Open", @"C:\in", ["image/*", ".png"], null)!);
+        Assert.Equal((ChromiumFileDialogMode.OpenMultiple, "Open", @"C:\in", 2), (seen!.Mode, seen.Title, seen.DefaultPath, seen.Accept.Count));
     }
 
     [Theory]
@@ -281,8 +281,8 @@ public class ChromiumPageHooksTests
     [InlineData(ChromiumFileDialogMode.Save)]
     public void A_dialog_for_one_path_is_given_the_first_only(ChromiumFileDialogMode mode)
     {
-        var hooks = Hooks(fileDialog: r => { r.Paths = [@"C:ina", "  ", @"C:in"]; return true; });
-        Assert.Equal([@"C:ina"], hooks.FileDialog(mode, "", "", [], null));
+        var hooks = Hooks(fileDialog: r => { r.Paths = [@"C:\in\a", "  ", @"C:\in\b"]; return true; });
+        Assert.Equal([@"C:\in\a"], hooks.FileDialog(mode, "", "", [], null)!);
     }
 
     [Fact]
