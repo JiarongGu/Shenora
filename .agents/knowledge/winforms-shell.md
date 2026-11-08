@@ -1,6 +1,6 @@
 ---
 name: winforms-shell
-applies_when: "touching any desktop primitive in `src/Shenora.Windows/` — bootstrap, frameless chrome/maximize, tray, secondary windows, window state, clipboard — or the single-instance guard both desktop shells run (`Core/Shell/`)"
+applies_when: "touching any desktop primitive in `src/Shenora.Windows/` — bootstrap, frameless chrome/maximize, tray, taskbar overlay/identity, secondary windows, window state, clipboard — or the single-instance guard both desktop shells run (`Core/Shell/`)"
 enforces: "STA-or-fail; idempotent init; `UserClosing` also means a PROGRAMMATIC close; `FormClosed` ≠ pump finished"
 ---
 
@@ -108,6 +108,16 @@ owner, `IUiDispatcher`) — don't restate it here.
   `DropZoneOverlay` registers itself, nothing ever subscribed to the form's drag events, and the
   form-level flag only forced OLE/STA on every consumer of the base class while showing a copy cursor
   for a drop it then silently discarded. An app wanting form-level drops sets `AllowDrop` itself.
+
+- **A taskbar overlay belongs to the BUTTON, and the button is not the window's.** Explorer makes it again on a restart
+  and says so with the registered `TaskbarButtonCreated` message; a recreated handle gets a new one too. So
+  `TaskbarOverlay` keeps the last text and re-applies on both, and listens through a `NativeWindow` beside the form's own
+  procedure (not `WndProcHook`, which an app owns). An error from `SetOverlayIcon` before the button exists is the message's
+  to mend, so it is not read. A `SendMessage` of that message to the form proves the re-apply path; it does NOT prove
+  Explorer sends it, which only a run with the taskbar restarted shows.
+- **A window's AppUserModelID is a per-window property, written per handle and emptied at its end** (`TaskbarIdentity`):
+  the properties belong to one HWND, and Windows asks them removed before the window closes. A relaunch command without a
+  display name is silently ignored, which is why `Wear` refuses it rather than writing it.
 
 ## Gotchas / traps
 

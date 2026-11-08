@@ -169,6 +169,15 @@ Secondary
 Child
 Single
 Instance
+# `Taskbar`, `Overlay`, `Flash`, `Identity` (2026-11-09) — in `TaskbarOverlay`, `TaskbarFlash` and `TaskbarIdentity`: the
+# Windows taskbar's own words for what the shell offers a window's button — `ITaskbarList3::SetOverlayIcon`'s "overlay icon",
+# `FlashWindowEx`'s "flash", and the AppUserModelID the taskbar groups a button by (an "identity" is what the property store's
+# relaunch properties and the id together say). A balloon is the tray's own: `NIF_INFO`'s "balloon", `NotifyIcon.ShowBalloonTip`.
+Taskbar
+Overlay
+Flash
+Identity
+Balloon
 
 # ── Messaging / transport mechanisms ──────────────────────────────────────────────────────────────
 Batch

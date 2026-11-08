@@ -65,6 +65,42 @@ public sealed class TrayIconOptions
     public TrayMenuColors? MenuColors { get; init; }
 }
 
+/// <summary>The glyph a <see cref="TrayBalloon"/> carries beside its title.</summary>
+public enum TrayBalloonIcon
+{
+    /// <summary>No glyph.</summary>
+    None,
+
+    /// <summary>The information glyph.</summary>
+    Info,
+
+    /// <summary>The warning glyph.</summary>
+    Warning,
+
+    /// <summary>The error glyph.</summary>
+    Error,
+}
+
+/// <summary>One balloon notification for <see cref="TrayIcon.ShowBalloon"/>.</summary>
+public sealed class TrayBalloon
+{
+    /// <summary>The balloon's heading.</summary>
+    public required string Title { get; init; }
+
+    /// <summary>The balloon's body.</summary>
+    public required string Text { get; init; }
+
+    /// <summary>The glyph beside the title. Default <see cref="TrayBalloonIcon.Info"/>.</summary>
+    public TrayBalloonIcon Icon { get; init; } = TrayBalloonIcon.Info;
+
+    /// <summary>
+    /// Run when the person clicks the balloon, on the tray's thread. Null brings the tray's window forward
+    /// (<see cref="TrayIcon.ShowWindow"/>), which is what a click on a balloon about the app means; pass an action that does
+    /// nothing to leave the click alone. A throw is logged, never raised into the message loop.
+    /// </summary>
+    public Action? Clicked { get; init; }
+}
+
 /// <summary>A <see cref="NotifyIcon"/> with an Open/…/Exit menu, double-click restore, and the
 /// close-to-tray dance. Create it once the main window exists; dispose it with the window — a leaked
 /// <see cref="NotifyIcon"/> ghosts in the tray until hovered.</summary>
@@ -106,6 +142,7 @@ public sealed class TrayIcon : IDisposable
             Visible = true,
         };
         _notifyIcon.DoubleClick += (_, _) => ShowWindow();
+        _notifyIcon.BalloonTipClicked += (_, _) => OnBalloonClicked();
 
         if (options.CloseToTray)
             options.Window.FormClosing += OnWindowClosing;
@@ -121,6 +158,55 @@ public sealed class TrayIcon : IDisposable
     /// <summary>Restore + focus the window (double-click / the Open item), through
     /// <see cref="WindowActivation"/>.</summary>
     public void ShowWindow() => WindowActivation.BringToFront(_options.Window);
+
+    /// <summary>
+    /// Show a balloon notification from the tray icon. On the tray's thread (it is a shell icon): marshal from any other.
+    /// <para>
+    /// 🔴 <b>Windows shows a balloon only while the icon is visible</b>, which it is for as long as this tray lives, and may
+    /// show it as a toast or keep it quiet under Focus Assist or the person's notification settings: the call cannot tell,
+    /// so nothing here says it was seen. Only the newest balloon's <see cref="TrayBalloon.Clicked"/> is kept: a click
+    /// arrives with no word of which balloon it was, and the old one's closing arrives after the new one is shown, so it
+    /// is not read as the new one's end.
+    /// </para>
+    /// </summary>
+    public void ShowBalloon(TrayBalloon balloon)
+    {
+        ArgumentNullException.ThrowIfNull(balloon);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        _balloonClicked = balloon.Clicked ?? ShowWindow;
+        var glyph = balloon.Icon switch
+        {
+            TrayBalloonIcon.Info => ToolTipIcon.Info,
+            TrayBalloonIcon.Warning => ToolTipIcon.Warning,
+            TrayBalloonIcon.Error => ToolTipIcon.Error,
+            _ => ToolTipIcon.None,
+        };
+        // The timeout is ignored by Windows since Vista, which picks its own; passed because the overload requires it.
+        (BalloonSink ?? _notifyIcon.ShowBalloonTip).Invoke(10_000, balloon.Title, balloon.Text, glyph);
+    }
+
+    private Action? _balloonClicked;
+
+    /// <summary>Replaces the shell call, so a test shows no balloon on the machine that runs it. Null calls the shell.</summary>
+    internal Action<int, string, string, ToolTipIcon>? BalloonSink { get; set; }
+
+    internal NotifyIcon Surface => _notifyIcon;
+
+    private void OnBalloonClicked()
+    {
+        var clicked = _balloonClicked;
+        _balloonClicked = null;
+        try
+        {
+            clicked?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            // The app's callback, in the tray's message loop: a throw there is a process-wide unhandled-exception dialog.
+            AppCallback.Log(_logger, () => "A tray balloon's click callback threw", LogLevel.Error, ex);
+        }
+    }
 
     /// <summary>Close the window FOR REAL — bypasses close-to-tray.</summary>
     public void ExitApplication()
