@@ -122,8 +122,8 @@ is left is mostly measurement that needs hardware or a person.
   gesture (the blocker may refuse it before the hook), one a frame raises, and `Disposition`/window features CEF gives are not run or offered
   (`docs/design/shells.md`, the hooks paragraph).
 - [ ] 🅿️ **`OnAuthRequest` on macOS and Linux, and what the Windows probe did not reach.** The code is shared (the browser's
-  own DevTools channel) and was run on Windows only; a proxy's challenge, a frame's, a popup's and a window's first navigation
-  are not run (`docs/design/shells.md`, the hooks paragraph), nor is whether a Linux/macOS CEF raises `Fetch.authRequired` the same.
+  own DevTools channel) and was run on Windows only; a proxy's challenge, the digest and NTLM schemes and a sub-resource's
+  challenge are not run (`docs/design/shells.md`, the hooks paragraph), nor is whether a Linux/macOS CEF raises `Fetch.authRequired` the same.
 
 **Windows**
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out

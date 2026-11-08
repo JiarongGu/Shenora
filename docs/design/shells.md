@@ -592,8 +592,14 @@ the environment: an empty list is refused by the protocol alongside `handleAuthR
 set`); no pattern matching (a host that never occurs) raised no event at all; omitted, every request paused and the navigation hung
 until continued; `*` worked, and `{urlPattern:"*", resourceType:"Document"}` worked and paused five requests in a whole run of the probe.
 So the hook pauses documents only (one pause per navigation or frame, each continued at once), and a challenge raised on a script, image or
-`fetch` is not asked. Not run: a proxy challenge (`IsProxy`), a frame, a popup, a challenge on the window's first navigation (the probe's
-is the page's second), the digest and NTLM schemes, and a sub-resource's challenge.
+`fetch` is not asked. Run too (`SHENORA_SAMPLE_HOOKS_AUTHAT=frame` or `first`, both samples, with `answer`): a challenge raised by an iframe of the page
+reached the hook once, as the frame's own URL with nothing to tell it from a window's, and the server then saw the credentials (the
+page's address stayed); `wrong` in a frame was asked four times as in a window. A challenge on the window's first navigation (the
+server's address as the window's own start URL, so Fetch is enabled just after the browser exists) was asked and answered in 5 of 5
+runs on the shell sample and once on the `ChromiumView` one, and `decline` there left the server one request. A popup's challenge
+cannot arise in a shell window: a popup the hook does not take goes to the user's browser. Not run: a proxy challenge (`IsProxy`: a
+window's pages take the system's proxy, which the probe does not touch; only a session panel's profile takes one of its own), the
+digest and NTLM schemes, and a sub-resource's challenge.
 `OnScriptDialog` (CEF's `on_jsdialog` and `on_before_unload_dialog`, given to CEF only when the hook is set) was run on both samples
 (`SHENORA_SAMPLE_HOOKS_DIALOG=answer` or `refuse`; the page raises `alert`, `confirm`, `prompt` and then reloads itself with a
 `beforeunload` handler): each reached the hook with its kind, the page's URL as origin, the message and the prompt's default text; `answer`
