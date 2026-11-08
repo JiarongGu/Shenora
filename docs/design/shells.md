@@ -496,6 +496,17 @@ ACTIVATES rather than recreating. Threads are **background**, so an exit never h
 window, and everything marshals with non-blocking `BeginInvoke` — a blocking `Invoke` from the IPC thread
 deadlocks the UI.
 
+`ChromiumWindowHost` is the default window over that registry for an app whose windows are routes of its own page: it
+makes the `OptimizedForm` and its `ChromiumView`, attaches the remembered geometry (a file per escaped name; the escape is
+injective, so two names never share one) and disposes the view as the form closes, so the closed window's page stops
+hearing the bus. It decides nothing about chrome, title or theme: `ChromiumFormOptions` carries what the app says, and a
+`Created` hook runs on the window's own thread before it shows.
+
+The taskbar's pieces are separate, form-level and Windows-only (`TaskbarOverlay`, `TaskbarFlash`, `TaskbarIdentity`), so
+a window of the host and the main window wear them the same way. The overlay is subclassed beside the form's own window
+procedure to hear `TaskbarButtonCreated`, not through `OptimizedForm.WndProcHook`, so it works on any `Form` and an app's
+own hook is left alone.
+
 The sessions are a family of browsers that are not the app's window, written ONCE in `Shenora.Core.Sessions`
 over the shell's `ISessionHost` (D91), sharing one `SessionBrowserOptions` (a `record`, so a session can
 `with`-override only what it owns, and a shell's options derive from it) and one event catalogue on the app's

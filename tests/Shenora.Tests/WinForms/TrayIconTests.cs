@@ -124,4 +124,111 @@ public class TrayIconTests
 
         Assert.True(closed);
     });
+
+    // The click the shell sends a balloon: NotifyIcon raises BalloonTipClicked from it (a private method, reached by
+    // reflection because a unit test has no balloon on screen to click).
+    private static void ClickBalloon(TrayIcon tray) =>
+        typeof(NotifyIcon).GetMethod("OnBalloonTipClicked", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(tray.Surface, null);
+
+    private static TrayIcon Quiet(Form form, List<(int Timeout, string Title, string Text, ToolTipIcon Glyph)> shown)
+    {
+        var tray = new TrayIcon(new TrayIconOptions { Window = form });
+        // A test shows no balloon on the machine that runs it.
+        tray.BalloonSink = (timeout, title, text, glyph) => shown.Add((timeout, title, text, glyph));
+        return tray;
+    }
+
+    [Fact]
+    public void A_balloon_carries_its_title_text_and_glyph_to_the_shell() => Sta.Run(() =>
+    {
+        using var form = new Form();
+        var shown = new List<(int, string, string, ToolTipIcon)>();
+        using var tray = Quiet(form, shown);
+
+        tray.ShowBalloon(new TrayBalloon { Title = "Done", Text = "It finished", Icon = TrayBalloonIcon.Warning });
+        tray.ShowBalloon(new TrayBalloon { Title = "Plain", Text = "No glyph", Icon = TrayBalloonIcon.None });
+        tray.ShowBalloon(new TrayBalloon { Title = "Default", Text = "Info" });
+
+        Assert.Equal(["Done", "Plain", "Default"], shown.Select(s => s.Item2));
+        Assert.Equal(["It finished", "No glyph", "Info"], shown.Select(s => s.Item3));
+        Assert.Equal([ToolTipIcon.Warning, ToolTipIcon.None, ToolTipIcon.Info], shown.Select(s => s.Item4));
+    });
+
+    [Fact]
+    public void A_click_on_a_balloon_runs_its_callback_once() => Sta.Run(() =>
+    {
+        using var form = new Form();
+        var clicks = 0;
+        using var tray = Quiet(form, []);
+
+        tray.ShowBalloon(new TrayBalloon { Title = "T", Text = "x", Clicked = () => clicks++ });
+        ClickBalloon(tray);
+        ClickBalloon(tray); // a second click with no balloon on screen
+
+        Assert.Equal(1, clicks);
+    });
+
+    [Fact]
+    public void A_balloon_with_no_callback_brings_the_tray_window_forward_on_a_click() => Sta.Run(() =>
+    {
+        using var form = new Form { ShowInTaskbar = false };
+        _ = form.Handle;
+        using var tray = Quiet(form, []);
+        Assert.False(form.Visible);
+
+        tray.ShowBalloon(new TrayBalloon { Title = "T", Text = "x" });
+        ClickBalloon(tray);
+
+        Assert.True(form.Visible);
+    });
+
+    [Fact]
+    public void A_callback_that_does_nothing_leaves_the_window_where_it_is() => Sta.Run(() =>
+    {
+        using var form = new Form { ShowInTaskbar = false };
+        _ = form.Handle;
+        using var tray = Quiet(form, []);
+
+        tray.ShowBalloon(new TrayBalloon { Title = "T", Text = "x", Clicked = () => { } });
+        ClickBalloon(tray);
+
+        Assert.False(form.Visible);
+    });
+
+    [Fact]
+    public void Only_the_newest_balloons_callback_is_kept() => Sta.Run(() =>
+    {
+        using var form = new Form();
+        var which = new List<string>();
+        using var tray = Quiet(form, []);
+
+        tray.ShowBalloon(new TrayBalloon { Title = "1", Text = "x", Clicked = () => which.Add("first") });
+        tray.ShowBalloon(new TrayBalloon { Title = "2", Text = "x", Clicked = () => which.Add("second") });
+        ClickBalloon(tray);
+
+        Assert.Equal(["second"], which);
+    });
+
+    // A callback is the app's code, run in the message loop: its throw must never reach WinForms' unhandled-exception dialog.
+    [Fact]
+    public void A_callback_that_throws_is_logged_and_not_raised() => Sta.Run(() =>
+    {
+        using var form = new Form();
+        using var tray = Quiet(form, []);
+
+        tray.ShowBalloon(new TrayBalloon { Title = "T", Text = "x", Clicked = () => throw new InvalidOperationException("app bug") });
+
+        ClickBalloon(tray);
+    });
+
+    [Fact]
+    public void A_balloon_after_dispose_is_refused_by_name() => Sta.Run(() =>
+    {
+        using var form = new Form();
+        var tray = Quiet(form, []);
+        tray.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => tray.ShowBalloon(new TrayBalloon { Title = "T", Text = "x" }));
+    });
 }

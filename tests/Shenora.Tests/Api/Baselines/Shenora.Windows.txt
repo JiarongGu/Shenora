@@ -37,6 +37,14 @@ struct Shenora.Windows.CaptionButtonState : System.IEquatable<Shenora.Windows.Ca
   public static bool op_Equality(Shenora.Windows.CaptionButtonState left, Shenora.Windows.CaptionButtonState right)
   public static bool op_Inequality(Shenora.Windows.CaptionButtonState left, Shenora.Windows.CaptionButtonState right)
   public void Deconstruct(out Shenora.Windows.CaptionButtonKind? Hot, out Shenora.Windows.CaptionButtonKind? Pressed)
+sealed class Shenora.Windows.ChromiumFormOptions
+  public .ctor()
+  public Shenora.Core.Shell.WindowStateOptions? State { get; init; }
+  public Shenora.Windows.OptimizedFormOptions? Chrome { get; init; }
+  public System.Action<Shenora.Windows.OptimizedForm>? Created { get; init; }
+  public System.Drawing.Icon? Icon { get; init; }
+  public string FailureText { get; init; }
+  public string? Title { get; init; }
 sealed class Shenora.Windows.ChromiumView : System.Windows.Forms.Control
   [Browsable(false)] [DesignerSerializationVisibility(0)] public Shenora.Chromium.ChromiumChildBrowser? Browser { get; }
   [DefaultValue(null)] public string? Path { get; set; }
@@ -45,6 +53,14 @@ sealed class Shenora.Windows.ChromiumView : System.Windows.Forms.Control
   protected override void OnHandleDestroyed(System.EventArgs e)
   protected override void OnSizeChanged(System.EventArgs e)
   public .ctor(Shenora.Chromium.ChromiumEngine engine, Microsoft.Extensions.Logging.ILogger<Shenora.Windows.ChromiumView>? log = null)
+sealed class Shenora.Windows.ChromiumWindowHost
+  public .ctor(Shenora.Chromium.ChromiumEngine engine, Shenora.Windows.SecondaryWindows windows, string stateFolder, System.Func<string, Shenora.Windows.ChromiumFormOptions>? describe = null, Microsoft.Extensions.Logging.ILogger<Shenora.Windows.ChromiumView>? log = null)
+  public Shenora.Windows.OptimizedForm? FormNamed(string name)
+  public System.Collections.Generic.IReadOnlyList<string> Opened { get; }
+  public bool Open(string name, string path)
+  public bool Post(string name, System.Action<Shenora.Windows.OptimizedForm> action)
+  public void Activate(string name)
+  public void Close(string name)
 sealed class Shenora.Windows.ClipboardService : Shenora.Core.Shell.IClipboardService
   public .ctor()
   public System.Threading.Tasks.Task ClearAsync()
@@ -164,11 +180,42 @@ sealed class Shenora.Windows.SplashPanelOptions
   public double BarWidthFraction { get; init; }
   public int BarHeight { get; init; }
   public int BarMaxWidth { get; init; }
+static class Shenora.Windows.TaskbarFlash
+  public static void Start(System.Windows.Forms.Form? form)
+  public static void Stop(System.Windows.Forms.Form? form)
+sealed class Shenora.Windows.TaskbarIdentity
+  public required string AppId { get; init; }
+  public string? RelaunchCommand { get; init; }
+  public string? RelaunchDisplayName { get; init; }
+  public string? RelaunchIcon { get; init; }
+  public void Wear(System.Windows.Forms.Form form)
+sealed class Shenora.Windows.TaskbarOverlay : System.IDisposable
+  public .ctor(System.Windows.Forms.Form form)
+  public System.Drawing.Color Fill { get; set; }
+  public System.Drawing.Color Ink { get; set; }
+  public const int MaxCount = 99
+  public static int ButtonCreatedMessage { get; }
+  public void Clear()
+  public void Dispose()
+  public void Show(int count, string? description = null)
+  public void Show(string? text, string? description = null)
+sealed class Shenora.Windows.TrayBalloon
+  public Shenora.Windows.TrayBalloonIcon Icon { get; init; }
+  public System.Action? Clicked { get; init; }
+  public required string Text { get; init; }
+  public required string Title { get; init; }
+enum Shenora.Windows.TrayBalloonIcon (int)
+  public const Shenora.Windows.TrayBalloonIcon Error = 3
+  public const Shenora.Windows.TrayBalloonIcon Info = 1
+  public const Shenora.Windows.TrayBalloonIcon None = 0
+  public const Shenora.Windows.TrayBalloonIcon Warning = 2
+  public int value__
 sealed class Shenora.Windows.TrayIcon : System.IDisposable
   public .ctor(Shenora.Windows.TrayIconOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Windows.TrayIcon>? logger = null)
   public System.Windows.Forms.ContextMenuStrip Menu { get; }
   public void Dispose()
   public void ExitApplication()
+  public void ShowBalloon(Shenora.Windows.TrayBalloon balloon)
   public void ShowWindow()
 sealed class Shenora.Windows.TrayIconOptions
   public Shenora.Windows.TrayMenuColors? MenuColors { get; init; }

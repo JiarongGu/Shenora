@@ -56,6 +56,22 @@ at the first list and missed five more breaking changes.
   now sets the launcher's extended DLL characteristics to the relaxed context-IP mode (`0x4`); the shadow stack stays on.
   `<ShenoraChromiumRelaxContextIp>false</ShenoraChromiumRelaxContextIp>` keeps CEF's strict validation. A launcher that is not
   CET-compatible is left as it is. Windows only.
+- **A window's taskbar button can carry a count and flash: `TaskbarOverlay` and `TaskbarFlash`** (Windows shell). `new TaskbarOverlay(form)`
+  then `Show(count)` or `Show(text)` draws a small icon (a circle in `Fill` with the text in `Ink`, at the window's DPI, `99+` past
+  `MaxCount`) over the button and `Clear()` takes it off; it is put back when Explorer makes the button again or the window's handle is
+  recreated, and a shell with no taskbar shows none. On the form's thread. `TaskbarFlash.Start(form)` flashes the button only until the
+  window is in front and `Stop(form)` puts it out, from any thread, never blocking.
+- **A window can carry its own AppUserModelID and relaunch properties: `TaskbarIdentity`** (Windows shell). `new TaskbarIdentity { AppId,
+  RelaunchCommand, RelaunchDisplayName, RelaunchIcon }.Wear(form)` writes them through the window's property store as each handle is
+  created and empties them as it is destroyed, so the taskbar groups the window by the app's id and a pin made from it starts the app's
+  command. An id Windows would ignore, or a command with no display name, throws at `Wear`.
+- **`TrayIcon.ShowBalloon(TrayBalloon)`.** A tray balloon with a `Title`, `Text` and `Icon` (`TrayBalloonIcon`) and a `Clicked` callback; a
+  click with none brings the tray's window forward. Only the newest balloon's callback is kept, and a throw from it is logged.
+- **`ChromiumWindowHost`: named Chromium windows at routes of the app's page, over `SecondaryWindows`** (Windows shell). One STA thread and
+  pump per name, a `ChromiumView` filling an `OptimizedForm`, the geometry remembered per name under the folder given; the app gives
+  only each window's `ChromiumFormOptions` (title, icon, chrome, state defaults, and a `Created` hook that runs on the window's thread
+  before it shows) and the route in `Open(name, path)`. `Post(name, form => …)` runs work on a window's thread without blocking,
+  `Opened` lists the names open, and a closed window's view is disposed with it.
 - **A Windows Chromium app shows a startup screen with no update launcher.** `<ShenoraChromiumStartupScreen>` (a PNG) and its options
   (`…Width`, `…Height`, `…Background`, `…ProgressBar`, `…ProgressColor`, `…Corners`, `…Monitor`, `…TimeoutSeconds`, the values
   `shenora_launcher_startup_screen()` takes; a bad one fails the build by its name, before CEF is fetched) have the app's build

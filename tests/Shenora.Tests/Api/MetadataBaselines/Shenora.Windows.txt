@@ -38,6 +38,14 @@ Shenora.Windows.CaptionButtonState
   method op_Inequality
   property Hot
   property Pressed
+Shenora.Windows.ChromiumFormOptions
+  method .ctor
+  property Chrome
+  property Created
+  property FailureText
+  property Icon
+  property State
+  property Title
 Shenora.Windows.ChromiumView
   method .ctor
   method OnGotFocus
@@ -46,6 +54,14 @@ Shenora.Windows.ChromiumView
   method OnSizeChanged
   property Browser
   property Path
+Shenora.Windows.ChromiumWindowHost
+  method .ctor
+  method Activate
+  method Close
+  method FormNamed
+  method Open
+  method Post
+  property Opened
 Shenora.Windows.ClipboardService
   method .ctor
   method ClearAsync
@@ -167,10 +183,43 @@ Shenora.Windows.SplashPanelOptions
   property BarHeight
   property BarMaxWidth
   property BarWidthFraction
+Shenora.Windows.TaskbarFlash
+  method Start
+  method Stop
+Shenora.Windows.TaskbarIdentity
+  method .ctor
+  method Wear
+  property AppId
+  property RelaunchCommand
+  property RelaunchDisplayName
+  property RelaunchIcon
+Shenora.Windows.TaskbarOverlay
+  field MaxCount
+  method .ctor
+  method Clear
+  method Dispose
+  method Show
+  method Show
+  property ButtonCreatedMessage
+  property Fill
+  property Ink
+Shenora.Windows.TrayBalloon
+  method .ctor
+  property Clicked
+  property Icon
+  property Text
+  property Title
+Shenora.Windows.TrayBalloonIcon
+  field Error
+  field Info
+  field None
+  field Warning
+  field value__
 Shenora.Windows.TrayIcon
   method .ctor
   method Dispose
   method ExitApplication
+  method ShowBalloon
   method ShowWindow
   property Menu
 Shenora.Windows.TrayIconOptions
