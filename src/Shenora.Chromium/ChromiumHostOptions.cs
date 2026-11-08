@@ -216,6 +216,18 @@ public sealed class ChromiumHostOptions
     /// </para>
     /// </summary>
     public Func<ChromiumAuthRequest, bool>? OnAuthRequest { get; init; }
+
+    /// <summary>
+    /// Asked when a window's page raises a script dialog: <c>alert</c>, <c>confirm</c>, <c>prompt</c>, or the question a
+    /// <c>beforeunload</c> handler asks on leaving. Set <see cref="ChromiumScriptDialogRequest.Accept"/> (and
+    /// <see cref="ChromiumScriptDialogRequest.ResultText"/> for a prompt) and return <c>true</c> to answer it yourself, with no
+    /// dialog; an <c>alert</c> is acknowledged whatever <c>Accept</c> says. Return <c>false</c>, throw, or set no hook and Chromium's own
+    /// dialog shows, as it always has, and CEF is only given the handler when the hook is set.
+    /// <para>
+    /// ⚠ An answer of <c>false</c> to a <c>beforeunload</c> keeps the page where it is. CEF's UI thread: answer at once, which means a dialog of the app's own is not shown from here.
+    /// </para>
+    /// </summary>
+    public Func<ChromiumScriptDialogRequest, bool>? OnScriptDialog { get; init; }
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

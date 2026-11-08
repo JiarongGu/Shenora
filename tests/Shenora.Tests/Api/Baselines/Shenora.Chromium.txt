@@ -96,6 +96,7 @@ sealed class Shenora.Chromium.ChromiumEngineOptions
   public System.Func<Shenora.Chromium.ChromiumFileDialogRequest, bool>? OnFileDialog { get; init; }
   public System.Func<Shenora.Chromium.ChromiumPermissionRequest, bool>? OnPermissionRequested { get; init; }
   public System.Func<Shenora.Chromium.ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumScriptDialogRequest, bool>? OnScriptDialog { get; init; }
   public bool? IsDevelopment { get; init; }
   public int DevToolsPort { get; init; }
   public string VirtualHost { get; init; }
@@ -137,6 +138,7 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public System.Func<Shenora.Chromium.ChromiumFileDialogRequest, bool>? OnFileDialog { get; init; }
   public System.Func<Shenora.Chromium.ChromiumPermissionRequest, bool>? OnPermissionRequested { get; init; }
   public System.Func<Shenora.Chromium.ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumScriptDialogRequest, bool>? OnScriptDialog { get; init; }
   public bool ObserveUnobservedTaskExceptions { get; init; }
   public bool OffscreenSessions { get; init; }
   public bool? IsDevelopment { get; init; }
@@ -194,6 +196,20 @@ enum Shenora.Chromium.ChromiumProcessStatus (int)
   public const Shenora.Chromium.ChromiumProcessStatus LaunchFailed = 4
   public const Shenora.Chromium.ChromiumProcessStatus OutOfMemory = 3
   public int value__
+enum Shenora.Chromium.ChromiumScriptDialogKind (int)
+  public const Shenora.Chromium.ChromiumScriptDialogKind Alert = 0
+  public const Shenora.Chromium.ChromiumScriptDialogKind BeforeUnload = 3
+  public const Shenora.Chromium.ChromiumScriptDialogKind Confirm = 1
+  public const Shenora.Chromium.ChromiumScriptDialogKind Prompt = 2
+  public int value__
+sealed class Shenora.Chromium.ChromiumScriptDialogRequest
+  public Shenora.Chromium.ChromiumScriptDialogKind Kind { get; }
+  public bool Accept { get; set; }
+  public bool IsReload { get; }
+  public string DefaultText { get; }
+  public string Message { get; }
+  public string Origin { get; }
+  public string ResultText { get; set; }
 sealed class Shenora.Chromium.ChromiumSessionHost : Shenora.Core.Sessions.ISessionHost
   public Shenora.Core.Sessions.ISessionBrowserContext CreateContext()
   public Shenora.Core.Shell.IUiDispatcher Ui { get; }

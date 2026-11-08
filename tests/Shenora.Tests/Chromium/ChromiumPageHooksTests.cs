@@ -12,8 +12,9 @@ public class ChromiumPageHooksTests
     private static ChromiumPageHooks Hooks(Func<ChromiumDownloadRequest, bool>? download = null,
         Func<ChromiumPermissionRequest, bool>? permission = null, Func<ChromiumProcessReport, bool>? failed = null,
         Action<ChromiumDownloadProgress>? progress = null, Func<ChromiumCertificateError, bool>? certificate = null,
-        Func<ChromiumFileDialogRequest, bool>? fileDialog = null, Func<ChromiumAuthRequest, bool>? auth = null) =>
-        new(download, permission, failed, progress, certificate, fileDialog, auth);
+        Func<ChromiumFileDialogRequest, bool>? fileDialog = null, Func<ChromiumAuthRequest, bool>? auth = null,
+        Func<ChromiumScriptDialogRequest, bool>? scriptDialog = null) =>
+        new(download, permission, failed, progress, certificate, fileDialog, auth, scriptDialog);
 
     private static ChromiumAuthRequest Challenge() => new("http://10.0.0.5/status", "http://10.0.0.5", "basic", "device", false);
 
@@ -33,6 +34,8 @@ public class ChromiumPageHooksTests
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnFileDialog = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnAuthRequest = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnAuthRequest = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnScriptDialog = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnScriptDialog = _ => false }));
     }
 
     [Fact]
@@ -316,6 +319,44 @@ public class ChromiumPageHooksTests
         Assert.Null(Hooks(auth: r => { r.UserName = "admin"; r.Password = "pw"; return false; }).Authenticate(Challenge(), null));
         Assert.Null(Hooks(auth: _ => throw new InvalidOperationException("app bug")).Authenticate(Challenge(), null));
         Assert.Null(Hooks(download: _ => false).Authenticate(Challenge(), null));
+    }
+
+    [Fact]
+    public void Only_a_script_dialog_hook_has_CEF_given_a_dialog_handler()
+    {
+        Assert.True(Hooks(scriptDialog: _ => false).HandlesScriptDialogs);
+        Assert.False(Hooks(download: _ => false, certificate: _ => false, fileDialog: _ => false, auth: _ => false).HandlesScriptDialogs);
+    }
+
+    [Fact]
+    public void A_dialog_the_app_answered_gives_its_answer_and_shows_what_the_page_raised()
+    {
+        ChromiumScriptDialogRequest? seen = null;
+        var hooks = Hooks(scriptDialog: r => { seen = r; r.Accept = true; r.ResultText = "typed"; return true; });
+
+        Assert.Equal((true, "typed"), hooks.ScriptDialog(ChromiumScriptDialogKind.Prompt, "https://app.local/", "Name?", "anon", false, null));
+        Assert.Equal((ChromiumScriptDialogKind.Prompt, "https://app.local/", "Name?", "anon", false),
+            (seen!.Kind, seen.Origin, seen.Message, seen.DefaultText, seen.IsReload));
+    }
+
+    [Theory]
+    [InlineData(ChromiumScriptDialogKind.Alert)]
+    [InlineData(ChromiumScriptDialogKind.Confirm)]
+    [InlineData(ChromiumScriptDialogKind.BeforeUnload)]
+    public void Only_a_prompt_carries_text_back(ChromiumScriptDialogKind kind) =>
+        Assert.Equal((true, ""), Hooks(scriptDialog: r => { r.Accept = true; r.ResultText = "typed"; return true; }).ScriptDialog(kind, "", "", "", false, null));
+
+    [Fact]
+    public void A_handled_dialog_is_not_accepted_until_the_app_says_so_and_a_refused_prompt_has_no_text() =>
+        Assert.Equal((false, ""), Hooks(scriptDialog: r => { r.ResultText = "typed"; return true; })
+            .ScriptDialog(ChromiumScriptDialogKind.Prompt, "", "", "", false, null));
+
+    [Fact]
+    public void A_dialog_the_app_declined_or_threw_on_is_CEFs_own()
+    {
+        Assert.Null(Hooks(scriptDialog: r => { r.Accept = true; return false; }).ScriptDialog(ChromiumScriptDialogKind.Confirm, "", "", "", false, null));
+        Assert.Null(Hooks(scriptDialog: _ => throw new InvalidOperationException("app bug")).ScriptDialog(ChromiumScriptDialogKind.Confirm, "", "", "", false, null));
+        Assert.Null(Hooks(download: _ => false).ScriptDialog(ChromiumScriptDialogKind.Confirm, "", "", "", false, null));
     }
 
     [Fact]

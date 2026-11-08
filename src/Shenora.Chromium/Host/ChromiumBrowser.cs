@@ -392,6 +392,7 @@ internal sealed unsafe class ChromiumBrowser
         private readonly Permissions _permissions;
         private readonly Downloads? _downloads;   // only with the app's hook: with none, CEF cancels every download itself
         private readonly FileDialogs? _dialogs;   // only with the app's hook: with none, CEF shows its own dialog
+        private readonly ScriptDialogs? _scriptDialogs;   // only with the app's hook: with none, CEF shows its own dialogs
         private readonly FocusHandler _focus;
 
         public Client(ChromiumBrowser owner)
@@ -404,6 +405,7 @@ internal sealed unsafe class ChromiumBrowser
             _permissions = new Permissions(owner);
             _downloads = owner._hooks is { HandlesDownloads: true } ? new Downloads(owner) : null;
             _dialogs = owner._hooks is { HandlesFileDialogs: true } ? new FileDialogs(owner) : null;
+            _scriptDialogs = owner._hooks is { HandlesScriptDialogs: true } ? new ScriptDialogs(owner) : null;
             _focus = new FocusHandler(owner);
             Struct->get_request_handler = &GetRequests;
             Struct->get_life_span_handler = &GetLifeSpan;
@@ -413,6 +415,7 @@ internal sealed unsafe class ChromiumBrowser
             Struct->get_permission_handler = &GetPermissions;
             Struct->get_download_handler = &GetDownloads;
             Struct->get_dialog_handler = &GetDialogs;
+            Struct->get_jsdialog_handler = &GetScriptDialogs;
             Struct->get_focus_handler = &GetFocus;
         }
 
@@ -427,6 +430,7 @@ internal sealed unsafe class ChromiumBrowser
             _permissions.Release();
             _downloads?.Release();
             _dialogs?.Release();
+            _scriptDialogs?.Release();
             _focus.Release();
         }
 
@@ -439,7 +443,65 @@ internal sealed unsafe class ChromiumBrowser
         [UnmanagedCallersOnly] private static _cef_permission_handler_t* GetPermissions(_cef_client_t* self) => From<Client>(self)._permissions.ForCef();
         [UnmanagedCallersOnly] private static _cef_download_handler_t* GetDownloads(_cef_client_t* self) => From<Client>(self)._downloads is { } downloads ? downloads.ForCef() : null;
         [UnmanagedCallersOnly] private static _cef_dialog_handler_t* GetDialogs(_cef_client_t* self) => From<Client>(self)._dialogs is { } dialogs ? dialogs.ForCef() : null;
+        [UnmanagedCallersOnly] private static _cef_jsdialog_handler_t* GetScriptDialogs(_cef_client_t* self) => From<Client>(self)._scriptDialogs is { } dialogs ? dialogs.ForCef() : null;
         [UnmanagedCallersOnly] private static _cef_focus_handler_t* GetFocus(_cef_client_t* self) => From<Client>(self)._focus.ForCef();
+    }
+
+    /// <summary>The page's <c>alert</c>, <c>confirm</c>, <c>prompt</c> and <c>beforeunload</c> dialogs, answered by the app's
+    /// <see cref="ChromiumHostOptions.OnScriptDialog"/> when it takes them; given to CEF only when that hook is set.</summary>
+    private sealed class ScriptDialogs : CefObject<_cef_jsdialog_handler_t>
+    {
+        private readonly ChromiumBrowser _owner;
+
+        public ScriptDialogs(ChromiumBrowser owner)
+        {
+            _owner = owner;
+            Struct->on_jsdialog = &OnJsDialog;
+            Struct->on_before_unload_dialog = &OnBeforeUnload;
+        }
+
+        // UI thread. Returning 1 takes the dialog and answers the callback before returning; 0 is CEF's own dialog.
+        [UnmanagedCallersOnly]
+        private static int OnJsDialog(_cef_jsdialog_handler_t* self, _cef_browser_t* browser, _cef_string_utf16_t* originUrl, cef_jsdialog_type_t type,
+            _cef_string_utf16_t* messageText, _cef_string_utf16_t* defaultPromptText, _cef_jsdialog_callback_t* callback, int* suppressMessage)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var c = new CefRef<_cef_jsdialog_callback_t>(callback);
+            var owner = From<ScriptDialogs>(self)._owner;
+            if (callback == null || owner._hooks is null) return 0;
+            var kind = type switch
+            {
+                cef_jsdialog_type_t.JSDIALOGTYPE_CONFIRM => ChromiumScriptDialogKind.Confirm,
+                cef_jsdialog_type_t.JSDIALOGTYPE_PROMPT => ChromiumScriptDialogKind.Prompt,
+                _ => ChromiumScriptDialogKind.Alert,
+            };
+            return Answer(owner, callback, kind, CefStrings.Read(originUrl), CefStrings.Read(messageText), CefStrings.Read(defaultPromptText), false);
+        }
+
+        [UnmanagedCallersOnly]
+        private static int OnBeforeUnload(_cef_jsdialog_handler_t* self, _cef_browser_t* browser, _cef_string_utf16_t* messageText, int isReload,
+            _cef_jsdialog_callback_t* callback)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var c = new CefRef<_cef_jsdialog_callback_t>(callback);
+            var owner = From<ScriptDialogs>(self)._owner;
+            if (callback == null || owner._hooks is null) return 0;
+            return Answer(owner, callback, ChromiumScriptDialogKind.BeforeUnload, string.Empty, CefStrings.Read(messageText), string.Empty, isReload != 0);
+        }
+
+        private static int Answer(ChromiumBrowser owner, _cef_jsdialog_callback_t* callback, ChromiumScriptDialogKind kind, string origin, string message,
+            string defaultText, bool isReload)
+        {
+            var answer = owner._hooks!.ScriptDialog(kind, origin, message, defaultText, isReload, owner.Log);
+            if (answer is not { } result) return 0;
+            fixed (char* t = result.Text)
+            {
+                var input = CefStrings.View(t, result.Text.Length);
+                callback->cont(callback, result.Accept ? 1 : 0, &input);
+            }
+            AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': the app answered a {kind} dialog ({(result.Accept ? "accepted" : "not accepted")})");
+            return 1;
+        }
     }
 
     /// <summary>The page's own file dialog (<c>&lt;input type="file"&gt;</c>), answered by the app's
