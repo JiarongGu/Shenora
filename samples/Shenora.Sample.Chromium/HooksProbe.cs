@@ -41,7 +41,9 @@ namespace Shenora.Sample.Chromium;
 /// <c>authorized</c>; <c>wrong</c> gives a wrong password for its first three asks and
 /// then cancels, which shows how often the page is asked again; <c>cancel</c> answers with none, and <c>decline</c> returns false: the server
 /// must see one request, with no credentials. ⚠ The page is then the server's: read the
-/// <c>RENDERER</c> and <c>RELOAD</c> lines as the reload of that page.</item>
+/// <c>RENDERER</c> and <c>RELOAD</c> lines as the reload of that page. <c>SHENORA_SAMPLE_HOOKS_AUTHAT=frame</c> has the page
+/// put the server in an iframe instead of navigating itself (the <c>authframe loaded</c> line, and the page's own address stays), and
+/// <c>first</c> makes the server's address the window's own first navigation: there is no probe page then, only the <c>AUTH</c> lines.</item>
 /// <item><c>SHENORA_SAMPLE_HOOKS_DIALOG=answer</c> or <c>refuse</c>: once the page is done it raises <c>alert</c>, <c>confirm</c> and
 /// <c>prompt</c> and then reloads itself with a <c>beforeunload</c> handler set. The hook is asked for each (<c>SCRIPTDIALOG</c>):
 /// <c>answer</c> accepts all and types <c>from the hook</c>, so the page must read <c>true</c> and that text and then reload (a second
@@ -85,7 +87,7 @@ internal static class HooksProbe
     public static bool Active => On;
 
     /// <summary>The page the main window shows: the probe's own while it runs, else the one given.</summary>
-    public static string Page(string normal) => On ? "hooks.html" : normal;
+    public static string Page(string normal) => !On ? normal : AuthAt == "first" && Login.Value is { } first ? $"http://127.0.0.1:{first.Port}/page" : "hooks.html";
 
     /// <summary>The app's provider, answering the probe's page and its reports first while it runs.</summary>
     public static IWebViewResourceProvider? Provider(IWebViewResourceProvider? app) => On ? new ProbeProvider(app) : app;
@@ -183,6 +185,11 @@ internal static class HooksProbe
     private static readonly string? Auth = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTH") is "answer" or "wrong" or "cancel" or "decline"
         ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTH") : null;
     private static readonly Lazy<AuthServer?> Login = new(() => On && Auth is not null ? new AuthServer(Log) : null);
+
+    // Where the challenge is raised: "frame" (an iframe of the probe's page) or "first" (the window's own first navigation, which is the
+    // server's address, so there is no probe page); unset, the page navigates itself to the server once it is done.
+    private static readonly string? AuthAt = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTHAT") is "frame" or "first"
+        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTHAT") : null;
     private static int _asked;
     private static int _popups;
 
@@ -268,6 +275,13 @@ internal static class HooksProbe
     {
         _ = Mine.Value;   // in the store before the page's navigation asks for it
         var hwnd = await MainWindowAsync(windowTitle);
+        if (AuthAt == "first" && Login.Value is { } start)
+        {
+            // The window opened on the server itself: no page of the probe's to click or to report, only the challenge and its answer.
+            await Task.Delay(4000);
+            Log($"AUTH server saw {start.Requests} request(s) for the page, {start.Authorized} authorized; the hook was asked {Volatile.Read(ref _asked)} time(s)");
+            return;
+        }
         await Task.WhenAny(Ready.Task, Task.Delay(20_000));
         if (pageWindow)
         {
@@ -383,7 +397,7 @@ internal static class HooksProbe
 
     private static string PageHtml => PageTemplate.Replace("__AUTO__", Auto is null ? "false" : "true")
         .Replace("__CERTPORT__", (Server.Value?.Port ?? 0).ToString()).Replace("__FILE__", Pick is null ? "false" : "true")
-        .Replace("__AUTHPORT__", (Login.Value?.Port ?? 0).ToString()).Replace("__DIALOG__", Dialog is null ? "false" : "true")
+        .Replace("__AUTHPORT__", (Login.Value?.Port ?? 0).ToString()).Replace("__AUTHFRAME__", AuthAt == "frame" ? "true" : "false").Replace("__DIALOG__", Dialog is null ? "false" : "true")
         .Replace("__POPUPURL__", Popup is null ? "''" : Popup is "take" or "browser" ? $"'http://127.0.0.1:{Opened.Value?.Port}/page'" : "'ftp://127.0.0.1/popup'");
 
     private const string PageTemplate = """
@@ -462,7 +476,16 @@ internal static class HooksProbe
           // The page itself goes to the server: the one request Chromium asks the certificate hook about.
           if (__CERTPORT__) { await new Promise(resolve => setTimeout(resolve, 300)); location.href = 'https://127.0.0.1:__CERTPORT__/page'; }
           // The same for a server that wants credentials: the page's own navigation meets the challenge.
-          if (__AUTHPORT__) { await new Promise(resolve => setTimeout(resolve, 300)); location.href = 'http://127.0.0.1:__AUTHPORT__/page'; }
+          if (__AUTHPORT__) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            if (__AUTHFRAME__) {
+              // A frame's own navigation meets the challenge; the page itself stays where it is.
+              const frame = document.createElement('iframe');
+              frame.addEventListener('load', () => say('authframe', 'loaded'));
+              frame.src = 'http://127.0.0.1:__AUTHPORT__/page';
+              document.body.append(frame);
+            } else location.href = 'http://127.0.0.1:__AUTHPORT__/page';
+          }
         })();
         </script>
         """;
