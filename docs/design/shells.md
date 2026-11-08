@@ -534,7 +534,7 @@ waits 500 ms after a profile's last release before it makes another context for 
 because CEF reports no end of the teardown; a pool's context, made on the UI thread, does not wait.
 
 **The app's hooks on what a window's page asks of the shell** (`ChromiumHostOptions.OnDownloadStarting`,
-`OnPermissionRequested`, `OnProcessFailed`, `OnCertificateError`, `OnFileDialog`, `OnAuthRequest`, and `OnDownloadProgress`, which only watches; D84's defaults stand where an app sets none, or answers false). Run for real
+`OnPermissionRequested`, `OnProcessFailed`, `OnCertificateError`, `OnFileDialog`, `OnAuthRequest`, `OnScriptDialog`, and `OnDownloadProgress`, which only watches; D84's defaults stand where an app sets none, or answers false). Run for real
 (`SHENORA_SAMPLE_HOOKS_PROBE=1` and `2`, Chromium sample, Windows, a click posted to the window starting each download):
 a download the hook gave a path was written there with its content, one handled with no path and one declined were
 cancelled; the hook's grant of notifications settled the page's promise as `granted`, and a request it declined got the
@@ -594,6 +594,13 @@ until continued; `*` worked, and `{urlPattern:"*", resourceType:"Document"}` wor
 So the hook pauses documents only (one pause per navigation or frame, each continued at once), and a challenge raised on a script, image or
 `fetch` is not asked. Not run: a proxy challenge (`IsProxy`), a frame, a popup, a challenge on the window's first navigation (the probe's
 is the page's second), the digest and NTLM schemes, and a sub-resource's challenge.
+`OnScriptDialog` (CEF's `on_jsdialog` and `on_before_unload_dialog`, given to CEF only when the hook is set) was run on both samples
+(`SHENORA_SAMPLE_HOOKS_DIALOG=answer` or `refuse`; the page raises `alert`, `confirm`, `prompt` and then reloads itself with a
+`beforeunload` handler): each reached the hook with its kind, the page's URL as origin, the message and the prompt's default text; `answer`
+gave the page `true` and the hook's text and the reload went through (a second load), `refuse` gave it `false` and `null` and the page stayed
+(no second load). ⚠ A `beforeunload` reaches the hook with no origin and Chromium's own message (`Is it OK to leave/reload this page?`), which a
+page cannot set. Not run: a decline, which shows Chromium's own dialog (a window a person closes), a dialog raised by a frame or a popup, and a
+window's own close with a `beforeunload` page.
 Build it like the shell sample
 (`ShenoraChromiumLayout` on, the app laid out beside CEF's launcher) and run `Shenora.Sample.ChromiumView.exe` with the same
 variables. The probe posts clicks until the page has counted three: its first posted click was lost in most runs, not the

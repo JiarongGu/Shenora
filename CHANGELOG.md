@@ -77,6 +77,11 @@ at the first list and missed five more breaking changes.
   to answer, or return `true` with neither to cancel; `false`, a throw or no hook leaves the page as before. ⚠ An app that sets it has
   each browser's DevTools opened and each document request paused once (a script, image or `fetch` is not), and an answer the server
   refuses is asked about again at once. Measured on Windows only.
+- **An app answers a Chromium page's `alert`, `confirm`, `prompt` and `beforeunload`: `OnScriptDialog`** on `ChromiumHostOptions` and
+  `ChromiumEngineOptions`. It gets a `ChromiumScriptDialogRequest` (`Kind`, `Origin`, `Message`, `DefaultText`, `IsReload`); set `Accept`
+  (and `ResultText` for a prompt) and return `true` and the page gets that answer with no dialog; `false`, a throw or no hook leaves
+  Chromium's own dialog, and CEF is only given the handler when the hook is set. A `beforeunload` answered with no `Accept` keeps the page
+  where it is. Measured on Windows only.
 - **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
   `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
   `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe

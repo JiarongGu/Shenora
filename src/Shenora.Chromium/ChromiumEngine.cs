@@ -108,6 +108,12 @@ public sealed class ChromiumEngineOptions
     /// <see cref="ChromiumHostOptions.OnAuthRequest"/>. CEF's UI thread: answer at once.
     /// </summary>
     public Func<ChromiumAuthRequest, bool>? OnAuthRequest { get; init; }
+
+    /// <summary>
+    /// Asked when a page raises a script dialog: the same hook, and the same contract, as
+    /// <see cref="ChromiumHostOptions.OnScriptDialog"/>. CEF's UI thread: answer at once.
+    /// </summary>
+    public Func<ChromiumScriptDialogRequest, bool>? OnScriptDialog { get; init; }
 }
 
 /// <summary>

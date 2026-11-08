@@ -42,6 +42,11 @@ namespace Shenora.Sample.Chromium;
 /// then cancels, which shows how often the page is asked again; <c>cancel</c> answers with none, and <c>decline</c> returns false: the server
 /// must see one request, with no credentials. ⚠ The page is then the server's: read the
 /// <c>RENDERER</c> and <c>RELOAD</c> lines as the reload of that page.</item>
+/// <item><c>SHENORA_SAMPLE_HOOKS_DIALOG=answer</c> or <c>refuse</c>: once the page is done it raises <c>alert</c>, <c>confirm</c> and
+/// <c>prompt</c> and then reloads itself with a <c>beforeunload</c> handler set. The hook is asked for each (<c>SCRIPTDIALOG</c>):
+/// <c>answer</c> accepts all and types <c>from the hook</c>, so the page must read <c>true</c> and that text and then reload (a second
+/// load); <c>refuse</c> answers <c>confirm</c> false, no prompt text and no leaving, so the page must read <c>false</c> and <c>null</c>
+/// and then report that it <c>stayed</c> (no second load). No dialog window of Chromium's may be on screen either way.</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -159,6 +164,19 @@ internal static class HooksProbe
         }
     };
 
+    // "answer" and "refuse": the page raises alert, confirm, prompt and a beforeunload, which the hook answers.
+    private static readonly string? Dialog = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_DIALOG") is "answer" or "refuse"
+        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_DIALOG") : null;
+
+    public static Func<ChromiumScriptDialogRequest, bool>? OnScriptDialog => !On || Dialog is null ? null : request =>
+    {
+        Log($"SCRIPTDIALOG hook: {request.Kind} from '{request.Origin}', message '{request.Message}', default '{request.DefaultText}', reload {request.IsReload}");
+        if (Dialog == "refuse") return true;
+        request.Accept = true;
+        request.ResultText = "from the hook";
+        return true;
+    };
+
     public static Func<ChromiumProcessReport, bool>? OnProcessFailed => !On ? null : failure =>
     {
         Log($"RENDERER hook: {failure.Status} ({failure.ErrorCode}); answering {(Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_PROBE") == "1" ? "handled" : "observed")}");
@@ -218,6 +236,7 @@ internal static class HooksProbe
         var finished = await Task.WhenAny(Done.Task, Task.Delay(30_000)) == Done.Task;
         await Task.Delay(1500);   // a download's file lands a moment after its hook answered
         Log($"PAGE finished: {finished}");
+        if (Dialog is not null) await Task.Delay(5000);   // the dialogs, and a beforeunload's reload or stay, settle
         if (Login.Value is { } login)
         {
             await Task.Delay(3000);   // the page's navigation, and a challenge's answer, settle
@@ -299,7 +318,7 @@ internal static class HooksProbe
 
     private static string PageHtml => PageTemplate.Replace("__AUTO__", Auto is null ? "false" : "true")
         .Replace("__CERTPORT__", (Server.Value?.Port ?? 0).ToString()).Replace("__FILE__", Pick is null ? "false" : "true")
-        .Replace("__AUTHPORT__", (Login.Value?.Port ?? 0).ToString());
+        .Replace("__AUTHPORT__", (Login.Value?.Port ?? 0).ToString()).Replace("__DIALOG__", Dialog is null ? "false" : "true");
 
     private const string PageTemplate = """
         <!doctype html><meta charset="utf-8"><title>hooks probe</title>
@@ -352,6 +371,17 @@ internal static class HooksProbe
           await new Promise(resolve => navigator.geolocation.getCurrentPosition(
             () => { say('geolocation', 'granted'); resolve(); }, e => { say('geolocation', 'denied ' + e.code); resolve(); }, { timeout: 5000 }));
           say('done', '1');
+          if (__DIALOG__) {
+            // Each of these blocks the page until the hook answers; with no answer the probe's reports below never come.
+            alert('probe alert'); await say('alert', 'returned');
+            await say('confirm', String(confirm('probe confirm?')));
+            await say('prompt', String(prompt('probe prompt?', 'default text')));
+            // A beforeunload needs the page to have had a user's gesture, which its clicks gave.
+            window.addEventListener('beforeunload', e => { e.preventDefault(); e.returnValue = ''; });
+            location.reload();
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            say('beforeunload', 'stayed');
+          }
           // The page itself goes to the server: the one request Chromium asks the certificate hook about.
           if (__CERTPORT__) { await new Promise(resolve => setTimeout(resolve, 300)); location.href = 'https://127.0.0.1:__CERTPORT__/page'; }
           // The same for a server that wants credentials: the page's own navigation meets the challenge.

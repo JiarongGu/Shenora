@@ -35,6 +35,7 @@ internal static class Program
             OnCertificateError = HooksProbe.OnCertificateError,
             OnFileDialog = HooksProbe.OnFileDialog,
             OnAuthRequest = HooksProbe.OnAuthRequest,
+            OnScriptDialog = HooksProbe.OnScriptDialog,
         });
         Form? form = null;
         builder.UseWindows(new WindowsHostOptions

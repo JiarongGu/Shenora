@@ -300,6 +300,53 @@ public sealed class ChromiumFileDialogRequest
     public IReadOnlyList<string> Paths { get; set; } = [];
 }
 
+/// <summary>Which dialog a page's script raised.</summary>
+public enum ChromiumScriptDialogKind
+{
+    /// <summary><c>alert(message)</c>: only an acknowledgement.</summary>
+    Alert,
+    /// <summary><c>confirm(message)</c>: accepted or not.</summary>
+    Confirm,
+    /// <summary><c>prompt(message, default)</c>: accepted with a text, or not.</summary>
+    Prompt,
+    /// <summary>The page's <c>beforeunload</c> handler asked whether to leave: accepted lets the page go.</summary>
+    BeforeUnload,
+}
+
+/// <summary>A dialog the page's script raised, offered to <see cref="ChromiumHostOptions.OnScriptDialog"/>.</summary>
+public sealed class ChromiumScriptDialogRequest
+{
+    internal ChromiumScriptDialogRequest(ChromiumScriptDialogKind kind, string origin, string message, string defaultText, bool isReload)
+    {
+        Kind = kind;
+        Origin = origin;
+        Message = message;
+        DefaultText = defaultText;
+        IsReload = isReload;
+    }
+
+    /// <summary>Which dialog the script raised.</summary>
+    public ChromiumScriptDialogKind Kind { get; }
+
+    /// <summary>The URL of the page that raised it; empty for <see cref="ChromiumScriptDialogKind.BeforeUnload"/>, which Chromium gives none.</summary>
+    public string Origin { get; }
+
+    /// <summary>The message the page gave; Chromium's own text for <see cref="ChromiumScriptDialogKind.BeforeUnload"/>, which a page cannot set.</summary>
+    public string Message { get; }
+
+    /// <summary>The text a <see cref="ChromiumScriptDialogKind.Prompt"/> starts with; empty for the others.</summary>
+    public string DefaultText { get; }
+
+    /// <summary>For <see cref="ChromiumScriptDialogKind.BeforeUnload"/>: the page is being reloaded, not left.</summary>
+    public bool IsReload { get; }
+
+    /// <summary>Whether the user's OK is answered (<c>confirm</c> returns true, a <c>prompt</c> its text, a <c>beforeunload</c> lets the page go). False until set.</summary>
+    public bool Accept { get; set; }
+
+    /// <summary>The text a <see cref="ChromiumScriptDialogKind.Prompt"/> returns when <see cref="Accept"/> is true; empty until set.</summary>
+    public string ResultText { get; set; } = "";
+}
+
 /// <summary>
 /// An HTTP authentication challenge the page met (a server's <c>401</c> or a proxy's <c>407</c>), offered to
 /// <see cref="ChromiumHostOptions.OnAuthRequest"/>.
@@ -346,30 +393,47 @@ public sealed class ChromiumAuthRequest
 /// The app's answers to what a page asks of the shell (<see cref="ChromiumHostOptions.OnDownloadStarting"/>,
 /// <see cref="ChromiumHostOptions.OnPermissionRequested"/>, <see cref="ChromiumHostOptions.OnProcessFailed"/>,
 /// <see cref="ChromiumHostOptions.OnCertificateError"/>, <see cref="ChromiumHostOptions.OnFileDialog"/>,
-/// <see cref="ChromiumHostOptions.OnAuthRequest"/>, and
+/// <see cref="ChromiumHostOptions.OnAuthRequest"/>, <see cref="ChromiumHostOptions.OnScriptDialog"/>, and
 /// <see cref="ChromiumHostOptions.OnDownloadProgress"/>, which only observes), and the
 /// shell's default for each when the app has none or declines. A hook that throws is logged and declines. CEF's UI thread.
 /// </summary>
 internal sealed class ChromiumPageHooks(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
     Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress = null,
     Func<ChromiumCertificateError, bool>? certificate = null, Func<ChromiumFileDialogRequest, bool>? fileDialog = null,
-    Func<ChromiumAuthRequest, bool>? auth = null)
+    Func<ChromiumAuthRequest, bool>? auth = null, Func<ChromiumScriptDialogRequest, bool>? scriptDialog = null)
 {
     /// <summary>The hooks the app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumHostOptions options) =>
         From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError,
-            options.OnFileDialog, options.OnAuthRequest);
+            options.OnFileDialog, options.OnAuthRequest, options.OnScriptDialog);
 
     /// <summary>The hooks the engine's app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumEngineOptions options) =>
         From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError,
-            options.OnFileDialog, options.OnAuthRequest);
+            options.OnFileDialog, options.OnAuthRequest, options.OnScriptDialog);
 
     private static ChromiumPageHooks? From(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
         Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress, Func<ChromiumCertificateError, bool>? certificate,
-        Func<ChromiumFileDialogRequest, bool>? fileDialog, Func<ChromiumAuthRequest, bool>? auth) =>
+        Func<ChromiumFileDialogRequest, bool>? fileDialog, Func<ChromiumAuthRequest, bool>? auth, Func<ChromiumScriptDialogRequest, bool>? scriptDialog) =>
         download is null && permission is null && failed is null && progress is null && certificate is null && fileDialog is null && auth is null
-            ? null : new ChromiumPageHooks(download, permission, failed, progress, certificate, fileDialog, auth);
+            && scriptDialog is null
+            ? null : new ChromiumPageHooks(download, permission, failed, progress, certificate, fileDialog, auth, scriptDialog);
+
+    /// <summary>Whether the app set a script dialog hook: without one CEF is not given a dialog handler and shows its own dialogs.</summary>
+    public bool HandlesScriptDialogs => scriptDialog is not null;
+
+    /// <summary>
+    /// The app's answer to the dialog, or null when it declined, threw or set no hook and Chromium's own dialog stands. The text is
+    /// empty unless the dialog is a prompt that was accepted.
+    /// </summary>
+    public (bool Accept, string Text)? ScriptDialog(ChromiumScriptDialogKind kind, string origin, string message, string defaultText, bool isReload, ILogger? log)
+    {
+        if (scriptDialog is null) return null;
+        var request = new ChromiumScriptDialogRequest(kind, origin, message, defaultText, isReload);
+        var handled = AppCallback.RunOrDefault(() => scriptDialog(request), false, Failed(log, nameof(ChromiumHostOptions.OnScriptDialog)));
+        if (!handled) return null;
+        return (request.Accept, request.Accept && kind == ChromiumScriptDialogKind.Prompt ? request.ResultText ?? "" : "");
+    }
 
     /// <summary>Whether the app set an authentication hook: only then is a page's DevTools channel opened to hear its challenges.</summary>
     public bool HandlesAuth => auth is not null;
