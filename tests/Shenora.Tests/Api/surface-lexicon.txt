@@ -150,6 +150,9 @@ Menu
 # `NSMenuItem`, WinForms' `ToolStripMenuItem`, Win32's `AppendMenu` "menu item").
 Item
 Optimized
+# `Page` — in `PageWindow`, the web page a shell hosts: the kit's own word for the document its webview shows and
+# that sends it requests (`PageSender`), which is the web platform's, not an app's.
+Page
 Panel
 # `Placement` (2026-08-16) — in `WindowPlacement`, how a window is sized against its monitor. Win32's
 # own word for it (`WINDOWPLACEMENT`, `GetWindowPlacement`), which the frameless chrome already calls,
