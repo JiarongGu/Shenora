@@ -301,31 +301,90 @@ public sealed class ChromiumFileDialogRequest
 }
 
 /// <summary>
+/// An HTTP authentication challenge the page met (a server's <c>401</c> or a proxy's <c>407</c>), offered to
+/// <see cref="ChromiumHostOptions.OnAuthRequest"/>.
+/// </summary>
+public sealed class ChromiumAuthRequest
+{
+    internal ChromiumAuthRequest(string url, string origin, string scheme, string realm, bool isProxy)
+    {
+        Url = url;
+        Origin = origin;
+        Scheme = scheme;
+        Realm = realm;
+        IsProxy = isProxy;
+    }
+
+    /// <summary>The address that was requested.</summary>
+    public string Url { get; }
+
+    /// <summary>The origin that asked for credentials, such as <c>http://device.local</c>: the proxy's, for a proxy.</summary>
+    public string Origin { get; }
+
+    /// <summary>The scheme the challenge named, in lower case: <c>basic</c>, <c>digest</c>, <c>ntlm</c>.</summary>
+    public string Scheme { get; }
+
+    /// <summary>The realm the challenge named; empty when it named none.</summary>
+    public string Realm { get; }
+
+    /// <summary>True when a proxy asked, false when the server did.</summary>
+    public bool IsProxy { get; }
+
+    /// <summary>The user name to answer with. Set both halves to answer; leave them null to cancel the challenge.</summary>
+    public string? UserName { get; set; }
+
+    /// <summary>The password to answer with. Set both halves to answer; leave them null to cancel the challenge.</summary>
+    public string? Password { get; set; }
+
+    /// <summary>Redacted: this object holds a password, and a log line or a debugger watch formats it.</summary>
+    public override string ToString() =>
+        $"{nameof(ChromiumAuthRequest)} {{ Url = {Url}, Scheme = {Scheme}, Realm = {Realm}, IsProxy = {IsProxy}, "
+        + $"UserName = {(UserName is null ? "null" : "***")}, Password = {(Password is null ? "null" : "***")} }}";
+}
+
+/// <summary>
 /// The app's answers to what a page asks of the shell (<see cref="ChromiumHostOptions.OnDownloadStarting"/>,
 /// <see cref="ChromiumHostOptions.OnPermissionRequested"/>, <see cref="ChromiumHostOptions.OnProcessFailed"/>,
-/// <see cref="ChromiumHostOptions.OnCertificateError"/>, <see cref="ChromiumHostOptions.OnFileDialog"/>, and
+/// <see cref="ChromiumHostOptions.OnCertificateError"/>, <see cref="ChromiumHostOptions.OnFileDialog"/>,
+/// <see cref="ChromiumHostOptions.OnAuthRequest"/>, and
 /// <see cref="ChromiumHostOptions.OnDownloadProgress"/>, which only observes), and the
 /// shell's default for each when the app has none or declines. A hook that throws is logged and declines. CEF's UI thread.
 /// </summary>
 internal sealed class ChromiumPageHooks(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
     Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress = null,
-    Func<ChromiumCertificateError, bool>? certificate = null, Func<ChromiumFileDialogRequest, bool>? fileDialog = null)
+    Func<ChromiumCertificateError, bool>? certificate = null, Func<ChromiumFileDialogRequest, bool>? fileDialog = null,
+    Func<ChromiumAuthRequest, bool>? auth = null)
 {
     /// <summary>The hooks the app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumHostOptions options) =>
         From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError,
-            options.OnFileDialog);
+            options.OnFileDialog, options.OnAuthRequest);
 
     /// <summary>The hooks the engine's app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumEngineOptions options) =>
         From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError,
-            options.OnFileDialog);
+            options.OnFileDialog, options.OnAuthRequest);
 
     private static ChromiumPageHooks? From(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
         Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress, Func<ChromiumCertificateError, bool>? certificate,
-        Func<ChromiumFileDialogRequest, bool>? fileDialog) =>
-        download is null && permission is null && failed is null && progress is null && certificate is null && fileDialog is null
-            ? null : new ChromiumPageHooks(download, permission, failed, progress, certificate, fileDialog);
+        Func<ChromiumFileDialogRequest, bool>? fileDialog, Func<ChromiumAuthRequest, bool>? auth) =>
+        download is null && permission is null && failed is null && progress is null && certificate is null && fileDialog is null && auth is null
+            ? null : new ChromiumPageHooks(download, permission, failed, progress, certificate, fileDialog, auth);
+
+    /// <summary>Whether the app set an authentication hook: only then is a page's DevTools channel opened to hear its challenges.</summary>
+    public bool HandlesAuth => auth is not null;
+
+    /// <summary>
+    /// The credentials the app answered the challenge with: both halves, or both null to cancel it. Null when the app declined, threw
+    /// or set no hook, and the challenge goes on as it did before the hook (the page's <c>401</c> body draws).
+    /// </summary>
+    public (string? UserName, string? Password)? Authenticate(ChromiumAuthRequest request, ILogger? log)
+    {
+        if (auth is null) return null;
+        var handled = AppCallback.RunOrDefault(() => auth(request), false, Failed(log, nameof(ChromiumHostOptions.OnAuthRequest)));
+        if (!handled) return null;
+        return request.UserName is { } user && request.Password is { } password ? (user, password) : (null, null);
+    }
 
     /// <summary>Whether the app set a file dialog hook: without one CEF is not given a dialog handler and shows its own dialog.</summary>
     public bool HandlesFileDialogs => fileDialog is not null;

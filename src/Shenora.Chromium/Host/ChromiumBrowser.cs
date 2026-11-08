@@ -257,9 +257,15 @@ internal sealed unsafe class ChromiumBrowser
         _browserId = browser->get_identifier(browser);
         using (var host = new CefRef<_cef_browser_host_t>(browser->get_host(browser)))
             if (!host.IsNull) Volatile.Write(ref _windowHandle, (nint)host.Ptr->get_window_handle(host.Ptr));   // per OS: HWND, X11 id, NSView*
+        if (_hooks is { HandlesAuth: true } && _auth is null)
+            using (var host = new CefRef<_cef_browser_host_t>(browser->get_host(browser)))
+                if (!host.IsNull) _auth = new ChromiumPageAuth(host.Ptr, _hooks, Name, _log);
         Bridge.Start();
         Host?.BrowserCreated();
     }
+
+    // The page's HTTP challenges, heard through the browser's DevTools only when the app set OnAuthRequest.
+    private ChromiumPageAuth? _auth;
 
     // Asked once: the page's first paint, from Chromium itself through the in-process DevTools protocol (no port), and
     // two animation frames after it, by which time the frame is on screen (measured: the paint event lands within
@@ -301,6 +307,8 @@ internal sealed unsafe class ChromiumBrowser
     private void BrowserClosing()
     {
         StopWatchingPaint();
+        _auth?.Dispose();
+        _auth = null;
         if (_browser == null) return;
         using (new CefRef<_cef_browser_t>(_browser))
         {

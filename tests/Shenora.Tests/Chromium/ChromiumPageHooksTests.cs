@@ -12,8 +12,10 @@ public class ChromiumPageHooksTests
     private static ChromiumPageHooks Hooks(Func<ChromiumDownloadRequest, bool>? download = null,
         Func<ChromiumPermissionRequest, bool>? permission = null, Func<ChromiumProcessReport, bool>? failed = null,
         Action<ChromiumDownloadProgress>? progress = null, Func<ChromiumCertificateError, bool>? certificate = null,
-        Func<ChromiumFileDialogRequest, bool>? fileDialog = null) =>
-        new(download, permission, failed, progress, certificate, fileDialog);
+        Func<ChromiumFileDialogRequest, bool>? fileDialog = null, Func<ChromiumAuthRequest, bool>? auth = null) =>
+        new(download, permission, failed, progress, certificate, fileDialog, auth);
+
+    private static ChromiumAuthRequest Challenge() => new("http://10.0.0.5/status", "http://10.0.0.5", "basic", "device", false);
 
     [Fact]
     public void No_hook_set_means_no_hooks() =>
@@ -29,6 +31,8 @@ public class ChromiumPageHooksTests
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnCertificateError = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnFileDialog = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnFileDialog = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnAuthRequest = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnAuthRequest = _ => false }));
     }
 
     [Fact]
@@ -280,6 +284,49 @@ public class ChromiumPageHooksTests
         Assert.Null(Hooks(fileDialog: r => { r.Paths = [@"C:ina"]; return false; }).FileDialog(ChromiumFileDialogMode.Open, "", "", [], null));
         Assert.Null(Hooks(fileDialog: _ => throw new InvalidOperationException("app bug")).FileDialog(ChromiumFileDialogMode.Open, "", "", [], null));
         Assert.Null(Hooks(download: _ => false).FileDialog(ChromiumFileDialogMode.Open, "", "", [], null));
+    }
+
+    [Fact]
+    public void Only_an_auth_hook_has_the_pages_DevTools_opened()
+    {
+        Assert.True(Hooks(auth: _ => false).HandlesAuth);
+        Assert.False(Hooks(download: _ => false, certificate: _ => false, fileDialog: _ => false).HandlesAuth);
+    }
+
+    [Fact]
+    public void A_challenge_the_app_answered_gives_its_credentials_and_shows_what_the_server_asked()
+    {
+        ChromiumAuthRequest? seen = null;
+        var hooks = Hooks(auth: r => { seen = r; r.UserName = "admin"; r.Password = "pw"; return true; });
+
+        Assert.Equal(("admin", "pw"), hooks.Authenticate(Challenge(), null));
+        Assert.Equal(("http://10.0.0.5/status", "http://10.0.0.5", "basic", "device", false), (seen!.Url, seen.Origin, seen.Scheme, seen.Realm, seen.IsProxy));
+    }
+
+    [Theory]
+    [InlineData("admin", null)]    // one half is not an answer
+    [InlineData(null, "pw")]
+    [InlineData(null, null)]
+    public void A_handled_challenge_without_both_halves_is_a_cancel(string? user, string? password) =>
+        Assert.Equal((null, null), Hooks(auth: r => { r.UserName = user; r.Password = password; return true; }).Authenticate(Challenge(), null));
+
+    [Fact]
+    public void A_challenge_the_app_declined_or_threw_on_is_left_as_it_was()
+    {
+        Assert.Null(Hooks(auth: r => { r.UserName = "admin"; r.Password = "pw"; return false; }).Authenticate(Challenge(), null));
+        Assert.Null(Hooks(auth: _ => throw new InvalidOperationException("app bug")).Authenticate(Challenge(), null));
+        Assert.Null(Hooks(download: _ => false).Authenticate(Challenge(), null));
+    }
+
+    [Fact]
+    public void A_challenges_text_never_prints_the_password()
+    {
+        var request = Challenge();
+        request.UserName = "admin";
+        request.Password = "hunter2";
+        var text = request.ToString();
+        Assert.DoesNotContain("hunter2", text);
+        Assert.DoesNotContain("admin", text);
     }
 
     [Theory]
