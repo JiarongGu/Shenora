@@ -228,6 +228,19 @@ public sealed class ChromiumHostOptions
     /// </para>
     /// </summary>
     public Func<ChromiumScriptDialogRequest, bool>? OnScriptDialog { get; init; }
+
+    /// <summary>
+    /// Asked when a server (or proxy) the window's page reaches wants the client to present a certificate, with the
+    /// certificates in the system's store it would accept. Set <see cref="ChromiumClientCertificateRequest.SelectedIndex"/> and
+    /// return <c>true</c> to present that one; return <c>true</c> with none set to present none, which the server may then refuse.
+    /// Return <c>false</c>, throw, or set no hook and Chromium's own picker shows, as it always has, and CEF is only given the
+    /// handler when the hook is set.
+    /// <para>
+    /// ⚠ Choose by <see cref="ChromiumClientCertificate.Sha256"/> or the issuer, never by position: the store's order is the
+    /// system's. CEF's UI thread: answer at once, which means a dialog of the app's own is not shown from here.
+    /// </para>
+    /// </summary>
+    public Func<ChromiumClientCertificateRequest, bool>? OnClientCertificateRequest { get; init; }
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

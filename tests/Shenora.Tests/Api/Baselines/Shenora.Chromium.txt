@@ -40,6 +40,18 @@ sealed class Shenora.Chromium.ChromiumChildBrowserOptions
   public System.Drawing.Color? BackgroundColor { get; init; }
   public string Name { get; init; }
   public string? Path { get; init; }
+sealed class Shenora.Chromium.ChromiumClientCertificate
+  public System.DateTimeOffset? ValidFrom { get; }
+  public System.DateTimeOffset? ValidUntil { get; }
+  public string Issuer { get; }
+  public string Sha256 { get; }
+  public string Subject { get; }
+sealed class Shenora.Chromium.ChromiumClientCertificateRequest
+  public System.Collections.Generic.IReadOnlyList<Shenora.Chromium.ChromiumClientCertificate> Certificates { get; }
+  public bool IsProxy { get; }
+  public int Port { get; }
+  public int? SelectedIndex { get; set; }
+  public string Host { get; }
 sealed class Shenora.Chromium.ChromiumDownloadProgress
   public Shenora.Chromium.ChromiumDownloadState State { get; }
   public bool IsPaused { get; }
@@ -92,6 +104,7 @@ sealed class Shenora.Chromium.ChromiumEngineOptions
   public System.Action<Shenora.Chromium.ChromiumDownloadProgress>? OnDownloadProgress { get; init; }
   public System.Func<Shenora.Chromium.ChromiumAuthRequest, bool>? OnAuthRequest { get; init; }
   public System.Func<Shenora.Chromium.ChromiumCertificateError, bool>? OnCertificateError { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumClientCertificateRequest, bool>? OnClientCertificateRequest { get; init; }
   public System.Func<Shenora.Chromium.ChromiumDownloadRequest, bool>? OnDownloadStarting { get; init; }
   public System.Func<Shenora.Chromium.ChromiumFileDialogRequest, bool>? OnFileDialog { get; init; }
   public System.Func<Shenora.Chromium.ChromiumPermissionRequest, bool>? OnPermissionRequested { get; init; }
@@ -134,6 +147,7 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public System.Action<Shenora.Core.Shell.UnhandledExceptionReport>? OnUnhandledException { get; init; }
   public System.Func<Shenora.Chromium.ChromiumAuthRequest, bool>? OnAuthRequest { get; init; }
   public System.Func<Shenora.Chromium.ChromiumCertificateError, bool>? OnCertificateError { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumClientCertificateRequest, bool>? OnClientCertificateRequest { get; init; }
   public System.Func<Shenora.Chromium.ChromiumDownloadRequest, bool>? OnDownloadStarting { get; init; }
   public System.Func<Shenora.Chromium.ChromiumFileDialogRequest, bool>? OnFileDialog { get; init; }
   public System.Func<Shenora.Chromium.ChromiumPermissionRequest, bool>? OnPermissionRequested { get; init; }
