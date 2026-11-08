@@ -597,9 +597,14 @@ reached the hook once, as the frame's own URL with nothing to tell it from a win
 page's address stayed); `wrong` in a frame was asked four times as in a window. A challenge on the window's first navigation (the
 server's address as the window's own start URL, so Fetch is enabled just after the browser exists) was asked and answered in 5 of 5
 runs on the shell sample and once on the `ChromiumView` one, and `decline` there left the server one request. A popup's challenge
-cannot arise in a shell window: a popup the hook does not take goes to the user's browser. Not run: a proxy challenge (`IsProxy`: a
-window's pages take the system's proxy, which the probe does not touch; only a session panel's profile takes one of its own), the
-digest and NTLM schemes, and a sub-resource's challenge.
+cannot arise in a shell window: a popup the hook does not take goes to the user's browser. Run too (`SHENORA_SAMPLE_HOOKS_AUTHSCHEME=digest`, a server checking the Digest response hash
+(MD5, qop auth) against `probe:secret`, both samples): `answer` reached the hook once as `digest` (realm `probe`) and the server verified the hash (`authorized`), `wrong` was asked 4 times in all as Basic was.
+And a sub-resource (`SHENORA_SAMPLE_HOOKS_AUTHAT=sub`: a page the server serves unchallenged fetches and loads an image from a path it challenges, after a cross-origin `fetch` of the same path from the probe's own page):
+the hook was asked 0 times for any of the three, each request reached the server once with no credentials, and the `fetch` was still pending 8 s later, as it was with no hook set (`AUTH=off`):
+a sub-resource's challenge is neither asked nor answered, and its request does not settle (both samples, one run each).
+Not run: a proxy challenge (`IsProxy`: a window's pages take the system's proxy, which the probe does not touch; only a session panel's profile takes one of its own). A try with
+`--proxy-server` given to the sample (it reached the browser process's command line) had the page navigate to a host that only the probe's proxy answers, and the proxy saw no connection at all, so the
+switch did not make the window's pages use it and why is not known), the NTLM scheme, and Negotiate.
 `OnScriptDialog` (CEF's `on_jsdialog` and `on_before_unload_dialog`, given to CEF only when the hook is set) was run on both samples
 (`SHENORA_SAMPLE_HOOKS_DIALOG=answer` or `refuse`; the page raises `alert`, `confirm`, `prompt` and then reloads itself with a
 `beforeunload` handler): each reached the hook with its kind, the page's URL as origin, the message and the prompt's default text; `answer`
@@ -629,8 +634,10 @@ server saw nothing, so Chromium's blocker refuses a popup with no gesture before
 (an iframe that exists before the click, whose own window opens the popup, `active=true` there) reached the hook for `window.open` and the link, 2 of 2 on each
 sample, with the same fields as the page's own and the frame's address not offered. ⚠ An iframe made after the click had `active=false` and its popup never reached the hook:
 a click's activation reaches the frames that exist, so a page that builds its frame late loses its popups to the blocker. `self`
-(`window.open(url, '_self')`) is no popup: the hook was asked 0 times and the page navigated (the server saw it). Not run: a redirect chain or `beforeunload`,
-a frame of another origin, and the `Disposition` and the window features (size, position) CEF gives are not offered.
+(`window.open(url, '_self')`) is no popup: the hook was asked 0 times and the page navigated (the server saw it). Run too (`=redirect`, `crossframe`, `beforeunload`, both samples, with `take`):
+a popup to an address that redirects reached the hook once per call with the address as written, before any hop (taken, the server saw neither the address nor the redirect, 1 run of each sample);
+an iframe of another origin that took the click itself (`active=true` there) and opened the popup reached the hook for `window.open` and the link, 2 of 2 on the shell sample and 1 on the `ChromiumView` one, with the same fields (the frame's address is not offered);
+and a popup opened from the page's own `beforeunload` handler as it reloaded never reached the hook (`active=false` there, so Chromium's blocker refused it first; 1 run of each sample). Not run: the `Disposition` and the window features (size, position) CEF gives, which are not offered.
 Build it like the shell sample
 (`ShenoraChromiumLayout` on, the app laid out beside CEF's launcher) and run `Shenora.Sample.ChromiumView.exe` with the same
 variables. The probe posts clicks until the page has counted three: its first posted click was lost in most runs, not the

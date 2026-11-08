@@ -43,7 +43,10 @@ namespace Shenora.Sample.Chromium;
 /// must see one request, with no credentials. ⚠ The page is then the server's: read the
 /// <c>RENDERER</c> and <c>RELOAD</c> lines as the reload of that page. <c>SHENORA_SAMPLE_HOOKS_AUTHAT=frame</c> has the page
 /// put the server in an iframe instead of navigating itself (the <c>authframe loaded</c> line, and the page's own address stays), and
-/// <c>first</c> makes the server's address the window's own first navigation: there is no probe page then, only the <c>AUTH</c> lines.</item>
+/// <c>first</c> makes the server's address the window's own first navigation: there is no probe page then, only the <c>AUTH</c> lines, and
+/// <c>sub</c> has the server serve its page unchallenged and challenge a <c>/sub</c> that the page fetches and loads as an image (and that the
+/// probe's own page fetches across origins first; the <c>authsub</c> line says whether that fetch settled). <c>SHENORA_SAMPLE_HOOKS_AUTHSCHEME=digest</c>
+/// makes the challenge Digest, which the server checks the response hash of. <c>SHENORA_SAMPLE_HOOKS_AUTH=off</c> sets no hook: the control.</item>
 /// <item><c>SHENORA_SAMPLE_HOOKS_DIALOG=answer</c> or <c>refuse</c>: once the page is done it raises <c>alert</c>, <c>confirm</c> and
 /// <c>prompt</c> and then reloads itself with a <c>beforeunload</c> handler set. The hook is asked for each (<c>SCRIPTDIALOG</c>):
 /// <c>answer</c> accepts all and types <c>from the hook</c>, so the page must read <c>true</c> and that text and then reload (a second
@@ -65,7 +68,9 @@ namespace Shenora.Sample.Chromium;
 /// the user's browser (⚠ which opens on this machine) and the server must see requests. No window of Chromium's may be on screen either way, and <c>window.open</c> must return null.
 /// <c>SHENORA_SAMPLE_HOOKS_POPUPAT=nogesture</c> raises them after the activation has lapsed (<c>popup active=false</c>), <c>frame</c> from an
 /// iframe of the page (<c>popup frame active=…</c>), and <c>self</c> navigates the page itself with <c>window.open(url, '_self')</c> (the hook
-/// must not be asked).</item>
+/// must not be asked), <c>redirect</c> opens the server's <c>/redirect</c> (the hook is asked with that address, before any hop),
+/// <c>crossframe</c> has an iframe of another origin (the server's <c>/frame</c>) take the last click itself and open the popup, and <c>beforeunload</c>
+/// opens one from the page's <c>beforeunload</c> handler as it reloads.</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -90,7 +95,7 @@ internal static class HooksProbe
     public static bool Active => On;
 
     /// <summary>The page the main window shows: the probe's own while it runs, else the one given.</summary>
-    public static string Page(string normal) => !On ? normal : AuthAt == "first" && Login.Value is { } first ? $"http://127.0.0.1:{first.Port}/page" : "hooks.html";
+    public static string Page(string normal) => !On ? normal : AuthAt == "first" && Login.Value is not null ? $"http://{AuthHost}/page" : "hooks.html";
 
     /// <summary>The app's provider, answering the probe's page and its reports first while it runs.</summary>
     public static IWebViewResourceProvider? Provider(IWebViewResourceProvider? app) => On ? new ProbeProvider(app) : app;
@@ -185,18 +190,38 @@ internal static class HooksProbe
     };
 
     // "answer", "wrong", "cancel" and "decline": the page navigates to a loopback server that wants Basic credentials.
-    private static readonly string? Auth = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTH") is "answer" or "wrong" or "cancel" or "decline"
+    private static readonly string? Auth = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTH") is "answer" or "wrong" or "cancel" or "decline" or "off"
         ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTH") : null;
-    private static readonly Lazy<AuthServer?> Login = new(() => On && Auth is not null ? new AuthServer(Log) : null);
+    // "digest": the server's challenge is Digest (MD5, qop auth); unset, Basic.
+    private static readonly string AuthScheme = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTHSCHEME") switch { "digest" => "digest", _ => "basic" };
 
-    // Where the challenge is raised: "frame" (an iframe of the probe's page) or "first" (the window's own first navigation, which is the
-    // server's address, so there is no probe page); unset, the page navigates itself to the server once it is done.
-    private static readonly string? AuthAt = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTHAT") is "frame" or "first"
+    private static readonly Lazy<AuthServer?> Login = new(() => On && Auth is not null
+        ? new AuthServer(Log, scheme: AuthScheme, challengedPath: AuthAt == "sub" ? "/sub" : "/page",
+            pages: AuthAt == "sub" ? new Dictionary<string, string> { ["/page"] = SubPage } : null)
+        : null);
+
+    // Where the challenge is raised: "frame" (an iframe of the probe's page), "first" (the window's own first navigation, which is the
+    // server's address, so there is no probe page) or "sub" (the page the server serves unchallenged fetches and loads an image from a
+    // path of it that is challenged, and the probe's own page fetches that path across origins first); unset, the page navigates itself
+    // to the server once it is done.
+    private static readonly string? AuthAt = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTHAT") is "frame" or "first" or "sub"
         ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTHAT") : null;
+
+    private static string AuthHost => $"127.0.0.1:{Login.Value?.Port}";
+
+    private const string SubPage = """
+        <title>sub page</title><script>
+        const note = t => fetch('/note/' + encodeURIComponent(t)).catch(() => {});
+        fetch('/sub').then(r => note('sub fetch status ' + r.status), e => note('sub fetch failed ' + e.message));
+        const img = new Image();
+        img.onload = () => note('sub img loaded'); img.onerror = () => note('sub img failed');
+        img.src = '/sub?img';
+        </script>
+        """;
     private static int _asked;
     private static int _popups;
 
-    public static Func<ChromiumAuthRequest, bool>? OnAuthRequest => !On || Auth is null ? null : request =>
+    public static Func<ChromiumAuthRequest, bool>? OnAuthRequest => !On || Auth is null or "off" ? null : request =>
     {
         var count = Interlocked.Increment(ref _asked);
         Log($"AUTH hook #{count}: {request.Scheme} realm '{request.Realm}' of {request.Origin} for {request.Url}, proxy {request.IsProxy}, as text {request}");
@@ -225,12 +250,30 @@ internal static class HooksProbe
     // "take" and "decline": the page opens windows, which the hook takes or leaves to the shell's policy.
     private static readonly string? Popup = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUP") is "take" or "decline" or "browser"
         ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUP") : null;
-    private static readonly Lazy<AuthServer?> Opened = new(() => On && Popup is not null ? new AuthServer(Log, "POPUP", challenge: false) : null);
+    private static readonly Lazy<AuthServer?> Opened = new(() => On && Popup is not null
+        ? new AuthServer(Log, "POPUP", challenge: false, pages: new Dictionary<string, string> { ["/frame"] = CrossFrame })
+        : null);
 
     // Where the popup is raised: "nogesture" (after the last click's user activation has lapsed), "frame" (by an iframe of the page, inside
     // the activation) or "self" (a `_self` navigation, which is no popup); unset, the page itself raises it inside the activation.
-    private static readonly string? PopupAt = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUPAT") is "nogesture" or "frame" or "self"
+    private static readonly string? PopupAt = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUPAT") is "nogesture" or "frame" or "self" or "redirect" or "crossframe" or "beforeunload"
         ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUPAT") : null;
+    private static readonly TaskCompletionSource CrossReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    // "crossframe": the frame is the server's, another origin than the page. A click that reaches it is its own gesture; it opens the popup itself.
+    private const string CrossFrame = """
+        <body style="margin:0;background:#642"><script>
+        const note = t => fetch('/note/' + encodeURIComponent(t)).catch(() => {});
+        addEventListener('click', e => {
+          if (!e.isTrusted) return;   // the link's own click below
+          note('frame click active=' + navigator.userActivation.isActive + ' trusted=' + e.isTrusted);
+          const w = window.open('/page', 'probe-side');
+          note('frame window.open returned ' + (w === null ? 'null' : 'a window'));
+          const a = document.createElement('a'); a.href = '/page'; a.target = '_blank'; document.body.append(a); a.click();
+        });
+        note('frame loaded');
+        </script>
+        """;
 
     public static Func<ChromiumPopupRequest, bool>? OnPopupRequested => !On || Popup is null ? null : request =>
     {
@@ -308,13 +351,24 @@ internal static class HooksProbe
             PostMessageW(hwnd, WmLButtonUp, 0, center);
             await Task.Delay(1500);
         }
+        if (PopupAt == "crossframe" && Opened.Value is { } framed && await Task.WhenAny(CrossReady.Task, Task.Delay(20_000)) == CrossReady.Task)
+        {
+            // The frame now takes the clicks: until it has reported one, which it opens its popup in.
+            for (var i = 0; i < 4 && framed.FrameClicks == 0; i++)
+            {
+                PostMessageW(hwnd, WmMouseMove, 0, center);
+                PostMessageW(hwnd, WmLButtonDown, MkLButton, center);
+                PostMessageW(hwnd, WmLButtonUp, 0, center);
+                await Task.Delay(1200);
+            }
+        }
         var finished = await Task.WhenAny(Done.Task, Task.Delay(30_000)) == Done.Task;
         await Task.Delay(1500);   // a download's file lands a moment after its hook answered
         Log($"PAGE finished: {finished}");
         if (Popup is not null && Opened.Value is { } served)
         {
             await Task.Delay(3000);   // a popup the shell opened would have reached the server by now
-            Log($"POPUP server saw {served.Requests} request(s) for the page; the hook was asked {Volatile.Read(ref _popups)} time(s)");
+            Log($"POPUP server saw {served.Requests} request(s) for the page and {served.Redirects} for the redirect; the hook was asked {Volatile.Read(ref _popups)} time(s)");
         }
         if (Dialog is not null) await Task.Delay(5000);   // the dialogs, and a beforeunload's reload or stay, settle
         if (ClientCert is not null && Server.Value is { } mutual)
@@ -326,8 +380,9 @@ internal static class HooksProbe
         }
         if (Login.Value is { } login)
         {
-            await Task.Delay(3000);   // the page's navigation, and a challenge's answer, settle
-            Log($"AUTH server saw {login.Requests} request(s) for the page, {login.Authorized} authorized; the hook was asked {Volatile.Read(ref _asked)} time(s)");
+            await Task.Delay(AuthAt == "sub" ? 14000 : 3000);   // the page's navigation, and a challenge's answer, settle
+            Log($"AUTH server saw {login.Requests} request(s) for the page, {login.Authorized} authorized, {login.SubRequests} for the sub-resource, {login.SubAuthorized} authorized; "
+                + $"the hook was asked {Volatile.Read(ref _asked)} time(s)");
         }
         foreach (var name in new[] { "yes.txt", "no.txt", "decline.txt", "auto1.txt", "auto2.txt" })
         {
@@ -406,7 +461,9 @@ internal static class HooksProbe
     private static string PageHtml => PageTemplate.Replace("__AUTO__", Auto is null ? "false" : "true")
         .Replace("__CERTPORT__", (Server.Value?.Port ?? 0).ToString()).Replace("__FILE__", Pick is null ? "false" : "true")
         .Replace("__AUTHPORT__", (Login.Value?.Port ?? 0).ToString()).Replace("__AUTHFRAME__", AuthAt == "frame" ? "true" : "false").Replace("__DIALOG__", Dialog is null ? "false" : "true")
-        .Replace("__POPUPAT__", PopupAt ?? "").Replace("__POPUPURL__", Popup is null ? "''" : Popup is "take" or "browser" ? $"'http://127.0.0.1:{Opened.Value?.Port}/page'" : "'ftp://127.0.0.1/popup'");
+        .Replace("__POPUPAT__", PopupAt ?? "").Replace("__POPUPPORT__", (Opened.Value?.Port ?? 0).ToString()).Replace("__AUTHSUB__", AuthAt == "sub" ? "true" : "false")
+        .Replace("__AUTHHOST__", Login.Value is null ? "" : AuthHost)
+        .Replace("__POPUPURL__", Popup is null ? "''" : Popup is "take" or "browser" ? $"'http://127.0.0.1:{Opened.Value?.Port}/{(PopupAt == "redirect" ? "redirect" : "page")}'" : "'ftp://127.0.0.1/popup'");
 
     private const string PageTemplate = """
         <!doctype html><meta charset="utf-8"><title>hooks probe</title>
@@ -435,10 +492,33 @@ internal static class HooksProbe
             frame.addEventListener('load', () => resolve(frame.contentWindow));
             document.body.append(frame);
           });
+          // "popupat=crossframe": an iframe of the server's, another origin; it exists before the click, lets the clicks through to the link,
+          // and takes them once the link's three are done.
+          const crossFrame = '__POPUPAT__' !== 'crossframe' ? null : new Promise(resolve => {
+            const frame = document.createElement('iframe');
+            frame.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;z-index:9;pointer-events:none';
+            frame.addEventListener('load', () => resolve(frame));
+            frame.src = 'http://127.0.0.1:__POPUPPORT__/frame';
+            document.body.append(frame);
+          });
+          if (crossFrame) await crossFrame;
           say('ready', '1');
           await finished;
           const popupAt = '__POPUPAT__';
-          if (__POPUPURL__ && popupAt !== 'self') {
+          if (crossFrame) {
+            (await crossFrame).style.pointerEvents = 'auto';
+            say('crossready', 'active=' + navigator.userActivation.isActive);
+            await new Promise(resolve => setTimeout(resolve, 6000));
+          } else if (__POPUPURL__ && popupAt === 'beforeunload') {
+            // A popup raised while the page is being left, inside the last click's activation: the reload below runs the handler.
+            window.addEventListener('beforeunload', () => {
+              const opened = window.open(__POPUPURL__, 'probe-side');
+              say('popup', 'beforeunload active=' + navigator.userActivation.isActive + ' window.open returned ' + (opened === null ? 'null' : 'a window'));
+            });
+            await say('done', '1');
+            location.reload();
+            return;
+          } else if (__POPUPURL__ && popupAt !== 'self') {
             // Inside the last click's user activation, which a popup needs to get past Chromium's blocker to the hook; "nogesture" waits it out.
             if (popupAt === 'nogesture') await new Promise(resolve => setTimeout(resolve, 6500));
             const host = popupFrame ? await popupFrame : window;
@@ -504,13 +584,16 @@ internal static class HooksProbe
           // The same for a server that wants credentials: the page's own navigation meets the challenge.
           if (__AUTHPORT__) {
             await new Promise(resolve => setTimeout(resolve, 300));
+            // A sub-resource across origins: the server's own page makes the same-origin ones once the page is its.
+            if (__AUTHSUB__) await Promise.race([fetch('http://127.0.0.1:__AUTHPORT__/sub', { mode: 'no-cors' }).then(r => say('authsub', 'cross-origin fetch settled, status ' + r.status + ' type ' + r.type), e => say('authsub', 'cross-origin fetch failed ' + e.message)),
+              new Promise(resolve => setTimeout(() => say('authsub', 'cross-origin fetch still pending after 8 s').then(resolve), 8000))]);
             if (__AUTHFRAME__) {
               // A frame's own navigation meets the challenge; the page itself stays where it is.
               const frame = document.createElement('iframe');
               frame.addEventListener('load', () => say('authframe', 'loaded'));
-              frame.src = 'http://127.0.0.1:__AUTHPORT__/page';
+              frame.src = 'http://__AUTHHOST__/page';
               document.body.append(frame);
-            } else location.href = 'http://127.0.0.1:__AUTHPORT__/page';
+            } else location.href = 'http://__AUTHHOST__/page';
           }
         })();
         </script>
@@ -643,18 +726,25 @@ internal static class HooksProbe
         }
     }
 
-    /// <summary>A loopback HTTP server that answers <c>401</c> with a Basic challenge until a request carries <c>probe:secret</c>.</summary>
+    /// <summary>
+    /// A loopback HTTP server that answers <c>401</c> with a challenge until a request carries <c>probe:secret</c>: Basic, or Digest (MD5, qop
+    /// auth). Only <paramref name="challengedPath"/> is challenged (<c>/page</c>, or <c>/sub</c> for a sub-resource of an unchallenged page). It also
+    /// serves <c>/note/…</c> (logged), <c>/redirect</c> (to <c>/page</c>) and the HTML of <paramref name="pages"/>.
+    /// </summary>
     private sealed class AuthServer
     {
-        private readonly System.Net.Sockets.TcpListener _listener = new(System.Net.IPAddress.Loopback, 0);
-        private int _requests, _authorized;
+        private readonly System.Net.Sockets.TcpListener _listener;
+        private int _requests, _authorized, _subRequests, _subAuthorized, _redirects, _frameClicks;
 
-        public AuthServer(Action<string> log, string name = "AUTH", bool challenge = true)
+        public AuthServer(Action<string> log, string name = "AUTH", bool challenge = true, string scheme = "basic", string challengedPath = "/page",
+            IReadOnlyDictionary<string, string>? pages = null)
         {
+            _listener = new(System.Net.IPAddress.Loopback, 0);
             _listener.Start();
             Port = ((System.Net.IPEndPoint)_listener.LocalEndpoint).Port;
-            log($"{name} server on {Port}");
+            log($"{name} server on {Port} ({scheme}, challenging {(challenge ? challengedPath : "nothing")})");
             var expected = "Basic " + Convert.ToBase64String(Encoding.ASCII.GetBytes("probe:secret"));
+            var nonce = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
             _ = Task.Run(async () =>
             {
                 while (true)
@@ -670,15 +760,41 @@ internal static class HooksProbe
                             var read = await stream.ReadAsync(buffer);
                             if (read == 0) return;   // a connection Chromium opened ahead and never used
                             var head = Encoding.ASCII.GetString(buffer, 0, read);
-                            var path = head.Split(' ', 3)[1];
-                            if (path != "/page") { await Reply(stream, "404 Not Found", ""); return; }   // a favicon
-                            var credentials = head.Split("\r\n").FirstOrDefault(l => l.StartsWith("Authorization:", StringComparison.OrdinalIgnoreCase))?[14..].Trim();
-                            Interlocked.Increment(ref _requests);
-                            var ok = !challenge || credentials == expected;
-                            if (ok) Interlocked.Increment(ref _authorized);
-                            log($"{name} server: GET {path} with {(credentials is null ? "no credentials" : ok ? "the right credentials (authorized)" : "wrong credentials")}");
-                            if (ok) await Reply(stream, "200 OK", "<title>authed page</title><p>behind the login");
-                            else await Reply(stream, "401 Unauthorized", "<title>401 body</title><p>login needed", "WWW-Authenticate: Basic realm=\"probe\"\r\n");
+                            var line = head.Split(' ', 3);
+                            var target = line[1];
+                            var path = Uri.TryCreate(target, UriKind.Absolute, out var absolute) ? absolute.PathAndQuery : target;
+                            var route = path.Split('?')[0];
+                            var headers = head.Split("\r\n");
+                            string? Header(string header) => headers.FirstOrDefault(l => l.StartsWith(header + ":", StringComparison.OrdinalIgnoreCase))?[(header.Length + 1)..].Trim();
+                            if (route.StartsWith("/note/", StringComparison.Ordinal))
+                            {
+                                var note = Uri.UnescapeDataString(route["/note/".Length..]);
+                                if (note.StartsWith("frame click", StringComparison.Ordinal)) Interlocked.Increment(ref _frameClicks);
+                                log($"{name} server note: {note}");
+                                await Reply(stream, "200 OK", "");
+                                return;
+                            }
+                            if (route == "/redirect")
+                            {
+                                Interlocked.Increment(ref _redirects);
+                                log($"{name} server: GET /redirect, sent on to /page");
+                                await Reply(stream, "302 Found", "", $"Location: http://127.0.0.1:{Port}/page\r\n");
+                                return;
+                            }
+                            if (route is not ("/page" or "/sub" or "/frame")) { log($"{name} server: {line[0]} {target} answered 404"); await Reply(stream, "404 Not Found", ""); return; }   // a favicon
+                            var credentials = Header("Authorization");
+                            var challenged = challenge && route == challengedPath;
+                            var ok = !challenged || (scheme == "digest" ? DigestOk(credentials, line[0], path, nonce) : credentials == expected);
+                            if (route == "/sub") { Interlocked.Increment(ref _subRequests); if (ok) Interlocked.Increment(ref _subAuthorized); }
+                            else if (route == "/page") { Interlocked.Increment(ref _requests); if (ok) Interlocked.Increment(ref _authorized); }
+                            log($"{name} server: {line[0]} {path} (site {Header("Sec-Fetch-Site") ?? "?"}, dest {Header("Sec-Fetch-Dest") ?? "?"}) with "
+                                + $"{(credentials is null ? "no credentials" : ok ? "the right credentials (authorized)" : "wrong credentials")}"
+                                + (credentials is { } sent && scheme == "digest" ? $" [{sent[..Math.Min(sent.Length, 24)]}…]" : ""));
+                            var html = pages?.GetValueOrDefault(route) ?? (route == "/frame" ? "" : "<title>authed page</title><p>behind the login");
+                            if (ok) await Reply(stream, "200 OK", html);
+                            else await Reply(stream, "401 Unauthorized", "<title>401 body</title><p>login needed", scheme == "digest"
+                                ? $"WWW-Authenticate: Digest realm=\"probe\", nonce=\"{nonce}\", qop=\"auth\", algorithm=MD5\r\n"
+                                : "WWW-Authenticate: Basic realm=\"probe\"\r\n");
                         }
                         catch (Exception ex) { log($"{name} server: the connection ended ({ex.GetType().Name}: {ex.Message})"); }
                     });
@@ -689,9 +805,39 @@ internal static class HooksProbe
         private static async Task Reply(System.Net.Sockets.NetworkStream stream, string status, string body, string extraHeaders = "") =>
             await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status}\r\nContent-Type: text/html\r\nContent-Length: {body.Length}\r\n{extraHeaders}Connection: close\r\n\r\n{body}"));
 
+        // A digest answer is right when the response hash is the one the server computes from probe:secret and the nonce it issued.
+        private static bool DigestOk(string? header, string method, string uri, string nonce)
+        {
+            if (header is null || !header.StartsWith("Digest ", StringComparison.OrdinalIgnoreCase)) return false;
+            var fields = System.Text.RegularExpressions.Regex.Matches(header[7..], "(\\w+)=(\"([^\"]*)\"|[^,\\s]*)")
+                .ToDictionary(m => m.Groups[1].Value.ToLowerInvariant(), m => m.Groups[3].Success ? m.Groups[3].Value : m.Groups[2].Value);
+            static string Md5(string text) => Convert.ToHexString(System.Security.Cryptography.MD5.HashData(Encoding.ASCII.GetBytes(text))).ToLowerInvariant();
+            if (fields.GetValueOrDefault("username") != "probe" || fields.GetValueOrDefault("nonce") != nonce || fields.GetValueOrDefault("uri") != uri) return false;
+            var ha1 = Md5("probe:probe:secret");
+            var ha2 = Md5($"{method}:{uri}");
+            var response = Md5($"{ha1}:{nonce}:{fields.GetValueOrDefault("nc")}:{fields.GetValueOrDefault("cnonce")}:{fields.GetValueOrDefault("qop")}:{ha2}");
+            return fields.GetValueOrDefault("response") == response;
+        }
+
         public int Port { get; }
+
+        /// <summary>The requests for <c>/page</c>.</summary>
         public int Requests => Volatile.Read(ref _requests);
+
+        /// <summary>The requests for <c>/page</c> that carried the right credentials, or needed none.</summary>
         public int Authorized => Volatile.Read(ref _authorized);
+
+        /// <summary>The requests for <c>/sub</c>.</summary>
+        public int SubRequests => Volatile.Read(ref _subRequests);
+
+        /// <summary>The requests for <c>/sub</c> that carried the right credentials, or needed none.</summary>
+        public int SubAuthorized => Volatile.Read(ref _subAuthorized);
+
+        /// <summary>The requests for <c>/redirect</c>.</summary>
+        public int Redirects => Volatile.Read(ref _redirects);
+
+        /// <summary>The clicks the cross-origin frame has reported.</summary>
+        public int FrameClicks => Volatile.Read(ref _frameClicks);
     }
 
     /// <summary>A body that arrives in 12 chunks, 400 ms apart, with no announced length: a download long enough to be paused.</summary>
@@ -742,6 +888,7 @@ internal static class HooksProbe
             Log($"PAGE {report[0]}: {Uri.UnescapeDataString(report.ElementAtOrDefault(1) ?? "")}");
             if (report[0] == "click") Interlocked.Increment(ref _pageClicks);
             if (report[0] == "ready") Ready.TrySetResult();
+            if (report[0] == "crossready") CrossReady.TrySetResult();
             if (report[0] == "done") Done.TrySetResult();
             return new MemoryStream(Encoding.UTF8.GetBytes(count.ToString()));
         }
