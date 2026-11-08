@@ -112,6 +112,10 @@ Permission
 # because the mechanism is genuinely one a shell owns and a page cannot reach — the web API works only
 # in fullscreen and not at all in WKWebView.
 Orientation
+# `ChromiumPopupRequest` — a window the PAGE asks to open (`window.open`, `target="_blank"`), which no shell opens on its own:
+# CEF's own callback is `on_before_popup`, Chromium's blocker is the "popup blocker", and the DOM's word is "popup". `Window`
+# alone is the app's own windows (`ChromiumWindows`), which this is not; "NewWindow" is WebView2's spelling for the same event.
+Popup
 # `IMediaSurface` / `MediaSurfaceRegion` — somewhere for a player to put pixels. The platforms' own word
 # (Android `Surface`/`SurfaceView`/`ISurfaceHolder`, Core Animation's backing surfaces), and D58 already
 # uses it for the same idea in the other direction: "the webview is one of its SURFACES". Every paraphrase

@@ -37,6 +37,7 @@ internal static class Program
             OnAuthRequest = HooksProbe.OnAuthRequest,
             OnScriptDialog = HooksProbe.OnScriptDialog,
             OnClientCertificateRequest = HooksProbe.OnClientCertificateRequest,
+            OnPopupRequested = HooksProbe.OnPopupRequested,
         });
         Form? form = null;
         builder.UseWindows(new WindowsHostOptions

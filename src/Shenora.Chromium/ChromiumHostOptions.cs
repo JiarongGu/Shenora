@@ -241,6 +241,18 @@ public sealed class ChromiumHostOptions
     /// </para>
     /// </summary>
     public Func<ChromiumClientCertificateRequest, bool>? OnClientCertificateRequest { get; init; }
+
+    /// <summary>
+    /// Asked when a window's page tries to open a window of its own (<c>window.open</c>, a <c>target="_blank"</c> link). Return
+    /// <c>true</c> to take it: the shell then does nothing with it, so the hook opens what the app wants (or nothing, which blocks
+    /// it). Return <c>false</c>, throw, or set no hook and the shell does what it always has: an http or https address opens in
+    /// the user's browser and any other is dropped. Chromium never opens a window of its own for a page's popup here.
+    /// <para>
+    /// ⚠ The address is the page's: check its scheme and host before handing it to the system, as the default does for http and
+    /// https only. CEF's UI thread: answer at once.
+    /// </para>
+    /// </summary>
+    public Func<ChromiumPopupRequest, bool>? OnPopupRequested { get; init; }
 }
 
 /// <summary>A Chromium window: CEF's own window around one browser view (D82).</summary>

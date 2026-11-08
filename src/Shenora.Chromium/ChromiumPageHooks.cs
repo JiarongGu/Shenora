@@ -447,12 +447,32 @@ public sealed class ChromiumClientCertificateRequest
     public int? SelectedIndex { get; set; }
 }
 
+/// <summary>A window the page asked to open (<c>window.open</c>, a <c>target="_blank"</c> link), offered to <see cref="ChromiumHostOptions.OnPopupRequested"/>.</summary>
+public sealed class ChromiumPopupRequest
+{
+    internal ChromiumPopupRequest(string url, string frameName, bool isUserGesture)
+    {
+        Url = url;
+        FrameName = frameName;
+        IsUserGesture = isUserGesture;
+    }
+
+    /// <summary>The address the page named, resolved against the page: any scheme, and empty or <c>about:blank</c> for a window the page fills itself.</summary>
+    public string Url { get; }
+
+    /// <summary>The target's name (<c>window.open</c>'s second argument, a link's <c>target</c>); empty when it has none or is <c>_blank</c>.</summary>
+    public string FrameName { get; }
+
+    /// <summary>Whether a click or key of the user started it, rather than the page's own script.</summary>
+    public bool IsUserGesture { get; }
+}
+
 /// <summary>
 /// The app's answers to what a page asks of the shell (<see cref="ChromiumHostOptions.OnDownloadStarting"/>,
 /// <see cref="ChromiumHostOptions.OnPermissionRequested"/>, <see cref="ChromiumHostOptions.OnProcessFailed"/>,
 /// <see cref="ChromiumHostOptions.OnCertificateError"/>, <see cref="ChromiumHostOptions.OnFileDialog"/>,
 /// <see cref="ChromiumHostOptions.OnAuthRequest"/>, <see cref="ChromiumHostOptions.OnScriptDialog"/>,
-/// <see cref="ChromiumHostOptions.OnClientCertificateRequest"/>, and
+/// <see cref="ChromiumHostOptions.OnClientCertificateRequest"/>, <see cref="ChromiumHostOptions.OnPopupRequested"/>, and
 /// <see cref="ChromiumHostOptions.OnDownloadProgress"/>, which only observes), and the
 /// shell's default for each when the app has none or declines. A hook that throws is logged and declines. CEF's UI thread.
 /// </summary>
@@ -460,25 +480,36 @@ internal sealed class ChromiumPageHooks(Func<ChromiumDownloadRequest, bool>? dow
     Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress = null,
     Func<ChromiumCertificateError, bool>? certificate = null, Func<ChromiumFileDialogRequest, bool>? fileDialog = null,
     Func<ChromiumAuthRequest, bool>? auth = null, Func<ChromiumScriptDialogRequest, bool>? scriptDialog = null,
-    Func<ChromiumClientCertificateRequest, bool>? clientCertificate = null)
+    Func<ChromiumClientCertificateRequest, bool>? clientCertificate = null, Func<ChromiumPopupRequest, bool>? popup = null)
 {
     /// <summary>The hooks the app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumHostOptions options) =>
         From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError,
-            options.OnFileDialog, options.OnAuthRequest, options.OnScriptDialog, options.OnClientCertificateRequest);
+            options.OnFileDialog, options.OnAuthRequest, options.OnScriptDialog, options.OnClientCertificateRequest, options.OnPopupRequested);
 
     /// <summary>The hooks the engine's app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumEngineOptions options) =>
         From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError,
-            options.OnFileDialog, options.OnAuthRequest, options.OnScriptDialog, options.OnClientCertificateRequest);
+            options.OnFileDialog, options.OnAuthRequest, options.OnScriptDialog, options.OnClientCertificateRequest, options.OnPopupRequested);
 
     private static ChromiumPageHooks? From(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
         Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress, Func<ChromiumCertificateError, bool>? certificate,
         Func<ChromiumFileDialogRequest, bool>? fileDialog, Func<ChromiumAuthRequest, bool>? auth, Func<ChromiumScriptDialogRequest, bool>? scriptDialog,
-        Func<ChromiumClientCertificateRequest, bool>? clientCertificate) =>
+        Func<ChromiumClientCertificateRequest, bool>? clientCertificate, Func<ChromiumPopupRequest, bool>? popup) =>
         download is null && permission is null && failed is null && progress is null && certificate is null && fileDialog is null && auth is null
-            && scriptDialog is null && clientCertificate is null
-            ? null : new ChromiumPageHooks(download, permission, failed, progress, certificate, fileDialog, auth, scriptDialog, clientCertificate);
+            && scriptDialog is null && clientCertificate is null && popup is null
+            ? null : new ChromiumPageHooks(download, permission, failed, progress, certificate, fileDialog, auth, scriptDialog, clientCertificate, popup);
+
+    /// <summary>
+    /// True when the app took the popup itself, which leaves the shell nothing to do with it. False when it declined, threw or set
+    /// no hook: the shell's own policy (the user's browser for an http or https address, nothing for any other) stands.
+    /// </summary>
+    public bool Popup(string url, string frameName, bool isUserGesture, ILogger? log)
+    {
+        if (popup is null) return false;
+        var request = new ChromiumPopupRequest(url, frameName, isUserGesture);
+        return AppCallback.RunOrDefault(() => popup(request), false, Failed(log, nameof(ChromiumHostOptions.OnPopupRequested)));
+    }
 
     /// <summary>Whether the app set a client certificate hook: without one CEF is not asked and Chromium's own picker stands.</summary>
     public bool HandlesClientCertificates => clientCertificate is not null;

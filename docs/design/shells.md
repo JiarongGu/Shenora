@@ -534,7 +534,7 @@ waits 500 ms after a profile's last release before it makes another context for 
 because CEF reports no end of the teardown; a pool's context, made on the UI thread, does not wait.
 
 **The app's hooks on what a window's page asks of the shell** (`ChromiumHostOptions.OnDownloadStarting`,
-`OnPermissionRequested`, `OnProcessFailed`, `OnCertificateError`, `OnFileDialog`, `OnAuthRequest`, `OnScriptDialog`, `OnClientCertificateRequest`, and `OnDownloadProgress`, which only watches; D84's defaults stand where an app sets none, or answers false). Run for real
+`OnPermissionRequested`, `OnProcessFailed`, `OnCertificateError`, `OnFileDialog`, `OnAuthRequest`, `OnScriptDialog`, `OnClientCertificateRequest`, `OnPopupRequested`, and `OnDownloadProgress`, which only watches; D84's defaults stand where an app sets none, or answers false). Run for real
 (`SHENORA_SAMPLE_HOOKS_PROBE=1` and `2`, Chromium sample, Windows, a click posted to the window starting each download):
 a download the hook gave a path was written there with its content, one handled with no path and one declined were
 cancelled; the hook's grant of notifications settled the page's promise as `granted`, and a request it declined got the
@@ -612,6 +612,14 @@ that Chromium dropped (its own checks, before the hook) left no request. ⚠ The
 list of authorities: the probe's server named none, so every certificate came, and a server that names its authorities narrows it. Not
 run: a decline, which shows Chromium's own picker (a window a person closes), a proxy that asks, a server with an acceptable-issuers
 list, a store with one certificate, and a hardware token.
+`OnPopupRequested` (CEF's `on_before_popup`, which the shell always handles, so the hook adds a question and no handler) was run on both
+samples (`SHENORA_SAMPLE_HOOKS_POPUP=take`, `decline` or `browser`; inside the last click's user activation the page calls `window.open`
+and clicks a `target="_blank"` link, to a loopback server's address or an `ftp:` one): each reached the hook, `window.open` with
+`FrameName` `probe-side` and the link with none, both with `IsUserGesture` true and the page's address as written; `window.open` returned
+`null` in every mode. `take` left the server no request in 3 s; the control, `browser` (the hook declining the same addresses), made the
+shell hand them to the user's browser, which sent two; `decline` with the `ftp:` address opened nothing. ⚠ A popup with no user gesture was
+not run (Chromium's blocker may refuse it before the hook is asked, as it does in a session), nor was one raised by a frame, a redirect
+chain, a `_self`, or `beforeunload`; and the `Disposition` and the window features (size, position) CEF gives are not offered.
 Build it like the shell sample
 (`ShenoraChromiumLayout` on, the app laid out beside CEF's launcher) and run `Shenora.Sample.ChromiumView.exe` with the same
 variables. The probe posts clicks until the page has counted three: its first posted click was lost in most runs, not the

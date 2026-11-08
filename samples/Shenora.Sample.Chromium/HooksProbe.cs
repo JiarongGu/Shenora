@@ -53,6 +53,13 @@ namespace Shenora.Sample.Chromium;
 /// look for, and a run killed before it leaves the certificate, which the next run removes). The page navigates itself to the server, and the
 /// hook is asked (<c>CLIENTCERT</c>, with every certificate of the store Chromium offered): <c>select</c> picks the probe's by its SHA-256,
 /// so the server must report that certificate; <c>none</c> picks none, so it must report none.</item>
+/// <item><c>SHENORA_SAMPLE_HOOKS_POPUP=take</c>, <c>decline</c> or <c>browser</c> starts the loopback HTTP server of the auth probe (<c>POPUP</c>, no
+/// challenge) and has the page, inside the last click's user activation, call <c>window.open</c> and then click a
+/// <c>target="_blank"</c> link, both to an address of the server in <c>take</c> and to an <c>ftp:</c> one in <c>decline</c>. The hook is
+/// asked for each (<c>POPUP hook</c>): <c>take</c> answers true, so the server must see no request (the shell opened nothing, where its
+/// own policy would hand the address to the user's browser), and <c>decline</c> answers false, so the shell's policy drops the
+/// non-web address. <c>browser</c> is the control for <c>take</c>: the hook declines the same server addresses, so the shell hands them to
+/// the user's browser (⚠ which opens on this machine) and the server must see requests. No window of Chromium's may be on screen either way, and <c>window.open</c> must return null.</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -174,6 +181,7 @@ internal static class HooksProbe
         ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_AUTH") : null;
     private static readonly Lazy<AuthServer?> Login = new(() => On && Auth is not null ? new AuthServer(Log) : null);
     private static int _asked;
+    private static int _popups;
 
     public static Func<ChromiumAuthRequest, bool>? OnAuthRequest => !On || Auth is null ? null : request =>
     {
@@ -199,6 +207,18 @@ internal static class HooksProbe
         request.Accept = true;
         request.ResultText = "from the hook";
         return true;
+    };
+
+    // "take" and "decline": the page opens windows, which the hook takes or leaves to the shell's policy.
+    private static readonly string? Popup = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUP") is "take" or "decline" or "browser"
+        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_POPUP") : null;
+    private static readonly Lazy<AuthServer?> Opened = new(() => On && Popup is not null ? new AuthServer(Log, "POPUP", challenge: false) : null);
+
+    public static Func<ChromiumPopupRequest, bool>? OnPopupRequested => !On || Popup is null ? null : request =>
+    {
+        Interlocked.Increment(ref _popups);
+        Log($"POPUP hook: '{request.Url}' frame '{request.FrameName}', user gesture {request.IsUserGesture}, answering {(Popup == "take" ? "taken" : "declined")}");
+        return Popup == "take";
     };
 
     public static Func<ChromiumProcessReport, bool>? OnProcessFailed => !On ? null : failure =>
@@ -266,6 +286,11 @@ internal static class HooksProbe
         var finished = await Task.WhenAny(Done.Task, Task.Delay(30_000)) == Done.Task;
         await Task.Delay(1500);   // a download's file lands a moment after its hook answered
         Log($"PAGE finished: {finished}");
+        if (Popup is not null && Opened.Value is { } served)
+        {
+            await Task.Delay(3000);   // a popup the shell opened would have reached the server by now
+            Log($"POPUP server saw {served.Requests} request(s) for the page; the hook was asked {Volatile.Read(ref _popups)} time(s)");
+        }
         if (Dialog is not null) await Task.Delay(5000);   // the dialogs, and a beforeunload's reload or stay, settle
         if (ClientCert is not null && Server.Value is { } mutual)
         {
@@ -355,7 +380,8 @@ internal static class HooksProbe
 
     private static string PageHtml => PageTemplate.Replace("__AUTO__", Auto is null ? "false" : "true")
         .Replace("__CERTPORT__", (Server.Value?.Port ?? 0).ToString()).Replace("__FILE__", Pick is null ? "false" : "true")
-        .Replace("__AUTHPORT__", (Login.Value?.Port ?? 0).ToString()).Replace("__DIALOG__", Dialog is null ? "false" : "true");
+        .Replace("__AUTHPORT__", (Login.Value?.Port ?? 0).ToString()).Replace("__DIALOG__", Dialog is null ? "false" : "true")
+        .Replace("__POPUPURL__", Popup is null ? "''" : Popup is "take" or "browser" ? $"'http://127.0.0.1:{Opened.Value?.Port}/page'" : "'ftp://127.0.0.1/popup'");
 
     private const string PageTemplate = """
         <!doctype html><meta charset="utf-8"><title>hooks probe</title>
@@ -378,6 +404,17 @@ internal static class HooksProbe
           }, 100); }));
           say('ready', '1');
           await finished;
+          if (__POPUPURL__) {
+            // Inside the last click's user activation, which a popup needs to get past Chromium's blocker to the hook.
+            say('popup', 'active=' + navigator.userActivation.isActive);
+            const opened = window.open(__POPUPURL__, 'probe-side');
+            await say('popup', 'window.open returned ' + (opened === null ? 'null' : 'a window'));
+            const a = document.createElement('a');
+            a.href = __POPUPURL__; a.target = '_blank';
+            document.body.append(a);
+            a.click();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
           if (__FILE__) {
             // Inside the last click's user activation (5 s), which a page's own file dialog needs.
             const input = document.createElement('input');
@@ -560,11 +597,11 @@ internal static class HooksProbe
         private readonly System.Net.Sockets.TcpListener _listener = new(System.Net.IPAddress.Loopback, 0);
         private int _requests, _authorized;
 
-        public AuthServer(Action<string> log)
+        public AuthServer(Action<string> log, string name = "AUTH", bool challenge = true)
         {
             _listener.Start();
             Port = ((System.Net.IPEndPoint)_listener.LocalEndpoint).Port;
-            log($"AUTH server on {Port}");
+            log($"{name} server on {Port}");
             var expected = "Basic " + Convert.ToBase64String(Encoding.ASCII.GetBytes("probe:secret"));
             _ = Task.Run(async () =>
             {
@@ -585,13 +622,13 @@ internal static class HooksProbe
                             if (path != "/page") { await Reply(stream, "404 Not Found", ""); return; }   // a favicon
                             var credentials = head.Split("\r\n").FirstOrDefault(l => l.StartsWith("Authorization:", StringComparison.OrdinalIgnoreCase))?[14..].Trim();
                             Interlocked.Increment(ref _requests);
-                            var ok = credentials == expected;
+                            var ok = !challenge || credentials == expected;
                             if (ok) Interlocked.Increment(ref _authorized);
-                            log($"AUTH server: GET {path} with {(credentials is null ? "no credentials" : ok ? "the right credentials (authorized)" : "wrong credentials")}");
+                            log($"{name} server: GET {path} with {(credentials is null ? "no credentials" : ok ? "the right credentials (authorized)" : "wrong credentials")}");
                             if (ok) await Reply(stream, "200 OK", "<title>authed page</title><p>behind the login");
                             else await Reply(stream, "401 Unauthorized", "<title>401 body</title><p>login needed", "WWW-Authenticate: Basic realm=\"probe\"\r\n");
                         }
-                        catch (Exception ex) { log($"AUTH server: the connection ended ({ex.GetType().Name}: {ex.Message})"); }
+                        catch (Exception ex) { log($"{name} server: the connection ended ({ex.GetType().Name}: {ex.Message})"); }
                     });
                 }
             });

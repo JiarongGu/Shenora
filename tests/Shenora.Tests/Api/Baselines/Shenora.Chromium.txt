@@ -108,6 +108,7 @@ sealed class Shenora.Chromium.ChromiumEngineOptions
   public System.Func<Shenora.Chromium.ChromiumDownloadRequest, bool>? OnDownloadStarting { get; init; }
   public System.Func<Shenora.Chromium.ChromiumFileDialogRequest, bool>? OnFileDialog { get; init; }
   public System.Func<Shenora.Chromium.ChromiumPermissionRequest, bool>? OnPermissionRequested { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumPopupRequest, bool>? OnPopupRequested { get; init; }
   public System.Func<Shenora.Chromium.ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
   public System.Func<Shenora.Chromium.ChromiumScriptDialogRequest, bool>? OnScriptDialog { get; init; }
   public bool? IsDevelopment { get; init; }
@@ -151,6 +152,7 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public System.Func<Shenora.Chromium.ChromiumDownloadRequest, bool>? OnDownloadStarting { get; init; }
   public System.Func<Shenora.Chromium.ChromiumFileDialogRequest, bool>? OnFileDialog { get; init; }
   public System.Func<Shenora.Chromium.ChromiumPermissionRequest, bool>? OnPermissionRequested { get; init; }
+  public System.Func<Shenora.Chromium.ChromiumPopupRequest, bool>? OnPopupRequested { get; init; }
   public System.Func<Shenora.Chromium.ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
   public System.Func<Shenora.Chromium.ChromiumScriptDialogRequest, bool>? OnScriptDialog { get; init; }
   public bool ObserveUnobservedTaskExceptions { get; init; }
@@ -199,6 +201,10 @@ sealed class Shenora.Chromium.ChromiumPermissionRequest
   public Shenora.Chromium.ChromiumPermissionKind Kinds { get; }
   public bool Allow { get; set; }
   public string Origin { get; }
+sealed class Shenora.Chromium.ChromiumPopupRequest
+  public bool IsUserGesture { get; }
+  public string FrameName { get; }
+  public string Url { get; }
 sealed class Shenora.Chromium.ChromiumProcessReport
   public Shenora.Chromium.ChromiumProcessStatus Status { get; }
   public int ErrorCode { get; }

@@ -13,8 +13,9 @@ public class ChromiumPageHooksTests
         Func<ChromiumPermissionRequest, bool>? permission = null, Func<ChromiumProcessReport, bool>? failed = null,
         Action<ChromiumDownloadProgress>? progress = null, Func<ChromiumCertificateError, bool>? certificate = null,
         Func<ChromiumFileDialogRequest, bool>? fileDialog = null, Func<ChromiumAuthRequest, bool>? auth = null,
-        Func<ChromiumScriptDialogRequest, bool>? scriptDialog = null, Func<ChromiumClientCertificateRequest, bool>? clientCertificate = null) =>
-        new(download, permission, failed, progress, certificate, fileDialog, auth, scriptDialog, clientCertificate);
+        Func<ChromiumScriptDialogRequest, bool>? scriptDialog = null, Func<ChromiumClientCertificateRequest, bool>? clientCertificate = null,
+        Func<ChromiumPopupRequest, bool>? popup = null) =>
+        new(download, permission, failed, progress, certificate, fileDialog, auth, scriptDialog, clientCertificate, popup);
 
     private static ChromiumClientCertificate[] Offered(int count) =>
         Enumerable.Range(0, count).Select(i => new ChromiumClientCertificate($"user {i}", "corp CA", new string((char)('a' + i), 64), null, null)).ToArray();
@@ -41,6 +42,8 @@ public class ChromiumPageHooksTests
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnScriptDialog = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnClientCertificateRequest = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnClientCertificateRequest = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnPopupRequested = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnPopupRequested = _ => false }));
     }
 
     [Fact]
@@ -400,6 +403,23 @@ public class ChromiumPageHooksTests
         Assert.Null(Hooks(clientCertificate: r => { r.SelectedIndex = 0; return false; }).ClientCertificate("h", 443, false, Offered(2), null));
         Assert.Null(Hooks(clientCertificate: _ => throw new InvalidOperationException("app bug")).ClientCertificate("h", 443, false, Offered(2), null));
         Assert.Null(Hooks(download: _ => false).ClientCertificate("h", 443, false, Offered(2), null));
+    }
+
+    [Fact]
+    public void A_popup_the_app_took_is_handled_and_the_request_shows_what_the_page_named()
+    {
+        ChromiumPopupRequest? seen = null;
+        var hooks = Hooks(popup: r => { seen = r; return true; });
+        Assert.True(hooks.Popup("https://example.com/a", "side", true, null));
+        Assert.Equal(("https://example.com/a", "side", true), (seen!.Url, seen.FrameName, seen.IsUserGesture));
+    }
+
+    [Fact]
+    public void A_popup_the_app_declined_or_threw_on_is_left_to_the_shells_own_policy()
+    {
+        Assert.False(Hooks(popup: _ => false).Popup("https://example.com/", "", false, null));
+        Assert.False(Hooks(popup: _ => throw new InvalidOperationException("app bug")).Popup("https://example.com/", "", false, null));
+        Assert.False(Hooks(download: _ => false).Popup("https://example.com/", "", false, null));
     }
 
     [Fact]
