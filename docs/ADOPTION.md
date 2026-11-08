@@ -332,6 +332,14 @@ them. `<ShenoraChromiumPublishFolders>true</ShenoraChromiumPublishFolders>` make
 `MyApp.exe`, `MyApp.dll` and `chrome_elf.dll` at the root, CEF in `engine\`, the app in `lib\`, and `data\` still
 beside `MyApp.exe`. That publish starts through `MyApp.exe` only; a build stays flat either way.
 
+**The launcher's shadow-stack check is relaxed for you.** CEF's `bootstrap.exe` is built CET-compatible with strict
+context-IP validation, so a shell extension that raises and handles its own exception inside the app (a context-menu
+handler, on a right-click in a file picker) resumes at an address that check refuses, and Windows ends the app
+(fail-fast `0xc0000409`, parameter `0x30`). The layout, build and publish alike, sets the launcher's extended DLL
+characteristics to the relaxed context-IP mode (`0x4`) after it stamps it, and the shadow stack stays on.
+`<ShenoraChromiumRelaxContextIp>false</ShenoraChromiumRelaxContextIp>` keeps CEF's strict check. A launcher that is not
+CET-compatible has none to relax and is left as it is.
+
 **An engine that arrives after install** (such as the codecs build): the shim loads CEF from `engine\` beside the exe when it
 holds a `libcef.dll`, so an installer, a native starter or the staged updater (D50) that merges an engine of the same CEF
 version into `engine\` before the app starts changes what it runs on, with no change to the app. It takes effect at the
