@@ -51,6 +51,10 @@ Certificate
 # `ChromiumTransport` (D83) — the engine's own name, as `WebView2` is WebView2's: the Chromium shell hosts
 # Chromium, and there is no more generic word for the engine a package is named after (D82).
 Chromium
+# `ChromiumClientCertificateRequest` — the TLS client side of a mutual-TLS handshake, the platform's own
+# `ClientCertificateRequested` word that `SessionCertificateRequest` above stands on: a certificate the CLIENT
+# presents, which is not the server's, and no other word tells the two apart.
+Client
 Clipboard
 Cookie
 Dpi

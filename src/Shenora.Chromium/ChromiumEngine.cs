@@ -114,6 +114,12 @@ public sealed class ChromiumEngineOptions
     /// <see cref="ChromiumHostOptions.OnScriptDialog"/>. CEF's UI thread: answer at once.
     /// </summary>
     public Func<ChromiumScriptDialogRequest, bool>? OnScriptDialog { get; init; }
+
+    /// <summary>
+    /// Asked when a server wants a client certificate: the same hook, and the same contract, as
+    /// <see cref="ChromiumHostOptions.OnClientCertificateRequest"/>. CEF's UI thread: answer at once.
+    /// </summary>
+    public Func<ChromiumClientCertificateRequest, bool>? OnClientCertificateRequest { get; init; }
 }
 
 /// <summary>

@@ -775,7 +775,65 @@ internal sealed unsafe class ChromiumBrowser
             Struct->on_before_browse = &BeforeBrowse;
             // Only with the app's hook: with none CEF is not asked and fails the request itself.
             if (owner._hooks is { HandlesCertificates: true }) Struct->on_certificate_error = &CertificateError;
+            if (owner._hooks is { HandlesClientCertificates: true }) Struct->on_select_client_certificate = &SelectClientCertificate;
         }
+
+        // UI thread. Returning 0 leaves it to Chromium's own picker; 1 means the callback is answered before returning, with the app's
+        // choice or none. Each certificate offered carries a reference this callback releases, as every pointer parameter does.
+        [UnmanagedCallersOnly]
+        private static int SelectClientCertificate(_cef_request_handler_t* self, _cef_browser_t* browser, int isProxy, _cef_string_utf16_t* host, int port,
+            nuint certificatesCount, _cef_x509_certificate_t** certificates, _cef_select_client_certificate_callback_t* callback)
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            using var c = new CefRef<_cef_select_client_certificate_callback_t>(callback);
+            var held = new List<CefRef<_cef_x509_certificate_t>>((int)certificatesCount);
+            try
+            {
+                for (nuint i = 0; i < certificatesCount; i++) held.Add(new CefRef<_cef_x509_certificate_t>(certificates[i]));
+                var owner = From<Requests>(self)._owner;
+                if (callback == null || owner._hooks is null) return 0;
+                var offered = new List<ChromiumClientCertificate>((int)certificatesCount);
+                foreach (var certificate in held)
+                {
+                    try
+                    {
+                        using var subject = new CefRef<_cef_x509_cert_principal_t>(certificate.Ptr->get_subject(certificate.Ptr));
+                        using var issuer = new CefRef<_cef_x509_cert_principal_t>(certificate.Ptr->get_issuer(certificate.Ptr));
+                        offered.Add(new ChromiumClientCertificate(
+                            subject.IsNull ? string.Empty : CefStrings.TakeUserFree(subject.Ptr->get_display_name(subject.Ptr)),
+                            issuer.IsNull ? string.Empty : CefStrings.TakeUserFree(issuer.Ptr->get_display_name(issuer.Ptr)),
+                            Fingerprint(certificate.Ptr->get_derencoded(certificate.Ptr)),
+                            Time(certificate.Ptr->get_valid_start(certificate.Ptr)), Time(certificate.Ptr->get_valid_expiry(certificate.Ptr))));
+                    }
+                    catch (Exception ex)
+                    {
+                        // Keep the list's positions: the app's index must stay the one CEF's callback takes.
+                        AppCallback.Log(owner.Log, () => "[Shenora.Chromium] Reading a client certificate failed; it is offered without its details", LogLevel.Warning, ex);
+                        offered.Add(new ChromiumClientCertificate(string.Empty, string.Empty, string.Empty, null, null));
+                    }
+                }
+                var hostName = CefStrings.Read(host);
+                var chosen = owner._hooks.ClientCertificate(hostName, port, isProxy != 0, offered, owner.Log);
+                if (chosen is not { } index) return 0;
+                if (index >= 0)
+                {
+                    var picked = certificates[index];
+                    ((_cef_base_ref_counted_t*)picked)->add_ref((_cef_base_ref_counted_t*)picked);   // select consumes one
+                    callback->select(callback, picked);
+                }
+                else callback->select(callback, null);
+                AppCallback.Log(owner.Log, () => $"[Shenora.Chromium] Window '{owner.Name}': {(index >= 0 ? $"presented client certificate {index}" : "presented no client certificate")} to {hostName}:{port}");
+                return 1;
+            }
+            finally
+            {
+                foreach (var certificate in held) certificate.Dispose();
+            }
+        }
+
+        // CEF's base time: microseconds since 1601-01-01 UTC; zero is no date.
+        private static DateTimeOffset? Time(_cef_basetime_t time) =>
+            time.val == 0 ? null : new DateTimeOffset(1601, 1, 1, 0, 0, 0, TimeSpan.Zero).AddTicks(time.val * 10);
 
         // UI thread. Returning 0 fails the request; 1 hands CEF's callback to us, answered before returning. No callback: the error
         // cannot be overridden, and the app is not asked.

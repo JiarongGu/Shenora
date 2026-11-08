@@ -389,35 +389,112 @@ public sealed class ChromiumAuthRequest
         + $"UserName = {(UserName is null ? "null" : "***")}, Password = {(Password is null ? "null" : "***")} }}";
 }
 
+/// <summary>One certificate the shell holds that a server asking for a client certificate would accept, offered in a <see cref="ChromiumClientCertificateRequest"/>.</summary>
+public sealed class ChromiumClientCertificate
+{
+    internal ChromiumClientCertificate(string subject, string issuer, string sha256, DateTimeOffset? validFrom, DateTimeOffset? validUntil)
+    {
+        Subject = subject;
+        Issuer = issuer;
+        Sha256 = sha256;
+        ValidFrom = validFrom;
+        ValidUntil = validUntil;
+    }
+
+    /// <summary>The certificate's subject, as Chromium displays it; empty when it has none.</summary>
+    public string Subject { get; }
+
+    /// <summary>The certificate's issuer, as Chromium displays it; empty when it has none.</summary>
+    public string Issuer { get; }
+
+    /// <summary>The SHA-256 of the certificate's DER bytes, as 64 lowercase hex digits; what an app pins.</summary>
+    public string Sha256 { get; }
+
+    /// <summary>When the certificate becomes valid; null when Chromium gave no date.</summary>
+    public DateTimeOffset? ValidFrom { get; }
+
+    /// <summary>When the certificate expires; null when Chromium gave no date.</summary>
+    public DateTimeOffset? ValidUntil { get; }
+}
+
+/// <summary>
+/// A server (or proxy) that wants the client to present a certificate, offered to <see cref="ChromiumHostOptions.OnClientCertificateRequest"/>
+/// with the certificates in the system's store that it would accept.
+/// </summary>
+public sealed class ChromiumClientCertificateRequest
+{
+    internal ChromiumClientCertificateRequest(string host, int port, bool isProxy, IReadOnlyList<ChromiumClientCertificate> certificates)
+    {
+        Host = host;
+        Port = port;
+        IsProxy = isProxy;
+        Certificates = certificates;
+    }
+
+    /// <summary>The host that asked.</summary>
+    public string Host { get; }
+
+    /// <summary>The port it asked on.</summary>
+    public int Port { get; }
+
+    /// <summary>True when a proxy asked, false when the server did.</summary>
+    public bool IsProxy { get; }
+
+    /// <summary>The certificates on offer, in the order Chromium listed them.</summary>
+    public IReadOnlyList<ChromiumClientCertificate> Certificates { get; }
+
+    /// <summary>The index in <see cref="Certificates"/> of the certificate to present; null (the default) presents none, which the server may then refuse.</summary>
+    public int? SelectedIndex { get; set; }
+}
+
 /// <summary>
 /// The app's answers to what a page asks of the shell (<see cref="ChromiumHostOptions.OnDownloadStarting"/>,
 /// <see cref="ChromiumHostOptions.OnPermissionRequested"/>, <see cref="ChromiumHostOptions.OnProcessFailed"/>,
 /// <see cref="ChromiumHostOptions.OnCertificateError"/>, <see cref="ChromiumHostOptions.OnFileDialog"/>,
-/// <see cref="ChromiumHostOptions.OnAuthRequest"/>, <see cref="ChromiumHostOptions.OnScriptDialog"/>, and
+/// <see cref="ChromiumHostOptions.OnAuthRequest"/>, <see cref="ChromiumHostOptions.OnScriptDialog"/>,
+/// <see cref="ChromiumHostOptions.OnClientCertificateRequest"/>, and
 /// <see cref="ChromiumHostOptions.OnDownloadProgress"/>, which only observes), and the
 /// shell's default for each when the app has none or declines. A hook that throws is logged and declines. CEF's UI thread.
 /// </summary>
 internal sealed class ChromiumPageHooks(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
     Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress = null,
     Func<ChromiumCertificateError, bool>? certificate = null, Func<ChromiumFileDialogRequest, bool>? fileDialog = null,
-    Func<ChromiumAuthRequest, bool>? auth = null, Func<ChromiumScriptDialogRequest, bool>? scriptDialog = null)
+    Func<ChromiumAuthRequest, bool>? auth = null, Func<ChromiumScriptDialogRequest, bool>? scriptDialog = null,
+    Func<ChromiumClientCertificateRequest, bool>? clientCertificate = null)
 {
     /// <summary>The hooks the app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumHostOptions options) =>
         From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError,
-            options.OnFileDialog, options.OnAuthRequest, options.OnScriptDialog);
+            options.OnFileDialog, options.OnAuthRequest, options.OnScriptDialog, options.OnClientCertificateRequest);
 
     /// <summary>The hooks the engine's app set, or null when it set none.</summary>
     public static ChromiumPageHooks? From(ChromiumEngineOptions options) =>
         From(options.OnDownloadStarting, options.OnPermissionRequested, options.OnProcessFailed, options.OnDownloadProgress, options.OnCertificateError,
-            options.OnFileDialog, options.OnAuthRequest, options.OnScriptDialog);
+            options.OnFileDialog, options.OnAuthRequest, options.OnScriptDialog, options.OnClientCertificateRequest);
 
     private static ChromiumPageHooks? From(Func<ChromiumDownloadRequest, bool>? download, Func<ChromiumPermissionRequest, bool>? permission,
         Func<ChromiumProcessReport, bool>? failed, Action<ChromiumDownloadProgress>? progress, Func<ChromiumCertificateError, bool>? certificate,
-        Func<ChromiumFileDialogRequest, bool>? fileDialog, Func<ChromiumAuthRequest, bool>? auth, Func<ChromiumScriptDialogRequest, bool>? scriptDialog) =>
+        Func<ChromiumFileDialogRequest, bool>? fileDialog, Func<ChromiumAuthRequest, bool>? auth, Func<ChromiumScriptDialogRequest, bool>? scriptDialog,
+        Func<ChromiumClientCertificateRequest, bool>? clientCertificate) =>
         download is null && permission is null && failed is null && progress is null && certificate is null && fileDialog is null && auth is null
-            && scriptDialog is null
-            ? null : new ChromiumPageHooks(download, permission, failed, progress, certificate, fileDialog, auth, scriptDialog);
+            && scriptDialog is null && clientCertificate is null
+            ? null : new ChromiumPageHooks(download, permission, failed, progress, certificate, fileDialog, auth, scriptDialog, clientCertificate);
+
+    /// <summary>Whether the app set a client certificate hook: without one CEF is not asked and Chromium's own picker stands.</summary>
+    public bool HandlesClientCertificates => clientCertificate is not null;
+
+    /// <summary>
+    /// The index of the certificate the app chose, or -1 to present none; null when the app declined, threw or set no hook and
+    /// Chromium's own picker stands. An index outside the list presents none.
+    /// </summary>
+    public int? ClientCertificate(string host, int port, bool isProxy, IReadOnlyList<ChromiumClientCertificate> certificates, ILogger? log)
+    {
+        if (clientCertificate is null) return null;
+        var request = new ChromiumClientCertificateRequest(host, port, isProxy, certificates);
+        var handled = AppCallback.RunOrDefault(() => clientCertificate(request), false, Failed(log, nameof(ChromiumHostOptions.OnClientCertificateRequest)));
+        if (!handled) return null;
+        return request.SelectedIndex is { } index && index >= 0 && index < certificates.Count ? index : -1;
+    }
 
     /// <summary>Whether the app set a script dialog hook: without one CEF is not given a dialog handler and shows its own dialogs.</summary>
     public bool HandlesScriptDialogs => scriptDialog is not null;

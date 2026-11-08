@@ -82,6 +82,12 @@ at the first list and missed five more breaking changes.
   (and `ResultText` for a prompt) and return `true` and the page gets that answer with no dialog; `false`, a throw or no hook leaves
   Chromium's own dialog, and CEF is only given the handler when the hook is set. A `beforeunload` answered with no `Accept` keeps the page
   where it is. Measured on Windows only.
+- **An app answers a server's request for a client certificate: `OnClientCertificateRequest`** on `ChromiumHostOptions` and
+  `ChromiumEngineOptions`, for a device or an intranet that wants mutual TLS. It gets a `ChromiumClientCertificateRequest` (`Host`,
+  `Port`, `IsProxy`, and `Certificates`, each with `Subject`, `Issuer`, `Sha256`, `ValidFrom`, `ValidUntil`); set `SelectedIndex` and
+  return `true` to present that certificate with no picker, or return `true` with none to present none; `false`, a throw or no hook leaves
+  Chromium's own picker, and CEF is only given the handler when the hook is set. Choose by `Sha256`, not by position. Measured on
+  Windows only, where the list is the current user's certificate store.
 - **A Windows Chromium app publishes self-contained.** `dotnet publish --self-contained` (or
   `<SelfContained>true</SelfContained>`) carries the .NET runtime beside the app, in `lib\` with
   `ShenoraChromiumPublishFolders`, and the machine then needs no .NET; the kit used to refuse it with a message. The exe

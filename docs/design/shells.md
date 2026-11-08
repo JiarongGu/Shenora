@@ -534,7 +534,7 @@ waits 500 ms after a profile's last release before it makes another context for 
 because CEF reports no end of the teardown; a pool's context, made on the UI thread, does not wait.
 
 **The app's hooks on what a window's page asks of the shell** (`ChromiumHostOptions.OnDownloadStarting`,
-`OnPermissionRequested`, `OnProcessFailed`, `OnCertificateError`, `OnFileDialog`, `OnAuthRequest`, `OnScriptDialog`, and `OnDownloadProgress`, which only watches; D84's defaults stand where an app sets none, or answers false). Run for real
+`OnPermissionRequested`, `OnProcessFailed`, `OnCertificateError`, `OnFileDialog`, `OnAuthRequest`, `OnScriptDialog`, `OnClientCertificateRequest`, and `OnDownloadProgress`, which only watches; D84's defaults stand where an app sets none, or answers false). Run for real
 (`SHENORA_SAMPLE_HOOKS_PROBE=1` and `2`, Chromium sample, Windows, a click posted to the window starting each download):
 a download the hook gave a path was written there with its content, one handled with no path and one declined were
 cancelled; the hook's grant of notifications settled the page's promise as `granted`, and a request it declined got the
@@ -601,6 +601,17 @@ gave the page `true` and the hook's text and the reload went through (a second l
 (no second load). ⚠ A `beforeunload` reaches the hook with no origin and Chromium's own message (`Is it OK to leave/reload this page?`), which a
 page cannot set. Not run: a decline, which shows Chromium's own dialog (a window a person closes), a dialog raised by a frame or a popup, and a
 window's own close with a `beforeunload` page.
+`OnClientCertificateRequest` (CEF's `on_select_client_certificate`, given to CEF only when the hook is set) was run on both samples
+(`SHENORA_SAMPLE_HOOKS_CLIENTCERT=select` or `none`: the loopback TLS server of the certificate probe, requiring a client certificate, and a
+certificate of the probe's own put in the current user's personal store for the run and removed, with its key, after it, which the
+probe's last log line and a look at the store confirm): the page's navigation reached the hook once, as `127.0.0.1` with the port and no
+proxy, offering every certificate of that store (five on the machine it ran on, the probe's among them, each with its subject, issuer,
+dates and SHA-256); `select` chose the probe's by its SHA-256 and the server saw that certificate on its request, `none` chose none and
+the server saw none. The certificate hook ran first (the server's own certificate is self-signed) and the server's earlier handshakes
+that Chromium dropped (its own checks, before the hook) left no request. ⚠ The list is the system's store, not the server's own
+list of authorities: the probe's server named none, so every certificate came, and a server that names its authorities narrows it. Not
+run: a decline, which shows Chromium's own picker (a window a person closes), a proxy that asks, a server with an acceptable-issuers
+list, a store with one certificate, and a hardware token.
 Build it like the shell sample
 (`ShenoraChromiumLayout` on, the app laid out beside CEF's launcher) and run `Shenora.Sample.ChromiumView.exe` with the same
 variables. The probe posts clicks until the page has counted three: its first posted click was lost in most runs, not the

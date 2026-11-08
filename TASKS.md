@@ -114,6 +114,10 @@ package's Linux helper has not run: see below); how it works is `docs/design/she
 is left is mostly measurement that needs hardware or a person.
 
 **Every desktop OS**
+- [ ] 🅿️ **`OnClientCertificateRequest` on macOS and Linux, and what the Windows probe did not reach.** Run on Windows only, where the
+  offered list is the user's certificate store; a proxy that asks, a server naming its acceptable authorities, a decline (Chromium's
+  own picker) and a hardware token are not run, nor is what macOS's keychain and Linux's NSS database offer
+  (`docs/design/shells.md`, the hooks paragraph).
 - [ ] 🅿️ **`OnAuthRequest` on macOS and Linux, and what the Windows probe did not reach.** The code is shared (the browser's
   own DevTools channel) and was run on Windows only; a proxy's challenge, a frame's, a popup's and a window's first navigation
   are not run (`docs/design/shells.md`, the hooks paragraph), nor is whether a Linux/macOS CEF raises `Fetch.authRequired` the same.

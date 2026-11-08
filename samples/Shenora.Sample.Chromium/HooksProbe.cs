@@ -47,6 +47,12 @@ namespace Shenora.Sample.Chromium;
 /// <c>answer</c> accepts all and types <c>from the hook</c>, so the page must read <c>true</c> and that text and then reload (a second
 /// load); <c>refuse</c> answers <c>confirm</c> false, no prompt text and no leaving, so the page must read <c>false</c> and <c>null</c>
 /// and then report that it <c>stayed</c> (no second load). No dialog window of Chromium's may be on screen either way.</item>
+/// <item><c>SHENORA_SAMPLE_HOOKS_CLIENTCERT=select</c> or <c>none</c> runs the certificate probe's server (<c>CERT</c>, whose own certificate
+/// the hook allows) with a client certificate REQUIRED, and puts a certificate of the probe's own into the CURRENT USER's personal store for
+/// the run (it is removed, with its key, as the run ends and before the next one starts; <c>CLIENT certificate … removed</c> is the line to
+/// look for, and a run killed before it leaves the certificate, which the next run removes). The page navigates itself to the server, and the
+/// hook is asked (<c>CLIENTCERT</c>, with every certificate of the store Chromium offered): <c>select</c> picks the probe's by its SHA-256,
+/// so the server must report that certificate; <c>none</c> picks none, so it must report none.</item>
 /// <item><c>no.txt</c> — handled with no path: cancelled. <c>decline.txt</c> — not handled: the default policy cancels it.
 /// Neither file may exist.</item>
 /// <item>notifications — the permission hook allows them, so the page's promise reads <c>granted</c>; the position — the hook
@@ -117,9 +123,27 @@ internal static class HooksProbe
 
     // "allow" and "deny": the page also fetches a local HTTPS server whose certificate no authority signed, which the certificate hook
     // allows when the certificate is the server's own (pinned by its SHA-256) and declines in "deny".
+    // A mutual-TLS run needs the same server, whose own certificate the certificate hook then allows.
     private static readonly string? Cert = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CERT") is "allow" or "deny"
-        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CERT") : null;
-    private static readonly Lazy<CertServer?> Server = new(() => On && Cert is not null ? new CertServer(Log) : null);
+        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CERT") : Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CLIENTCERT") is "select" or "none" ? "allow" : null;
+    private static readonly Lazy<CertServer?> Server = new(() => On && Cert is not null ? new CertServer(Log, requireClientCertificate: ClientCert is not null) : null);
+
+    // "select" and "none": the server wants a client certificate, which the hook answers with the probe's own, put in the current user's
+    // store for the run and taken out after, or with none.
+    private static readonly string? ClientCert = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CLIENTCERT") is "select" or "none"
+        ? Environment.GetEnvironmentVariable("SHENORA_SAMPLE_HOOKS_CLIENTCERT") : null;
+    private static readonly Lazy<ProbeClientCertificate?> Mine = new(() => On && ClientCert is not null ? new ProbeClientCertificate(Log) : null);
+    private static int _askedForCertificate;
+
+    public static Func<ChromiumClientCertificateRequest, bool>? OnClientCertificateRequest => !On || ClientCert is null ? null : request =>
+    {
+        Interlocked.Increment(ref _askedForCertificate);
+        Log($"CLIENTCERT hook: {request.Host}:{request.Port}, proxy {request.IsProxy}, {request.Certificates.Count} on offer: "
+            + string.Join("; ", request.Certificates.Select(c => $"'{c.Subject}' by '{c.Issuer}' {c.ValidFrom:u}..{c.ValidUntil:u} sha256 {c.Sha256}")));
+        if (ClientCert == "select")
+            request.SelectedIndex = request.Certificates.Select((c, i) => (c, i)).Where(p => p.c.Sha256 == Mine.Value?.Sha256).Select(p => (int?)p.i).FirstOrDefault();
+        return true;
+    };
 
     public static Func<ChromiumCertificateError, bool>? OnCertificateError => !On || Cert is null ? null : error =>
     {
@@ -208,12 +232,18 @@ internal static class HooksProbe
         {
             try { await RunAsync(windowTitle, pageWindow); }
             catch (Exception ex) { Log($"THREW {ex.GetType().Name}: {ex.Message}"); }
-            finally { close(); }
+            finally
+            {
+                try { if (Mine.IsValueCreated) Mine.Value?.Dispose(); }   // out of the user's store before the app ends, whatever happened
+                catch (Exception ex) { Log($"CLIENT certificate: not removed ({ex.GetType().Name}: {ex.Message})"); }
+                close();
+            }
         });
     }
 
     private static async Task RunAsync(string windowTitle, bool pageWindow)
     {
+        _ = Mine.Value;   // in the store before the page's navigation asks for it
         var hwnd = await MainWindowAsync(windowTitle);
         await Task.WhenAny(Ready.Task, Task.Delay(20_000));
         if (pageWindow)
@@ -237,6 +267,13 @@ internal static class HooksProbe
         await Task.Delay(1500);   // a download's file lands a moment after its hook answered
         Log($"PAGE finished: {finished}");
         if (Dialog is not null) await Task.Delay(5000);   // the dialogs, and a beforeunload's reload or stay, settle
+        if (ClientCert is not null && Server.Value is { } mutual)
+        {
+            await Task.Delay(3000);   // the page's navigation, and the handshake's second round, settle
+            Log($"CLIENTCERT server saw {mutual.Requests} page request(s), the last with client certificate {mutual.ClientCertificate ?? "none"}; "
+                + $"the probe's is {Mine.Value?.Sha256}, so {(mutual.ClientCertificate is null ? "none came" : mutual.ClientCertificate == Mine.Value?.Sha256 ? "the probe's came" : "ANOTHER came")}; "
+                + $"the hook was asked {Volatile.Read(ref _askedForCertificate)} time(s)");
+        }
         if (Login.Value is { } login)
         {
             await Task.Delay(3000);   // the page's navigation, and a challenge's answer, settle
@@ -395,7 +432,10 @@ internal static class HooksProbe
     {
         private readonly System.Net.Sockets.TcpListener _listener = new(System.Net.IPAddress.Loopback, 0);
 
-        public CertServer(Action<string> log)
+        private int _requests;
+        private string? _clientCertificate;
+
+        public CertServer(Action<string> log, bool requireClientCertificate = false)
         {
             using var key = System.Security.Cryptography.RSA.Create(2048);
             var request = new System.Security.Cryptography.X509Certificates.CertificateRequest("CN=hooks-probe", key,
@@ -422,10 +462,20 @@ internal static class HooksProbe
                         {
                             using var tcp = client;
                             using var tls = new System.Net.Security.SslStream(tcp.GetStream());
-                            await tls.AuthenticateAsServerAsync(certificate);
+                            // Any client certificate is taken (the probe checks WHICH one came); none is refused when one is required.
+                            await tls.AuthenticateAsServerAsync(new System.Net.Security.SslServerAuthenticationOptions
+                            {
+                                ServerCertificate = certificate,
+                                ClientCertificateRequired = requireClientCertificate,
+                                RemoteCertificateValidationCallback = (_, _, _, _) => true,
+                            });
                             var buffer = new byte[4096];
                             var read = await tls.ReadAsync(buffer);
-                            log($"CERT server: served a request ({read} bytes) over TLS");
+                            var offered = (tls.RemoteCertificate as System.Security.Cryptography.X509Certificates.X509Certificate2
+                                ?? (tls.RemoteCertificate is null ? null : new System.Security.Cryptography.X509Certificates.X509Certificate2(tls.RemoteCertificate)))
+                                ?.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256).ToLowerInvariant();
+                            if (read > 0 && Encoding.ASCII.GetString(buffer, 0, read).StartsWith("GET /page")) { Interlocked.Increment(ref _requests); _clientCertificate = offered; }
+                            log($"CERT server: served a request ({read} bytes) over TLS, client certificate {(offered is null ? "none" : offered)}");
                             const string body = "<title>cert page</title><p>served over TLS";
                             await tls.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"));
                         }
@@ -437,8 +487,71 @@ internal static class HooksProbe
 
         public int Port { get; }
 
+        /// <summary>The page requests served.</summary>
+        public int Requests => Volatile.Read(ref _requests);
+
+        /// <summary>The SHA-256 of the client certificate the last page request came with; null when it came with none.</summary>
+        public string? ClientCertificate => _clientCertificate;
+
         /// <summary>The certificate's SHA-256 as 64 lowercase hex digits: what the hook pins.</summary>
         public string Sha256 { get; }
+    }
+
+    /// <summary>
+    /// A client certificate of the probe's own, in the CURRENT USER's personal store for the run: Chromium lists a client's certificates from the
+    /// system's store, so there is nowhere else to put it. Its subject is the probe's (one a stale run left is removed first), and
+    /// disposing removes it and its key.
+    /// </summary>
+    private sealed class ProbeClientCertificate : IDisposable
+    {
+        private const string Subject = "CN=shenora-hooks-probe-client";
+        private readonly System.Security.Cryptography.X509Certificates.X509Certificate2 _certificate;
+
+        public ProbeClientCertificate(Action<string> log)
+        {
+            Remove(log);
+            using var key = System.Security.Cryptography.RSA.Create(2048);
+            var request = new System.Security.Cryptography.X509Certificates.CertificateRequest(Subject, key,
+                System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+            request.CertificateExtensions.Add(new System.Security.Cryptography.X509Certificates.X509KeyUsageExtension(
+                System.Security.Cryptography.X509Certificates.X509KeyUsageFlags.DigitalSignature, critical: true));
+            request.CertificateExtensions.Add(new System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension(
+                [new System.Security.Cryptography.Oid("1.3.6.1.5.5.7.3.2")], critical: false));   // clientAuth
+            using var made = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+            // A key that lives in the user's key store (PersistKeySet), which a store entry needs to sign with it.
+            _certificate = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12(
+                made.Export(System.Security.Cryptography.X509Certificates.X509ContentType.Pfx), null,
+                System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.PersistKeySet | System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.UserKeySet);
+            Sha256 = Convert.ToHexString(_certificate.GetCertHash(System.Security.Cryptography.HashAlgorithmName.SHA256)).ToLowerInvariant();
+            using var store = new System.Security.Cryptography.X509Certificates.X509Store(
+                System.Security.Cryptography.X509Certificates.StoreName.My, System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser);
+            store.Open(System.Security.Cryptography.X509Certificates.OpenFlags.ReadWrite);
+            store.Add(_certificate);
+            log($"CLIENT certificate '{Subject}' added to the current user's store for this run, sha256 {Sha256}");
+        }
+
+        /// <summary>The certificate's SHA-256 as 64 lowercase hex digits.</summary>
+        public string Sha256 { get; }
+
+        public void Dispose() => Remove(Log);
+
+        // Every certificate of the probe's subject, with its key: this run's, and one a run that was killed left.
+        private static void Remove(Action<string> log)
+        {
+            using var store = new System.Security.Cryptography.X509Certificates.X509Store(
+                System.Security.Cryptography.X509Certificates.StoreName.My, System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser);
+            store.Open(System.Security.Cryptography.X509Certificates.OpenFlags.ReadWrite);
+            foreach (var found in store.Certificates.Find(System.Security.Cryptography.X509Certificates.X509FindType.FindBySubjectDistinguishedName, Subject, validOnly: false))
+            {
+                try
+                {
+                    if (System.Security.Cryptography.X509Certificates.RSACertificateExtensions.GetRSAPrivateKey(found) is System.Security.Cryptography.RSACng { Key: { } key }) key.Delete();
+                }
+                catch (Exception ex) { log($"CLIENT certificate: its key was not deleted ({ex.GetType().Name}: {ex.Message})"); }
+                store.Remove(found);
+                log($"CLIENT certificate '{Subject}' removed from the current user's store");
+            }
+        }
     }
 
     /// <summary>A loopback HTTP server that answers <c>401</c> with a Basic challenge until a request carries <c>probe:secret</c>.</summary>

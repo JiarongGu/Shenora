@@ -13,8 +13,11 @@ public class ChromiumPageHooksTests
         Func<ChromiumPermissionRequest, bool>? permission = null, Func<ChromiumProcessReport, bool>? failed = null,
         Action<ChromiumDownloadProgress>? progress = null, Func<ChromiumCertificateError, bool>? certificate = null,
         Func<ChromiumFileDialogRequest, bool>? fileDialog = null, Func<ChromiumAuthRequest, bool>? auth = null,
-        Func<ChromiumScriptDialogRequest, bool>? scriptDialog = null) =>
-        new(download, permission, failed, progress, certificate, fileDialog, auth, scriptDialog);
+        Func<ChromiumScriptDialogRequest, bool>? scriptDialog = null, Func<ChromiumClientCertificateRequest, bool>? clientCertificate = null) =>
+        new(download, permission, failed, progress, certificate, fileDialog, auth, scriptDialog, clientCertificate);
+
+    private static ChromiumClientCertificate[] Offered(int count) =>
+        Enumerable.Range(0, count).Select(i => new ChromiumClientCertificate($"user {i}", "corp CA", new string((char)('a' + i), 64), null, null)).ToArray();
 
     private static ChromiumAuthRequest Challenge() => new("http://10.0.0.5/status", "http://10.0.0.5", "basic", "device", false);
 
@@ -36,6 +39,8 @@ public class ChromiumPageHooksTests
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnAuthRequest = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnScriptDialog = _ => false }));
         Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnScriptDialog = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumHostOptions { OnClientCertificateRequest = _ => false }));
+        Assert.NotNull(ChromiumPageHooks.From(new ChromiumEngineOptions { OnClientCertificateRequest = _ => false }));
     }
 
     [Fact]
@@ -357,6 +362,44 @@ public class ChromiumPageHooksTests
         Assert.Null(Hooks(scriptDialog: r => { r.Accept = true; return false; }).ScriptDialog(ChromiumScriptDialogKind.Confirm, "", "", "", false, null));
         Assert.Null(Hooks(scriptDialog: _ => throw new InvalidOperationException("app bug")).ScriptDialog(ChromiumScriptDialogKind.Confirm, "", "", "", false, null));
         Assert.Null(Hooks(download: _ => false).ScriptDialog(ChromiumScriptDialogKind.Confirm, "", "", "", false, null));
+    }
+
+    [Fact]
+    public void Only_a_client_certificate_hook_has_CEF_asked_for_one()
+    {
+        Assert.True(Hooks(clientCertificate: _ => false).HandlesClientCertificates);
+        Assert.False(Hooks(download: _ => false, certificate: _ => false, scriptDialog: _ => false).HandlesClientCertificates);
+    }
+
+    [Fact]
+    public void A_certificate_the_app_chose_is_its_index_and_the_request_shows_what_was_offered()
+    {
+        ChromiumClientCertificateRequest? seen = null;
+        var hooks = Hooks(clientCertificate: r => { seen = r; r.SelectedIndex = 1; return true; });
+        Assert.Equal(1, hooks.ClientCertificate("device.local", 8443, false, Offered(3), null));
+        Assert.Equal(("device.local", 8443, false, 3), (seen!.Host, seen.Port, seen.IsProxy, seen.Certificates.Count));
+        Assert.Equal("user 2", seen.Certificates[2].Subject);
+    }
+
+    [Fact]
+    public void A_handled_request_with_no_choice_presents_none()
+    {
+        Assert.Equal(-1, Hooks(clientCertificate: _ => true).ClientCertificate("h", 443, false, Offered(2), null));
+        Assert.Equal(-1, Hooks(clientCertificate: r => { r.SelectedIndex = null; return true; }).ClientCertificate("h", 443, false, Offered(2), null));
+    }
+
+    [Theory]
+    [InlineData(2)]    // one past the end
+    [InlineData(-1)]
+    public void A_choice_outside_the_list_presents_none_rather_than_another_certificate(int index) =>
+        Assert.Equal(-1, Hooks(clientCertificate: r => { r.SelectedIndex = index; return true; }).ClientCertificate("h", 443, false, Offered(2), null));
+
+    [Fact]
+    public void A_request_the_app_declined_or_threw_on_is_CEFs_own_picker()
+    {
+        Assert.Null(Hooks(clientCertificate: r => { r.SelectedIndex = 0; return false; }).ClientCertificate("h", 443, false, Offered(2), null));
+        Assert.Null(Hooks(clientCertificate: _ => throw new InvalidOperationException("app bug")).ClientCertificate("h", 443, false, Offered(2), null));
+        Assert.Null(Hooks(download: _ => false).ClientCertificate("h", 443, false, Offered(2), null));
     }
 
     [Fact]

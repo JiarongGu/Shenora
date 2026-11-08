@@ -36,6 +36,7 @@ internal static class Program
             OnFileDialog = HooksProbe.OnFileDialog,
             OnAuthRequest = HooksProbe.OnAuthRequest,
             OnScriptDialog = HooksProbe.OnScriptDialog,
+            OnClientCertificateRequest = HooksProbe.OnClientCertificateRequest,
         });
         Form? form = null;
         builder.UseWindows(new WindowsHostOptions
