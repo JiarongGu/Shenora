@@ -115,7 +115,7 @@ is left is mostly measurement that needs hardware or a person.
 
 **Every desktop OS**
 - [ ] 🅿️ **`OnClientCertificateRequest` on macOS and Linux, and what the Windows probe did not reach.** Run on Windows only, where the
-  offered list is the user's certificate store; a proxy that asks, a server naming its acceptable authorities, a decline (run once on Windows: the server then saw
+  offered list is the user's certificate store; a proxy that asks, a server naming its acceptable authorities (a .NET server could not be made to send the list, so it needs OpenSSL's `s_server -CAfile`: `docs/design/shells.md`), a decline (run once on Windows: the server then saw
   no page request, and why CEF's documented first-certificate default completed no handshake is not known) and a hardware token are not run, nor is what macOS's keychain and Linux's
   NSS database offer (`docs/design/shells.md`, the hooks paragraph).
 - [ ] 🅿️ **`OnPopupRequested` on macOS and Linux, and what the Windows probe did not reach.** Run on Windows only; `Disposition`/window features CEF gives are not run or offered
