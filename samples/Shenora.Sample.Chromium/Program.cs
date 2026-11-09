@@ -97,7 +97,7 @@ internal static class Program
             // event, as any module of the app could send one. It lifts once the boot work is done and the page says it has
             // painted (closeSplash() in App.tsx), not at its handshake, which comes before its first paint.
             // Launched with --splash-card, a card shows from the app's first moments until the window exists.
-            Splash = HooksProbe.Active ? null : new ChromiumSplashOptions   // none in HooksProbe, whose clicks the splash would take
+            Splash = HooksProbe.Active || PanelProbe.Stacked ? null : new ChromiumSplashOptions   // none in HooksProbe, whose clicks the splash would take, nor where PanelProbe reads the screen
             {
                 HoldUntilClosed = true,
                 Card = args.Contains("--splash-card") ? new SplashCardOptions { Width = 420, Height = 260 } : null,

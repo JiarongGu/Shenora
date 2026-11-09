@@ -22,8 +22,12 @@ namespace Shenora.Chromium.Host;
 /// manager, if one runs, through the freedesktop <c>SAVE_TARGETS</c> request: the manager reads each target from this app,
 /// which keeps answering until the manager says it is done or <see cref="HandoverLimit"/> passes. A manager that is not
 /// there costs nothing; one that does not answer costs the limit, once. ⚠ Each target is read on its own: <c>MULTIPLE</c>
-/// is not offered, so a manager that asks only for it keeps nothing. A format larger than one X request (about 16 MB on a
-/// typical server) is refused, not sent in parts.
+/// is not offered, so a manager that asks only for it keeps nothing.
+/// </para>
+/// <para>
+/// A format larger than one X request (about 16 MB on a typical server) is sent in parts (ICCCM <c>INCR</c>): the answer
+/// says how much is coming, and each part is written once the requestor has deleted the one before, from the connection's
+/// own thread, so a slow requestor holds up nobody. One that stops taking parts is let go after <see cref="IncrIdleLimit"/>.
 /// </para>
 /// </summary>
 internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
@@ -33,12 +37,17 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
     private const uint AtomType = 4, IntegerType = 19, StringType = 31;
     private static readonly TimeSpan Answer = TimeSpan.FromSeconds(2);
     private const int MaxTransfer = 256 << 20;   // what one read takes in parts before giving up on its owner
+    private const int IncrPart = 1 << 20;        // what one part of a large copy holds, within one request
 
     /// <summary>The longest <see cref="Dispose"/> waits for a clipboard manager to finish keeping the copy.</summary>
     internal static readonly TimeSpan HandoverLimit = TimeSpan.FromSeconds(5);
 
+    /// <summary>How long a transfer in parts waits for its requestor to take the part before it is given up on.</summary>
+    internal static readonly TimeSpan IncrIdleLimit = TimeSpan.FromSeconds(30);
+
     private readonly string _selectionName;
-    private readonly TimeSpan _handover;
+    private readonly TimeSpan _handover, _incrIdle;
+    private int _pending;
     private readonly ILogger? _log;
     private readonly ConcurrentQueue<(Action Run, Action<Exception> Fail)> _work = new();
     private readonly object _gate = new();
@@ -55,17 +64,34 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
     private Dictionary<uint, (uint Type, byte[] Data)>? _offered;
     private uint _ownedSince;
 
+    // The large copies being sent in parts, each to the requestor whose deletes ask for the next part. Likewise.
+    private readonly List<Incr> _transfers = [];
+
+    private sealed class Incr(uint requestor, uint property, uint type, byte[] data, long touched)
+    {
+        public uint Requestor { get; } = requestor;
+        public uint Property { get; } = property;
+        public uint Type { get; } = type;
+        public byte[] Data { get; } = data;
+        public int Sent;
+        public long Touched = touched;
+    }
+
     /// <summary>The system clipboard.</summary>
     public LinuxClipboard(ILogger<LinuxClipboard>? log = null) : this("CLIPBOARD", log) { }
 
     /// <summary>A selection of this name, which no other app reads: how the connection is exercised without the user's
     /// clipboard.</summary>
-    internal LinuxClipboard(string selectionName, ILogger? log, TimeSpan? handover = null)
+    internal LinuxClipboard(string selectionName, ILogger? log, TimeSpan? handover = null, TimeSpan? incrIdle = null)
     {
         _selectionName = selectionName;
         _log = log;
         _handover = handover ?? HandoverLimit;
+        _incrIdle = incrIdle ?? IncrIdleLimit;
     }
+
+    /// <summary>How many large copies are being sent in parts right now.</summary>
+    internal int PendingTransfers => Volatile.Read(ref _pending);
 
     public Task SetTextAsync(string text)
     {
@@ -86,8 +112,6 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
         return Run(() =>
         {
             if (content.IsEmpty) { Relinquish(); return true; }
-            if (offer.FirstOrDefault(t => t.Data.Length > _maxBytes) is { Name: not null } tooLarge)
-                throw new NotSupportedException($"'{tooLarge.Name}' is {tooLarge.Data.Length:N0} bytes; this X server takes at most {_maxBytes:N0} in one request.");
             var offered = new Dictionary<uint, (uint, byte[])>();
             foreach (var target in offer) offered[Atom(target.Name)] = (Atom(target.Type), target.Data);
             var time = ServerTime();
@@ -212,12 +236,13 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
             {
                 while (_work.TryDequeue(out var job)) job.Run();
                 Pump();
+                ExpireIncr();
                 if (xcb_connection_has_error(_c) != 0)
                 {
                     AppCallback.Log(_log, () => "[Shenora.Chromium] The clipboard's X connection broke", LogLevel.Warning);
                     break;
                 }
-                Wait(-1, wake: true);
+                Wait(_transfers.Count > 0 ? 250 : -1, wake: true);   // a transfer's idle limit is read again soon
             }
         }
         finally
@@ -233,6 +258,8 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
                 close(_wakeWrite);
                 _wakeRead = _wakeWrite = -1;
                 _offered = null;
+                _transfers.Clear();
+                Volatile.Write(ref _pending, 0);
                 _atoms.Clear();
                 _names.Clear();
                 Exception closed = _stopping ? new ObjectDisposedException(nameof(LinuxClipboard)) : new InvalidOperationException("The clipboard's X connection closed.");
@@ -304,6 +331,10 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
             case SelectionClear when U32(e, 12) == _selection && !(_ownedSince != 0 && (int)(U32(e, 4) - _ownedSince) < 0):
                 _offered = null;
                 break;
+            // A requestor took the part of a large copy that was there: the next one goes (state 1 is a deletion).
+            case PropertyNotify when ((byte*)e)[16] == 1 && _transfers.Find(t => t.Requestor == U32(e, 4) && t.Property == U32(e, 8)) is { } transfer:
+                Continue(transfer);
+                break;
         }
     }
 
@@ -329,7 +360,8 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
             }
             else if (offered.TryGetValue(target, out var data))
             {
-                fixed (byte* bytes = data.Data) xcb_change_property(_c, 0, requestor, property, data.Type, 8, (uint)data.Data.Length, bytes);
+                if (data.Data.Length > _maxBytes) BeginIncr(requestor, property, data.Type, data.Data);
+                else fixed (byte* bytes = data.Data) xcb_change_property(_c, 0, requestor, property, data.Type, 8, (uint)data.Data.Length, bytes);
                 answered = true;
             }
         }
@@ -342,6 +374,50 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
         *(uint*)(notify + 16) = target;
         *(uint*)(notify + 20) = answered ? property : 0;
         xcb_send_event(_c, 0, requestor, 0, notify);
+        xcb_flush(_c);
+    }
+
+    // A copy too large for one request, begun: the requestor's property holds its size, typed INCR, and we watch the
+    // requestor's window for the property's deletion, which asks for the first part (ICCCM 2.7.2). The watch comes first so
+    // a quick delete is not missed.
+    private void BeginIncr(uint requestor, uint property, uint type, byte[] data)
+    {
+        var events = 0x400000u;   // PropertyChange
+        xcb_change_window_attributes(_c, requestor, 0x800 /* EventMask */, &events);
+        var size = (uint)Math.Min(data.Length, int.MaxValue);   // a lower bound, which is all ICCCM asks of it
+        xcb_change_property(_c, 0, requestor, property, _incr, 32, 1, &size);
+        _transfers.RemoveAll(t => t.Requestor == requestor && t.Property == property);   // a new ask replaces its old one
+        _transfers.Add(new Incr(requestor, property, type, data, Environment.TickCount64));
+        Volatile.Write(ref _pending, _transfers.Count);
+    }
+
+    // The requestor deleted the property: write the next part, or the empty one that ends the transfer.
+    private void Continue(Incr transfer)
+    {
+        var left = transfer.Data.Length - transfer.Sent;
+        var part = Math.Min(left, (int)Math.Min(IncrPart, _maxBytes));
+        fixed (byte* bytes = transfer.Data)
+            xcb_change_property(_c, 0, transfer.Requestor, transfer.Property, transfer.Type, 8, (uint)part, bytes + transfer.Sent);
+        transfer.Sent += part;
+        transfer.Touched = Environment.TickCount64;
+        xcb_flush(_c);
+        if (part == 0) EndIncr(transfer);
+    }
+
+    private void EndIncr(Incr transfer)
+    {
+        var none = 0u;
+        xcb_change_window_attributes(_c, transfer.Requestor, 0x800, &none);   // the window is the requestor's again
+        _transfers.Remove(transfer);
+        Volatile.Write(ref _pending, _transfers.Count);
+    }
+
+    // A requestor that has not taken a part in the idle limit is given up on, so its transfer does not outlive it.
+    private void ExpireIncr()
+    {
+        if (_transfers.Count == 0) return;
+        var now = Environment.TickCount64;
+        foreach (var t in _transfers.Where(t => now - t.Touched > _incrIdle.TotalMilliseconds).ToList()) EndIncr(t);
         xcb_flush(_c);
     }
 
@@ -526,6 +602,7 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
     [DllImport(Xcb)] private static extern nint xcb_poll_for_event(nint c);
     [DllImport(Xcb)] private static extern int xcb_get_file_descriptor(nint c);
     [DllImport(Xcb)] private static extern uint xcb_get_maximum_request_length(nint c);
+    [DllImport(Xcb)] private static extern uint xcb_change_window_attributes(nint c, uint window, uint valueMask, void* valueList);
 
     [DllImport(LibC)] private static extern void free(nint p);
     [DllImport(LibC)] private static extern int pipe2(int* fds, int flags);

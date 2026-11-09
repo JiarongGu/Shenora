@@ -22,7 +22,7 @@ import path from 'node:path';
 import { repo } from './cef-cache.mjs';
 
 if (process.platform !== 'win32') {
-  console.error('chromium-codecs: the probe drives a web panel, which is Windows only today.');
+  console.error('chromium-codecs: the probe has only been run on Windows.');
   process.exit(2);
 }
 

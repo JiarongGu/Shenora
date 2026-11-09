@@ -24,9 +24,12 @@ namespace Shenora.Sample.Chromium;
 /// <item><c>4</c> — a panel disposed and another made in the same profile at once, in one process; <c>5</c> — the same
 /// with another profile's panel opened and closed in between (a cookie went missing in 8 of 100 such runs, before the host
 /// waited for a profile's teardown).</item>
+/// <item><c>6</c> — Linux: two panels stacked, hidden, moved and closed, one step at a time. The probe writes a <c>STEP</c>
+/// line and waits for a line on its standard input; whoever drives it (<c>tests/Shenora.Tests.Linux</c>) reads the screen
+/// from outside between the two, so the pixels are the X server's and not the app's own account of them.</item>
 /// </list>
-/// Windows only, as the panel is. Nothing outside the app is touched: input is posted to its own window, and the page
-/// comes from a server on localhost that lives as long as the probe.
+/// Nothing outside the app is touched: input is posted to its own window, and the page comes from a server on localhost
+/// that lives as long as the probe.
 /// </summary>
 internal static class PanelProbe
 {
@@ -36,11 +39,15 @@ internal static class PanelProbe
     private static string? _log;
     private static IUiDispatcher _ui = null!;
 
+    /// <summary>Run 6, whose driver reads the screen: the splash would be one more thing on it.</summary>
+    public static bool Stacked => Environment.GetEnvironmentVariable("SHENORA_SAMPLE_PANEL_PROBE") == "6";
+
     /// <summary>Start the probe if the environment asks for it; otherwise nothing.</summary>
     public static void StartIfAsked(ShenoraApplication app)
     {
         var run = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_PANEL_PROBE");
-        if (run is not ("1" or "2" or "3" or "4" or "5") || !OperatingSystem.IsWindows()) return;
+        if (run is not ("1" or "2" or "3" or "4" or "5" or "6")) return;
+        if (run == "6" ? !OperatingSystem.IsLinux() : !OperatingSystem.IsWindows()) return;
         _log = Environment.GetEnvironmentVariable("SHENORA_SAMPLE_PANEL_LOG") ?? Path.Combine(AppContext.BaseDirectory, "panel-probe.log");
         _ = Task.Run(async () =>
         {
@@ -57,6 +64,11 @@ internal static class PanelProbe
     {
         using var server = PageServer.Start();
         var origin = server.Origin;
+        if (run == "6")
+        {
+            await StackedAsync(windows, sessions, origin);
+            return;
+        }
         var hwnd = await MainWindowAsync();
         GetClientRect(hwnd, out var client);
         var bounds = new Rectangle(client.Right / 4, client.Bottom / 4, client.Right / 2, client.Bottom / 2);
@@ -150,6 +162,46 @@ internal static class PanelProbe
         using (var other = await PanelAsync(windows, sessions, OtherProfile, origin + "plain", bounds, persistSessionCookies: true))
             Log($"ISOLATION {OtherProfile}: {await CookiesAsync(other, origin)}");
         SetWindowPos(hwnd, HwndNoTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+    }
+
+    // Run 6: panel A (green) with panel B (blue) opened over part of it, then B hidden and shown, A moved clear, B closed.
+    // The last step leaves A open: the driver closes the main window as a window manager does, and the app must end.
+    private static async Task StackedAsync(ChromiumWindows windows, ChromiumSessionHost sessions, string origin)
+    {
+        var a = new Rectangle(200, 150, 500, 360);
+        var b = new Rectangle(400, 260, 500, 360);   // over A's lower right
+        var moved = new Rectangle(50, 60, 300, 200);   // clear of B
+        Log($"BOUNDS A {a.X},{a.Y},{a.Width},{a.Height} B {b.X},{b.Y},{b.Width},{b.Height} A-MOVED {moved.X},{moved.Y},{moved.Width},{moved.Height}");
+        await StepAsync("BEFORE");
+        var first = await PanelAsync(windows, sessions, Profile, origin, a, persistSessionCookies: true);
+        await StepAsync("A");
+        var second = await PanelAsync(windows, sessions, OtherProfile, origin + "two", b, persistSessionCookies: true);
+        await StepAsync("B");
+        second.SetVisible(false);
+        await StepAsync("B-HIDDEN");
+        second.SetVisible(true);
+        await StepAsync("B-SHOWN");
+        first.SetBounds(moved);
+        await StepAsync("A-MOVED");
+        second.Dispose();
+        await Task.WhenAny(second.Closed, Task.Delay(5000));
+        await StepAsync("B-CLOSED");
+        await StepAsync("A-OPEN");   // the driver closes the window now, not this
+        GC.KeepAlive(first);
+    }
+
+    private static StreamReader? _acks;
+
+    // A step reached: written to the log, then held until the driver answers with a line on standard input (it reads the
+    // screen from outside meanwhile). The pause first lets the page paint; an unanswered step goes on after five minutes,
+    // longer than a slow start the driver waits out, so a late driver is never overtaken.
+    private static async Task StepAsync(string name)
+    {
+        await Task.Delay(800);
+        Log($"STEP {name}");
+        _acks ??= new StreamReader(Console.OpenStandardInput());
+        var answer = _acks.ReadLineAsync();
+        if (await Task.WhenAny(answer, Task.Delay(TimeSpan.FromMinutes(5))) != answer) Log($"STEP {name} was never answered");
     }
 
     private static async Task<ChromiumWebPanel> PanelAsync(ChromiumWindows windows, ChromiumSessionHost sessions, string profile,

@@ -554,13 +554,24 @@ HWND (that first build placed right and showed only its background). The panel e
 `SetVisible` and `GoBack`/`GoForward`/`Reload`/`Stop`, so the host places it in a region its page reserves and draws
 its own chrome. The context sets the profile's proxy through Chromium's `proxy` preference and
 `persist_session_cookies`. It runs in the shell's own CEF process, which is why it needs no `ChromiumEngine` (that
-would be a second CEF init). Windows only, today. WHY: D97.
+would be a second CEF init). One code path on Windows and Linux; macOS builds it and has not run it. WHY: D97.
 
 **Seen on real CEF** (Windows, the Chromium sample's opt-in `PanelProbe`, 2026-10-22): the panel's pixels on screen are
 its page's, a click and keys posted to the shell's window reach the panel's page, back/forward, `SetVisible` and
 `SetBounds` move what is on screen, two profiles keep separate cookies, and across a restart the session cookie stays
 with `PersistSessionCookies` true and goes with false (the persistent one stays either way). Its `ISessionBrowser`
 members must be called on the shell's UI thread: from another, CEF refuses the DevTools calls behind script and cookies.
+
+**Seen on Linux** (`LinuxWebPanelTests`: the sample's `PanelProbe` run 6 under openbox on Xvfb in WSL, the screen read from
+outside through XCB, `dev.mjs linux-tests`): the panel is Views too, so the X window is the main window's alone and there is
+nothing of the panel to ask the server about; its place is its page's pixels. Those fill the bounds asked for exactly
+(client pixels at the window's origin, scale 1) with none of the panel's own background showing; a second panel opened over
+the first covers it where they meet and the first shows elsewhere; `SetVisible(false)` takes the top one off the screen and the
+one beneath is whole, `SetVisible(true)` puts it back on top; `SetBounds` moves a panel and the page it covered is the
+baseline's again; a closed panel leaves the baseline's pixels; and the main window closed as a window manager closes it
+(`WM_DELETE_WINDOW`), with a panel still open, ends the app within 20 s and leaves no window. The same `ChromiumSessionHost.CreateChild`
+runs on every OS; only the Windows build had refused it. Not run on Linux: a display scale other than 1, a click or keys
+reaching the panel's page, history, and a profile's cookies across a restart (all of them run on Windows above).
 
 A profile's context is let go as its panel (or window) closes, and CEF tears the profile down on its own threads after
 that. A context made for the same folder meanwhile read the cookie file early: a recreated panel lost a cookie in 8 of 100

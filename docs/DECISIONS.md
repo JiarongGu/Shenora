@@ -1373,7 +1373,8 @@ docs cite them — so the number is the column to scan.
   `ChromiumWindows.CreateWebPanelAsync` embeds a web-content browser in a window the shell owns (`ChromiumWebPanel`):
   a CEF browser view floated over the window's page as a Views overlay, in a caller-chosen profile's request context,
   in the shell's OWN CEF process. The host places it (`SetBounds`) in a region its page reserves, draws its own
-  chrome, and drives it through `ISessionBrowser`, plus back/forward/reload. Windows only, today.
+  chrome, and drives it through `ISessionBrowser`, plus back/forward/reload. Run on Windows and Linux through the one
+  code path (the overlay is Views on every OS); macOS builds it and has not run it.
   - 🔴 **Why not `ChromiumEngine`/`ChromiumChildBrowser` (D83):** that path needs a STARTED engine — a second CEF
     init this process cannot do — and serves the app's OWN origin with its IPC bridge. The panel is arbitrary web
     content in a chosen profile, so it reuses the session browser (D91), already in-process and already drivable.

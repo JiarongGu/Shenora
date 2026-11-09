@@ -89,7 +89,7 @@ public sealed unsafe class ChromiumWindows
     /// Embed a web-content browser in the named window (D97): a CEF browser view floated over the window's page as a Views
     /// overlay, in a profile of the caller's choosing, running in this shell's own CEF process. The host places it with
     /// <see cref="ChromiumWebPanel.SetBounds"/> inside a region its page reserves and draws its own chrome; it drives the
-    /// content through <see cref="ChromiumWebPanel.Browser"/>. Windows only, today.
+    /// content through <see cref="ChromiumWebPanel.Browser"/>. Run on Windows and Linux; macOS has not run it.
     /// </summary>
     /// <param name="windowName">The window to host it in; it must be open (<see cref="MainWindowName"/> for the shell's
     /// main window).</param>

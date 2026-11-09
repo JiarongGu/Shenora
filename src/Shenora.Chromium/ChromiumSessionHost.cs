@@ -179,7 +179,7 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
     /// Make a web-content browser embedded in a host window (D97): a CEF <c>CefBrowserView</c> in the profile's request
     /// context, floated over <paramref name="host"/>'s page as a CUSTOM-docked overlay and placed by the panel, driven as
     /// any session browser is and with nothing of the app's own. It runs in this shell's own CEF process, so it needs no
-    /// separate <see cref="ChromiumEngine"/>. Windows only, today.
+    /// separate <see cref="ChromiumEngine"/>.
     /// </summary>
     internal Task<ChromiumWebPanelBrowser> CreateChildAsync(SessionBrowserOptions options, Action<SessionProcessReport>? onGone,
         ChromiumWindow host, Rectangle bounds, Color? background, bool persistSessionCookies, string? proxyServer, CancellationToken cancellationToken)
@@ -210,10 +210,6 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
     private ChromiumWebPanelBrowser CreateChild(SessionBrowserOptions options, Action<SessionProcessReport>? onGone, string profile,
         ChromiumWindow host, Rectangle bounds, Color? background, _cef_request_context_t* context)
     {
-#if !CEF_WINDOWS
-        Release(context, profile);
-        throw new PlatformNotSupportedException("A Chromium web panel is Windows only, today.");
-#else
         var size = new Size(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height));
         var browser = new ChromiumSessionBrowser(options, () => null, onGone, size, _ui, windowless: false);
         var panel = new ChromiumWebPanelBrowser(browser, host, bounds, background);
@@ -229,7 +225,6 @@ public sealed unsafe class ChromiumSessionHost : ISessionHost
         // The context is the panel's own, let go as its browser closes.
         browser.WhenClosed(() => Release(context, profile));
         return panel;
-#endif
     }
 
     // CEF's UI thread, once the profile is ready: a session browser in a window of its own. An owned context is released
