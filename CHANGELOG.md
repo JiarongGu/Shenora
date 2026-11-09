@@ -39,6 +39,17 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **The Linux Chromium shell hands its clipboard copy to a clipboard manager as the app exits.** X11 keeps no copy, so what the app
+  copied went with it unless a manager copies on change. Disposing the app now asks the manager (the freedesktop `SAVE_TARGETS`
+  request) to keep it, while the app goes on answering the manager's reads, and waits for it at most 5 seconds: no manager costs
+  nothing, a manager that does not answer costs the 5 seconds once. Each target is read on its own (`MULTIPLE` is not offered).
+  Measured against a scripted manager on Xvfb; not against GNOME's, Plasma's or XFCE's.
+- **`ISessionBrowserHistory`: back, forward, reload and stop on a session browser, on both engines** (D100). `CanGoBack`,
+  `CanGoForward`, `GoBack`, `GoForward`, `Reload` and `Stop`, found by type on a browser the kit's shells make
+  (`window.Browser as ISessionBrowserHistory` for an interactive session's window), so a host that draws its own chrome can
+  step through a page's history and grey its buttons. `ISessionBrowser` gains nothing, so no implementation of it breaks.
+  `ChromiumWebPanel` gains `CanGoBack` and `CanGoForward` beside the four it had. ⚠ WebView2 asks `CancelNavigation` about a
+  step; CEF does not for a back or a forward (measured), so a policy that must see every navigation does not see one there.
 - **`AllowZoom`: the same zoom setting on both engines** (`ChromiumHostOptions`, `ChromiumEngineOptions`,
   `WebViewHostOptions`). Off by default, as the WebView2 host always had it: Ctrl+wheel, Ctrl+plus, Ctrl+minus, Ctrl+0
   and a pinch do not zoom the page. The Chromium shell had no counterpart, so a page there zoomed the whole window and an

@@ -152,6 +152,38 @@ public interface ISessionBrowser
 }
 
 /// <summary>
+/// The history of a browser, for a host that draws its own back, forward, reload and stop. Optional, and found by type:
+/// <c>window.Browser as ISessionBrowserHistory</c>. A shell's own browsers implement it; the pooled and streamed ones
+/// are driven by a lease and never stepped. Every member runs on the shell's UI thread (<see cref="ISessionHost.Ui"/>).
+/// <para>
+/// A step starts a main-frame navigation like <see cref="ISessionBrowser.Navigate"/> does, and
+/// <see cref="ISessionBrowser.NavigationCompleted"/> says when it finished. ⚠
+/// <see cref="ISessionBrowser.CancelNavigation"/> is asked about a step by WebView2, and not by CEF, which raises no
+/// pre-navigation callback for a back or forward step (measured): the entry was allowed when it was first loaded.
+/// </para>
+/// </summary>
+public interface ISessionBrowserHistory
+{
+    /// <summary>Whether there is an earlier entry to go to.</summary>
+    bool CanGoBack { get; }
+
+    /// <summary>Whether there is a later entry to go to.</summary>
+    bool CanGoForward { get; }
+
+    /// <summary>Go to the earlier entry; nothing happens when <see cref="CanGoBack"/> is false.</summary>
+    void GoBack();
+
+    /// <summary>Go to the later entry; nothing happens when <see cref="CanGoForward"/> is false.</summary>
+    void GoForward();
+
+    /// <summary>Load the current entry again.</summary>
+    void Reload();
+
+    /// <summary>Stop the load in progress.</summary>
+    void Stop();
+}
+
+/// <summary>
 /// An interactive session's window (see <see cref="ISessionHost.OpenWindowAsync"/>). Every member runs on the
 /// shell's UI thread.
 /// </summary>

@@ -276,6 +276,8 @@ sealed class Shenora.Chromium.ChromiumWebPanel : System.IDisposable
   public Shenora.Core.Sessions.ISessionBrowser Browser { get; }
   public System.IntPtr WindowHandle { get; }
   public System.Threading.Tasks.Task Closed { get; }
+  public bool CanGoBack { get; }
+  public bool CanGoForward { get; }
   public void Dispose()
   public void Focus()
   public void GoBack()

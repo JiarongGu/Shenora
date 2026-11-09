@@ -184,7 +184,8 @@ dev server, and `npm run build:chromium` writes the packaged page into the sampl
 
 **What differs by OS.** Linux: the tray needs a panel that shows StatusNotifierItems, which GNOME has only with its
 AppIndicator extension, and without one closing the main window ends the app; the clipboard is X11's, where what
-the app copied lasts while it runs unless a clipboard manager keeps a copy; the window's `WM_CLASS` is `MyApp`,
+the app copied lasts while it runs and, as the app is disposed, in a clipboard manager that takes it (the freedesktop
+`SAVE_TARGETS` request; with none running it goes with the app); the window's `WM_CLASS` is `MyApp`,
 which a `.desktop` file's `StartupWMClass` names. macOS: the bundle's icon is `ShenoraChromiumBundleIcon`, an
 `.icns`, and the build neither signs nor notarizes it, which Gatekeeper needs of a download. What else the bundle
 declares, such as the link schemes and document types macOS routes to the app, goes in a plist of your own that

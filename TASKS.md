@@ -164,17 +164,15 @@ is left is mostly measurement that needs hardware or a person.
   panel only, including whether a click on it raises the window past focus-stealing prevention (no user timestamp or
   XDG activation token is passed); Chromium may use the XDG desktop portal for dialogs where one runs. And
   linux-arm64, whose helper is built and has never run.
-- [ ] **The clipboard at exit.** It hands no copy to a clipboard manager (the freedesktop `SAVE_TARGETS` handover), so
-  a copy leaves with the app where no manager copies on change; and it writes no format larger than one X request.
+- [ ] **The Linux clipboard writes no format larger than one X request** (about 16 MB); it refuses one rather than send
+  it in parts (INCR on the write side). The exit handover to a manager (`SAVE_TARGETS`) is built and measured against a
+  scripted manager only, not a real one (GNOME's, Plasma's, XFCE's), and does not offer `MULTIPLE`.
 
 ### 🌐 THE CHROMIUM WEB PANEL (D97) — runs on Windows; what is left
 
 It has run on real CEF (the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`; how it works and what was seen:
 `docs/design/shells.md`).
 
-- [ ] **Decide whether history nav generalises onto `ISessionBrowser`.** `GoBack`/`GoForward`/`Reload`/`Stop` are on the
-  panel today (Chromium-only, no Core or WebView2 change); WebView2's `CoreWebView2` has the same four, so they could
-  move to the shared session contract if a second consumer wants them there. **Proposed as D100, awaiting the owner.**
 - [ ] **macOS/Linux panels.** Windows only today: `ChromiumSessionHost.CreateChild` throws `PlatformNotSupportedException`
   in the macOS and Linux builds, while the overlay it builds is Views on every OS. Lift the guard and run the probe on
   Linux first (WSL can).

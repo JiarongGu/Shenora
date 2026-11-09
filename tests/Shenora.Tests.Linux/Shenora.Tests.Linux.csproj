@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The tests that need Linux and an X display: the Chromium shell's Linux code, compiled as CefOs=Linux, which the
+    Windows test project cannot reference. Outside Shenora.slnx. `node devtools/dev.mjs linux-tests` runs them (under WSL
+    from Windows) on a private Xvfb display; `verify` only compiles them, as it does the engine's Linux code.
+    tests/ sits OUTSIDE src/, so the shared build properties are restated, as in Shenora.Tests.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+    <!-- Compiled on Windows too, where the apphost's runtime pack is not wanted. -->
+    <UseAppHost>false</UseAppHost>
+    <SelfContained>false</SelfContained>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <CodePage>65001</CodePage>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Shenora.Chromium\Shenora.Chromium.csproj" AdditionalProperties="RuntimeIdentifier=$(RuntimeIdentifier)" />
+  </ItemGroup>
+
+</Project>

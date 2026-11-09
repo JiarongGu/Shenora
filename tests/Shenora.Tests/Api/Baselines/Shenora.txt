@@ -336,6 +336,13 @@ interface Shenora.Core.Sessions.ISessionBrowser
   public abstract void Focus()
   public abstract void Navigate(string url)
 interface Shenora.Core.Sessions.ISessionBrowserContext : System.IDisposable
+interface Shenora.Core.Sessions.ISessionBrowserHistory
+  public abstract bool CanGoBack { get; }
+  public abstract bool CanGoForward { get; }
+  public abstract void GoBack()
+  public abstract void GoForward()
+  public abstract void Reload()
+  public abstract void Stop()
 interface Shenora.Core.Sessions.ISessionHost
   public abstract Shenora.Core.Sessions.ISessionBrowserContext CreateContext()
   public abstract Shenora.Core.Shell.IUiDispatcher Ui { get; }

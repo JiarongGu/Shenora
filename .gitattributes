@@ -14,3 +14,6 @@
 # line is the belt and that is the braces.)
 *.md text eol=lf
 
+
+# A shell script runs under WSL or Linux from a Windows checkout, where a CRLF would break its first line.
+*.sh text eol=lf

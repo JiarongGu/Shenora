@@ -158,7 +158,7 @@ docs cite them — so the number is the column to scan.
 | **D97** | THE CHROMIUM SHELL EMBEDS A WEB PANEL: A CHILD BROWSER IN A SHELL WINDOW, IN A CHOSEN PROFILE. |
 | **D98** | THE README IS THE LANDING PAGE EVERY PACKAGE SHIPS, AND THE FILES WRITTEN FOR CODING AGENTS ARE KEPT AS STATE, NOT AS COPIES. |
 | **D99** | THE CHROMIUM ENGINE CARRIES H.264, AAC AND HEVC AS A PACKAGE OF ITS OWN, BUILT AND PUBLISHED BY THE KIT. |
-| **D100** | PROPOSED: HISTORY NAVIGATION STAYS ON THE CHROMIUM WEB PANEL; `ISessionBrowser` GAINS NONE OF IT UNTIL A SECOND SHELL WANTS IT, AND THEN AS AN OPTIONAL INTERFACE. |
+| **D100** | HISTORY NAVIGATION IS AN OPTIONAL INTERFACE, `ISessionBrowserHistory`, WHICH BOTH ENGINES' SESSION BROWSERS IMPLEMENT; `ISessionBrowser` ITSELF GAINS NOTHING. |
 | **D101** | PROPOSED: THE KIT TAKES ONE PLAYBACK-HEALTH FIGURE — DROPPED PICTURES, ABSENT WHEN UNKNOWN — AND ONLY WHERE ITS OWN PLAYERS CAN READ IT. |
 | **D102** | PROPOSED: ASK THE ANDROID ENCODER NOT TO REORDER, KEEP THE WRITER'S DROP AS THE BACKSTOP, AND BUILD THE REORDERING WRITER ONLY IF THE LOSS SURVIVES IT. |
 | **D103** | A WINDOWS CHROMIUM APP'S STARTUP SCREEN IS DRAWN BY THE SHIM, FROM RESOURCES THE BUILD STAMPS INTO ITS LAUNCHER. |
@@ -1420,34 +1420,27 @@ docs cite them — so the number is the column to scan.
     the first shape, which made the targets a second transport with its own pin; a third party's hand-built CEF (no HEVC, one person's
     binaries in a public package); sending each video to Edge.
 
-- **D100 — PROPOSED: HISTORY NAVIGATION STAYS ON THE CHROMIUM WEB PANEL; `ISessionBrowser` GAINS NONE OF IT UNTIL A SECOND
-  SHELL WANTS IT, AND THEN AS AN OPTIONAL INTERFACE.**
-  **Status: PROPOSED, not accepted** — the owner's call; it answers the TASKS row "Decide whether history nav generalises
-  onto `ISessionBrowser`". `GoBack`/`GoForward`/`Reload`/`Stop` are on `ChromiumWebPanel` only (D97), and call
-  `ChromiumSessionBrowser`'s `internal` methods (`can_go_back` → `go_back`, `reload`, `stop_load`).
-  - **Options.** (A) Leave them on the panel. (B) Add the four to `ISessionBrowser`, abstract or as default interface
-    members. (C) A separate `ISessionBrowserHistory` the Chromium browser (and later WebView2's) implements, found by
-    `is`; the panel's four become sugar over it.
-  - **Evidence.** *No second consumer.* The only caller is the Chromium sample's `PanelProbe`. WebView2 has no web panel
-    at all (`CreateWebPanelAsync` is Chromium-only), and nothing in `Shenora.Core.Sessions` navigates history: the pool
-    resets to a blank page between leases, `StreamingSession` and `InteractiveSession` drive a page with input, not with
-    back. None of the sibling apps' sources on this machine names `ChromiumWebPanel` or `ISessionBrowser`.
-    *The interface is implemented outside the kit's shells*: the test fake `FakeSessionBrowser` does, and the changelog tells
-    an app that writes its own `ISessionBrowser` to honour `NavigationCompleted`'s replaced-navigation rule. Four abstract
-    members break each of them (pre-1.0, so allowed, but it is `### Breaking`); a default member does not break them and
-    silently does nothing, which is the failure D91's fail-closed rules argue against. *WebView2 would be cheap*:
-    `CoreWebView2` has `GoBack`/`GoForward`/`Reload`/`Stop` and `CanGoBack`/`CanGoForward` one for one.
-  - **Costs and constraints.** (A) costs nothing and promises nothing; the price is that a host holding only an
-    `ISessionBrowser` cannot go back, which no one has asked for. (B) widens D91's one-implementation contract for a
-    capability the pooled and streamed browsers never use, and a history step on a pooled browser would be a navigation
-    the lease did not ask for. Whether CEF raises `on_before_browse` (so `CancelNavigation` applies) for a history step is
-    **not measured** — (B) would need that measured first. (C) is additive, lets the promotion wait without a breaking
-    change later, and keeps D91's contract to what every browser does.
-  - ⚠ **A gap whichever is chosen:** the panel exposes no `CanGoBack`/`CanGoForward`, and `GoBack` is a silent no-op
-    when there is nowhere to go. A host that draws its own chrome (D97's reason for the four) cannot grey its buttons. That
-    is the first thing a real consumer will need, and it is part of the shape (C) should carry.
-  - **Recommended: (A) now, (C) when a second shell or a consumer holding only an `ISessionBrowser` asks** (D15: promote on
-    proof, and there is none). (B) is the option to refuse: it is the breaking one and the least earned.
+- **D100 — HISTORY NAVIGATION IS AN OPTIONAL INTERFACE, `ISessionBrowserHistory`, WHICH BOTH ENGINES' SESSION BROWSERS IMPLEMENT;
+  `ISessionBrowser` ITSELF GAINS NOTHING.**
+  `GoBack`/`GoForward`/`Reload`/`Stop` were on `ChromiumWebPanel` only (D97), over `ChromiumSessionBrowser`'s `internal` methods. They are
+  now `ISessionBrowserHistory` (`Core/Sessions`): those four plus `CanGoBack` and `CanGoForward`, found by type
+  (`window.Browser as ISessionBrowserHistory`), implemented by the Chromium session browser and the WebView2 one. The panel's four stay,
+  forwarding, and gain the two `Can` properties.
+  - **Options.** (A) Leave them on the panel. (B) Add them to `ISessionBrowser`. (C) The optional interface.
+  - **Why (C).** It is additive: nothing published narrows, and no implementor of `ISessionBrowser` (the test fake, an app's own)
+    breaks. A host holding only an `ISessionBrowser`, an interactive session's `ISessionWindow.Browser`, can now draw its own back
+    button on either engine, which (A) denied it, and it can grey it, which the panel could not (`GoBack` was a silent no-op with
+    nowhere to go). WebView2 was cheap: its control has the six one for one. It is one way for both engines, which D97's four on one
+    engine's panel was not.
+  - **Why not (B).** Four abstract members are `### Breaking` for every implementor; default ones silently do nothing, the failure
+    D91's fail-closed rules argue against; and the pooled and streamed browsers are driven by a lease and are never stepped, so the
+    contract would carry a capability that part of its one implementation never uses.
+  - ⚠ **The engines differ on one thing, measured.** WebView2 asks `CancelNavigation` for a back, a forward and a reload; CEF asked it
+    for a `Navigate` and not for a back or forward (`PanelProbe`, real CEF 154: asked for `/two`, then nothing for either step). A
+    policy that must see every navigation does not see a step on the Chromium shell. The entry stepped to was allowed when it first
+    loaded, and the interface says so. Reload on CEF is not measured.
+  - **Not covered.** `NavigationCompleted` for a step is measured on WebView2 only, in a test against a real control; on CEF the
+    probe saw the page change, not the event.
 
 - **D101 — PROPOSED: THE KIT TAKES ONE PLAYBACK-HEALTH FIGURE — DROPPED PICTURES, ABSENT WHEN UNKNOWN — AND ONLY WHERE ITS OWN
   PLAYERS CAN READ IT.**
