@@ -18,8 +18,12 @@ namespace Shenora.Chromium.Host;
 /// requestor's window closing mid-paste.
 /// </para>
 /// <para>
-/// ⚠ What the app copied goes with it when it exits, unless a clipboard manager has taken a copy (the kit does not
-/// hand it over). A format larger than one X request (about 16 MB on a typical server) is refused, not sent in parts.
+/// What the app copied goes with it when it exits, so <see cref="Dispose"/> first hands the copy to the clipboard
+/// manager, if one runs, through the freedesktop <c>SAVE_TARGETS</c> request: the manager reads each target from this app,
+/// which keeps answering until the manager says it is done or <see cref="HandoverLimit"/> passes. A manager that is not
+/// there costs nothing; one that does not answer costs the limit, once. ⚠ Each target is read on its own: <c>MULTIPLE</c>
+/// is not offered, so a manager that asks only for it keeps nothing. A format larger than one X request (about 16 MB on a
+/// typical server) is refused, not sent in parts.
 /// </para>
 /// </summary>
 internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
@@ -30,7 +34,11 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
     private static readonly TimeSpan Answer = TimeSpan.FromSeconds(2);
     private const int MaxTransfer = 256 << 20;   // what one read takes in parts before giving up on its owner
 
+    /// <summary>The longest <see cref="Dispose"/> waits for a clipboard manager to finish keeping the copy.</summary>
+    internal static readonly TimeSpan HandoverLimit = TimeSpan.FromSeconds(5);
+
     private readonly string _selectionName;
+    private readonly TimeSpan _handover;
     private readonly ILogger? _log;
     private readonly ConcurrentQueue<(Action Run, Action<Exception> Fail)> _work = new();
     private readonly object _gate = new();
@@ -52,10 +60,11 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
 
     /// <summary>A selection of this name, which no other app reads: how the connection is exercised without the user's
     /// clipboard.</summary>
-    internal LinuxClipboard(string selectionName, ILogger? log)
+    internal LinuxClipboard(string selectionName, ILogger? log, TimeSpan? handover = null)
     {
         _selectionName = selectionName;
         _log = log;
+        _handover = handover ?? HandoverLimit;
     }
 
     public Task SetTextAsync(string text)
@@ -109,6 +118,16 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
 
     public void Dispose()
     {
+        // The thread that answers other apps goes last, so the manager can read the copy before it does.
+        Task<bool>? handover = null;
+        lock (_gate)
+        {
+            if (_stopping) return;
+            if (_thread is not null && _selectionName == "CLIPBOARD") handover = Run(HandOver);
+        }
+        try { handover?.Wait(_handover + Answer + Answer); }
+        catch (Exception ex) { AppCallback.Log(_log, () => $"[Shenora.Chromium] The clipboard was not handed to a manager: {ex.GetBaseException().Message}", LogLevel.Debug); }
+
         Thread? thread;
         lock (_gate)
         {
@@ -328,12 +347,34 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
 
     // ── on the connection's thread, inside a Run ───────────────────────────────────────────────────────────────────
 
-    private uint Owner()
+    private uint Owner() => Owner(_selection);
+
+    private uint Owner(uint selection)
     {
-        var reply = xcb_get_selection_owner_reply(_c, xcb_get_selection_owner(_c, _selection), null);
+        var reply = xcb_get_selection_owner_reply(_c, xcb_get_selection_owner(_c, selection), null);
         if (reply == 0) return 0;
         try { return U32(reply, 8); }
         finally { free(reply); }
+    }
+
+    // The freedesktop clipboard-manager handover: SAVE_TARGETS, with the targets to keep, to the selection a manager owns.
+    // The manager then reads each from this app (Serve, from WaitFor) and answers with a SelectionNotify, whose property
+    // is None when it will not. True when it kept the copy.
+    private bool HandOver()
+    {
+        if (_offered is not { Count: > 0 } offered || Owner(_selection) != _window) return false;
+        var manager = Atom("CLIPBOARD_MANAGER");
+        if (Owner(manager) == 0) return false;
+        var save = Atom("SAVE_TARGETS");
+        var property = Atom("SHENORA_CLIPBOARD_SAVE");
+        var targets = offered.Keys.ToArray();
+        fixed (uint* list = targets) xcb_change_property(_c, 0, _window, property, AtomType, 32, (uint)targets.Length, list);
+        xcb_convert_selection(_c, _window, manager, save, property, 0);
+        xcb_flush(_c);
+        var e = WaitFor(x => Type(x) == SelectionNotify && U32(x, 8) == _window && U32(x, 12) == manager && U32(x, 16) == save, _handover);
+        if (e == 0) return false;
+        try { return U32(e, 20) != 0; }
+        finally { free(e); }
     }
 
     // Leaving the selection with no owner is what an empty clipboard is; any app may.

@@ -39,6 +39,11 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **The Linux Chromium shell hands its clipboard copy to a clipboard manager as the app exits.** X11 keeps no copy, so what the app
+  copied went with it unless a manager copies on change. Disposing the app now asks the manager (the freedesktop `SAVE_TARGETS`
+  request) to keep it, while the app goes on answering the manager's reads, and waits for it at most 5 seconds: no manager costs
+  nothing, a manager that does not answer costs the 5 seconds once. Each target is read on its own (`MULTIPLE` is not offered).
+  Measured against a scripted manager on Xvfb; not against GNOME's, Plasma's or XFCE's.
 - **`ISessionBrowserHistory`: back, forward, reload and stop on a session browser, on both engines** (D100). `CanGoBack`,
   `CanGoForward`, `GoBack`, `GoForward`, `Reload` and `Stop`, found by type on a browser the kit's shells make
   (`window.Browser as ISessionBrowserHistory` for an interactive session's window), so a host that draws its own chrome can

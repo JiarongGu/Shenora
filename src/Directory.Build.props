@@ -66,9 +66,11 @@
     <None Include="$(MSBuildThisFileDirectory)..\docs\assets\shenora-icon.png" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 
-  <!-- The single test project sees internals of every src assembly. -->
+  <!-- The test projects see internals of every src assembly: Shenora.Tests, and Shenora.Tests.Linux for the Chromium
+       shell's Linux code, which only a Linux build has. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Shenora.Tests" />
+    <InternalsVisibleTo Include="Shenora.Tests.Linux" />
   </ItemGroup>
 
   <!--

@@ -15,6 +15,7 @@
 //   node devtools/dev.mjs input <args…>    - raw win-input passthrough (list | click | rclick | move | drag)
 //   node devtools/dev.mjs responsiveness <fx> <fy> [--label name] [--duration|--interval|--timeout ms]
 //                                           - click + SendMessageTimeout(WM_NULL) UI-thread stall probe
+//   node devtools/dev.mjs linux-tests [dotnet test args] - the Chromium shell's Linux code on a private Xvfb display (WSL from Windows)
 //   node devtools/dev.mjs update-probe [dir] - drive the staged updater over a REAL tree (default: publish the desktop sample)
 //   node devtools/dev.mjs knowledge <…>    - rule-base + skills doctor (check | footprint | new <name> [--core])
 //   node devtools/dev.mjs clean [--all]     - drop devtools/_* build output (--all: sources + publish/ too)
@@ -1168,6 +1169,11 @@ switch (cmd) {
       && ['MacOS', 'Linux'].every((os) => step(`dotnet build (Shenora.Chromium as ${os})`, () => run('dotnet',
         ['build', path.join('src', 'Shenora.Chromium', 'Shenora.Chromium.csproj'), `-p:CefOs=${os}`, '-v', 'minimal',
           '--artifacts-path', path.join('devtools', '_build', `chromium-${os.toLowerCase()}`)])))
+      // The tests of that Linux code (`dev.mjs linux-tests` runs them): compiled here, never run, since running needs
+      // Linux and Xvfb.
+      && step('dotnet build (Shenora.Tests.Linux)', () => run('dotnet',
+        ['build', path.join('tests', 'Shenora.Tests.Linux', 'Shenora.Tests.Linux.csproj'), '-v', 'minimal',
+          '--artifacts-path', path.join('devtools', '_build', 'tests-linux')]))
       // The Chromium sample is outside the solution, because its layout fetches CEF. Compiled without the layout, so
       // the app docs/getting-started.md (2b) walks through still builds against the surface it names; its warnings
       // join the solution's, which is what --strict reads.
@@ -1792,6 +1798,19 @@ switch (cmd) {
   // include note at the top of src/platform_posix.cpp). D5 keeps this repo on ONE manual release
   // workflow with no push CI, so `--posix` is not a convenience — it is the only thing between a broken
   // POSIX half and a failed release.
+  case 'linux-tests': {
+    // The Chromium shell's Linux code, tested on a private Xvfb display (tests/Shenora.Tests.Linux). On Windows it runs in
+    // WSL, with SHENORA_LINUX_SYSROOT (if set) passed through; `verify` only compiles it.
+    const script = 'devtools/scripts/linux-tests.sh';
+    if (process.platform === 'win32') {
+      const wslenv = ['SHENORA_LINUX_SYSROOT', process.env.WSLENV].filter(Boolean).join(':');
+      run('wsl.exe', ['--cd', repo, '--', 'bash', script, ...args], { env: { ...process.env, WSLENV: wslenv } });
+    } else {
+      run('bash', [script, ...args]);
+    }
+    break;
+  }
+
   case 'launcher': {
     if (args.includes('--posix')) { runPosixLauncherBuild(); break; }
     const cmake = resolveCmake();
@@ -2029,7 +2048,7 @@ switch (cmd) {
     // ⚠ THIS STRING IS THE ONLY DISCOVERY SURFACE FOR A VERB, so a verb missing from it is a tool nobody
     // finds. `stale-scan` and `cite-scan` were both absent for their whole lives until 2026-08-10 — each
     // shipped with a `case` and a rule telling you to run it, and neither appeared here.
-    console.log('usage: node devtools/dev.mjs <build|test|checks|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|reserved-paths|cef-binding|cef-native|chromium-codecs|chromium-startup-screen|install-hooks>');
+    console.log('usage: node devtools/dev.mjs <build|test|checks|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|linux-tests|nuget-retire|knowledge|clean|check-sensitive|reserved-paths|cef-binding|cef-native|chromium-codecs|chromium-startup-screen|install-hooks>');
     console.log('  release        : retired-audit <prev-tag>   (account for every public REMOVAL)');
     console.log('                   namespace-moves <prev-tag> (old FQN -> new FQN, for the migration notes)');
     console.log('  probes         : update-probe [dir] | android-jdk');
