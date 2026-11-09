@@ -182,11 +182,6 @@ by `tests/Shenora.Tests.Linux`); how it works and what was seen: `docs/design/sh
   the same code, and has never run it (no Mac here). Run the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`-style
   steps on a Mac (the probe's pixel reads and posted input are Windows' and its run 6 is Linux's: macOS needs its own driver, e.g.
   the window server's list and `screencapture`, as the splash was measured), and say what a Views overlay does in an `NSWindow`.
-- [ ] **`PanelRun`'s constructor leaves the display connection and the window manager running when a later step throws**
-  (`tests/Shenora.Tests.Linux/LinuxWebPanelTests.cs:117`, review finding, piece 4 of 6, `fd27085a`): `XScreen`, then openbox, then the
-  sample are started in turn, and the test's `using` only disposes a `PanelRun` that was built, so a failed `Process.Start` of the sample (or
-  the sample's folder) leaves openbox and the X connection behind for the rest of the run, and openbox's redirected stderr is never read
-  while it runs. Test harness only, so nothing fails first.
 
 ### 🟡 THE PLAYBACK HEALTH FIGURES — the adopter has now BUILT them, so this is a harvest call
 
