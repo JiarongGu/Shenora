@@ -127,6 +127,7 @@ Shenora.Windows.OptimizedForm
   method .ctor
   method .ctor
   method ApplyChromeTheme
+  method ApplyChromeTheme
   method Dispose
   method Maximize
   method OnActivated
@@ -151,6 +152,8 @@ Shenora.Windows.OptimizedFormOptions
   method .ctor
   property BackColor
   property DwmBorderColor
+  property DwmCaptionColor
+  property DwmCaptionTextColor
   property FramelessChrome
   property ImmersiveDarkMode
   property NativeCaptionButtons
@@ -224,11 +227,13 @@ Shenora.Windows.TrayIcon
   property Menu
 Shenora.Windows.TrayIconOptions
   method .ctor
+  property BuiltInMenuItems
   property CloseToTray
   property ConfigureMenu
   property ExitMenuItemText
   property Icon
   property MenuColors
+  property OnOpen
   property OpenMenuItemText
   property Text
   property Window

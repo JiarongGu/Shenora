@@ -222,6 +222,75 @@ public class TrayIconTests
         ClickBalloon(tray);
     });
 
+    private static void DoubleClick(TrayIcon tray) =>
+        typeof(NotifyIcon).GetMethod("OnDoubleClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(tray.Surface, [EventArgs.Empty]);
+
+    [Fact]
+    public void An_open_callback_answers_a_double_click_and_the_open_item_and_the_window_stays_where_it_is() => Sta.Run(() =>
+    {
+        using var form = new Form { ShowInTaskbar = false };
+        _ = form.Handle;
+        var opened = 0;
+        using var tray = new TrayIcon(new TrayIconOptions { Window = form, OnOpen = () => opened++ });
+
+        DoubleClick(tray);
+        ((ToolStripMenuItem)tray.Menu.Items[0]).PerformClick();
+
+        Assert.Equal(2, opened);
+        Assert.False(form.Visible);
+    });
+
+    [Fact]
+    public void An_open_callback_also_answers_a_balloon_with_no_callback() => Sta.Run(() =>
+    {
+        using var form = new Form { ShowInTaskbar = false };
+        _ = form.Handle;
+        var opened = 0;
+        using var tray = new TrayIcon(new TrayIconOptions { Window = form, OnOpen = () => opened++ });
+        tray.BalloonSink = (_, _, _, _) => { };
+
+        tray.ShowBalloon(new TrayBalloon { Title = "T", Text = "x" });
+        ClickBalloon(tray);
+
+        Assert.Equal(1, opened);
+        Assert.False(form.Visible);
+    });
+
+    [Fact]
+    public void An_open_callback_that_throws_is_logged_and_not_raised() => Sta.Run(() =>
+    {
+        using var form = new Form();
+        using var tray = new TrayIcon(new TrayIconOptions { Window = form, OnOpen = () => throw new InvalidOperationException("app bug") });
+
+        DoubleClick(tray);
+        ((ToolStripMenuItem)tray.Menu.Items[0]).PerformClick();
+    });
+
+    [Fact]
+    public void Without_the_built_in_items_the_menu_holds_only_the_apps() => Sta.Run(() =>
+    {
+        using var form = new Form();
+        using var tray = new TrayIcon(new TrayIconOptions
+        {
+            Window = form,
+            BuiltInMenuItems = false,
+            ConfigureMenu = menu => menu.Items.Add(new ToolStripMenuItem("App item")),
+        });
+
+        Assert.Equal(["App item"], tray.Menu.Items.Cast<ToolStripItem>().Select(i => i.Text));
+    });
+
+    [Fact]
+    public void A_menu_with_no_built_in_items_and_no_app_items_is_empty_and_disposes() => Sta.Run(() =>
+    {
+        using var form = new Form();
+        var tray = new TrayIcon(new TrayIconOptions { Window = form, BuiltInMenuItems = false });
+
+        Assert.Empty(tray.Menu.Items);
+        tray.Dispose();
+    });
+
     [Fact]
     public void A_balloon_after_dispose_is_refused_by_name() => Sta.Run(() =>
     {

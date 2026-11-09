@@ -67,6 +67,17 @@ at the first list and missed five more breaking changes.
   command. An id Windows would ignore, or a command with no display name, throws at `Wear`.
 - **`TrayIcon.ShowBalloon(TrayBalloon)`.** A tray balloon with a `Title`, `Text` and `Icon` (`TrayBalloonIcon`) and a `Clicked` callback; a
   click with none brings the tray's window forward. Only the newest balloon's callback is kept, and a throw from it is logged.
+- **`TrayIcon` can be told what opening means, and can go without its Open and Exit items.** `TrayIconOptions.OnOpen` runs, instead
+  of bringing the window forward, on a double-click of the icon, on the Open item and on a click of a balloon with no `Clicked`; a
+  throw from it is logged. `BuiltInMenuItems = false` leaves the menu with only what `ConfigureMenu` adds (the app reaches the same
+  ends with `OnOpen` and `ExitApplication`). Both default to what they were.
+- **A framed window's title bar can be coloured and the theme re-applied to it: `OptimizedFormOptions.DwmCaptionColor` and
+  `DwmCaptionTextColor`, and an `ApplyChromeTheme` overload with a caption colour and a caption text colour** (Windows 11). Until now
+  `ApplyChromeTheme` did nothing to a framed window's frame. A framed window stays the system's unless one of those colours or
+  `DwmBorderColor` is set, or `ApplyChromeTheme` is called; from then on it takes `ImmersiveDarkMode` and the border colour as a
+  frameless one does, keeps them across a handle recreation, and a null caption colour hands the system's back. A frameless window
+  has no title bar, so the caption colours are ignored there. Calling the existing `ApplyChromeTheme` on a framed window now
+  applies its dark-mode flag and border, which it left alone before.
 - **`ChromiumWindowHost`: named Chromium windows at routes of the app's page, over `SecondaryWindows`** (Windows shell). One STA thread and
   pump per name, a `ChromiumView` filling an `OptimizedForm`, the geometry remembered per name under the folder given; the app gives
   only each window's `ChromiumFormOptions` (title, icon, chrome, state defaults, and a `Created` hook that runs on the window's thread

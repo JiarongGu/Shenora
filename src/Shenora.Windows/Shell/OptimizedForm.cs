@@ -30,6 +30,16 @@ public sealed class OptimizedFormOptions
     public bool ImmersiveDarkMode { get; init; } = true;
 
     /// <summary>
+    /// Framed: the title bar's fill (Windows 11). Null = the system's. A framed window is left to the system's theme unless
+    /// this, <see cref="DwmCaptionTextColor"/> or <see cref="DwmBorderColor"/> is set, or <see cref="OptimizedForm.ApplyChromeTheme(Color, Color?, bool, Color?, Color?)"/>
+    /// runs; then <see cref="ImmersiveDarkMode"/> and the border colour apply to it too. A frameless window has no title bar to fill.
+    /// </summary>
+    public Color? DwmCaptionColor { get; init; }
+
+    /// <summary>Framed: the title bar's text colour (Windows 11). Null = the system's. See <see cref="DwmCaptionColor"/>.</summary>
+    public Color? DwmCaptionTextColor { get; init; }
+
+    /// <summary>
     /// Frameless: rounded corners while windowed (always square while maximized — a maximized
     /// window fills the work area, so rounding would clip the content at the edges; measured).
     /// </summary>
@@ -82,7 +92,9 @@ public class OptimizedForm : Form, IAppMaximizable
     // A held press on a caption button captures the mouse, as the system's own caption loop does.
     private const int WM_MOUSEMOVE = 0x0200, WM_LBUTTONUP = 0x0202, WM_RBUTTONDOWN = 0x0204, WM_MBUTTONDBLCLK = 0x0209,
                       WM_XBUTTONDOWN = 0x020B, WM_XBUTTONDBLCLK = 0x020D, WM_CAPTURECHANGED = 0x0215, MK_LBUTTON = 0x0001;
-    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_BORDER_COLOR = 34;
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_BORDER_COLOR = 34, DWMWA_CAPTION_COLOR = 35, DWMWA_TEXT_COLOR = 36;
+    // Gives a colour attribute back to the system.
+    private const int DWMWA_COLOR_DEFAULT = unchecked((int)0xFFFFFFFF);
     // A frameless window (custom WM_NCCALCSIZE) can lose the AUTOMATIC Win11 rounding, so it is
     // requested explicitly. 33 = DWMWA_WINDOW_CORNER_PREFERENCE.
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2, DWMWCP_DONOTROUND = 1;
@@ -90,6 +102,9 @@ public class OptimizedForm : Form, IAppMaximizable
     private readonly OptimizedFormOptions _options;
     private Color? _dwmBorderColor;
     private bool _immersiveDarkMode;
+    private Color? _dwmCaptionColor, _dwmCaptionTextColor;
+    // A framed window is themed only once it is asked to be (see OptimizedFormOptions.DwmCaptionColor).
+    private bool _framedThemed;
     // The placement the corners and MaximizedChanged last followed (SyncPlacement).
     private bool _placedMaximized;
     // Caption-button regions in CLIENT px. Empty = every message below falls through untouched.
@@ -136,6 +151,9 @@ public class OptimizedForm : Form, IAppMaximizable
 
         _dwmBorderColor = _options.DwmBorderColor;
         _immersiveDarkMode = _options.ImmersiveDarkMode;
+        _dwmCaptionColor = _options.DwmCaptionColor;
+        _dwmCaptionTextColor = _options.DwmCaptionTextColor;
+        _framedThemed = _options.DwmBorderColor is not null || _dwmCaptionColor is not null || _dwmCaptionTextColor is not null;
 
         // ⚠ NEVER add ControlStyles.UserPaint without an OnPaint: the resize inset then renders as an
         // unpainted WHITE frame (measured). Let the system paint BackColor so no edge is a light flash.
@@ -627,14 +645,26 @@ public class OptimizedForm : Form, IAppMaximizable
 
     /// <summary>
     /// Re-apply the chrome to a new theme at RUNTIME — a light↔dark switch must resync the DWM
-    /// border/dark-mode flag and the form fill, or the frame keeps the old theme's edge.
+    /// border/dark-mode flag and the form fill, or the frame keeps the old theme's edge. A framed window's title bar goes
+    /// back to the system's colours; <see cref="ApplyChromeTheme(Color, Color?, bool, Color?, Color?)"/> sets them.
     /// </summary>
-    public void ApplyChromeTheme(Color backColor, Color? dwmBorderColor, bool immersiveDarkMode = true)
+    public void ApplyChromeTheme(Color backColor, Color? dwmBorderColor, bool immersiveDarkMode = true) =>
+        ApplyChromeTheme(backColor, dwmBorderColor, immersiveDarkMode, null, null);
+
+    /// <summary>
+    /// <see cref="ApplyChromeTheme(Color, Color?, bool)"/> with a framed window's title bar: its fill and its text (Windows 11;
+    /// null = the system's). A frameless window has no title bar, so both are ignored there. A framed window takes the dark-mode
+    /// flag and the border colour from here on, as a frameless one always has.
+    /// </summary>
+    public void ApplyChromeTheme(Color backColor, Color? dwmBorderColor, bool immersiveDarkMode, Color? captionColor, Color? captionTextColor)
     {
         BackColor = backColor;
         _dwmBorderColor = dwmBorderColor;
         _immersiveDarkMode = immersiveDarkMode;
-        if (_options.FramelessChrome && IsHandleCreated) ApplyDwmChrome();
+        _dwmCaptionColor = captionColor;
+        _dwmCaptionTextColor = captionTextColor;
+        _framedThemed = true;
+        if (IsHandleCreated) ApplyDwmChrome();
     }
 
     /// <inheritdoc />
@@ -658,7 +688,7 @@ public class OptimizedForm : Form, IAppMaximizable
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        if (_options.FramelessChrome) ApplyDwmChrome();
+        if (_options.FramelessChrome || _framedThemed) ApplyDwmChrome();
     }
 
     /// <summary>
@@ -681,16 +711,31 @@ public class OptimizedForm : Form, IAppMaximizable
 
     private void ApplyDwmChrome()
     {
-        var dark = _immersiveDarkMode ? 1 : 0;
-        DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
-        if (_dwmBorderColor is { } color)
+        SetDwm(DWMWA_USE_IMMERSIVE_DARK_MODE, _immersiveDarkMode ? 1 : 0);
+        if (_dwmBorderColor is { } color) SetDwm(DWMWA_BORDER_COLOR, ColorRef(color));
+        if (_options.FramelessChrome)
         {
-            // COLORREF is 0x00BBGGRR.
-            var border = color.R | (color.G << 8) | (color.B << 16);
-            DwmSetWindowAttribute(Handle, DWMWA_BORDER_COLOR, ref border, sizeof(int));
+            ApplyCornerPreference();
+            return;
         }
-        ApplyCornerPreference();
+        // A framed window's title bar. Both are written every time, so a null after a colour hands the system's back.
+        SetDwm(DWMWA_CAPTION_COLOR, _dwmCaptionColor is { } c ? ColorRef(c) : DWMWA_COLOR_DEFAULT);
+        SetDwm(DWMWA_TEXT_COLOR, _dwmCaptionTextColor is { } t ? ColorRef(t) : DWMWA_COLOR_DEFAULT);
     }
+
+    private void SetDwm(int attribute, int value)
+    {
+        DwmSetWindowAttribute(Handle, attribute, ref value, sizeof(int));
+        DwmWriteSink?.Invoke(attribute, value);
+    }
+
+    /// <summary>Told each theme attribute and value written to DWM, because DWM does not read the title-bar colours back.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<int, int>? DwmWriteSink { get; set; }
+
+    // COLORREF is 0x00BBGGRR.
+    private static int ColorRef(Color color) => color.R | (color.G << 8) | (color.B << 16);
 
     /// <summary>Rounded when WINDOWED, SQUARE when maximized — a maximized window fills the work
     /// area, so rounded corners would clip the content at the edges.</summary>

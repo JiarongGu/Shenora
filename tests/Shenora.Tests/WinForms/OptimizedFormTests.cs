@@ -383,4 +383,115 @@ public class OptimizedFormTests
 
         Assert.Equal(Color.FromArgb(245, 246, 248), form.BackColor);
     });
+
+    // DWM does not read the title-bar colours back, so the form reports what it wrote (attribute, value).
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_BORDER_COLOR = 34, DWMWA_CAPTION_COLOR = 35, DWMWA_TEXT_COLOR = 36;
+    private const int DWMWA_COLOR_DEFAULT = unchecked((int)0xFFFFFFFF);
+
+    private static int ColorRef(Color c) => c.R | (c.G << 8) | (c.B << 16);
+
+    private static List<(int Attribute, int Value)> Watch(OptimizedForm form)
+    {
+        var writes = new List<(int, int)>();
+        form.DwmWriteSink = (attribute, value) => writes.Add((attribute, value));
+        return writes;
+    }
+
+    [Fact]
+    public void A_framed_window_is_left_to_the_system_unless_it_is_asked_to_be_themed() => Sta.Run(() =>
+    {
+        using var form = new OptimizedForm();
+        var writes = Watch(form);
+        _ = form.Handle;
+
+        Assert.Empty(writes);
+    });
+
+    [Fact]
+    public void A_framed_windows_caption_colours_in_the_options_reach_dwm_when_the_handle_is_made() => Sta.Run(() =>
+    {
+        using var form = new OptimizedForm(new OptimizedFormOptions
+        {
+            DwmCaptionColor = Color.FromArgb(10, 20, 30),
+            DwmCaptionTextColor = Color.FromArgb(200, 210, 220),
+        });
+        var writes = Watch(form);
+        _ = form.Handle;
+
+        Assert.Contains((DWMWA_CAPTION_COLOR, ColorRef(Color.FromArgb(10, 20, 30))), writes);
+        Assert.Contains((DWMWA_TEXT_COLOR, ColorRef(Color.FromArgb(200, 210, 220))), writes);
+        Assert.Contains((DWMWA_USE_IMMERSIVE_DARK_MODE, 1), writes);
+    });
+
+    [Fact]
+    public void A_border_colour_alone_themes_a_framed_window_with_the_systems_title_bar() => Sta.Run(() =>
+    {
+        using var form = new OptimizedForm(new OptimizedFormOptions { DwmBorderColor = Color.FromArgb(1, 2, 3) });
+        var writes = Watch(form);
+        _ = form.Handle;
+
+        Assert.Contains((DWMWA_BORDER_COLOR, ColorRef(Color.FromArgb(1, 2, 3))), writes);
+        Assert.Contains((DWMWA_CAPTION_COLOR, DWMWA_COLOR_DEFAULT), writes);
+    });
+
+    [Fact]
+    public void ApplyChromeTheme_colours_a_framed_windows_caption_and_a_null_gives_the_systems_back() => Sta.Run(() =>
+    {
+        using var form = new OptimizedForm();
+        _ = form.Handle;
+        var writes = Watch(form);
+
+        form.ApplyChromeTheme(Color.FromArgb(24, 24, 24), null, true, Color.FromArgb(31, 41, 51), Color.FromArgb(240, 241, 242));
+        Assert.Equal(
+            [(DWMWA_USE_IMMERSIVE_DARK_MODE, 1), (DWMWA_CAPTION_COLOR, ColorRef(Color.FromArgb(31, 41, 51))), (DWMWA_TEXT_COLOR, ColorRef(Color.FromArgb(240, 241, 242)))],
+            writes);
+
+        writes.Clear();
+        form.ApplyChromeTheme(Color.White, null, false);
+        Assert.Equal(
+            [(DWMWA_USE_IMMERSIVE_DARK_MODE, 0), (DWMWA_CAPTION_COLOR, DWMWA_COLOR_DEFAULT), (DWMWA_TEXT_COLOR, DWMWA_COLOR_DEFAULT)],
+            writes);
+    });
+
+    [Fact]
+    public void ApplyChromeTheme_before_the_handle_exists_is_written_when_it_is_made() => Sta.Run(() =>
+    {
+        using var form = new OptimizedForm();
+        var writes = Watch(form);
+
+        form.ApplyChromeTheme(Color.FromArgb(24, 24, 24), null, true, Color.FromArgb(31, 41, 51), null);
+        Assert.Empty(writes);
+        _ = form.Handle;
+
+        Assert.Contains((DWMWA_CAPTION_COLOR, ColorRef(Color.FromArgb(31, 41, 51))), writes);
+    });
+
+    [Fact]
+    public void A_frameless_windows_theme_is_unchanged_by_the_caption_colours() => Sta.Run(() =>
+    {
+        using var form = new OptimizedForm(new OptimizedFormOptions
+        {
+            FramelessChrome = true,
+            DwmCaptionColor = Color.Red,
+        });
+        var writes = Watch(form);
+        _ = form.Handle;
+
+        Assert.DoesNotContain(writes, w => w.Item1 is DWMWA_CAPTION_COLOR or DWMWA_TEXT_COLOR);
+        Assert.Contains((DWMWA_USE_IMMERSIVE_DARK_MODE, 1), writes);
+    });
+
+    [Fact]
+    public void A_themed_framed_window_keeps_its_caption_when_its_handle_is_recreated() => Sta.Run(() =>
+    {
+        using var form = new OptimizedForm();
+        _ = form.Handle;
+        form.ApplyChromeTheme(Color.FromArgb(24, 24, 24), null, true, Color.FromArgb(31, 41, 51), null);
+        var writes = Watch(form);
+
+        form.ShowInTaskbar = false; // recreates the handle
+        form.ShowInTaskbar = true;
+
+        Assert.Contains((DWMWA_CAPTION_COLOR, ColorRef(Color.FromArgb(31, 41, 51))), writes);
+    });
 }
