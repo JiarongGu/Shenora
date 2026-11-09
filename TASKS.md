@@ -172,11 +172,6 @@ is left is mostly measurement that needs hardware or a person.
   (`SAVE_TARGETS`) is built and measured against a scripted manager only, not a real one (GNOME's, Plasma's, XFCE's), and does
   not offer `MULTIPLE`; a copy over one X request goes in parts (INCR), read back by the kit's own clipboard and by a
   requestor that stops reading, never by Chromium's or another toolkit's.
-- [ ] **`LinuxClipboard.Start` leaks the connection and the wake-up pipe when it throws part-way**
-  (`src/Shenora.Chromium/Host/LinuxClipboard.cs:194`, review finding, pieces 3 and 5 of 6, `80f60bf5`, `823a8993`): after `xcb_connect` and
-  `pipe2` succeed, `Atom` (now also for `INCR` and `SHENORA_STAMP`) throws `InvalidOperationException` when the server stops answering, and
-  nothing closes `_c` or the two descriptors; `_thread` stays null, so the next call connects and leaks again. Close both on that path. No
-  test fails first: a server that dies between the connect and the first atom is not made on Xvfb without a hook in the connection.
 
 ### 🌐 THE CHROMIUM WEB PANEL (D97) — runs on Windows and Linux; what is left
 
