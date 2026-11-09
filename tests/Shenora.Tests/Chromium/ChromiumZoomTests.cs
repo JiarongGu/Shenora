@@ -39,11 +39,8 @@ public unsafe class ChromiumZoomTests
     [InlineData(Command, VkOemPlus)]
     [InlineData(Command, VkOemMinus)]
     [InlineData(Command, Vk0)]
-    public void A_zoom_key_is_blocked_whichever_event_it_raises(uint modifiers, int keyCode)
-    {
-        foreach (var type in Enum.GetValues<cef_key_event_type_t>())
-            Assert.True(ChromiumZoom.BlocksKey(type, modifiers, keyCode), $"{type} with modifiers {modifiers} and key {keyCode} reached the page");
-    }
+    public void A_zoom_key_is_blocked(uint modifiers, int keyCode) =>
+        Assert.True(ChromiumZoom.BlocksKey(modifiers, keyCode), $"modifiers {modifiers} and key {keyCode} reached the page");
 
     [Theory]
     [InlineData(0u, VkOemPlus)]      // a typed '=' or '+'
@@ -52,7 +49,7 @@ public unsafe class ChromiumZoomTests
     [InlineData(Ctrl, VkA)]          // select all, which the page keeps
     [InlineData(Ctrl | Shift, VkA)]
     public void Any_other_key_reaches_the_page(uint modifiers, int keyCode) =>
-        Assert.False(ChromiumZoom.BlocksKey(cef_key_event_type_t.KEYEVENT_RAWKEYDOWN, modifiers, keyCode));
+        Assert.False(ChromiumZoom.BlocksKey(modifiers, keyCode));
 
     [Fact]
     public void The_client_blocks_a_zoom_key_in_the_keyboard_handler_before_the_page_hears_it()

@@ -124,14 +124,10 @@ is left is mostly measurement that needs hardware or a person.
   are not run (`docs/design/shells.md`, the hooks paragraph), nor is whether a Linux/macOS CEF raises `Fetch.authRequired` the same.
 
 **Windows**
-- [ ] **Run the Chromium zoom guard on real CEF.** `AllowZoom` off is built (`ChromiumZoom`, `docs/design/shells.md`) and unit-tested, but
-  never seen zoom or fail to: probe on the Chromium sample that a real Ctrl+wheel and Ctrl+plus/minus/0 leave the zoom level at 0, that a
-  precision touchpad's pinch does too, that a cross-origin frame's wheel is covered (else register the script on its target), and what the
-  non-passive wheel listener costs a long scroll. Also what `BlocksKey` does with a character event
-  (`src/Shenora.Chromium/Host/ChromiumZoom.cs:42`, review finding, piece 1 of 6, `dd011c40`): its doc says all four events one press raises are
-  blocked, but it never reads `type`, and CEF fills a `KEYEVENT_CHAR`'s `windows_key_code` with the character (Ctrl+minus is 0x1F), not the
-  virtual key, so a char event may reach the page as a `keypress`; its test passes every event type the same key code and cannot tell. Log the
-  four events of a Ctrl+minus press on real CEF, then either read `type` or drop the parameter and say what the page hears.
+- [ ] 🅿️ **The Chromium zoom guard on a real Windows desktop with real input.** The guard was run on real CEF (`docs/design/shells.md`, the zoom paragraph): on Linux with real X input and
+  on Windows with a posted wheel, which reaches only the frame. Left: `node devtools/dev.mjs chromium-zoom` (no `--posted`) from a terminal you are looking at, which sends the
+  desktop's own input and needs the window in the foreground for ~30 s, to see the page's Ctrl+wheel and Ctrl with plus, minus and 0 on Windows, and above all whether a
+  `keypress` (`WM_CHAR`, Ctrl+minus is 0x1F) reaches the page past `BlocksKey`, which reads no event type; a precision touchpad's pinch and a touch screen's were not made anywhere.
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out
   an ARM64 launcher, shim and `libcef.dll`; running it needs ARM64 hardware or a `windows-11-arm` CI runner. ⚠ The
   release job builds the ARM64 shim (the 0.23.2 package's is PE machine `0xaa64`); it has never been loaded.

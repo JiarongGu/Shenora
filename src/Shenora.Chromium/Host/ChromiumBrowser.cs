@@ -510,7 +510,7 @@ internal sealed unsafe class ChromiumBrowser
 #endif
         {
             using var b = new CefRef<_cef_browser_t>(browser);
-            return key != null && ChromiumZoom.BlocksKey(key->type, key->modifiers, key->windows_key_code) ? 1 : 0;
+            return key != null && ChromiumZoom.BlocksKey(key->modifiers, key->windows_key_code) ? 1 : 0;
         }
     }
 

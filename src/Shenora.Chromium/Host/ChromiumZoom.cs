@@ -36,10 +36,13 @@ internal static class ChromiumZoom
     private const int Vk0 = 0x30, VkNumpad0 = 0x60, VkAdd = 0x6B, VkSubtract = 0x6D, VkOemPlus = 0xBB, VkOemMinus = 0xBD;
 
     /// <summary>
-    /// Whether a key event is a zoom shortcut, for any of the four events one press raises: nothing the page hears is left to
-    /// tell it a zoom was asked for.
+    /// Whether a key event is a zoom shortcut. It reads no event type, and so decides the key's down event, the one that carries the
+    /// virtual key: the CHAR event of a press has the character in <c>windows_key_code</c> (Ctrl+minus is 0x1F), which this would
+    /// not know. Measured on real CEF on Linux: Chromium drops the char event of a key this handled, and the page, which unguarded
+    /// hears a <c>keypress</c> after the <c>keydown</c> of Ctrl with plus, equal or 0, hears nothing of them guarded. Not measured on
+    /// Windows, where the char event comes from <c>WM_CHAR</c> (<c>dev.mjs chromium-zoom</c> shows what the page hears there).
     /// </summary>
-    internal static bool BlocksKey(cef_key_event_type_t type, uint modifiers, int windowsKeyCode)
+    internal static bool BlocksKey(uint modifiers, int windowsKeyCode)
     {
         const uint ctrlOrCommand = (uint)cef_event_flags_t.EVENTFLAG_CONTROL_DOWN | (uint)cef_event_flags_t.EVENTFLAG_COMMAND_DOWN;
         return (modifiers & ctrlOrCommand) != 0

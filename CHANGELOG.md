@@ -74,6 +74,10 @@ at the first list and missed five more breaking changes.
   and a pinch do not zoom the page. The Chromium shell had no counterpart, so a page there zoomed the whole window and an
   app that draws its own frame could not stop it. Set it to give the user zoom back; on WebView2 the shortcut script then
   leaves Ctrl+plus, minus and 0 alone as well.
+  On the Chromium shell it was run on real CEF with real input (X on Linux, a posted wheel on Windows), which found two holes
+  now closed: a Ctrl+wheel over a frame of another site zoomed the page (the guard reached the page's own process only, and now
+  attaches to each frame as it appears), and a zoom an earlier run had allowed, which Chromium keeps per host in the profile,
+  came back with the page (it is reset to the default as the page loads). A touch screen's and a touchpad's pinch were not made.
 - **`PageWindow.Current`: the window of the page that sent the request** (`Shenora.Windows`). The top-level form showing
   the page whose request a module is handling, still there after an `await`, and on a `SecondaryWindows` window that
   window, not the main one; null for a send from no page. Until now the kit knew the sending page internally and an app

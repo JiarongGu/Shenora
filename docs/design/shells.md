@@ -127,11 +127,25 @@ the Chromium shell answers each input its own way (`ChromiumZoom`): the client's
 with plus, minus or 0 (main row and numpad) before Chromium or the page hears it, and a script registered through the
 browser's in-process DevTools (`Page.addScriptToEvaluateOnNewDocument`, so for every document, a frame's included) cancels a
 Ctrl or Command wheel, which a precision touchpad's pinch also raises, and sets `touch-action: pan-x pan-y` on the document,
-which takes a touch screen's pinch away. ⚠ **Not measured on real CEF**: the unit tests run the handler and the script's
-text, and the script's behaviour was run in Chromium by a synthetic wheel event, so whether Alloy's own wheel handling
-zooms before the page's listener could cancel it, a touch screen's pinch, and a cross-origin out-of-process frame (which
-the script may not reach) are unseen. The listener is non-passive, which can make the first wheel event of a scroll
-wait for the page's main thread.
+which takes a touch screen's pinch away. **Run on real CEF** (the Chromium sample's `ZoomProbe`: a page and a frame of another
+origin that report what they hear and the zoom they are at, and a control with `AllowZoom` set, which the same input must zoom or
+the probe proves nothing). Linux, real input through the X server's input extension (`LinuxZoomTests`): Ctrl+wheel over the page and
+over the frame, and Ctrl with plus, equal, minus, 0 and the numpad's, in the page and in the frame. Found and fixed there: (1)
+the script reached the page's own process only, so a Ctrl+wheel over a frame of another site zoomed the page (the frame's wheel
+logged `prevented=0`), and each frame target is now attached to as it appears (`ChromiumZoom.GuardFrames`, `Target.setAutoAttach`
+with flat sessions) and given the script; (2) Chromium keeps a page's zoom per host in the profile, so a zoom an allowed run made
+returned when zoom was no longer allowed, and a main frame now resets a non-default zoom as it starts loading. Guarded, nothing
+of any of it zooms and no zoom key reaches either document in any of keydown, keypress or keyup, while a wheel and a minus without Ctrl
+are heard as ever. ⚠ With zoom allowed, Linux/Views CEF does not zoom on the keys at all (no accelerator), so there the key guard
+changes what the page hears, and unguarded the page hears a `keypress` (charCode 11, 29, 16) after the `keydown` of Ctrl with plus,
+equal and 0, which Chromium drops once the keydown was handled, so `BlocksKey` reads no event type. Windows
+(`dev.mjs chromium-zoom --posted`, 200% display): the wheel posted to the render widget, Ctrl taken from its `MK_CONTROL`, reached
+the frame only (cancelled, no zoom; the control zoomed 2 to 3 and back) and never the page; real input there needs the window in the
+foreground, and its keys, its page's wheel and `WM_CHAR` are unmeasured. **What the non-passive wheel listener costs** (Linux, Xvfb with
+software GL, 120 wheels a phase, the guard's own listener off, on, off, on in one run, two runs): the wheel-to-scroll latency stayed at
+p50 0.1 ms and p95 0.2 ms and the frame time at 16.7 ms with it on or off; the only difference was one outlier of 38 to 133 ms (the frame
+time too) in the first phase with it on, none in the second. Unmeasured anywhere: a precision touchpad's pinch (an X input extension or
+a mouse cannot make one; Windows turns it into a Ctrl+wheel, which is the case above) and a touch screen's.
 
 **On macOS the data folder is named by the bundle identifier** (D89). The build writes `ShenoraChromiumBundleId` into
 `Info.plist`, `com.shenora.app.<App>` unless the app sets it; `ShenoraPaths` reads it from the plist, takes the
