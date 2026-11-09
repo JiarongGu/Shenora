@@ -39,6 +39,14 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **A Linux Chromium app can publish into folders** (`<ShenoraChromiumPublishFolders>true</ShenoraChromiumPublishFolders>`,
+  D96, the option a Windows app already had): `dotnet publish` leaves the one executable `MyApp` at the root, CEF's runtime
+  and `MyApp-helper` in `engine/` and the .NET app in `lib/`, a self-contained runtime with it. Publish only, off by
+  default (a build and a publish without it stay flat), and a publish into a folder that holds the other shape removes
+  that shape's CEF files. There is no rpath and no shim: the helper loads `libcef.so` from its own folder, and the build
+  rewrites the .NET apphost's embedded app path to `lib/` (`ShenoraChromiumPointApphost`, refusing an apphost it does not
+  know). Run on real CEF (the page painted, every subprocess from `engine/`, the window's close ending the app) and on a
+  self-contained publish that started from `lib/`; linux-arm64 is unrun.
 - **`ChromiumWebPanel` runs on Linux** (D97). `ChromiumWindows.CreateWebPanelAsync` made a panel on Windows only and threw
   `PlatformNotSupportedException` elsewhere, though the overlay it builds is Views on every OS; the guard is gone and Linux
   takes the same path as Windows, with the same surface. Measured on real CEF under openbox on Xvfb, the screen read from

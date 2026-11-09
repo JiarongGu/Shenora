@@ -332,7 +332,8 @@ redistributes Chromium: CEF's `LICENSE.txt` and Chromium's
 third-party notices (`CREDITS.html`, in the same CEF build) are the app's to ship, and the layout does not copy
 them. `<ShenoraChromiumPublishFolders>true</ShenoraChromiumPublishFolders>` makes `dotnet publish` tidier (D96):
 `MyApp.exe`, `MyApp.dll` and `chrome_elf.dll` at the root, CEF in `engine\`, the app in `lib\`, and `data\` still
-beside `MyApp.exe`. That publish starts through `MyApp.exe` only; a build stays flat either way.
+beside `MyApp.exe`. That publish starts through `MyApp.exe` only; a build stays flat either way. On Linux the root holds
+`MyApp` alone, with CEF and the helper in `engine/` and the app in `lib/`.
 
 **The launcher's shadow-stack check is relaxed for you.** CEF's `bootstrap.exe` is built CET-compatible with strict
 context-IP validation, so a shell extension that raises and handles its own exception inside the app (a context-menu

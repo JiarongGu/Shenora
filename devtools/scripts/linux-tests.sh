@@ -63,6 +63,14 @@ if dotnet build samples/Shenora.Sample.Chromium/Shenora.Sample.Chromium.csproj -
 else
   echo "linux-tests: the Chromium sample did not build (devtools/_build/linux-sample-build.log); the web panel test will fail." >&2
 fi
+# The same sample published with ShenoraChromiumPublishFolders (D96), which the folders test starts on real CEF.
+folders=$scratch/linux-sample-folders/publish
+if dotnet publish samples/Shenora.Sample.Chromium/Shenora.Sample.Chromium.csproj -r linux-x64 -p:ShenoraChromiumPublishFolders=true \
+    -o "$folders" --artifacts-path "$scratch/linux-sample-folders" -v quiet >"$scratch/linux-sample-folders-build.log" 2>&1; then
+  export SHENORA_LINUX_FOLDERS_SAMPLE=$folders/Shenora.Sample.Chromium
+else
+  echo "linux-tests: the Chromium sample did not publish into folders (devtools/_build/linux-sample-folders-build.log); its test will fail." >&2
+fi
 [ -n "$sysroot" ] && export SHENORA_LINUX_SYSROOT=$sysroot
 dotnet test tests/Shenora.Tests.Linux/Shenora.Tests.Linux.csproj --artifacts-path "$scratch/linux-tests" "$@"
 rc=$?

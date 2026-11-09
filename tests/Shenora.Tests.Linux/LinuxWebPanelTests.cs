@@ -98,6 +98,36 @@ public class LinuxWebPanelTests
         Assert.DoesNotContain(run.Log(), line => line.Contains("THREW"));
     }
 
+    // The sample published with ShenoraChromiumPublishFolders (D96): the one executable at the root, CEF and the helper in
+    // engine/, the app in lib/. Real CEF: it must find its library, its resources and its locales there, run every
+    // subprocess from the helper in engine/, paint the page, and end with its window.
+    [Fact]
+    public async Task A_sample_published_into_folders_starts_on_real_CEF_paints_its_page_and_ends_with_its_window()
+    {
+        var sample = Environment.GetEnvironmentVariable("SHENORA_LINUX_FOLDERS_SAMPLE");
+        using var run = new PanelRun(sample);
+        var root = Path.GetDirectoryName(sample)!;
+        Assert.True(File.Exists(Path.Combine(root, "engine", "libcef.so")) && File.Exists(Path.Combine(root, "lib", "Shenora.Sample.Chromium.App.dll"))
+            && !File.Exists(Path.Combine(root, "libcef.so")), "SHENORA_LINUX_FOLDERS_SAMPLE is not a folders publish");
+
+        await run.StepAsync("BEFORE");
+        var window = await run.WindowAsync();
+        var origin = run.Screen.Origin(window);
+        var client = run.Screen.Size(window);
+        var area = new Rectangle(origin.X, origin.Y, client.Width, client.Height);
+        await run.SettledAsync(area);   // a painted page has more than 8 colours: Chromium's own blank has one
+
+        var processes = run.Processes(full: true);
+        var helper = Path.Combine(root, "engine", "Shenora.Sample.Chromium-helper");
+        Assert.Contains($"{helper} --type=zygote", processes);
+        Assert.Contains($"{helper} --type=gpu-process", processes);
+
+        run.Screen.AskToClose(window);
+        await run.ExitsAsync();
+        Assert.False(run.Screen.Exists(window), "the window is still on the display");
+        Assert.DoesNotContain(run.Log(), line => line.Contains("THREW"));
+    }
+
     [Fact]
     public void A_run_whose_app_will_not_start_ends_the_window_manager_and_the_display_connection_it_had_started()
     {
@@ -161,7 +191,7 @@ public class LinuxWebPanelTests
 
     /// <summary>One run of the sample: the display's window manager, the app's probe log and standard input, and a data
     /// folder that is the run's own.</summary>
-    private sealed class PanelRun : IDisposable
+    internal sealed class PanelRun : IDisposable
     {
         private readonly Process _wm;
         private readonly Process _app;
@@ -174,7 +204,7 @@ public class LinuxWebPanelTests
         public PanelRun(string? launcher)
         {
             if (string.IsNullOrEmpty(launcher) || !File.Exists(launcher))
-                throw new InvalidOperationException("SHENORA_LINUX_SAMPLE names no built Chromium sample (devtools/scripts/linux-tests.sh builds it).");
+                throw new InvalidOperationException("The run names no built Chromium sample (SHENORA_LINUX_SAMPLE, or SHENORA_LINUX_FOLDERS_SAMPLE: devtools/scripts/linux-tests.sh builds both).");
             // Started in turn, and the test's `using` only disposes a run that was built: a step that throws ends the ones before it.
             XScreen? screen = null;
             Process? wm = null, app = null;
@@ -230,7 +260,7 @@ public class LinuxWebPanelTests
         }
 
         // The app and everything it started, as /proc has them: what a start that never says anything is stuck on.
-        private string Processes()
+        public string Processes(bool full = false)
         {
             var all = new Dictionary<int, (int Parent, string State, string Command)>();
             foreach (var dir in Directory.EnumerateDirectories("/proc"))
@@ -241,7 +271,7 @@ public class LinuxWebPanelTests
                     var stat = File.ReadAllText(Path.Combine(dir, "stat"));
                     var rest = stat[(stat.LastIndexOf(')') + 2)..].Split(' ');
                     var command = File.ReadAllText(Path.Combine(dir, "cmdline")).Replace('\0', ' ').Trim();
-                    all[pid] = (int.Parse(rest[1]), rest[0], command.Length > 120 ? command[..120] : command);
+                    all[pid] = (int.Parse(rest[1]), rest[0], full || command.Length <= 120 ? command : command[..120]);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }

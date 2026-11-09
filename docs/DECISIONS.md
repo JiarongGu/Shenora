@@ -154,7 +154,7 @@ docs cite them — so the number is the column to scan.
 | **D93** | THE APP'S COLOUR SCHEME IS A SETTING THE APP OWNS, AND THE DESKTOP SHELLS APPLY IT TO THEIR BROWSER ENGINE. |
 | **D94** | THE NATIVE LAUNCHER OWNS THE FIRST FRAMES: A STARTUP SCREEN, COMPILED INTO IT, UNTIL THE APP'S FIRST WINDOW. |
 | **D95** | ONE BUNDLE PROVIDER FOR BOTH DESKTOP SHELLS, AND A PAGE FOR A PAGE THAT IS NOT THERE. |
-| **D96** | A WINDOWS CHROMIUM APP CAN PUBLISH AS THREE FILES AND TWO FOLDERS, AS AN OPTION. |
+| **D96** | A WINDOWS OR LINUX CHROMIUM APP CAN PUBLISH AS THREE FILES AND TWO FOLDERS, AS AN OPTION. |
 | **D97** | THE CHROMIUM SHELL EMBEDS A WEB PANEL: A CHILD BROWSER IN A SHELL WINDOW, IN A CHOSEN PROFILE. |
 | **D98** | THE README IS THE LANDING PAGE EVERY PACKAGE SHIPS, AND THE FILES WRITTEN FOR CODING AGENTS ARE KEPT AS STATE, NOT AS COPIES. |
 | **D99** | THE CHROMIUM ENGINE CARRIES H.264, AAC AND HEVC AS A PACKAGE OF ITS OWN, BUILT AND PUBLISHED BY THE KIT. |
@@ -1354,10 +1354,10 @@ docs cite them — so the number is the column to scan.
     about the request reaches any body (the host log names the path and where it looked); a page that is not there
     lifts a splash rather than leaving it up for its timeout.
 
-- **D96 — A WINDOWS CHROMIUM APP CAN PUBLISH AS THREE FILES AND TWO FOLDERS, AS AN OPTION.**
+- **D96 — A WINDOWS OR LINUX CHROMIUM APP CAN PUBLISH AS THREE FILES AND TWO FOLDERS, AS AN OPTION.**
   `ShenoraChromiumPublishFolders` makes a Windows `dotnet publish` of a Chromium app `MyApp.exe`, `MyApp.dll` and
   `chrome_elf.dll` at the root, CEF's runtime in `engine\` and the .NET app in `lib\`: a tidy install folder, as an
-  option and never the default. Without it the publish stays flat.
+  option and never the default. Without it the publish stays flat. On Linux the root holds the one executable `MyApp`.
   - 🔴 **Why folders and not one file:** the engine stays files, as Electron's does — Windows maps `libcef.dll` only
     from a file, CEF reads its resources and locales by path, and every Chromium subprocess is the exe relaunched.
   - **Publish only:** a build is what an IDE and `dotnet run` start, so the dev loop keeps its flat output. **And
@@ -1366,8 +1366,13 @@ docs cite them — so the number is the column to scan.
   - **The constraints:** `chrome_elf.dll` stays at the root, because CEF's launcher imports it; the shim reads both
     shapes, so a missing engine is a message naming the path; a publish removes the other shape's CEF files, which
     the SDK's clean never touches and the shim would otherwise load; such a publish starts through `MyApp.exe` only
-    (`dotnet lib\MyApp.App.dll` does not find CEF, and a resolver would serve a start nothing makes); Windows only —
-    macOS is already one `.app`, and Linux needs a spike of its own.
+    (`dotnet lib\MyApp.App.dll` does not find CEF, and a resolver would serve a start nothing makes); Windows and Linux —
+    macOS is already one `.app`.
+  - 🔴 **Linux needs no rpath and no shim, only the apphost's path (spiked, then proven on real CEF):** the helper loads
+    `libcef.so` by an absolute path from its own folder and CEF reads its resources from beside it, so the helper sits in
+    `engine/` with them; the one thing that moves is the .NET apphost, whose embedded app path the build rewrites to
+    `lib/MyApp.App.dll` (the apphost then looks for the runtime there too, so a self-contained publish works), and
+    the app finds `engine/` from its own folder being `lib/`.
 
 - **D97 — THE CHROMIUM SHELL EMBEDS A WEB PANEL: A CHILD BROWSER IN A SHELL WINDOW, IN A CHOSEN PROFILE.**
   `ChromiumWindows.CreateWebPanelAsync` embeds a web-content browser in a window the shell owns (`ChromiumWebPanel`):

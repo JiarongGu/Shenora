@@ -70,6 +70,17 @@ when that holds it, with `engine\` added to the DLL search for what Chromium loa
 launcher), and a subprocess stays silent. Such a publish starts through `<App>.exe` only: run as
 `dotnet lib\<App>.App.dll`, it does not find CEF.
 
+**On Linux the same option** leaves `<App>` alone at the root, CEF's runtime and `<App>-helper` in `engine/`, and the app in
+`lib/`. There is no shim to teach: the helper loads `libcef.so` by an absolute path from its own folder (no rpath), CEF reads
+its resources and locales from beside the library, and the .NET apphost, which the SDK points at `<App>.App.dll` beside it,
+is rewritten by the build (`ShenoraChromiumPointApphost`) to `lib/<App>.App.dll`, a path it takes below its own folder, and
+it then looks for the runtime there too: a self-contained publish keeps its runtime in `lib/`. The app finds `engine/` from
+its folder being `lib/` (`LinuxPlatform.EngineOf`), and, as on Windows, `ShenoraPaths` reads the root from it, so `data/` is
+beside `<App>`. Seen on real CEF (the Chromium sample, linux-x64, WSL, under openbox on Xvfb: `LinuxWebPanelTests`): the
+window up, the page painted, the zygote and the GPU process run from `engine/<App>-helper`, and the window closed by
+`WM_DELETE_WINDOW` ends the app. Not run: `dotnet lib/<App>.App.dll` (it should find `engine/` the same way, since its folder
+is `lib/`), and linux-arm64.
+
 **What a Windows publish has been seen to do** (the Chromium sample, win-x64, framework-dependent, published to a
 fresh folder outside the build tree on a machine with the .NET 10 runtime, 2026-10-22): flat and with folders, each
 started from the artifact (its window in 3.6 s and 7.6 s, its data folder created beside it) and closed by a posted
