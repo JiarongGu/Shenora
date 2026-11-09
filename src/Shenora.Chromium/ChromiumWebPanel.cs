@@ -59,7 +59,7 @@ public sealed class ChromiumWebPanelOptions
 /// as a Views overlay, running in the shell's own CEF process (not a second <see cref="ChromiumEngine"/>, which cannot
 /// coexist), in a caller-chosen profile's request context. The host places it (<see cref="SetBounds"/>) in a region its
 /// page reserves and drives it through <see cref="Browser"/>; the host draws its own chrome (address bar, back/forward)
-/// in the page. Windows only, today.
+/// in the page. On Windows and Linux; macOS has not run it.
 /// <para>
 /// <see cref="Dispose"/> closes the browser and leaves its parent window open; destroying the parent closes it too.
 /// </para>

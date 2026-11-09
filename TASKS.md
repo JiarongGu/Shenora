@@ -168,14 +168,15 @@ is left is mostly measurement that needs hardware or a person.
   it in parts (INCR on the write side). The exit handover to a manager (`SAVE_TARGETS`) is built and measured against a
   scripted manager only, not a real one (GNOME's, Plasma's, XFCE's), and does not offer `MULTIPLE`.
 
-### 🌐 THE CHROMIUM WEB PANEL (D97) — runs on Windows; what is left
+### 🌐 THE CHROMIUM WEB PANEL (D97) — runs on Windows and Linux; what is left
 
-It has run on real CEF (the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`; how it works and what was seen:
-`docs/design/shells.md`).
+It has run on real CEF: on Windows (the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`) and on Linux (run 6, driven
+by `tests/Shenora.Tests.Linux`); how it works and what was seen: `docs/design/shells.md`.
 
-- [ ] **macOS/Linux panels.** Windows only today: `ChromiumSessionHost.CreateChild` throws `PlatformNotSupportedException`
-  in the macOS and Linux builds, while the overlay it builds is Views on every OS. Lift the guard and run the probe on
-  Linux first (WSL can).
+- [ ] 🅿️ **The macOS panel.** `ChromiumSessionHost.CreateChild` makes one on Windows and Linux; macOS's build still goes through
+  the same code, and has never run it (no Mac here). Run the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`-style
+  steps on a Mac (the probe's pixel reads and posted input are Windows' and its run 6 is Linux's: macOS needs its own driver, e.g.
+  the window server's list and `screencapture`, as the splash was measured), and say what a Views overlay does in an `NSWindow`.
 
 ### 🟡 THE PLAYBACK HEALTH FIGURES — the adopter has now BUILT them, so this is a harvest call
 

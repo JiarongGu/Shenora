@@ -21,7 +21,7 @@ namespace Shenora.Sample.Chromium;
 /// (measured: 128x96 failed on a GeForce with "GetVideoDecoderConfigCount failed", 320x240 played). The <c>graphics:</c>
 /// line names the GPU path the page was drawn on. The runner is <c>dev.mjs chromium-codecs</c>.
 /// </para>
-/// Windows only, as the panel is. Nothing outside the app is touched; the page comes from a server on localhost that lives
+/// Windows only: it has not been run on another OS. Nothing outside the app is touched; the page comes from a server on localhost that lives
 /// as long as the probe.
 /// </summary>
 internal static class CodecProbe

@@ -39,6 +39,12 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`ChromiumWebPanel` runs on Linux** (D97). `ChromiumWindows.CreateWebPanelAsync` made a panel on Windows only and threw
+  `PlatformNotSupportedException` elsewhere, though the overlay it builds is Views on every OS; the guard is gone and Linux
+  takes the same path as Windows, with the same surface. Measured on real CEF under openbox on Xvfb, the screen read from
+  outside: the panel at its bounds exactly, one over another in order, hidden, shown, moved and closed, and closing the
+  window with a panel open ending the app. Not run on Linux: a display scale other than 1, input reaching the panel's page,
+  and a profile's cookies across a restart. macOS builds the same code and has not run it.
 - **The Linux Chromium shell hands its clipboard copy to a clipboard manager as the app exits.** X11 keeps no copy, so what the app
   copied went with it unless a manager copies on change. Disposing the app now asks the manager (the freedesktop `SAVE_TARGETS`
   request) to keep it, while the app goes on answering the manager's reads, and waits for it at most 5 seconds: no manager costs
