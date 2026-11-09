@@ -45,6 +45,11 @@ at the first list and missed five more breaking changes.
   outside: the panel at its bounds exactly, one over another in order, hidden, shown, moved and closed, and closing the
   window with a panel open ending the app. Not run on Linux: a display scale other than 1, input reaching the panel's page,
   and a profile's cookies across a restart. macOS builds the same code and has not run it.
+- **The Linux Chromium shell's clipboard sends a copy larger than one X request in parts.** A format over about 16 MB was refused
+  (`NotSupportedException`); it is now served by the ICCCM `INCR` protocol from the clipboard's own thread, one megabyte at a time,
+  each once the requestor has taken the one before, and a requestor that stops taking parts is let go after 30 seconds. Measured on
+  Xvfb against the kit's own clipboard as the requestor (a 20 MB image, byte for byte) and a bare one that stops after the first
+  part, with a second paste served meanwhile; not against another toolkit's reader.
 - **The Linux Chromium shell hands its clipboard copy to a clipboard manager as the app exits.** X11 keeps no copy, so what the app
   copied went with it unless a manager copies on change. Disposing the app now asks the manager (the freedesktop `SAVE_TARGETS`
   request) to keep it, while the app goes on answering the manager's reads, and waits for it at most 5 seconds: no manager costs

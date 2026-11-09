@@ -164,9 +164,10 @@ is left is mostly measurement that needs hardware or a person.
   panel only, including whether a click on it raises the window past focus-stealing prevention (no user timestamp or
   XDG activation token is passed); Chromium may use the XDG desktop portal for dialogs where one runs. And
   linux-arm64, whose helper is built and has never run.
-- [ ] **The Linux clipboard writes no format larger than one X request** (about 16 MB); it refuses one rather than send
-  it in parts (INCR on the write side). The exit handover to a manager (`SAVE_TARGETS`) is built and measured against a
-  scripted manager only, not a real one (GNOME's, Plasma's, XFCE's), and does not offer `MULTIPLE`.
+- [ ] 🅿️ **The Linux clipboard's exit handover and large copies against a real manager.** The handover to a manager
+  (`SAVE_TARGETS`) is built and measured against a scripted manager only, not a real one (GNOME's, Plasma's, XFCE's), and does
+  not offer `MULTIPLE`; a copy over one X request goes in parts (INCR), read back by the kit's own clipboard and by a
+  requestor that stops reading, never by Chromium's or another toolkit's.
 
 ### 🌐 THE CHROMIUM WEB PANEL (D97) — runs on Windows and Linux; what is left
 

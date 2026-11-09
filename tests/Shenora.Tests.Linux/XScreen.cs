@@ -195,6 +195,16 @@ internal sealed unsafe class XScreen : IDisposable
             return (data[i + 2] << 16) | (data[i + 1] << 8) | data[i];
         }
 
+        /// <summary>How many different colours <paramref name="area"/> holds, counting no further than <paramref name="limit"/>.</summary>
+        public int Colours(System.Drawing.Rectangle area, int limit)
+        {
+            var seen = new HashSet<int>();
+            for (var y = Math.Max(0, area.Top); y < Math.Min(Height, area.Bottom); y++)
+                for (var x = Math.Max(0, area.Left); x < Math.Min(Width, area.Right); x++)
+                    if (seen.Add(At(x, y)) && seen.Count >= limit) return seen.Count;
+            return seen.Count;
+        }
+
         /// <summary>Whether every pixel of <paramref name="area"/> is the same in both.</summary>
         public bool Same(Snapshot other, System.Drawing.Rectangle area)
         {

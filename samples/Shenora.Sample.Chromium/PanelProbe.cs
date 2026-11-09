@@ -193,14 +193,15 @@ internal static class PanelProbe
     private static StreamReader? _acks;
 
     // A step reached: written to the log, then held until the driver answers with a line on standard input (it reads the
-    // screen from outside meanwhile). The pause first lets the page paint; an unanswered step goes on after a minute.
+    // screen from outside meanwhile). The pause first lets the page paint; an unanswered step goes on after five minutes,
+    // longer than a slow start the driver waits out, so a late driver is never overtaken.
     private static async Task StepAsync(string name)
     {
         await Task.Delay(800);
         Log($"STEP {name}");
         _acks ??= new StreamReader(Console.OpenStandardInput());
         var answer = _acks.ReadLineAsync();
-        if (await Task.WhenAny(answer, Task.Delay(TimeSpan.FromMinutes(1))) != answer) Log($"STEP {name} was never answered");
+        if (await Task.WhenAny(answer, Task.Delay(TimeSpan.FromMinutes(5))) != answer) Log($"STEP {name} was never answered");
     }
 
     private static async Task<ChromiumWebPanel> PanelAsync(ChromiumWindows windows, ChromiumSessionHost sessions, string profile,

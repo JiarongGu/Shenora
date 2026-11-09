@@ -18,7 +18,7 @@ public class LinuxWebPanelTests
 {
     private const string Title = "Shenora Chromium Sample";
     private const int Green = 0x22AA77, Blue = 0x2255CC, Magenta = 0xFF00FF;   // the probe's pages, and the panel's own background
-    private static readonly TimeSpan Step = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan Step = TimeSpan.FromSeconds(60), StartLimit = TimeSpan.FromMinutes(4);
 
     [Fact]
     public async Task A_web_panel_sits_where_it_is_placed_stacks_hides_moves_and_closes_with_its_window()
@@ -151,7 +151,35 @@ public class LinuxWebPanelTests
 
         private string Account()
         {
-            lock (_output) return $"{string.Join(Environment.NewLine, Log())}{Environment.NewLine}--- the app's output:{Environment.NewLine}{_output}";
+            lock (_output)
+                return $"{string.Join(Environment.NewLine, Log())}{Environment.NewLine}--- the app's output:{Environment.NewLine}{_output}"
+                    + $"--- its processes (pid, state, command):{Environment.NewLine}{Processes()}";
+        }
+
+        // The app and everything it started, as /proc has them: what a start that never says anything is stuck on.
+        private string Processes()
+        {
+            var all = new Dictionary<int, (int Parent, string State, string Command)>();
+            foreach (var dir in Directory.EnumerateDirectories("/proc"))
+            {
+                if (!int.TryParse(Path.GetFileName(dir), out var pid)) continue;
+                try
+                {
+                    var stat = File.ReadAllText(Path.Combine(dir, "stat"));
+                    var rest = stat[(stat.LastIndexOf(')') + 2)..].Split(' ');
+                    var command = File.ReadAllText(Path.Combine(dir, "cmdline")).Replace('\0', ' ').Trim();
+                    all[pid] = (int.Parse(rest[1]), rest[0], command.Length > 120 ? command[..120] : command);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
+            var mine = new HashSet<int> { _app.Id };
+            for (var grew = true; grew;)
+            {
+                grew = false;
+                foreach (var (pid, p) in all)
+                    if (mine.Contains(p.Parent) && mine.Add(pid)) grew = true;
+            }
+            return string.Join(Environment.NewLine, mine.Where(all.ContainsKey).Order().Select(pid => $"{pid} {all[pid].State} {all[pid].Command}"));
         }
 
         public XScreen Screen { get; }
@@ -179,7 +207,10 @@ public class LinuxWebPanelTests
         /// <summary>Wait for the probe to reach a step; a probe that threw, or an app that ended, fails the test here.</summary>
         public async Task StepAsync(string name)
         {
-            var deadline = DateTime.UtcNow + Step;
+            // The first step is the app's own start, which loads CEF's runtime (hundreds of MB) from wherever the build put it:
+            // on a drive WSL mounts it sat in uninterruptible disk wait for over a minute on a loaded machine (state D below).
+            var limit = name == "BEFORE" ? StartLimit : Step;
+            var deadline = DateTime.UtcNow + limit;
             while (DateTime.UtcNow < deadline)
             {
                 var lines = Log();
@@ -191,7 +222,7 @@ public class LinuxWebPanelTests
                 if (_app.HasExited) Assert.Fail($"the app ended (exit {_app.ExitCode}) before step {name}:{Environment.NewLine}{Account()}");
                 await Task.Delay(100);
             }
-            Assert.Fail($"step {name} was not reached in {Step}:{Environment.NewLine}{Account()}");
+            Assert.Fail($"step {name} was not reached in {limit}:{Environment.NewLine}{Account()}");
         }
 
         /// <summary>Let the probe go on to its next step.</summary>
@@ -210,20 +241,25 @@ public class LinuxWebPanelTests
             return 0;
         }
 
-        /// <summary>The screen once <paramref name="area"/> has stopped changing between samples, which is the main page
-        /// painted: the baseline later steps are compared with.</summary>
+        /// <summary>The screen once <paramref name="area"/> shows the main page and has stopped changing between samples: the
+        /// baseline later steps are compared with. Before its first paint the window is one flat colour of Chromium's own
+        /// (measured: light grey, steady for seconds on a slow start), which a page of text and boxes is not.</summary>
         public async Task<XScreen.Snapshot> SettledAsync(Rectangle area)
         {
-            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+            // Part of the same slow start as StartLimit: the page paints once its bundle has loaded.
+            var deadline = DateTime.UtcNow + StartLimit;
             var last = Screen.Capture();
+            bool stable;
             do
             {
                 await Task.Delay(400);
                 var now = Screen.Capture();
-                if (now.Same(last, area)) return now;
+                stable = now.Same(last, area);
+                if (stable && now.Colours(area, 9) > 8) return now;
                 last = now;
             } while (DateTime.UtcNow < deadline);
-            Assert.Fail("the main page never stopped changing");
+            Assert.Fail($"the main page never painted and settled: {last.Colours(area, 9)} colours in its area (a painted page has more than 8), "
+                + $"{(stable ? "steady" : "still changing")}{Environment.NewLine}{Account()}");
             return last;
         }
 
