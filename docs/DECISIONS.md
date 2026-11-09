@@ -161,7 +161,7 @@ docs cite them — so the number is the column to scan.
 | **D100** | HISTORY NAVIGATION IS AN OPTIONAL INTERFACE, `ISessionBrowserHistory`, WHICH BOTH ENGINES' SESSION BROWSERS IMPLEMENT; `ISessionBrowser` ITSELF GAINS NOTHING. |
 | **D101** | PROPOSED: THE KIT TAKES ONE PLAYBACK-HEALTH FIGURE — DROPPED PICTURES, ABSENT WHEN UNKNOWN — AND ONLY WHERE ITS OWN PLAYERS CAN READ IT. |
 | **D102** | PROPOSED: ASK THE ANDROID ENCODER NOT TO REORDER, KEEP THE WRITER'S DROP AS THE BACKSTOP, AND BUILD THE REORDERING WRITER ONLY IF THE LOSS SURVIVES IT. |
-| **D103** | A WINDOWS CHROMIUM APP'S STARTUP SCREEN IS DRAWN BY THE SHIM, FROM RESOURCES THE BUILD STAMPS INTO ITS LAUNCHER. |
+| **D103** | A WINDOWS OR LINUX CHROMIUM APP'S STARTUP SCREEN IS DRAWN BY THE SHIM OR THE STARTER, FROM A STAMP THE BUILD PUTS ON ITS LAUNCHER. |
 
 <!-- decisions-index:end -->
 
@@ -1509,7 +1509,7 @@ docs cite them — so the number is the column to scan.
     is the right end state if the encoder reorders in the field, and a bigger risk than the problem seen so far, which is
     one emulator's software encoder. The row's own condition stands: the phone number is re-measured before anything is built.
 
-- **D103 — A WINDOWS CHROMIUM APP'S STARTUP SCREEN IS DRAWN BY THE SHIM, FROM RESOURCES THE BUILD STAMPS INTO ITS LAUNCHER.**
+- **D103 — A WINDOWS OR LINUX CHROMIUM APP'S STARTUP SCREEN IS DRAWN BY THE SHIM OR THE STARTER, FROM A STAMP THE BUILD PUTS ON ITS LAUNCHER.**
   `ShenoraChromiumStartupScreen` (a PNG, with size, background, bar, corners, monitor and timeout) puts D94's screen on an app
   that has no update launcher: `<App>.dll`, the shim, draws it from the browser process's first moments, before CEF's runtime
   is loaded and .NET has started, and the app closes it at its first window as it does the launcher's.
@@ -1522,7 +1522,11 @@ docs cite them — so the number is the column to scan.
   - **The constraints:** opt-in (no property, no resource, nothing drawn); a browser process only, never a CEF subprocess;
     none when the arguments already carry `--startup-screen` (the update launcher's screen is the one up); a bad value is
     refused by its property's name before CEF is fetched; a screen that cannot be shown is none and never a failed start;
-    Windows only (on macOS and Linux the browser process is the .NET apphost). Rejected: a file beside the exe (one more to lose), and a launcher of the kit's own before CEF's (a second process).
+    Windows and Linux (on macOS the browser process is the .NET apphost, and nothing native runs first). Rejected: a file beside the exe (one more to lose), and a launcher of the kit's own before CEF's (a second process).
+  - 🔴 **Linux has no native code of the kit's before .NET, so the build puts one there (the starter):** `<App>` is a small native executable, the same
+    screen code as the update launcher's, with the description and PNG appended to its file (an ELF ignores what follows it), and the app's apphost `<App>.App`
+    beside it. It stays the parent (the app's status is its status, signals reach the app), which a service manager and a terminal need, and execs the app
+    outright where there is nothing to draw. A starter's second process costs a few MB resident for the life of the app; the Windows shim has none.
 
 ## Anti-goals — deliberately NOT built
 

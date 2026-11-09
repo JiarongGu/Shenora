@@ -73,13 +73,17 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   shows only the wallpaper), which a person grants. Then: CJK through CoreText, the splash's rounded bottom corners
   against the window's, a click on the splash bringing its window forward, and a drag on the frameless strip (with no
   traffic lights, from its whole width: compiled, not run).
-- [ ] **A startup screen for a Chromium app without the update launcher, on Linux and macOS (D103).** Windows draws it from the
-  shim, which is the native code CEF's launcher runs before .NET. On Linux and macOS the browser process IS the .NET apphost
-  (the helper `helper_linux.c` / `helper_mac.c` only runs CEF's subprocesses), so nothing native of the kit's runs first;
-  a screen there needs a native starter in front of the app, which is what the update launcher already is (D94: Windows
-  and Linux). Whether a Linux app without it needs one is for an adopter to say.
+- [ ] **A startup screen for a macOS Chromium app without the update launcher (D103).** Windows draws it from the shim and Linux from the
+  starter (`starter_linux.cpp`); on macOS the browser process IS the .NET apphost inside the bundle (the helper `helper_mac.c` only runs CEF's
+  subprocesses), so a screen there needs a native starter as the bundle's executable in front of the app, drawn with AppKit, which the build says
+  it does not do (`ShenoraChromiumStartupScreen` warns on a macOS app). The Linux starter's shape (the stamp on the end of its file, the app as its
+  child, signals forwarded) is the one to mirror; a macOS bundle's executable must stay the process LaunchServices tracks, which needs measuring on a Mac.
 - [ ] 🅿️ **The shim's screen on a person's desktop.** `dev.mjs chromium-startup-screen` reads its windows from outside; what a
   person sees (the picture's crispness at a second monitor's DPI, the first frame beside a slow disk) needs their eye.
+- [ ] 🅿️ **The Linux starter's screen on a person's desktop, and the CI-built starter.** Measured under openbox on Xvfb in WSL (up before the app's window, the box asked
+  for, gone at the first window and not at the timeout, the status and the arguments passed on). Not seen: GNOME's or KDE's own session, a display scale other than 1 (the
+  update launcher's X11 code scales by Xft.dpi, which Xvfb does not set), Wayland alone (it is drawn through XWayland, as CEF is), and linux-arm64, whose starter the
+  release builds with zig and nobody has run. The release job now installs the X11 headers the starter needs (`chromium-helper-linux`), which no run has used.
 - [ ] 🅿️ **Whether a later launch's window takes the foreground on Linux and macOS.** Not observed: WSL's desktop and
   Xvfb enforce no focus-stealing prevention, so they cannot show it. On Linux a later launch could hand over its
   activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands over the foreground; it needs a

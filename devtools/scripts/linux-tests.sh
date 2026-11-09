@@ -71,6 +71,17 @@ if dotnet publish samples/Shenora.Sample.Chromium/Shenora.Sample.Chromium.csproj
 else
   echo "linux-tests: the Chromium sample did not publish into folders (devtools/_build/linux-sample-folders-build.log); its test will fail." >&2
 fi
+# And with a startup screen (D103), which needs the kit's Linux starter staged too (`dev.mjs cef-native --rid linux-x64`, with the X11
+# headers): the starter test starts it and reads the screen from outside.
+screen=$scratch/linux-sample-screen/publish
+if dotnet publish samples/Shenora.Sample.Chromium/Shenora.Sample.Chromium.csproj -r linux-x64 \
+    -p:ShenoraChromiumStartupScreen="$root/src/Shenora.Launcher/tests/screen.png" -p:ShenoraChromiumStartupScreenWidth=300 \
+    -p:ShenoraChromiumStartupScreenHeight=180 -p:ShenoraChromiumStartupScreenProgressBar=true -p:ShenoraChromiumStartupScreenTimeoutSeconds=60 \
+    -o "$screen" --artifacts-path "$scratch/linux-sample-screen" -v quiet >"$scratch/linux-sample-screen-build.log" 2>&1; then
+  export SHENORA_LINUX_SCREEN_SAMPLE=$screen/Shenora.Sample.Chromium
+else
+  echo "linux-tests: the Chromium sample did not publish with a startup screen (devtools/_build/linux-sample-screen-build.log); its test will fail." >&2
+fi
 [ -n "$sysroot" ] && export SHENORA_LINUX_SYSROOT=$sysroot
 dotnet test tests/Shenora.Tests.Linux/Shenora.Tests.Linux.csproj --artifacts-path "$scratch/linux-tests" "$@"
 rc=$?

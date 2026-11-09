@@ -73,6 +73,77 @@ public class LinuxPublishFoldersTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    // A startup screen (D103) needs a native starter in front of the app on Linux: <App> is the starter with the screen stamped on the end of its
+    // file, and the apphost, which stays as the SDK made it, is beside it, or in lib/ with the folders.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void With_a_startup_screen_the_root_executable_is_the_starter_carrying_it_and_the_apphost_is_beside_it_or_in_lib(bool folders)
+    {
+        var root = NewRoot();
+        try
+        {
+            var tree = Publish(root, folders, ScreenProperties(root));
+            var starter = File.ReadAllBytes(Path.Combine(root, "publish", "MyApp"));
+            AssertStamp(starter, "starter-bytes");
+            Assert.Contains(folders ? "lib/MyApp.App" : "MyApp.App", tree);
+            Assert.Contains(folders ? "lib/MyApp.App.dll" : "MyApp.App.dll", tree);
+            if (folders) Assert.Equal(["MyApp"], tree.Where(f => !f.Contains('/')));
+            AssertExecutable(Path.Combine(root, "publish", "MyApp"));
+            AssertExecutable(Path.Combine(root, "publish", folders ? "lib" : "", "MyApp.App"));
+
+            // Published again over itself the stamp is on the starter once, and a publish without a screen over it is the apphost again.
+            Publish(root, folders, ScreenProperties(root));
+            Assert.Equal(starter, File.ReadAllBytes(Path.Combine(root, "publish", "MyApp")));
+            Publish(root, folders, []);
+            Assert.DoesNotContain("SHENORASCREEN001", MagicOf(File.ReadAllBytes(Path.Combine(root, "publish", "MyApp"))));
+            Assert.Equal(Path.Combine(root, "publish", folders ? "lib" : "") + "/", Start(Path.Combine(root, "publish", "MyApp")));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void A_startup_screen_without_the_starter_is_an_error_naming_it()
+    {
+        var root = NewRoot();
+        try
+        {
+            var (project, dist) = App(root, folders: false);
+            var png = ScreenProperties(root)[0];
+            var said = Run("dotnet", ["build", project, "-c", "Debug", $"-p:ShenoraCefDist={dist}", png, $"-p:ShenoraChromiumStarter={Path.Combine(root, "missing")}",
+                "--disable-build-servers", "-nologo", "-v:minimal"], expectSuccess: false);
+            Assert.Contains("The kit's Linux starter, which draws the startup screen, is missing", said);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    // The screen's own description and picture, and a stand-in for the starter, in the test's folder.
+    private static string[] ScreenProperties(string root)
+    {
+        Directory.CreateDirectory(root);
+        var png = Path.Combine(root, "screen.png");
+        var starter = Path.Combine(root, "starter");
+        if (!File.Exists(png)) File.WriteAllBytes(png, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, .. "png-body"u8.ToArray()]);
+        if (!File.Exists(starter)) File.WriteAllText(starter, "starter-bytes");
+        return [$"-p:ShenoraChromiumStartupScreen={png}", $"-p:ShenoraChromiumStarter={starter}", "-p:ShenoraChromiumStartupScreenWidth=300",
+            "-p:ShenoraChromiumStartupScreenHeight=180", "-p:ShenoraChromiumStartupScreenProgressBar=true", "-p:ShenoraChromiumStartupScreenBackground=#102030"];
+    }
+
+    private static string MagicOf(byte[] file) => System.Text.Encoding.ASCII.GetString(file, Math.Max(0, file.Length - 16), Math.Min(16, file.Length));
+
+    // The stamp starter_linux.cpp reads: [description][PNG][description size: u32le][PNG size: u32le][magic] after the starter's own bytes.
+    private static void AssertStamp(byte[] file, string starter)
+    {
+        Assert.Equal("SHENORASCREEN001", MagicOf(file));
+        var textSize = (int)BitConverter.ToUInt32(file, file.Length - 24);
+        var pngSize = (int)BitConverter.ToUInt32(file, file.Length - 20);
+        Assert.Equal(starter.Length + textSize + pngSize + 24, file.Length);
+        Assert.Equal(starter, System.Text.Encoding.ASCII.GetString(file, 0, starter.Length));
+        var text = System.Text.Encoding.UTF8.GetString(file, starter.Length, textSize).Split('\n');
+        Assert.Equal(["width=300", "height=180", "background=FF102030", "progress_bar=1", "progress_color=FF3B82F6", "corners=rounded", "monitor=cursor", "timeout_ms=20000"], text);
+        Assert.Equal([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, .. "png-body"u8.ToArray()], file[(starter.Length + textSize)..(starter.Length + textSize + pngSize)]);
+    }
+
     // A build is what an IDE and `dotnet run` start: the option is for a publish.
     [Fact]
     public void A_build_stays_flat_with_the_option()

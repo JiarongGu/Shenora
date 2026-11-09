@@ -300,6 +300,26 @@ frame of the animation (1673×949) as the size to restore to. And a window maxim
 normal-looking bounds unsettled, because macOS can end a zoom on its full-screen frame with no maximized change after
 it (2 zooms in 21 saved that frame as a Normal size before; none in 25 after).
 
+## The Chromium shell's startup screen on Linux
+
+On Windows the shim is native code CEF's launcher runs before .NET (D103). On Linux the browser process IS the .NET apphost, so nothing
+native of the kit's runs first, and a screen there needs a native starter in front of the app: with `ShenoraChromiumStartupScreen` the
+build lays `shenora_chromium_starter` out as `<App>`, with the description (the Windows resource's own text) and the PNG appended to the end
+of its file, and the app's apphost beside it as `<App>.App` (in `lib/` with a publish into folders: the apphost is then left as the SDK
+made it, not pointed at `lib/`). The starter reads its stamp from `/proc/self/exe`; draws the update launcher's own X11 window and
+pixels (`shenora::StartupScreen`, compiled into it, libX11 and libXrandr loaded with `dlopen`); starts the app with
+`--startup-screen <window id>`, which the app closes at its first window as it does the launcher's; keeps the screen moving until
+then, the timeout, or the app's end; and waits for the app, forwarding SIGINT, SIGTERM, SIGHUP and SIGQUIT and ending with its status, so a
+service manager's main process and a terminal's job stay the one process. With no stamp, with no display, or with `--startup-screen`
+already on the command line (the update launcher's screen is the one up) it execs the app and does nothing else; a screen that cannot be shown is
+none. Why a starter of the kit's and not the update launcher: D94's launcher updates an install, which most apps do not use, and the
+starter is the same screen code without it. **Seen on real CEF** (`LinuxStartupScreenTests`, the Chromium sample under openbox on Xvfb, the screen read
+from the X server): its window (WM_CLASS `ShenoraStartupScreen`) was on the display before the app's own window, 300x180 as the build
+asked, and gone within seconds of the app's window, closed by the app and not by the 60 s timeout; the starter ended with status 0 when the
+window was closed; and with `--startup-screen` on the command line none was drawn. Not seen: a real GNOME or KDE session, a display scale other
+than 1, a Wayland-only session, and linux-arm64. The starter is a C++ build over the launcher's sources (`dev.mjs cef-native`, which needs a C++
+compiler of CC's family and the X11 headers: libx11-dev, libxrandr-dev), statically linked against the C++ runtime (2.7 MB with zig's).
+
 ## The Chromium shell's splash
 
 `ChromiumHostOptions.Splash` (D92). The WinForms shell needs none of this: its form paints `SplashPanel` at once,
@@ -308,7 +328,7 @@ takes, the main window's render area, and leaves the window's frame to the windo
 minimizes and closes from the moment CEF shows it.
 
 ```
-(the shim, before all of it: an opt-in startup screen, D103 — below)
+(the shim on Windows, the starter on Linux, before all of it: an opt-in startup screen, D103 — below)
 UseChromium        ← with a Card, CEF is NOT started early (D87's exception); with none it is
 Run: gate          ← a launch turned away shows nothing
      SplashSession.Start  ← setup; the card, if any (once it is on screen, a launcher's startup screen goes, D94);

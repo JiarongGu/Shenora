@@ -39,6 +39,14 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **A Linux Chromium app can have a startup screen without the update launcher** (`<ShenoraChromiumStartupScreen>`, D103, the Windows
+  option's own properties). The build lays the kit's starter out as `<App>` with the screen stamped on the end of its file, and the apphost as
+  `<App>.App` beside it (in `lib/` with `ShenoraChromiumPublishFolders`): it draws the update launcher's X11 screen, starts the app with
+  `--startup-screen <window id>`, which the app closes at its first window, and ends with the app's status, forwarding its signals; with no
+  stamp, no display, or `--startup-screen` already given (the launcher's screen is up) it just runs the app. The package carries
+  `shenora_chromium_starter` for linux-x64 and linux-arm64 beside the helper; a macOS app still shows none (the build says so). Run on real CEF
+  under openbox on Xvfb: up before the app's window, the 300x180 asked for, gone at the app's first window and not at the timeout; a real
+  GNOME or KDE session and linux-arm64 are unrun.
 - **A Linux Chromium app can publish into folders** (`<ShenoraChromiumPublishFolders>true</ShenoraChromiumPublishFolders>`,
   D96, the option a Windows app already had): `dotnet publish` leaves the one executable `MyApp` at the root, CEF's runtime
   and `MyApp-helper` in `engine/` and the .NET app in `lib/`, a self-contained runtime with it. Publish only, off by

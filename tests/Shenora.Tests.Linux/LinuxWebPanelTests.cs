@@ -207,7 +207,8 @@ public class LinuxWebPanelTests
         /// <param name="appRoot">The app's root, where its data and Chromium's cache are kept (<c>--app-root</c>): a folder of the run's own
         /// on the machine's own disk by default, since Chromium's cache cannot map its index file on a drive WSL mounts (measured: the next run
         /// in a folder that already held one never showed its page). Two runs given the same one share a profile.</param>
-        public PanelRun(string? launcher, IReadOnlyDictionary<string, string>? probe = null, string? appRoot = null)
+        /// <param name="arguments">More arguments for the app, after its <c>--app-root</c>.</param>
+        public PanelRun(string? launcher, IReadOnlyDictionary<string, string>? probe = null, string? appRoot = null, params string[] arguments)
         {
             if (string.IsNullOrEmpty(launcher) || !File.Exists(launcher))
                 throw new InvalidOperationException("The run names no built Chromium sample (SHENORA_LINUX_SAMPLE, or SHENORA_LINUX_FOLDERS_SAMPLE: devtools/scripts/linux-tests.sh builds both).");
@@ -233,6 +234,7 @@ public class LinuxWebPanelTests
                     RedirectStandardError = true,
                     UseShellExecute = false,
                 };
+                foreach (var argument in arguments) info.ArgumentList.Add(argument);
                 // The libraries Chromium needs that the machine lacks (nspr, nss), from the sysroot where there is one.
                 if (Environment.GetEnvironmentVariable("SHENORA_LINUX_SYSROOT") is { Length: > 0 } sysroot)
                     info.Environment["LD_LIBRARY_PATH"] = Path.Combine(sysroot, "usr/lib/x86_64-linux-gnu");
@@ -416,6 +418,9 @@ public class LinuxWebPanelTests
         /// <summary>The app ended: a start that was handed to another instance, or that failed, ends at once.</summary>
         public bool Exited => _app.HasExited;
 
+        /// <summary>The process the run started: its exit status, once it has ended.</summary>
+        public int ExitCode => _app.ExitCode;
+
         /// <summary>What a failure says: the probe's log, the app's and the window manager's output, and the app's processes.</summary>
         public string Describe() => Account();
 
@@ -424,9 +429,20 @@ public class LinuxWebPanelTests
         // they run from.
         private static void Stragglers(string home)
         {
+            // Never this test host or what runs it: a run whose launcher is in the tests' own folder (the one that will not start) would name them.
+            var mine = new HashSet<int>();
+            for (var pid = Environment.ProcessId; pid > 1 && mine.Add(pid);)
+            {
+                try
+                {
+                    var stat = File.ReadAllText($"/proc/{pid}/stat");
+                    pid = int.Parse(stat[(stat.LastIndexOf(')') + 2)..].Split(' ')[1]);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException) { break; }
+            }
             foreach (var dir in Directory.EnumerateDirectories("/proc"))
             {
-                if (!int.TryParse(Path.GetFileName(dir), out var pid) || pid == Environment.ProcessId) continue;
+                if (!int.TryParse(Path.GetFileName(dir), out var pid) || mine.Contains(pid)) continue;
                 try
                 {
                     if (!File.ReadAllText(Path.Combine(dir, "cmdline")).Contains(home, StringComparison.Ordinal)) continue;
