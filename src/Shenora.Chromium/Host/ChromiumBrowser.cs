@@ -69,9 +69,11 @@ internal sealed unsafe class ChromiumBrowser
     /// <param name="log">Diagnostics.</param>
     /// <param name="urls">Where popups go; none drops them.</param>
     /// <param name="hooks">The app's answers to downloads, permissions and a renderer's end; none leaves the defaults.</param>
+    /// <param name="allowZoom">The user may zoom the page; false, the default, keeps every zoom input from it (<see cref="ChromiumZoom"/>).</param>
     public ChromiumBrowser(string name, ChromiumServing serving, ChromiumOrigins origins, Func<ChromiumBrowser, ChromiumIpcBridge> bridge,
-        ILogger? log, IUrlLauncher? urls = null, ChromiumPageHooks? hooks = null)
+        ILogger? log, IUrlLauncher? urls = null, ChromiumPageHooks? hooks = null, bool allowZoom = false)
     {
+        AllowZoom = allowZoom;
         Name = name;
         Serving = serving;
         Origins = origins;
@@ -84,6 +86,7 @@ internal sealed unsafe class ChromiumBrowser
     }
 
     public string Name { get; }
+    public bool AllowZoom { get; }
     public ChromiumServing Serving { get; }
 
     /// <summary>Told when one of this page's loads found nothing and the not-found page was answered. The main window's
@@ -260,12 +263,27 @@ internal sealed unsafe class ChromiumBrowser
         if (_hooks is { HandlesAuth: true } && _auth is null)
             using (var host = new CefRef<_cef_browser_host_t>(browser->get_host(browser)))
                 if (!host.IsNull) _auth = new ChromiumPageAuth(host.Ptr, _hooks, Name, _log);
+        if (!AllowZoom) GuardZoom(browser);
         Bridge.Start();
         Host?.BrowserCreated();
     }
 
     // The page's HTTP challenges, heard through the browser's DevTools only when the app set OnAuthRequest.
     private ChromiumPageAuth? _auth;
+
+    // The zoom guard's script is registered through the browser's DevTools, in process, only when the app has not allowed zoom
+    // (ChromiumZoom): the channel is kept for the browser's life, as the registration ends with it.
+    private DevToolsChannel? _zoomGuard;
+
+    private void GuardZoom(_cef_browser_t* browser)
+    {
+        using var host = new CefRef<_cef_browser_host_t>(browser->get_host(browser));
+        if (host.IsNull) return;
+        var channel = _zoomGuard = new DevToolsChannel(host.Ptr);
+        _ = channel.CallAsync("Page.addScriptToEvaluateOnNewDocument", ChromiumZoom.AddScriptParameters()).ContinueWith(
+            t => AppCallback.Log(_log, () => $"[Shenora.Chromium] Window '{Name}': the zoom guard could not be set up, so the wheel and a pinch may zoom the page", LogLevel.Warning, t.Exception?.GetBaseException()),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+    }
 
     // Asked once: the page's first paint, from Chromium itself through the in-process DevTools protocol (no port), and
     // two animation frames after it, by which time the frame is on screen (measured: the paint event lands within
@@ -324,6 +342,8 @@ internal sealed unsafe class ChromiumBrowser
         StopWatchingPaint();
         _auth?.Dispose();
         _auth = null;
+        _zoomGuard?.Dispose();
+        _zoomGuard = null;
         if (_browser == null) return;
         using (new CefRef<_cef_browser_t>(_browser))
         {
@@ -409,6 +429,7 @@ internal sealed unsafe class ChromiumBrowser
         private readonly FileDialogs? _dialogs;   // only with the app's hook: with none, CEF shows its own dialog
         private readonly ScriptDialogs? _scriptDialogs;   // only with the app's hook: with none, CEF shows its own dialogs
         private readonly FocusHandler _focus;
+        private readonly ZoomKeys? _zoomKeys;   // only with zoom off: with it allowed, every key is Chromium's
 
         public Client(ChromiumBrowser owner)
         {
@@ -422,6 +443,7 @@ internal sealed unsafe class ChromiumBrowser
             _dialogs = owner._hooks is { HandlesFileDialogs: true } ? new FileDialogs(owner) : null;
             _scriptDialogs = owner._hooks is { HandlesScriptDialogs: true } ? new ScriptDialogs(owner) : null;
             _focus = new FocusHandler(owner);
+            _zoomKeys = owner.AllowZoom ? null : new ZoomKeys();
             Struct->get_request_handler = &GetRequests;
             Struct->get_life_span_handler = &GetLifeSpan;
             Struct->get_load_handler = &GetLoad;
@@ -432,6 +454,7 @@ internal sealed unsafe class ChromiumBrowser
             Struct->get_dialog_handler = &GetDialogs;
             Struct->get_jsdialog_handler = &GetScriptDialogs;
             Struct->get_focus_handler = &GetFocus;
+            Struct->get_keyboard_handler = &GetKeyboard;
         }
 
         // The client's references to its handlers: each is freed once CEF has let go of it too.
@@ -447,6 +470,7 @@ internal sealed unsafe class ChromiumBrowser
             _dialogs?.Release();
             _scriptDialogs?.Release();
             _focus.Release();
+            _zoomKeys?.Release();
         }
 
         // A getter handing CEF one of our structs must add the reference CEF takes.
@@ -460,6 +484,25 @@ internal sealed unsafe class ChromiumBrowser
         [UnmanagedCallersOnly] private static _cef_dialog_handler_t* GetDialogs(_cef_client_t* self) => From<Client>(self)._dialogs is { } dialogs ? dialogs.ForCef() : null;
         [UnmanagedCallersOnly] private static _cef_jsdialog_handler_t* GetScriptDialogs(_cef_client_t* self) => From<Client>(self)._scriptDialogs is { } dialogs ? dialogs.ForCef() : null;
         [UnmanagedCallersOnly] private static _cef_focus_handler_t* GetFocus(_cef_client_t* self) => From<Client>(self)._focus.ForCef();
+        [UnmanagedCallersOnly] private static _cef_keyboard_handler_t* GetKeyboard(_cef_client_t* self) => From<Client>(self)._zoomKeys is { } keys ? keys.ForCef() : null;
+    }
+
+    /// <summary>Handles a zoom shortcut itself, before Chromium or the page hears it, when the app has not allowed zoom
+    /// (<see cref="ChromiumZoom.BlocksKey"/>).</summary>
+    private sealed class ZoomKeys : CefObject<_cef_keyboard_handler_t>
+    {
+        public ZoomKeys() => Struct->on_pre_key_event = &PreKeyEvent;
+
+        [UnmanagedCallersOnly]
+#if CEF_WINDOWS
+        private static int PreKeyEvent(_cef_keyboard_handler_t* self, _cef_browser_t* browser, _cef_key_event_t* key, nint osEvent, int* isShortcut)
+#else
+        private static int PreKeyEvent(_cef_keyboard_handler_t* self, _cef_browser_t* browser, _cef_key_event_t* key, void* osEvent, int* isShortcut)
+#endif
+        {
+            using var b = new CefRef<_cef_browser_t>(browser);
+            return key != null && ChromiumZoom.BlocksKey(key->type, key->modifiers, key->windows_key_code) ? 1 : 0;
+        }
     }
 
     /// <summary>The page's <c>alert</c>, <c>confirm</c>, <c>prompt</c> and <c>beforeunload</c> dialogs, answered by the app's

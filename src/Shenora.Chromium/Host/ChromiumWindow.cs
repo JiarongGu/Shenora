@@ -40,14 +40,15 @@ internal sealed unsafe class ChromiumWindow : IChromiumBrowserHost
     // geometry, for the main window when the app keeps its state: restored as it opens, saved as it closes.
     public ChromiumWindow(string name, ChromiumWindowOptions options, ChromiumServing serving, ChromiumOrigins origins,
         Func<ChromiumBrowser, ChromiumIpcBridge> bridge, Action<ChromiumWindow> destroyed, ILogger? log, IUrlLauncher? urls = null,
-        Func<ChromiumWindow, bool>? mayClose = null, ChromiumWindowGeometry? geometry = null, ChromiumPageHooks? hooks = null)
+        Func<ChromiumWindow, bool>? mayClose = null, ChromiumWindowGeometry? geometry = null, ChromiumPageHooks? hooks = null,
+        bool allowZoom = false)
     {
         _options = options;
         _geometry = geometry;
         _destroyed = destroyed;
         _mayClose = mayClose;
         _log = log;
-        Browser = new ChromiumBrowser(name, serving, origins, bridge, log, urls, hooks) { Host = this };
+        Browser = new ChromiumBrowser(name, serving, origins, bridge, log, urls, hooks, allowZoom) { Host = this };
         _delegate = new WindowDelegate(this);
         _viewDelegate = new BrowserViewDelegate(this);
         // The click runs AFTER the message that delivered it: closing the window from inside its own subclassed

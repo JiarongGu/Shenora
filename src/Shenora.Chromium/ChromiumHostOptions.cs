@@ -60,6 +60,14 @@ public sealed class ChromiumHostOptions
     /// menus and dialogs, such as <c>zh-CN</c>. Null means the OS's UI language, as WebView2 follows it.</summary>
     public string? Locale { get; init; }
 
+    /// <summary>
+    /// Whether the user can zoom a page (Ctrl+wheel, Ctrl+plus, Ctrl+minus, Ctrl+0, a pinch). Off by default, as in the
+    /// WebView2 host: an app that draws its own frame is not meant to scale. It is the same name and default there
+    /// (<c>WebViewHostOptions.AllowZoom</c>), so one app behaves the same on both engines. A page's own zoom, such as CSS
+    /// <c>zoom</c>, is not affected.
+    /// </summary>
+    public bool AllowZoom { get; init; }
+
     /// <summary>What the ready handshake tells the page this shell is and can do (D36).</summary>
     public ShellInfo? Shell { get; init; }
 

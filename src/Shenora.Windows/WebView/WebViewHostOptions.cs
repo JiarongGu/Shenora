@@ -147,6 +147,13 @@ public sealed class WebViewHostOptions
     public bool BlockBrowserShortcutsInProduction { get; init; } = true;
 
     /// <summary>
+    /// Whether the user can zoom a page (Ctrl+wheel, Ctrl+plus, Ctrl+minus, Ctrl+0, a pinch). Off by default. The same name,
+    /// default and meaning as the Chromium shell's <c>ChromiumHostOptions.AllowZoom</c>, so one app behaves the same on both
+    /// engines. <see cref="ConfigureSettings"/> still runs after it.
+    /// </summary>
+    public bool AllowZoom { get; init; }
+
+    /// <summary>
     /// Globals injected on document created as <c>window.&lt;name&gt; = &lt;json&gt;;</c> (e.g. an
     /// app-metadata object). Values are JSON-serialized camelCase with full escaping.
     /// </summary>

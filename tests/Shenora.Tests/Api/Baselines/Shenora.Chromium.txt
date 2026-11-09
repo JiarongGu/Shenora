@@ -111,6 +111,7 @@ sealed class Shenora.Chromium.ChromiumEngineOptions
   public System.Func<Shenora.Chromium.ChromiumPopupRequest, bool>? OnPopupRequested { get; init; }
   public System.Func<Shenora.Chromium.ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
   public System.Func<Shenora.Chromium.ChromiumScriptDialogRequest, bool>? OnScriptDialog { get; init; }
+  public bool AllowZoom { get; init; }
   public bool? IsDevelopment { get; init; }
   public int DevToolsPort { get; init; }
   public string VirtualHost { get; init; }
@@ -155,6 +156,7 @@ sealed class Shenora.Chromium.ChromiumHostOptions
   public System.Func<Shenora.Chromium.ChromiumPopupRequest, bool>? OnPopupRequested { get; init; }
   public System.Func<Shenora.Chromium.ChromiumProcessReport, bool>? OnProcessFailed { get; init; }
   public System.Func<Shenora.Chromium.ChromiumScriptDialogRequest, bool>? OnScriptDialog { get; init; }
+  public bool AllowZoom { get; init; }
   public bool ObserveUnobservedTaskExceptions { get; init; }
   public bool OffscreenSessions { get; init; }
   public bool? IsDevelopment { get; init; }

@@ -257,10 +257,10 @@ public sealed class WebViewHost
         settings.IsPasswordAutosaveEnabled = false;
         settings.IsWebMessageEnabled = true;
         settings.IsStatusBarEnabled = false;
-        settings.IsZoomControlEnabled = false;
+        settings.IsZoomControlEnabled = _options.AllowZoom;
         settings.IsBuiltInErrorPageEnabled = false;
         settings.IsGeneralAutofillEnabled = false;
-        settings.IsPinchZoomEnabled = false;
+        settings.IsPinchZoomEnabled = _options.AllowZoom;
         settings.IsSwipeNavigationEnabled = false;
 
         _webView.AllowExternalDrop = _options.AllowExternalDrop;
@@ -539,7 +539,7 @@ public sealed class WebViewHost
             await core.AddScriptToExecuteOnDocumentCreatedAsync(WebViewScripts.PreventDefaultFileDrop);
 
         if (_options.BlockBrowserShortcutsInProduction && !IsDevelopment)
-            await core.AddScriptToExecuteOnDocumentCreatedAsync(WebViewScripts.BlockBrowserShortcuts);
+            await core.AddScriptToExecuteOnDocumentCreatedAsync(WebViewScripts.BlockBrowserShortcuts(_options.AllowZoom));
 
         foreach (var (name, value) in _options.InjectedGlobals)
             await core.AddScriptToExecuteOnDocumentCreatedAsync(WebViewScripts.BuildGlobalScript(name, value));

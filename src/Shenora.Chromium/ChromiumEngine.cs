@@ -60,6 +60,10 @@ public sealed class ChromiumEngineOptions
     /// <summary>What the ready handshake tells each page this host is and can do (D36).</summary>
     public ShellInfo? Shell { get; init; }
 
+    /// <summary>Whether the user can zoom a page (Ctrl+wheel, Ctrl+plus, Ctrl+minus, Ctrl+0, a pinch). Off by default: the
+    /// same name, default and meaning as <see cref="ChromiumHostOptions.AllowZoom"/>.</summary>
+    public bool AllowZoom { get; init; }
+
     /// <summary>
     /// Replaces the default download policy for every page (downloads are CANCELED and logged, D84): the same hook, and the
     /// same contract, as <see cref="ChromiumHostOptions.OnDownloadStarting"/>. CEF's UI thread: answer at once.
@@ -285,7 +289,7 @@ public sealed class ChromiumEngine
             var root = _isDevelopment && _options.DevUrl is not null ? new Uri(_options.DevUrl) : origins.App;
             return _pages = new ChromiumPages(origins, serving, root, dispatcher, services.GetRequiredService<IUiDispatcher>(),
                 services.GetService<IEventBus>(), services.GetService<IUrlLauncher>(), _options.Shell, _log,
-                ChromiumPageHooks.From(_options));
+                ChromiumPageHooks.From(_options), _options.AllowZoom);
         }
     }
 
@@ -297,4 +301,4 @@ public sealed class ChromiumEngine
 /// <summary>What every page of a <see cref="ChromiumEngine"/> shares. <c>Root</c> is where a page's path is resolved:
 /// the dev server in development, else the app's origin.</summary>
 internal sealed record ChromiumPages(ChromiumOrigins Origins, ChromiumServing Serving, Uri Root, IMessageDispatcher Dispatcher,
-    IUiDispatcher Ui, IEventBus? Events, IUrlLauncher? Urls, ShellInfo? Shell, ILogger? Log, ChromiumPageHooks? Hooks = null);
+    IUiDispatcher Ui, IEventBus? Events, IUrlLauncher? Urls, ShellInfo? Shell, ILogger? Log, ChromiumPageHooks? Hooks = null, bool AllowZoom = false);

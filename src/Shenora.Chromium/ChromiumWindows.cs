@@ -261,7 +261,7 @@ public sealed unsafe class ChromiumWindows
     {
         if (_serving is null || _origins is null) throw new InvalidOperationException("The Chromium shell has not started.");
         var window = new ChromiumWindow(name, options, _serving, _origins, NewBridge, Closed, _log, _urls,
-            w => CloseGuard?.Invoke(w.Name) ?? true, GeometryFor(name, options), ChromiumPageHooks.From(_options))
+            w => CloseGuard?.Invoke(w.Name) ?? true, GeometryFor(name, options), ChromiumPageHooks.From(_options), _options.AllowZoom)
         {
             Background = options.BackgroundColor ?? _options.Window.BackgroundColor,
             SchemeDark = _colorSchemes is { } schemes ? () => ChromiumColorSchemes.Dark(schemes.Scheme, SystemTheme.IsDark()) : null,
