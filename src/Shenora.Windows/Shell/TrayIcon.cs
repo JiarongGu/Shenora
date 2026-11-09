@@ -57,6 +57,20 @@ public sealed class TrayIconOptions
     /// <summary>Label of the built-in exit item.</summary>
     public string ExitMenuItemText { get; init; } = "Exit";
 
+    /// <summary>
+    /// Run instead of <see cref="TrayIcon.ShowWindow"/> when the person double-clicks the icon or chooses the Open item, and
+    /// when a <see cref="TrayBalloon"/> with no <see cref="TrayBalloon.Clicked"/> is clicked. On the tray's thread; a throw is
+    /// logged, never raised into the message loop. Null = bring <see cref="Window"/> forward.
+    /// </summary>
+    public Action? OnOpen { get; init; }
+
+    /// <summary>
+    /// True (default): the menu opens with the Open item and ends with a separator and Exit. False: it holds only what
+    /// <see cref="ConfigureMenu"/> adds, and the app reaches the same ends with <see cref="OnOpen"/> and
+    /// <see cref="TrayIcon.ExitApplication"/>. <see cref="OpenMenuItemText"/> and <see cref="ExitMenuItemText"/> are unused.
+    /// </summary>
+    public bool BuiltInMenuItems { get; init; } = true;
+
     /// <summary>Add the app's items — they land between the built-in Open item and the trailing
     /// separator + Exit. Refresh dynamic items from the menu's <c>Opening</c> event.</summary>
     public Action<ContextMenuStrip>? ConfigureMenu { get; init; }
@@ -94,8 +108,8 @@ public sealed class TrayBalloon
     public TrayBalloonIcon Icon { get; init; } = TrayBalloonIcon.Info;
 
     /// <summary>
-    /// Run when the person clicks the balloon, on the tray's thread. Null brings the tray's window forward
-    /// (<see cref="TrayIcon.ShowWindow"/>), which is what a click on a balloon about the app means; pass an action that does
+    /// Run when the person clicks the balloon, on the tray's thread. Null does what a double-click on the icon does
+    /// (<see cref="TrayIconOptions.OnOpen"/>, else brings the tray's window forward), which is what a click on a balloon about the app means; pass an action that does
     /// nothing to leave the click alone. A throw is logged, never raised into the message loop.
     /// </summary>
     public Action? Clicked { get; init; }
@@ -109,7 +123,7 @@ public sealed class TrayIcon : IDisposable
     private readonly TrayIconOptions _options;
     private readonly ILogger<TrayIcon> _logger;
     private readonly NotifyIcon _notifyIcon;
-    private readonly Font _openItemFont; // ToolStripItem doesn't own assigned fonts — dispose ours
+    private readonly Font? _openItemFont; // ToolStripItem doesn't own assigned fonts — dispose ours
     private bool _exiting;
     private bool _disposed;
 
@@ -124,15 +138,21 @@ public sealed class TrayIcon : IDisposable
         if (options.MenuColors is { } colors)
             Menu.Renderer = new TrayMenuRenderer(colors);
 
-        var open = new ToolStripMenuItem(options.OpenMenuItemText, null, (_, _) => ShowWindow());
-        _openItemFont = new Font(open.Font, FontStyle.Bold);
-        open.Font = _openItemFont;
-        Menu.Items.Add(open);
+        if (options.BuiltInMenuItems)
+        {
+            var open = new ToolStripMenuItem(options.OpenMenuItemText, null, (_, _) => Open());
+            _openItemFont = new Font(open.Font, FontStyle.Bold);
+            open.Font = _openItemFont;
+            Menu.Items.Add(open);
+        }
 
         options.ConfigureMenu?.Invoke(Menu);
 
-        Menu.Items.Add(new ToolStripSeparator());
-        Menu.Items.Add(new ToolStripMenuItem(options.ExitMenuItemText, null, (_, _) => ExitApplication()));
+        if (options.BuiltInMenuItems)
+        {
+            Menu.Items.Add(new ToolStripSeparator());
+            Menu.Items.Add(new ToolStripMenuItem(options.ExitMenuItemText, null, (_, _) => ExitApplication()));
+        }
 
         _notifyIcon = new NotifyIcon
         {
@@ -141,7 +161,7 @@ public sealed class TrayIcon : IDisposable
             ContextMenuStrip = Menu,
             Visible = true,
         };
-        _notifyIcon.DoubleClick += (_, _) => ShowWindow();
+        _notifyIcon.DoubleClick += (_, _) => Open();
         _notifyIcon.BalloonTipClicked += (_, _) => OnBalloonClicked();
 
         if (options.CloseToTray)
@@ -152,12 +172,32 @@ public sealed class TrayIcon : IDisposable
         options.Window.FormClosed += OnWindowClosed;
     }
 
-    /// <summary>The tray menu (built-in Open first, app items, separator, Exit last).</summary>
+    /// <summary>The tray menu (built-in Open first, app items, separator, Exit last; only the app's items with
+    /// <see cref="TrayIconOptions.BuiltInMenuItems"/> off).</summary>
     public ContextMenuStrip Menu { get; }
 
     /// <summary>Restore + focus the window (double-click / the Open item), through
     /// <see cref="WindowActivation"/>.</summary>
     public void ShowWindow() => WindowActivation.BringToFront(_options.Window);
+
+    // What a double-click, the Open item and a balloon with no callback do: the app's, else the window forward.
+    private void Open()
+    {
+        if (_options.OnOpen is not { } onOpen)
+        {
+            ShowWindow();
+            return;
+        }
+        try
+        {
+            onOpen();
+        }
+        catch (Exception ex)
+        {
+            // The app's callback, in the tray's message loop: a throw there is a process-wide unhandled-exception dialog.
+            AppCallback.Log(_logger, () => "The tray's open callback threw", LogLevel.Error, ex);
+        }
+    }
 
     /// <summary>
     /// Show a balloon notification from the tray icon. On the tray's thread (it is a shell icon): marshal from any other.
@@ -174,7 +214,7 @@ public sealed class TrayIcon : IDisposable
         ArgumentNullException.ThrowIfNull(balloon);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _balloonClicked = balloon.Clicked ?? ShowWindow;
+        _balloonClicked = balloon.Clicked ?? Open;
         var glyph = balloon.Icon switch
         {
             TrayBalloonIcon.Info => ToolTipIcon.Info,
@@ -246,7 +286,7 @@ public sealed class TrayIcon : IDisposable
         _notifyIcon.Visible = false; // a disposed-but-visible NotifyIcon ghosts until hovered
         _notifyIcon.Dispose();
         Menu.Dispose();
-        _openItemFont.Dispose();
+        _openItemFont?.Dispose();
     }
 
     /// <summary>Parameterized dark menu renderer: legible text on the app's surface, including disabled

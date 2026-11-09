@@ -126,6 +126,11 @@ is left is mostly measurement that needs hardware or a person.
   are not run (`docs/design/shells.md`, the hooks paragraph), nor is whether a Linux/macOS CEF raises `Fetch.authRequired` the same.
 
 **Windows**
+- [ ] **A zoom setting for the Chromium shell.** The WebView2 host turns Ctrl+wheel, Ctrl+plus/minus and pinch zoom off in production
+  (`WebViewHost`'s `IsZoomControlEnabled`, `IsPinchZoomEnabled`); `ChromiumHostOptions` has no counterpart, so a page there zooms the whole window
+  and an app that draws its own frame cannot stop it. The shell has no keyboard handler yet (`cef_keyboard_handler_t` is bound, never
+  set on the client) and CEF has no wheel callback, so what can reach the Ctrl+wheel is unmeasured: probe on real CEF first (set
+  `set_zoom_level` back on change, or a key handler plus the page's own `wheel` listener), then decide the option's shape.
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out
   an ARM64 launcher, shim and `libcef.dll`; running it needs ARM64 hardware or a `windows-11-arm` CI runner. ⚠ The
   release job builds the ARM64 shim (the 0.23.2 package's is PE machine `0xaa64`); it has never been loaded.

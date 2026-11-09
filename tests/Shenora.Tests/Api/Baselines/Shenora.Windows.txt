@@ -141,6 +141,7 @@ class Shenora.Windows.OptimizedForm : System.Windows.Forms.Form, Shenora.Windows
   public System.Drawing.Rectangle AppRestoreBounds { get; }
   public event System.EventHandler MaximizedChanged
   public void ApplyChromeTheme(System.Drawing.Color backColor, System.Drawing.Color? dwmBorderColor, bool immersiveDarkMode = true)
+  public void ApplyChromeTheme(System.Drawing.Color backColor, System.Drawing.Color? dwmBorderColor, bool immersiveDarkMode, System.Drawing.Color? captionColor, System.Drawing.Color? captionTextColor)
   public void Maximize()
   public void RestoreFromMax()
   public void SetCaptionButtons(System.Collections.Generic.IReadOnlyList<Shenora.Windows.CaptionButtonRegion>? regions)
@@ -149,6 +150,8 @@ sealed class Shenora.Windows.OptimizedFormOptions
   public .ctor()
   public System.Drawing.Color? BackColor { get; init; }
   public System.Drawing.Color? DwmBorderColor { get; init; }
+  public System.Drawing.Color? DwmCaptionColor { get; init; }
+  public System.Drawing.Color? DwmCaptionTextColor { get; init; }
   public bool FramelessChrome { get; init; }
   public bool ImmersiveDarkMode { get; init; }
   public bool NativeCaptionButtons { get; init; }
@@ -220,7 +223,9 @@ sealed class Shenora.Windows.TrayIcon : System.IDisposable
 sealed class Shenora.Windows.TrayIconOptions
   public Shenora.Windows.TrayMenuColors? MenuColors { get; init; }
   public System.Action<System.Windows.Forms.ContextMenuStrip>? ConfigureMenu { get; init; }
+  public System.Action? OnOpen { get; init; }
   public System.Drawing.Icon? Icon { get; init; }
+  public bool BuiltInMenuItems { get; init; }
   public bool CloseToTray { get; init; }
   public required System.Windows.Forms.Form Window { get; init; }
   public string ExitMenuItemText { get; init; }
