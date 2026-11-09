@@ -15,7 +15,7 @@ namespace Shenora.Chromium.Host;
 /// request filter, which CEF asks on its IO thread: it marshals there and answers CEF asynchronously, so the app's hooks
 /// all run on the UI thread, as they do in the WinForms shell.
 /// </summary>
-internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
+internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser, ISessionBrowserHistory
 {
     private readonly SessionBrowserOptions _options;
     private readonly Func<string?> _scope;
@@ -76,26 +76,28 @@ internal sealed unsafe class ChromiumSessionBrowser : ISessionBrowser
     /// <summary>Completes once the browser has gone, however it went.</summary>
     internal Task Closed => _closedSignal.Task;
 
-    /// <summary>Go back in history, if there is anywhere to go. UI thread.</summary>
-    internal void GoBack()
+    // ── ISessionBrowserHistory: UI thread; nothing before the browser is made ─────────────────────────
+
+    public bool CanGoBack => _browser != null && _browser->can_go_back(_browser) == 1;
+
+    public bool CanGoForward => _browser != null && _browser->can_go_forward(_browser) == 1;
+
+    public void GoBack()
     {
-        if (_browser != null && _browser->can_go_back(_browser) == 1) _browser->go_back(_browser);
+        if (CanGoBack) _browser->go_back(_browser);
     }
 
-    /// <summary>Go forward in history, if there is anywhere to go. UI thread.</summary>
-    internal void GoForward()
+    public void GoForward()
     {
-        if (_browser != null && _browser->can_go_forward(_browser) == 1) _browser->go_forward(_browser);
+        if (CanGoForward) _browser->go_forward(_browser);
     }
 
-    /// <summary>Reload the current page. UI thread.</summary>
-    internal void Reload()
+    public void Reload()
     {
         if (_browser != null) _browser->reload(_browser);
     }
 
-    /// <summary>Stop the current load. UI thread.</summary>
-    internal void Stop()
+    public void Stop()
     {
         if (_browser != null) _browser->stop_load(_browser);
     }

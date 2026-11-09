@@ -232,7 +232,7 @@ public sealed class WebView2SessionHost : ISessionHost
 }
 
 /// <summary>A WebView2 control a session drives, and the form hosting it.</summary>
-internal sealed class WebView2SessionBrowser : ISessionBrowser
+internal sealed class WebView2SessionBrowser : ISessionBrowser, ISessionBrowserHistory
 {
     private readonly WebView2Control _web;
     private readonly Form _host;
@@ -319,6 +319,24 @@ internal sealed class WebView2SessionBrowser : ISessionBrowser
             list.Add(new SessionCookie(cookie.Name, cookie.Value, cookie.Domain, cookie.Path));
         return list;
     }
+
+    public bool CanGoBack => !_web.IsDisposed && Core is { CanGoBack: true };
+
+    public bool CanGoForward => !_web.IsDisposed && Core is { CanGoForward: true };
+
+    public void GoBack()
+    {
+        if (CanGoBack) Core.GoBack();
+    }
+
+    public void GoForward()
+    {
+        if (CanGoForward) Core.GoForward();
+    }
+
+    public void Reload() => Core.Reload();
+
+    public void Stop() => Core.Stop();
 
     public void Focus() => _web.Focus();
 

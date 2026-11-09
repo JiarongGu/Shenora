@@ -172,9 +172,6 @@ is left is mostly measurement that needs hardware or a person.
 It has run on real CEF (the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`; how it works and what was seen:
 `docs/design/shells.md`).
 
-- [ ] **Decide whether history nav generalises onto `ISessionBrowser`.** `GoBack`/`GoForward`/`Reload`/`Stop` are on the
-  panel today (Chromium-only, no Core or WebView2 change); WebView2's `CoreWebView2` has the same four, so they could
-  move to the shared session contract if a second consumer wants them there. **Proposed as D100, awaiting the owner.**
 - [ ] **macOS/Linux panels.** Windows only today: `ChromiumSessionHost.CreateChild` throws `PlatformNotSupportedException`
   in the macOS and Linux builds, while the overlay it builds is Views on every OS. Lift the guard and run the probe on
   Linux first (WSL can).

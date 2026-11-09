@@ -118,13 +118,19 @@ internal static class PanelProbe
         await Task.Delay(600);
         Log($"KEYS posted 'abc' -> field holds {await ScriptAsync(panel, "window.keys")}");
 
+        // Whether the policy is asked about a history step, which Navigate's is (ISessionBrowserHistory leaves it to the engine).
+        var asked = new List<string>();
+        panel.Browser.CancelNavigation = uri => { lock (asked) asked.Add(Tail(uri)); return false; };
         await NavigateAsync(panel, origin + "two");
+        var onTwo =await _ui.InvokeAsync(() => Task.FromResult($"canBack {panel.CanGoBack} canForward {panel.CanGoForward}"));
         await _ui.InvokeAsync(panel.GoBack);
         await LoadedAsync(panel);
-        var back = await _ui.InvokeAsync(() => Task.FromResult(panel.Browser.Source));
+        var back = await _ui.InvokeAsync(() => Task.FromResult($"{Tail(panel.Browser.Source)} (canBack {panel.CanGoBack} canForward {panel.CanGoForward})"));
         await _ui.InvokeAsync(panel.GoForward);
         await LoadedAsync(panel);
-        Log($"HISTORY back -> {Tail(back)}, forward -> {Tail(await _ui.InvokeAsync(() => Task.FromResult(panel.Browser.Source)))}");
+        Log($"HISTORY on two: {onTwo}; back -> {back}, forward -> {Tail(await _ui.InvokeAsync(() => Task.FromResult(panel.Browser.Source)))}");
+        panel.Browser.CancelNavigation = null;
+        Log($"HISTORY CancelNavigation was asked for (Navigate two, back, forward): {string.Join(", ", asked)}");
         await NavigateAsync(panel, origin);
 
         panel.SetVisible(false);

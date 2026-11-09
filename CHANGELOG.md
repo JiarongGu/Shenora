@@ -39,6 +39,12 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`ISessionBrowserHistory`: back, forward, reload and stop on a session browser, on both engines** (D100). `CanGoBack`,
+  `CanGoForward`, `GoBack`, `GoForward`, `Reload` and `Stop`, found by type on a browser the kit's shells make
+  (`window.Browser as ISessionBrowserHistory` for an interactive session's window), so a host that draws its own chrome can
+  step through a page's history and grey its buttons. `ISessionBrowser` gains nothing, so no implementation of it breaks.
+  `ChromiumWebPanel` gains `CanGoBack` and `CanGoForward` beside the four it had. ⚠ WebView2 asks `CancelNavigation` about a
+  step; CEF does not for a back or a forward (measured), so a policy that must see every navigation does not see one there.
 - **`AllowZoom`: the same zoom setting on both engines** (`ChromiumHostOptions`, `ChromiumEngineOptions`,
   `WebViewHostOptions`). Off by default, as the WebView2 host always had it: Ctrl+wheel, Ctrl+plus, Ctrl+minus, Ctrl+0
   and a pinch do not zoom the page. The Chromium shell had no counterpart, so a page there zoomed the whole window and an

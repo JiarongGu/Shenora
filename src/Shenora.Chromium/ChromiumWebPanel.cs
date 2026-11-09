@@ -93,7 +93,8 @@ public sealed class ChromiumWebPanel : IDisposable
     /// <summary>
     /// The embedded browser, driven exactly as any session browser is: <see cref="ISessionBrowser.Navigate"/>,
     /// <see cref="ISessionBrowser.ExecuteScriptAsync"/>, <see cref="ISessionBrowser.GetCookiesAsync"/>,
-    /// <see cref="ISessionBrowser.NavigationCompleted"/> and the rest (D91). Its members run on the shell's UI thread;
+    /// <see cref="ISessionBrowser.NavigationCompleted"/> and the rest (D91), and it is an <see cref="ISessionBrowserHistory"/>
+    /// too, which <see cref="GoBack"/> and its three neighbours forward to. Its members run on the shell's UI thread;
     /// from any other thread go through <see cref="ChromiumSessionHost.Ui"/>, since CEF refuses its DevTools calls (the
     /// script and cookie members) from elsewhere.
     /// </summary>
@@ -124,6 +125,12 @@ public sealed class ChromiumWebPanel : IDisposable
     /// </summary>
     /// <param name="visible">True shows the panel; false hides it where it is.</param>
     public void SetVisible(bool visible) => _ui.Queue(() => _panel.SetVisible(visible));
+
+    /// <summary>Whether there is an earlier page to go back to, to draw the host's own back button by. The shell's UI thread.</summary>
+    public bool CanGoBack => _panel.Browser.CanGoBack;
+
+    /// <summary>Whether there is a later page to go forward to. The shell's UI thread.</summary>
+    public bool CanGoForward => _panel.Browser.CanGoForward;
 
     /// <summary>Navigate back in this panel's history, if it can. The shell's UI thread.</summary>
     public void GoBack() => _panel.Browser.GoBack();

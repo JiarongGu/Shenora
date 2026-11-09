@@ -100,6 +100,10 @@ Navigation
 # Admitted rather than paraphrased because every paraphrase is worse — "Previous" and "Up" are both
 # DIFFERENT Android concepts, and a page reading either would wire the wrong one.
 Back
+# `ISessionBrowserHistory` — the browser's own word for the entries its back and forward step through
+# (`window.history`, `NavigationHistory`, CoreWebView2's `GoBack` over its history). "Navigation" is taken by the
+# load itself (`SessionNavigationResult`), and a type named for stepping would not say what it steps through.
+History
 # `SessionPermissionRequest` — the platform's own word (`PermissionRequested`,
 # `CoreWebView2PermissionKind`), for the capability gate a page passes through to reach a camera,
 # microphone, geolocation or the clipboard. Same reasoning as Auth and Certificate above: the mechanism
