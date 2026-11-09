@@ -73,15 +73,17 @@ What `Shenora.Windows` has and the Chromium shell does not, inventoried from the
   shows only the wallpaper), which a person grants. Then: CJK through CoreText, the splash's rounded bottom corners
   against the window's, a click on the splash bringing its window forward, and a drag on the frameless strip (with no
   traffic lights, from its whole width: compiled, not run).
-- [ ] **A startup screen for a Chromium app without the update launcher, on Linux and macOS (D103).** Windows draws it from the
-  shim, which is the native code CEF's launcher runs before .NET. On Linux and macOS the browser process IS the .NET apphost
-  (the helper `helper_linux.c` / `helper_mac.c` only runs CEF's subprocesses), so nothing native of the kit's runs first;
-  a screen there needs a native starter in front of the app, which is what the update launcher already is (D94: Windows
-  and Linux). Whether a Linux app without it needs one is for an adopter to say.
+- [ ] **A startup screen for a macOS Chromium app without the update launcher (D103).** Windows draws it from the shim and Linux from the
+  starter (`starter_linux.cpp`); on macOS the browser process IS the .NET apphost inside the bundle (the helper `helper_mac.c` only runs CEF's
+  subprocesses), so a screen there needs a native starter as the bundle's executable in front of the app, drawn with AppKit, which the build says
+  it does not do (`ShenoraChromiumStartupScreen` warns on a macOS app). The Linux starter's shape (the stamp on the end of its file, the app as its
+  child, signals forwarded) is the one to mirror; a macOS bundle's executable must stay the process LaunchServices tracks, which needs measuring on a Mac.
 - [ ] 🅿️ **The shim's screen on a person's desktop.** `dev.mjs chromium-startup-screen` reads its windows from outside; what a
   person sees (the picture's crispness at a second monitor's DPI, the first frame beside a slow disk) needs their eye.
-- [ ] **The Chromium shell's folders publish on Linux (D96):** the same `engine/` and `lib/` shape, through the
-  helper's and `libcef.so`'s library search paths (rpath). A spike first.
+- [ ] 🅿️ **The Linux starter's screen on a person's desktop, and the CI-built starter.** Measured under openbox on Xvfb in WSL (up before the app's window, the box asked
+  for, gone at the first window and not at the timeout, the status and the arguments passed on). Not seen: GNOME's or KDE's own session, a display scale other than 1 (the
+  update launcher's X11 code scales by Xft.dpi, which Xvfb does not set), Wayland alone (it is drawn through XWayland, as CEF is), and linux-arm64, whose starter the
+  release builds with zig and nobody has run. The release job now installs the X11 headers the starter needs (`chromium-helper-linux`), which no run has used.
 - [ ] 🅿️ **Whether a later launch's window takes the foreground on Linux and macOS.** Not observed: WSL's desktop and
   Xvfb enforce no focus-stealing prevention, so they cannot show it. On Linux a later launch could hand over its
   activation token (`XDG_ACTIVATION_TOKEN`, `DESKTOP_STARTUP_ID`) as Windows hands over the foreground; it needs a
@@ -126,14 +128,10 @@ is left is mostly measurement that needs hardware or a person.
   are not run (`docs/design/shells.md`, the hooks paragraph), nor is whether a Linux/macOS CEF raises `Fetch.authRequired` the same.
 
 **Windows**
-- [ ] **Run the Chromium zoom guard on real CEF.** `AllowZoom` off is built (`ChromiumZoom`, `docs/design/shells.md`) and unit-tested, but
-  never seen zoom or fail to: probe on the Chromium sample that a real Ctrl+wheel and Ctrl+plus/minus/0 leave the zoom level at 0, that a
-  precision touchpad's pinch does too, that a cross-origin frame's wheel is covered (else register the script on its target), and what the
-  non-passive wheel listener costs a long scroll. Also what `BlocksKey` does with a character event
-  (`src/Shenora.Chromium/Host/ChromiumZoom.cs:42`, review finding, piece 1 of 6, `dd011c40`): its doc says all four events one press raises are
-  blocked, but it never reads `type`, and CEF fills a `KEYEVENT_CHAR`'s `windows_key_code` with the character (Ctrl+minus is 0x1F), not the
-  virtual key, so a char event may reach the page as a `keypress`; its test passes every event type the same key code and cannot tell. Log the
-  four events of a Ctrl+minus press on real CEF, then either read `type` or drop the parameter and say what the page hears.
+- [ ] 🅿️ **The Chromium zoom guard on a real Windows desktop with real input.** The guard was run on real CEF (`docs/design/shells.md`, the zoom paragraph): on Linux with real X input and
+  on Windows with a posted wheel, which reaches only the frame. Left: `node devtools/dev.mjs chromium-zoom` (no `--posted`) from a terminal you are looking at, which sends the
+  desktop's own input and needs the window in the foreground for ~30 s, to see the page's Ctrl+wheel and Ctrl with plus, minus and 0 on Windows, and above all whether a
+  `keypress` (`WM_CHAR`, Ctrl+minus is 0x1F) reaches the page past `BlocksKey`, which reads no event type; a precision touchpad's pinch and a touch screen's were not made anywhere.
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out
   an ARM64 launcher, shim and `libcef.dll`; running it needs ARM64 hardware or a `windows-11-arm` CI runner. ⚠ The
   release job builds the ARM64 shim (the 0.23.2 package's is PE machine `0xaa64`); it has never been loaded.
@@ -167,7 +165,7 @@ is left is mostly measurement that needs hardware or a person.
 - [ ] 🅿️ **A real desktop's tray and dialogs.** The StatusNotifierItem was measured against a scripted watcher and
   panel only, including whether a click on it raises the window past focus-stealing prevention (no user timestamp or
   XDG activation token is passed); Chromium may use the XDG desktop portal for dialogs where one runs. And
-  linux-arm64, whose helper is built and has never run.
+  linux-arm64, whose helper is built and has never run (nor its folders publish, nor `dotnet lib/<App>.App.dll` from one).
 - [ ] 🅿️ **The Linux clipboard's exit handover and large copies against a real manager.** The handover to a manager
   (`SAVE_TARGETS`) is built and measured against a scripted manager only, not a real one (GNOME's, Plasma's, XFCE's), and does
   not offer `MULTIPLE`; a copy over one X request goes in parts (INCR), read back by the kit's own clipboard and by a

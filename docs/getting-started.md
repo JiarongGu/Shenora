@@ -175,7 +175,8 @@ which Finder and `open` do not pass: `open --env DOTNET_ROOT=$HOME/.dotnet MyApp
 `dotnet publish --self-contained` makes a bundle or folder that needs no .NET at all, on Windows too. On Windows,
 `<ShenoraChromiumPublishFolders>true</ShenoraChromiumPublishFolders>` makes `dotnet publish` three files and two
 folders: `MyApp.exe`, `MyApp.dll` and `chrome_elf.dll`, with Chromium in `engine\` and the app, and the runtime if it is
-self-contained, in `lib\` (D96).
+self-contained, in `lib\` (D96). On Linux the same option leaves the one executable `MyApp` at the root, with Chromium and
+its helper in `engine/` and the app, and the runtime if it is self-contained, in `lib/`.
 
 **Development.** With `DOTNET_ENVIRONMENT=Development` in the app's environment, or a `.dev` file beside its
 assemblies, the page comes from `DevUrl`, your dev server, and Chromium takes command-line switches such as

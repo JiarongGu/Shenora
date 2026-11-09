@@ -39,6 +39,22 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **A Linux Chromium app can have a startup screen without the update launcher** (`<ShenoraChromiumStartupScreen>`, D103, the Windows
+  option's own properties). The build lays the kit's starter out as `<App>` with the screen stamped on the end of its file, and the apphost as
+  `<App>.App` beside it (in `lib/` with `ShenoraChromiumPublishFolders`): it draws the update launcher's X11 screen, starts the app with
+  `--startup-screen <window id>`, which the app closes at its first window, and ends with the app's status, forwarding its signals; with no
+  stamp, no display, or `--startup-screen` already given (the launcher's screen is up) it just runs the app. The package carries
+  `shenora_chromium_starter` for linux-x64 and linux-arm64 beside the helper; a macOS app still shows none (the build says so). Run on real CEF
+  under openbox on Xvfb: up before the app's window, the 300x180 asked for, gone at the app's first window and not at the timeout; a real
+  GNOME or KDE session and linux-arm64 are unrun.
+- **A Linux Chromium app can publish into folders** (`<ShenoraChromiumPublishFolders>true</ShenoraChromiumPublishFolders>`,
+  D96, the option a Windows app already had): `dotnet publish` leaves the one executable `MyApp` at the root, CEF's runtime
+  and `MyApp-helper` in `engine/` and the .NET app in `lib/`, a self-contained runtime with it. Publish only, off by
+  default (a build and a publish without it stay flat), and a publish into a folder that holds the other shape removes
+  that shape's CEF files. There is no rpath and no shim: the helper loads `libcef.so` from its own folder, and the build
+  rewrites the .NET apphost's embedded app path to `lib/` (`ShenoraChromiumPointApphost`, refusing an apphost it does not
+  know). Run on real CEF (the page painted, every subprocess from `engine/`, the window's close ending the app) and on a
+  self-contained publish that started from `lib/`; linux-arm64 is unrun.
 - **`ChromiumWebPanel` runs on Linux** (D97). `ChromiumWindows.CreateWebPanelAsync` made a panel on Windows only and threw
   `PlatformNotSupportedException` elsewhere, though the overlay it builds is Views on every OS; the guard is gone and Linux
   takes the same path as Windows, with the same surface. Measured on real CEF under openbox on Xvfb, the screen read from
@@ -66,6 +82,10 @@ at the first list and missed five more breaking changes.
   and a pinch do not zoom the page. The Chromium shell had no counterpart, so a page there zoomed the whole window and an
   app that draws its own frame could not stop it. Set it to give the user zoom back; on WebView2 the shortcut script then
   leaves Ctrl+plus, minus and 0 alone as well.
+  On the Chromium shell it was run on real CEF with real input (X on Linux, a posted wheel on Windows), which found two holes
+  now closed: a Ctrl+wheel over a frame of another site zoomed the page (the guard reached the page's own process only, and now
+  attaches to each frame as it appears), and a zoom an earlier run had allowed, which Chromium keeps per host in the profile,
+  came back with the page (it is reset to the default as the page loads). A touch screen's and a touchpad's pinch were not made.
 - **`PageWindow.Current`: the window of the page that sent the request** (`Shenora.Windows`). The top-level form showing
   the page whose request a module is handling, still there after an `await`, and on a `SecondaryWindows` window that
   window, not the main one; null for a send from no page. Until now the kit knew the sending page internally and an app

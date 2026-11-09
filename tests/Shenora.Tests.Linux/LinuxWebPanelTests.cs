@@ -98,6 +98,36 @@ public class LinuxWebPanelTests
         Assert.DoesNotContain(run.Log(), line => line.Contains("THREW"));
     }
 
+    // The sample published with ShenoraChromiumPublishFolders (D96): the one executable at the root, CEF and the helper in
+    // engine/, the app in lib/. Real CEF: it must find its library, its resources and its locales there, run every
+    // subprocess from the helper in engine/, paint the page, and end with its window.
+    [Fact]
+    public async Task A_sample_published_into_folders_starts_on_real_CEF_paints_its_page_and_ends_with_its_window()
+    {
+        var sample = Environment.GetEnvironmentVariable("SHENORA_LINUX_FOLDERS_SAMPLE");
+        using var run = new PanelRun(sample);
+        var root = Path.GetDirectoryName(sample)!;
+        Assert.True(File.Exists(Path.Combine(root, "engine", "libcef.so")) && File.Exists(Path.Combine(root, "lib", "Shenora.Sample.Chromium.App.dll"))
+            && !File.Exists(Path.Combine(root, "libcef.so")), "SHENORA_LINUX_FOLDERS_SAMPLE is not a folders publish");
+
+        await run.StepAsync("BEFORE");
+        var window = await run.WindowAsync();
+        var origin = run.Screen.Origin(window);
+        var client = run.Screen.Size(window);
+        var area = new Rectangle(origin.X, origin.Y, client.Width, client.Height);
+        await run.SettledAsync(area);   // a painted page has more than 8 colours: Chromium's own blank has one
+
+        var processes = run.Processes(full: true);
+        var helper = Path.Combine(root, "engine", "Shenora.Sample.Chromium-helper");
+        Assert.Contains($"{helper} --type=zygote", processes);
+        Assert.Contains($"{helper} --type=gpu-process", processes);
+
+        run.Screen.AskToClose(window);
+        await run.ExitsAsync();
+        Assert.False(run.Screen.Exists(window), "the window is still on the display");
+        Assert.DoesNotContain(run.Log(), line => line.Contains("THREW"));
+    }
+
     [Fact]
     public void A_run_whose_app_will_not_start_ends_the_window_manager_and_the_display_connection_it_had_started()
     {
@@ -161,7 +191,7 @@ public class LinuxWebPanelTests
 
     /// <summary>One run of the sample: the display's window manager, the app's probe log and standard input, and a data
     /// folder that is the run's own.</summary>
-    private sealed class PanelRun : IDisposable
+    internal sealed class PanelRun : IDisposable
     {
         private readonly Process _wm;
         private readonly Process _app;
@@ -171,16 +201,24 @@ public class LinuxWebPanelTests
 
         public PanelRun() : this(Environment.GetEnvironmentVariable("SHENORA_LINUX_SAMPLE")) { }
 
-        public PanelRun(string? launcher)
+        /// <param name="launcher">The built sample's launcher.</param>
+        /// <param name="probe">The environment of another probe of the sample than the panel's run 6, whose lines go to the run's
+        /// log (<c>{log}</c> in a value is its path); null runs the panel probe.</param>
+        /// <param name="appRoot">The app's root, where its data and Chromium's cache are kept (<c>--app-root</c>): a folder of the run's own
+        /// on the machine's own disk by default, since Chromium's cache cannot map its index file on a drive WSL mounts (measured: the next run
+        /// in a folder that already held one never showed its page). Two runs given the same one share a profile.</param>
+        /// <param name="arguments">More arguments for the app, after its <c>--app-root</c>.</param>
+        public PanelRun(string? launcher, IReadOnlyDictionary<string, string>? probe = null, string? appRoot = null, params string[] arguments)
         {
             if (string.IsNullOrEmpty(launcher) || !File.Exists(launcher))
-                throw new InvalidOperationException("SHENORA_LINUX_SAMPLE names no built Chromium sample (devtools/scripts/linux-tests.sh builds it).");
+                throw new InvalidOperationException("The run names no built Chromium sample (SHENORA_LINUX_SAMPLE, or SHENORA_LINUX_FOLDERS_SAMPLE: devtools/scripts/linux-tests.sh builds both).");
             // Started in turn, and the test's `using` only disposes a run that was built: a step that throws ends the ones before it.
             XScreen? screen = null;
             Process? wm = null, app = null;
             string? folder = null;
             try
             {
+                Stragglers(Path.GetDirectoryName(launcher)!);   // a run that was killed leaves Chromium's own processes, which hold the data folder
                 screen = new XScreen();
                 wm = StartWindowManager(screen, _wmOutput);
                 folder = Path.Combine(AppContext.BaseDirectory, $"panel-run-{Guid.NewGuid():N}");
@@ -190,16 +228,22 @@ public class LinuxWebPanelTests
                 var info = new ProcessStartInfo(launcher)
                 {
                     WorkingDirectory = Path.GetDirectoryName(launcher)!,
+                    ArgumentList = { "--app-root", appRoot ?? (_ownRoot = Path.Combine(Path.GetTempPath(), $"shenora-run-{Guid.NewGuid():N}")) },
                     RedirectStandardInput = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
                 };
+                foreach (var argument in arguments) info.ArgumentList.Add(argument);
                 // The libraries Chromium needs that the machine lacks (nspr, nss), from the sysroot where there is one.
                 if (Environment.GetEnvironmentVariable("SHENORA_LINUX_SYSROOT") is { Length: > 0 } sysroot)
                     info.Environment["LD_LIBRARY_PATH"] = Path.Combine(sysroot, "usr/lib/x86_64-linux-gnu");
-                info.Environment["SHENORA_SAMPLE_PANEL_PROBE"] = "6";
-                info.Environment["SHENORA_SAMPLE_PANEL_LOG"] = _log;
+                if (probe is null)
+                {
+                    info.Environment["SHENORA_SAMPLE_PANEL_PROBE"] = "6";
+                    info.Environment["SHENORA_SAMPLE_PANEL_LOG"] = _log;
+                }
+                else foreach (var (name, value) in probe) info.Environment[name] = value.Replace("{log}", _log);
                 app = new Process { StartInfo = info };
                 app.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (_output) _output.AppendLine(e.Data); };
                 app.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (_output) _output.AppendLine(e.Data); };
@@ -209,13 +253,15 @@ public class LinuxWebPanelTests
             }
             catch
             {
-                End(app, wm, screen, folder);
+                End(app, wm, screen, folder, Path.GetDirectoryName(launcher)!);
                 throw;
             }
             Screen = screen;
             _wm = wm;
             _app = app;
             _folder = folder;
+            _home = Path.GetDirectoryName(launcher)!;
+            _root = _ownRoot;
         }
 
         // What the app wrote to its own output, and what the window manager wrote to its standard error, for a failure to say.
@@ -230,7 +276,7 @@ public class LinuxWebPanelTests
         }
 
         // The app and everything it started, as /proc has them: what a start that never says anything is stuck on.
-        private string Processes()
+        public string Processes(bool full = false)
         {
             var all = new Dictionary<int, (int Parent, string State, string Command)>();
             foreach (var dir in Directory.EnumerateDirectories("/proc"))
@@ -241,7 +287,7 @@ public class LinuxWebPanelTests
                     var stat = File.ReadAllText(Path.Combine(dir, "stat"));
                     var rest = stat[(stat.LastIndexOf(')') + 2)..].Split(' ');
                     var command = File.ReadAllText(Path.Combine(dir, "cmdline")).Replace('\0', ' ').Trim();
-                    all[pid] = (int.Parse(rest[1]), rest[0], command.Length > 120 ? command[..120] : command);
+                    all[pid] = (int.Parse(rest[1]), rest[0], full || command.Length <= 120 ? command : command[..120]);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }
@@ -360,10 +406,55 @@ public class LinuxWebPanelTests
             catch (OperationCanceledException) { Assert.Fail("the app did not end within 20 s of its window's close"); }
         }
 
-        public void Dispose() => End(_app, _wm, Screen, _folder);
+        private readonly string _home;
+        private readonly string? _ownRoot, _root;
+
+        public void Dispose()
+        {
+            End(_app, _wm, Screen, _folder, _home);
+            if (_root is not null) try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
+        }
+
+        /// <summary>The app ended: a start that was handed to another instance, or that failed, ends at once.</summary>
+        public bool Exited => _app.HasExited;
+
+        /// <summary>The process the run started: its exit status, once it has ended.</summary>
+        public int ExitCode => _app.ExitCode;
+
+        /// <summary>What a failure says: the probe's log, the app's and the window manager's output, and the app's processes.</summary>
+        public string Describe() => Account();
+
+        // Chromium's own processes (its zygote, its GPU and network processes) that outlive an app killed from outside: they run from
+        // the sample's folder and hold its data folder, and the next run's app is then handed to them and never shows. Ended by where
+        // they run from.
+        private static void Stragglers(string home)
+        {
+            // Never this test host or what runs it: a run whose launcher is in the tests' own folder (the one that will not start) would name them.
+            var mine = new HashSet<int>();
+            for (var pid = Environment.ProcessId; pid > 1 && mine.Add(pid);)
+            {
+                try
+                {
+                    var stat = File.ReadAllText($"/proc/{pid}/stat");
+                    pid = int.Parse(stat[(stat.LastIndexOf(')') + 2)..].Split(' ')[1]);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException) { break; }
+            }
+            foreach (var dir in Directory.EnumerateDirectories("/proc"))
+            {
+                if (!int.TryParse(Path.GetFileName(dir), out var pid) || mine.Contains(pid)) continue;
+                try
+                {
+                    if (!File.ReadAllText(Path.Combine(dir, "cmdline")).Contains(home, StringComparison.Ordinal)) continue;
+                    using var process = Process.GetProcessById(pid);
+                    process.Kill();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or System.ComponentModel.Win32Exception) { }
+            }
+        }
 
         // What a run started, ended, whichever of it was started: the window manager is waited for, so it is gone when this returns.
-        private static void End(Process? app, Process? wm, XScreen? screen, string? folder)
+        private static void End(Process? app, Process? wm, XScreen? screen, string? folder, string home)
         {
             if (app is not null)
             {
@@ -371,6 +462,7 @@ public class LinuxWebPanelTests
                 catch (InvalidOperationException) { }   // never started, or ended meanwhile
                 app.Dispose();
             }
+            Stragglers(home);
             if (wm is not null)
             {
                 try

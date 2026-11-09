@@ -70,6 +70,17 @@ when that holds it, with `engine\` added to the DLL search for what Chromium loa
 launcher), and a subprocess stays silent. Such a publish starts through `<App>.exe` only: run as
 `dotnet lib\<App>.App.dll`, it does not find CEF.
 
+**On Linux the same option** leaves `<App>` alone at the root, CEF's runtime and `<App>-helper` in `engine/`, and the app in
+`lib/`. There is no shim to teach: the helper loads `libcef.so` by an absolute path from its own folder (no rpath), CEF reads
+its resources and locales from beside the library, and the .NET apphost, which the SDK points at `<App>.App.dll` beside it,
+is rewritten by the build (`ShenoraChromiumPointApphost`) to `lib/<App>.App.dll`, a path it takes below its own folder, and
+it then looks for the runtime there too: a self-contained publish keeps its runtime in `lib/`. The app finds `engine/` from
+its folder being `lib/` (`LinuxPlatform.EngineOf`), and, as on Windows, `ShenoraPaths` reads the root from it, so `data/` is
+beside `<App>`. Seen on real CEF (the Chromium sample, linux-x64, WSL, under openbox on Xvfb: `LinuxWebPanelTests`): the
+window up, the page painted, the zygote and the GPU process run from `engine/<App>-helper`, and the window closed by
+`WM_DELETE_WINDOW` ends the app. Not run: `dotnet lib/<App>.App.dll` (it should find `engine/` the same way, since its folder
+is `lib/`), and linux-arm64.
+
 **What a Windows publish has been seen to do** (the Chromium sample, win-x64, framework-dependent, published to a
 fresh folder outside the build tree on a machine with the .NET 10 runtime, 2026-10-22): flat and with folders, each
 started from the artifact (its window in 3.6 s and 7.6 s, its data folder created beside it) and closed by a posted
@@ -116,11 +127,25 @@ the Chromium shell answers each input its own way (`ChromiumZoom`): the client's
 with plus, minus or 0 (main row and numpad) before Chromium or the page hears it, and a script registered through the
 browser's in-process DevTools (`Page.addScriptToEvaluateOnNewDocument`, so for every document, a frame's included) cancels a
 Ctrl or Command wheel, which a precision touchpad's pinch also raises, and sets `touch-action: pan-x pan-y` on the document,
-which takes a touch screen's pinch away. ⚠ **Not measured on real CEF**: the unit tests run the handler and the script's
-text, and the script's behaviour was run in Chromium by a synthetic wheel event, so whether Alloy's own wheel handling
-zooms before the page's listener could cancel it, a touch screen's pinch, and a cross-origin out-of-process frame (which
-the script may not reach) are unseen. The listener is non-passive, which can make the first wheel event of a scroll
-wait for the page's main thread.
+which takes a touch screen's pinch away. **Run on real CEF** (the Chromium sample's `ZoomProbe`: a page and a frame of another
+origin that report what they hear and the zoom they are at, and a control with `AllowZoom` set, which the same input must zoom or
+the probe proves nothing). Linux, real input through the X server's input extension (`LinuxZoomTests`): Ctrl+wheel over the page and
+over the frame, and Ctrl with plus, equal, minus, 0 and the numpad's, in the page and in the frame. Found and fixed there: (1)
+the script reached the page's own process only, so a Ctrl+wheel over a frame of another site zoomed the page (the frame's wheel
+logged `prevented=0`), and each frame target is now attached to as it appears (`ChromiumZoom.GuardFrames`, `Target.setAutoAttach`
+with flat sessions) and given the script; (2) Chromium keeps a page's zoom per host in the profile, so a zoom an allowed run made
+returned when zoom was no longer allowed, and a main frame now resets a non-default zoom as it starts loading. Guarded, nothing
+of any of it zooms and no zoom key reaches either document in any of keydown, keypress or keyup, while a wheel and a minus without Ctrl
+are heard as ever. ⚠ With zoom allowed, Linux/Views CEF does not zoom on the keys at all (no accelerator), so there the key guard
+changes what the page hears, and unguarded the page hears a `keypress` (charCode 11, 29, 16) after the `keydown` of Ctrl with plus,
+equal and 0, which Chromium drops once the keydown was handled, so `BlocksKey` reads no event type. Windows
+(`dev.mjs chromium-zoom --posted`, 200% display): the wheel posted to the render widget, Ctrl taken from its `MK_CONTROL`, reached
+the frame only (cancelled, no zoom; the control zoomed 2 to 3 and back) and never the page; real input there needs the window in the
+foreground, and its keys, its page's wheel and `WM_CHAR` are unmeasured. **What the non-passive wheel listener costs** (Linux, Xvfb with
+software GL, 120 wheels a phase, the guard's own listener off, on, off, on in one run, two runs): the wheel-to-scroll latency stayed at
+p50 0.1 ms and p95 0.2 ms and the frame time at 16.7 ms with it on or off; the only difference was one outlier of 38 to 133 ms (the frame
+time too) in the first phase with it on, none in the second. Unmeasured anywhere: a precision touchpad's pinch (an X input extension or
+a mouse cannot make one; Windows turns it into a Ctrl+wheel, which is the case above) and a touch screen's.
 
 **On macOS the data folder is named by the bundle identifier** (D89). The build writes `ShenoraChromiumBundleId` into
 `Info.plist`, `com.shenora.app.<App>` unless the app sets it; `ShenoraPaths` reads it from the plist, takes the
@@ -275,6 +300,26 @@ frame of the animation (1673×949) as the size to restore to. And a window maxim
 normal-looking bounds unsettled, because macOS can end a zoom on its full-screen frame with no maximized change after
 it (2 zooms in 21 saved that frame as a Normal size before; none in 25 after).
 
+## The Chromium shell's startup screen on Linux
+
+On Windows the shim is native code CEF's launcher runs before .NET (D103). On Linux the browser process IS the .NET apphost, so nothing
+native of the kit's runs first, and a screen there needs a native starter in front of the app: with `ShenoraChromiumStartupScreen` the
+build lays `shenora_chromium_starter` out as `<App>`, with the description (the Windows resource's own text) and the PNG appended to the end
+of its file, and the app's apphost beside it as `<App>.App` (in `lib/` with a publish into folders: the apphost is then left as the SDK
+made it, not pointed at `lib/`). The starter reads its stamp from `/proc/self/exe`; draws the update launcher's own X11 window and
+pixels (`shenora::StartupScreen`, compiled into it, libX11 and libXrandr loaded with `dlopen`); starts the app with
+`--startup-screen <window id>`, which the app closes at its first window as it does the launcher's; keeps the screen moving until
+then, the timeout, or the app's end; and waits for the app, forwarding SIGINT, SIGTERM, SIGHUP and SIGQUIT and ending with its status, so a
+service manager's main process and a terminal's job stay the one process. With no stamp, with no display, or with `--startup-screen`
+already on the command line (the update launcher's screen is the one up) it execs the app and does nothing else; a screen that cannot be shown is
+none. Why a starter of the kit's and not the update launcher: D94's launcher updates an install, which most apps do not use, and the
+starter is the same screen code without it. **Seen on real CEF** (`LinuxStartupScreenTests`, the Chromium sample under openbox on Xvfb, the screen read
+from the X server): its window (WM_CLASS `ShenoraStartupScreen`) was on the display before the app's own window, 300x180 as the build
+asked, and gone within seconds of the app's window, closed by the app and not by the 60 s timeout; the starter ended with status 0 when the
+window was closed; and with `--startup-screen` on the command line none was drawn. Not seen: a real GNOME or KDE session, a display scale other
+than 1, a Wayland-only session, and linux-arm64. The starter is a C++ build over the launcher's sources (`dev.mjs cef-native`, which needs a C++
+compiler of CC's family and the X11 headers: libx11-dev, libxrandr-dev), statically linked against the C++ runtime (2.7 MB with zig's).
+
 ## The Chromium shell's splash
 
 `ChromiumHostOptions.Splash` (D92). The WinForms shell needs none of this: its form paints `SplashPanel` at once,
@@ -283,7 +328,7 @@ takes, the main window's render area, and leaves the window's frame to the windo
 minimizes and closes from the moment CEF shows it.
 
 ```
-(the shim, before all of it: an opt-in startup screen, D103 — below)
+(the shim on Windows, the starter on Linux, before all of it: an opt-in startup screen, D103 — below)
 UseChromium        ← with a Card, CEF is NOT started early (D87's exception); with none it is
 Run: gate          ← a launch turned away shows nothing
      SplashSession.Start  ← setup; the card, if any (once it is on screen, a launcher's startup screen goes, D94);

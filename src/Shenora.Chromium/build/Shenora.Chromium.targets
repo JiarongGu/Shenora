@@ -21,8 +21,9 @@
     icon: ApplicationIcon (.ico) on Windows, ShenoraChromiumBundleIcon (.icns) for the macOS bundle.
     ShenoraChromiumRelaxContextIp=false (Windows) keeps CEF's strict context-IP validation in the launcher: by default the
     layout relaxes it (shadow stack stays on), so a shell extension's handled exception does not end the app.
-    ShenoraChromiumPublishFolders=true (Windows, publish only; off by default) publishes MyApp.exe, MyApp.dll and
-    chrome_elf.dll at the root, CEF in engine\ and everything the SDK publishes in lib\, instead of all side by side.
+    ShenoraChromiumPublishFolders=true (Windows and Linux, publish only; off by default) publishes MyApp.exe, MyApp.dll and
+    chrome_elf.dll at the root (on Linux the one executable, MyApp), CEF in engine\ and everything the SDK publishes in lib\,
+    instead of all side by side.
 
       ShenoraChromiumMacLayout  after Build (and Publish) on macOS: bundle/<App>.app beside the output, whose
                                 Contents/MacOS holds the app with the .NET apphost as <App>, and whose
@@ -32,7 +33,9 @@
 
       ShenoraChromiumLinuxLayout after Build (and Publish) on Linux: CEF's runtime and resources beside the app, the
                                 .NET apphost also as <App>, and the kit's helper as <App>-helper, which every CEF
-                                subprocess runs.
+                                subprocess runs. With ShenoraChromiumPublishFolders a publish puts <App> alone at the
+                                root (its apphost pointed at lib/), CEF's runtime and the helper in engine/, and the
+                                app in lib/.
   -->
   <Import Project="$(MSBuildThisFileDirectory)Shenora.Chromium.Cef.g.targets" />
 
@@ -75,6 +78,9 @@
     <_ShenoraNative Condition="'$(_ShenoraNative)' == ''">shenora_chromium_shim.dll</_ShenoraNative>
     <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == '' and Exists('$(MSBuildThisFileDirectory)..\tools')">$(MSBuildThisFileDirectory)..\tools\$(RuntimeIdentifier)\native\$(_ShenoraNative)</ShenoraChromiumShim>
     <ShenoraChromiumShim Condition="'$(ShenoraChromiumShim)' == ''">$(MSBuildThisFileDirectory)..\artifacts\runtimes\$(RuntimeIdentifier)\native\$(_ShenoraNative)</ShenoraChromiumShim>
+    <!-- Linux, for a startup screen (D103): the starter that runs in front of the app's apphost and draws it. -->
+    <ShenoraChromiumStarter Condition="'$(ShenoraChromiumStarter)' == '' and Exists('$(MSBuildThisFileDirectory)..\tools')">$(MSBuildThisFileDirectory)..\tools\$(RuntimeIdentifier)\native\shenora_chromium_starter</ShenoraChromiumStarter>
+    <ShenoraChromiumStarter Condition="'$(ShenoraChromiumStarter)' == ''">$(MSBuildThisFileDirectory)..\artifacts\runtimes\$(RuntimeIdentifier)\native\shenora_chromium_starter</ShenoraChromiumStarter>
   </PropertyGroup>
 
   <!-- GetFileHash has no SHA-1, and SHA-1 is what CEF's index publishes. -->
@@ -173,7 +179,8 @@
   <UsingTask TaskName="ShenoraChromiumStampLauncher" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
     <ParameterGroup>
       <Executable ParameterType="System.String" Required="true" />
-      <From ParameterType="System.String" Required="true" />
+      <From ParameterType="System.String" />
+      <AppendOnly ParameterType="System.Boolean" />
       <StartupScreen ParameterType="System.String" />
       <StartupScreenWidth ParameterType="System.String" />
       <StartupScreenHeight ParameterType="System.String" />
@@ -197,7 +204,10 @@ using Microsoft.Build.Utilities;
 public sealed class ShenoraChromiumStampLauncher : Task
 {
     [Required] public string Executable { get; set; }
-    [Required] public string From { get; set; }
+    // The app's assembly, whose icon and version a Windows launcher takes; none for a Linux starter.
+    public string From { get; set; }
+    // Linux: Executable is the starter, which takes the screen on the end of its file (AppendStarter) and no resources.
+    public bool AppendOnly { get; set; }
     public string StartupScreen { get; set; }
     public string StartupScreenWidth { get; set; }
     public string StartupScreenHeight { get; set; }
@@ -237,6 +247,7 @@ public sealed class ShenoraChromiumStampLauncher : Task
         // Absolute before any native call: a relative path is resolved by each API its own way (LoadLibraryEx by its
         // search order, not the project's folder), and the stamp failed with error 2 on a path the checks below found.
         Executable = Path.GetFullPath(Executable);
+        if (AppendOnly) return string.IsNullOrEmpty(StartupScreen) || AppendStarter();
         From = Path.GetFullPath(From);
         if (!File.Exists(Executable) || !File.Exists(From)) { Log.LogMessage(MessageImportance.Low, "Nothing to stamp: {0} or {1} is missing.", Executable, From); return true; }
         var remove = Read(Executable, withData: false);
@@ -288,6 +299,27 @@ public sealed class ShenoraChromiumStampLauncher : Task
         });
         add.Add(new Resource { Type = RcData, Name = ScreenResource, Language = 0, Data = System.Text.Encoding.UTF8.GetBytes(text) });
         add.Add(new Resource { Type = RcData, Name = ImageResource, Language = 0, Data = png });
+        return true;
+    }
+
+    // The Linux starter's stamp (starter_linux.cpp): [description][PNG][description size: u32le][PNG size: u32le][16-byte magic] on the end
+    // of the starter's own file, which an ELF ignores. The description and the picture are the Windows resources', byte for byte.
+    private bool AppendStarter()
+    {
+        var add = new List<Resource>();
+        if (!AddStartupScreen(add)) return false;
+        var text = add[0].Data;
+        var png = add[1].Data;
+        var magic = System.Text.Encoding.ASCII.GetBytes("SHENORASCREEN001");
+        using (var stream = new FileStream(Executable, FileMode.Append, FileAccess.Write))
+        {
+            stream.Write(text, 0, text.Length);
+            stream.Write(png, 0, png.Length);
+            stream.Write(BitConverter.GetBytes((uint)text.Length), 0, 4);
+            stream.Write(BitConverter.GetBytes((uint)png.Length), 0, 4);
+            stream.Write(magic, 0, magic.Length);
+        }
+        Log.LogMessage(MessageImportance.Low, "{0} now carries its startup screen ({1} + {2} bytes).", Path.GetFileName(Executable), text.Length, png.Length);
         return true;
     }
 
@@ -487,8 +519,10 @@ public sealed class ShenoraChromiumStampLauncher : Task
            Text="ShenoraChromiumStartupScreenCorners must be Rounded or Square, not '$(ShenoraChromiumStartupScreenCorners)'." />
     <Error Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumStartupScreenMonitor)' != '' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(ShenoraChromiumStartupScreenMonitor)', '^(?i:cursor|primary)$'))"
            Text="ShenoraChromiumStartupScreenMonitor must be Cursor or Primary, not '$(ShenoraChromiumStartupScreenMonitor)'." />
-    <Warning Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumLayout)' == 'true' and '$(ShenoraCefPlatform)' != '' and !$(ShenoraCefPlatform.StartsWith('windows'))"
-             Text="ShenoraChromiumStartupScreen is drawn on Windows only, so this $(RuntimeIdentifier) app shows none." />
+    <Warning Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('macos'))"
+             Text="ShenoraChromiumStartupScreen is drawn on Windows and Linux only, so this $(RuntimeIdentifier) app shows none." />
+    <Error Condition="'$(ShenoraChromiumStartupScreen)' != '' and '$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('linux')) and !Exists('$(ShenoraChromiumStarter)')"
+           Text="The kit's Linux starter, which draws the startup screen, is missing at $(ShenoraChromiumStarter). The package carries it for linux-x64 and linux-arm64; in this repo, `node devtools/dev.mjs cef-native --rid $(RuntimeIdentifier)` builds and stages it, on Linux, with the X11 headers." />
     <Error Condition="'$(ShenoraChromiumEnginePath)' != '' and !Exists('$(ShenoraCefDist)\Release')"
            Text="ShenoraChromiumEnginePath names $(ShenoraCefDist), which has no Release\ folder of CEF's." />
     <Error Condition="'$(ShenoraCefPlatform)' == ''"
@@ -647,36 +681,130 @@ public sealed class ShenoraChromiumStampLauncher : Task
        regenerates (a PackageReference with Publish="false", a runtime store) joins the list in
        GeneratePublishDependencyFile, after ComputeResolvedFilesToPublishList. -->
   <Target Name="_ShenoraChromiumPublishIntoLib" AfterTargets="ComputeFilesToPublish"
-          Condition="'$(ShenoraChromiumLayout)' == 'true' and '$(ShenoraChromiumPublishFolders)' == 'true' and $(ShenoraCefPlatform.StartsWith('windows'))">
+          Condition="'$(ShenoraChromiumLayout)' == 'true' and '$(ShenoraChromiumPublishFolders)' == 'true' and ($(ShenoraCefPlatform.StartsWith('windows')) or $(ShenoraCefPlatform.StartsWith('linux')))">
     <ItemGroup>
       <ResolvedFileToPublish>
-        <RelativePath>lib\%(ResolvedFileToPublish.RelativePath)</RelativePath>
+        <RelativePath>lib$([System.IO.Path]::DirectorySeparatorChar)%(ResolvedFileToPublish.RelativePath)</RelativePath>
       </ResolvedFileToPublish>
     </ItemGroup>
   </Target>
 
-  <!-- Linux: flat, as Windows': CEF's runtime and resources beside the app, the .NET apphost also as <App>, and the kit's
+  <!-- Linux: the .NET apphost's embedded path to the app's assembly (the SDK writes `<App>.App.dll`) rewritten to a path
+       below the apphost's folder, for a publish with ShenoraChromiumPublishFolders, whose app is in lib/. The apphost keeps
+       the path in one 1024-byte buffer, NUL-terminated, and looks for the runtime beside the app it names (measured: a
+       self-contained app's runtime is found in lib/). Nothing found, or found twice, is an error, so a changed apphost
+       fails the build rather than starting nothing. -->
+  <UsingTask TaskName="ShenoraChromiumPointApphost" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Executable ParameterType="System.String" Required="true" />
+      <From ParameterType="System.String" Required="true" />
+      <To ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Method" Language="cs"><![CDATA[
+      public override bool Execute()
+      {
+        const int BufferSize = 1024;
+        var path = System.IO.Path.GetFullPath(Executable);
+        var bytes = System.IO.File.ReadAllBytes(path);
+        var old = System.Text.Encoding.UTF8.GetBytes(From + "\0");
+        var next = System.Text.Encoding.UTF8.GetBytes(To + "\0");
+        int Find(byte[] what, int from)
+        {
+            for (var i = from; i <= bytes.Length - what.Length; i++)
+            {
+                var j = 0;
+                while (j < what.Length && bytes[i + j] == what[j]) j++;
+                if (j == what.Length) return i;
+            }
+            return -1;
+        }
+        var at = Find(old, 0);
+        if (at < 0) { Log.LogError("{0} does not carry the app path '{1}' the SDK embeds in its apphost, so it cannot be pointed at '{2}'.", path, From, To); return false; }
+        if (Find(old, at + 1) >= 0) { Log.LogError("{0} carries the app path '{1}' more than once, so which one the apphost reads is not known.", path, From); return false; }
+        if (next.Length > BufferSize || at + next.Length > bytes.Length) { Log.LogError("The app path '{0}' does not fit the apphost's {1}-byte buffer.", To, BufferSize); return false; }
+        // Beyond the old string the buffer is zero; anything else there is not the apphost this knows.
+        for (var i = old.Length; i < next.Length; i++)
+            if (bytes[at + i] != 0) { Log.LogError("{0}'s embedded app path is followed by data, so '{1}' does not fit after it.", path, To); return false; }
+        System.Array.Clear(bytes, at, old.Length);
+        System.Array.Copy(next, 0, bytes, at, next.Length);
+        System.IO.File.WriteAllBytes(path, bytes);
+        return true;
+      }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!-- Linux, flat as Windows': CEF's runtime and resources beside the app, the .NET apphost also as <App>, and the kit's
        helper as <App>-helper, which every CEF subprocess runs (Chromium's zygote forks it, so it runs no .NET). -->
   <Target Name="ShenoraChromiumLinuxLayout" AfterTargets="Build" DependsOnTargets="_ShenoraChromiumLayoutInputs"
           Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('linux'))">
-    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="_ShenoraChromiumLinuxInto" Properties="_ShenoraLinuxInto=$(OutDir)" />
+    <!-- _ShenoraLinuxPublish=false spelled out, as the Windows layout's is: the task passes the build's global properties on. -->
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="_ShenoraChromiumLinuxInto" Properties="_ShenoraLinuxInto=$(OutDir);_ShenoraLinuxPublish=false" />
   </Target>
 
   <Target Name="ShenoraChromiumLinuxPublishLayout" AfterTargets="Publish"
           Condition="'$(ShenoraChromiumLayout)' == 'true' and $(ShenoraCefPlatform.StartsWith('linux'))">
-    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="_ShenoraChromiumLinuxInto" Properties="_ShenoraLinuxInto=$(PublishDir)" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="_ShenoraChromiumLinuxInto" Properties="_ShenoraLinuxInto=$(PublishDir);_ShenoraLinuxPublish=true" />
   </Target>
 
+  <!-- The Linux layout into $(_ShenoraLinuxInto), a build's output or a publish's. A publish with
+       ShenoraChromiumPublishFolders puts CEF's runtime and the helper in engine/ (the helper loads libcef.so from its own
+       folder, and CEF reads its resources from beside it: no rpath is needed), the app in lib/, and <App> alone at the
+       root, its apphost pointed at lib/. Otherwise, and in every build, all of it sits beside the app. -->
   <Target Name="_ShenoraChromiumLinuxInto" DependsOnTargets="_ShenoraChromiumLayoutInputs">
+    <PropertyGroup>
+      <_ShenoraFolders Condition="'$(_ShenoraLinuxPublish)' == 'true' and '$(ShenoraChromiumPublishFolders)' == 'true'">true</_ShenoraFolders>
+      <!-- With a startup screen <App> is the starter, which starts the apphost beside it (or in lib/): no apphost to point at lib/. -->
+      <_ShenoraStarter Condition="'$(ShenoraChromiumStartupScreen)' != ''">true</_ShenoraStarter>
+      <_ShenoraEngineInto Condition="'$(_ShenoraFolders)' == 'true'">$(_ShenoraLinuxInto)engine/</_ShenoraEngineInto>
+      <_ShenoraEngineInto Condition="'$(_ShenoraFolders)' != 'true'">$(_ShenoraLinuxInto)</_ShenoraEngineInto>
+      <_ShenoraAppInto Condition="'$(_ShenoraFolders)' == 'true'">$(_ShenoraLinuxInto)lib/</_ShenoraAppInto>
+      <_ShenoraAppInto Condition="'$(_ShenoraFolders)' != 'true'">$(_ShenoraLinuxInto)</_ShenoraAppInto>
+    </PropertyGroup>
     <ItemGroup>
       <_ShenoraCefLinuxRuntime Include="$(ShenoraCefDist)/Release/*" />
     </ItemGroup>
-    <Copy SourceFiles="@(_ShenoraCefLinuxRuntime)" DestinationFolder="$(_ShenoraLinuxInto)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(_ShenoraLinuxInto)%(RecursiveDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(_ShenoraLinuxInto)$(AssemblyName)" DestinationFiles="$(_ShenoraLinuxInto)$(_ShenoraAppExe)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(_ShenoraLinuxInto)$(_ShenoraAppExe)-helper" SkipUnchangedFiles="true" />
+    <!-- A publish into a folder that still holds the OTHER shape, the option switched since: the SDK's incremental clean
+         removes only what it wrote, never CEF, and the app finds engine/ before its own folder, so a leftover would run.
+         Only CEF's own file names, the helper and the apphost under the assembly's name go (every locale, filtered or not;
+         the SDK's clean leaves that apphost, though it removes the dlls), then the folders they leave empty. -->
+    <ItemGroup Condition="'$(_ShenoraLinuxPublish)' == 'true'">
+      <_ShenoraCefAllResources Include="$(ShenoraCefDist)/Resources/**/*" />
+      <_ShenoraLeftover Condition="'$(_ShenoraFolders)' == 'true'"
+                        Include="@(_ShenoraCefLinuxRuntime->'$(_ShenoraLinuxInto)%(Filename)%(Extension)');@(_ShenoraCefAllResources->'$(_ShenoraLinuxInto)%(RecursiveDir)%(Filename)%(Extension)');$(_ShenoraLinuxInto)$(_ShenoraAppExe)-helper;$(_ShenoraLinuxInto)$(AssemblyName)" />
+      <_ShenoraLeftover Condition="'$(_ShenoraFolders)' != 'true'"
+                        Include="@(_ShenoraCefLinuxRuntime->'$(_ShenoraLinuxInto)engine/%(Filename)%(Extension)');@(_ShenoraCefAllResources->'$(_ShenoraLinuxInto)engine/%(RecursiveDir)%(Filename)%(Extension)');$(_ShenoraLinuxInto)engine/$(_ShenoraAppExe)-helper;$(_ShenoraLinuxInto)lib/$(AssemblyName).dll" />
+    </ItemGroup>
+    <Delete Condition="'$(_ShenoraLinuxPublish)' == 'true'" Files="@(_ShenoraLeftover)" />
+    <ItemGroup Condition="'$(_ShenoraLinuxPublish)' == 'true'">
+      <_ShenoraLeftInLocales Include="$(_ShenoraLinuxInto)locales/**" />
+      <_ShenoraLeftInEngine Include="$(_ShenoraLinuxInto)engine/**" />
+      <_ShenoraLeftInLib Include="$(_ShenoraLinuxInto)lib/**" />
+    </ItemGroup>
+    <RemoveDir Condition="'$(_ShenoraLinuxPublish)' == 'true' and '$(_ShenoraFolders)' == 'true' and '@(_ShenoraLeftInLocales)' == ''" Directories="$(_ShenoraLinuxInto)locales" />
+    <RemoveDir Condition="'$(_ShenoraLinuxPublish)' == 'true' and '$(_ShenoraFolders)' != 'true' and '@(_ShenoraLeftInEngine)' == ''" Directories="$(_ShenoraLinuxInto)engine" />
+    <RemoveDir Condition="'$(_ShenoraLinuxPublish)' == 'true' and '$(_ShenoraFolders)' != 'true' and '@(_ShenoraLeftInLib)' == ''" Directories="$(_ShenoraLinuxInto)lib" />
+    <Copy SourceFiles="@(_ShenoraCefLinuxRuntime)" DestinationFolder="$(_ShenoraEngineInto)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ShenoraCefResources)" DestinationFolder="$(_ShenoraEngineInto)%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ShenoraChromiumShim)" DestinationFiles="$(_ShenoraEngineInto)$(_ShenoraAppExe)-helper" SkipUnchangedFiles="true" />
+    <!-- <App> is the apphost the SDK published, copied every time: a folders publish points it at lib/ below, and a flat one
+         over it must replace that. In the folders shape the SDK's own copy in lib/ goes, the one apphost being the root's. -->
+    <Copy Condition="'$(_ShenoraStarter)' != 'true'" SourceFiles="$(_ShenoraAppInto)$(AssemblyName)" DestinationFiles="$(_ShenoraLinuxInto)$(_ShenoraAppExe)" />
+    <Delete Condition="'$(_ShenoraFolders)' == 'true' and '$(_ShenoraStarter)' != 'true'" Files="$(_ShenoraAppInto)$(AssemblyName)" />
+    <ShenoraChromiumPointApphost Condition="'$(_ShenoraFolders)' == 'true' and '$(_ShenoraStarter)' != 'true'" Executable="$(_ShenoraLinuxInto)$(_ShenoraAppExe)"
+                                 From="$(AssemblyName).dll" To="lib/$(AssemblyName).dll" />
+    <!-- With a startup screen (D103): the starter, copied every time (the stamp is appended to it), with the screen on its end. -->
+    <Copy Condition="'$(_ShenoraStarter)' == 'true'" SourceFiles="$(ShenoraChromiumStarter)" DestinationFiles="$(_ShenoraLinuxInto)$(_ShenoraAppExe)" />
+    <ShenoraChromiumStampLauncher Condition="'$(_ShenoraStarter)' == 'true'" Executable="$(_ShenoraLinuxInto)$(_ShenoraAppExe)" AppendOnly="true"
+                                  StartupScreen="$(ShenoraChromiumStartupScreen)" StartupScreenWidth="$(ShenoraChromiumStartupScreenWidth)"
+                                  StartupScreenHeight="$(ShenoraChromiumStartupScreenHeight)" StartupScreenBackground="$(ShenoraChromiumStartupScreenBackground)"
+                                  StartupScreenProgressBar="$(ShenoraChromiumStartupScreenProgressBar)" StartupScreenProgressColor="$(ShenoraChromiumStartupScreenProgressColor)"
+                                  StartupScreenCorners="$(ShenoraChromiumStartupScreenCorners)" StartupScreenMonitor="$(ShenoraChromiumStartupScreenMonitor)"
+                                  StartupScreenTimeoutSeconds="$(ShenoraChromiumStartupScreenTimeoutSeconds)" />
     <!-- A NuGet package keeps no Unix permissions, so the helper arrives from one without its executable bit. -->
-    <Exec Command="chmod 755 &quot;$(_ShenoraLinuxInto)$(_ShenoraAppExe)&quot; &quot;$(_ShenoraLinuxInto)$(_ShenoraAppExe)-helper&quot;" />
+    <Exec Command="chmod 755 &quot;$(_ShenoraLinuxInto)$(_ShenoraAppExe)&quot; &quot;$(_ShenoraEngineInto)$(_ShenoraAppExe)-helper&quot;" />
+    <Exec Condition="'$(_ShenoraStarter)' == 'true'" Command="chmod 755 &quot;$(_ShenoraAppInto)$(AssemblyName)&quot;" />
   </Target>
 
   <!-- An Info.plist, the one piece of a bundle the build has to write rather than copy. -->

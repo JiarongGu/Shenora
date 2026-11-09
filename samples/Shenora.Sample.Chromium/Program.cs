@@ -34,18 +34,18 @@ internal static class Program
             // Packaged: the page built into the app's assembly (wwwroot, embedded by the csproj). In development
             // (DOTNET_ENVIRONMENT=Development, or a .dev file beside the app) the page comes from the dev server
             // instead, with hot reload.
-            ResourceProvider = HooksProbe.Provider(new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
+            ResourceProvider = ZoomProbe.Provider(HooksProbe.Provider(new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
             {
                 Assembly = typeof(Program).Assembly,
                 ResourcePrefix = "Shenora.Sample.Chromium.wwwroot",
-            })),
+            }))),
             DevUrl = "http://localhost:3901",   // samples/Shenora.Sample.Web: npm run dev:chromium
             Window = new ChromiumWindowOptions
             {
                 Title = "Shenora Chromium Sample",
                 Width = 1000,
                 Height = 760,
-                Path = HooksProbe.Page("chromium.html"),
+                Path = ZoomProbe.Page(HooksProbe.Page("chromium.html")),
                 BackgroundColor = System.Drawing.Color.FromArgb(0x1e, 0x1e, 0x1e),
                 // The page draws its own title bar (App.tsx), with drag regions and buttons.
                 FramelessChrome = true,
@@ -77,6 +77,8 @@ internal static class Program
             // The page is dark only, so the app is too: Chromium's own UI, the page's prefers-color-scheme and the
             // window's first frames are dark whatever the OS says. An app offering the choice passes its saved one.
             ColorScheme = ColorScheme.Dark,
+            // The page may not be zoomed (the default), except where ZoomProbe is asked for its control or its scroll timing.
+            AllowZoom = ZoomProbe.AllowZoom,
             // What the page may download and be granted, and what happens when its renderer goes: the shell's defaults, except in
             // HooksProbe, which sets all three (null otherwise).
             OnDownloadStarting = HooksProbe.OnDownloadStarting,
@@ -97,7 +99,7 @@ internal static class Program
             // event, as any module of the app could send one. It lifts once the boot work is done and the page says it has
             // painted (closeSplash() in App.tsx), not at its handshake, which comes before its first paint.
             // Launched with --splash-card, a card shows from the app's first moments until the window exists.
-            Splash = HooksProbe.Active || PanelProbe.Stacked ? null : new ChromiumSplashOptions   // none in HooksProbe, whose clicks the splash would take, nor where PanelProbe reads the screen
+            Splash = HooksProbe.Active || PanelProbe.Stacked || ZoomProbe.Active ? null : new ChromiumSplashOptions   // none in HooksProbe, whose clicks the splash would take, nor where PanelProbe reads the screen
             {
                 HoldUntilClosed = true,
                 Card = args.Contains("--splash-card") ? new SplashCardOptions { Width = 420, Height = 260 } : null,

@@ -45,6 +45,19 @@ internal sealed unsafe class XScreen : IDisposable
     /// at least <paramref name="minimum"/> pixels each way, or 0.</summary>
     public uint FindWindow(string title, int minimum = 100) => Find(_root, title, minimum);
 
+    /// <summary>The first window anywhere in the tree whose <c>WM_CLASS</c> holds <paramref name="wmClass"/>, or 0.</summary>
+    public uint FindClass(string wmClass)
+    {
+        uint Search(uint window)
+        {
+            if (Property(window, "WM_CLASS", 0, 256) is { } value && Encoding.ASCII.GetString(value).Contains(wmClass, StringComparison.Ordinal)) return window;
+            foreach (var child in Children(window))
+                if (Search(child) is var found and not 0) return found;
+            return 0;
+        }
+        return Search(_root);
+    }
+
     private uint Find(uint window, string title, int minimum)
     {
         if (Title(window) == title)

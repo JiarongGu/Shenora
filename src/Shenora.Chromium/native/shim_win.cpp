@@ -40,6 +40,7 @@
 #include <hostfxr.h>
 #include <nethost.h>
 
+#include "screen_description.hpp"
 #include "shenora/startup_screen.hpp"
 
 namespace {
@@ -74,34 +75,12 @@ bool ReadResource(const wchar_t* name, std::vector<unsigned char>& out) {
   return true;
 }
 
-// The description the build stamped: one `key=value` per line. A key it does not know is skipped, a value it cannot read
-// stays the default, and no picture is no screen.
+// The description the build stamped, a resource of the launcher: one key=value per line, read by screen_description.hpp, which the Linux
+// starter reads too.
 bool ReadDescription(shenora::StartupScreenDescription& d, std::vector<unsigned char>& png) {
   std::vector<unsigned char> text;
   if (!ReadResource(L"SHENORA_STARTUP_SCREEN", text) || !ReadResource(L"SHENORA_STARTUP_IMAGE", png)) return false;
-  const std::string all(text.begin(), text.end());
-  size_t at = 0;
-  while (at < all.size()) {
-    size_t end = all.find('\n', at);
-    if (end == std::string::npos) end = all.size();
-    std::string line = all.substr(at, end - at);
-    at = end + 1;
-    while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
-    const size_t eq = line.find('=');
-    if (eq == std::string::npos) continue;
-    const std::string key = line.substr(0, eq), value = line.substr(eq + 1);
-    const auto number = [&] { return static_cast<int>(strtol(value.c_str(), nullptr, 10)); };
-    const auto color = [&] { return static_cast<std::uint32_t>(strtoul(value.c_str(), nullptr, 16)); };
-    if (key == "width") d.width_dip = number();
-    else if (key == "height") d.height_dip = number();
-    else if (key == "background") d.background = color();
-    else if (key == "progress_bar") d.progress_bar = value == "1";
-    else if (key == "progress_color") d.progress_color = color();
-    else if (key == "corners") d.corners = value == "square" ? shenora::ScreenCorners::Square : shenora::ScreenCorners::Rounded;
-    else if (key == "monitor") d.monitor = value == "primary" ? shenora::ScreenMonitor::Primary : shenora::ScreenMonitor::Cursor;
-    else if (key == "timeout_ms") d.timeout_ms = number();
-  }
-  return d.width_dip > 0 && d.height_dip > 0 && d.timeout_ms > 0;
+  return shenora_chromium::parse_screen_description(std::string(text.begin(), text.end()), d);
 }
 
 bool HasScreenArgument(const std::vector<std::wstring>& args) {

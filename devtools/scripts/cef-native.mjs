@@ -13,7 +13,9 @@
 // (downloaded and SHA-1-checked by cef-cache.mjs), and the .NET SDK's static nethost for the RID.
 // macOS: the helper every CEF subprocess runs, built with clang against no headers, on a Mac.
 // Linux: the same helper's twin, built with gcc against no headers, on Linux (linux-arm64 cross-compiles with
-// aarch64-linux-gnu-gcc from an x64 host).
+// aarch64-linux-gnu-gcc from an x64 host), and the starter an app with a startup screen runs in front of its apphost (D103): C++ over
+// the update launcher's own window and pixel code, so it needs a C++ compiler of the same family as CC and the X11 headers
+// (libx11-dev, libxrandr-dev; SHENORA_X11_INCLUDE names another folder holding X11/Xlib.h).
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -63,6 +65,40 @@ function linuxCompiler(arch, args) {
   const cc = process.env.CC?.trim() || (arch === 'arm64' && process.arch !== 'arm64' ? 'aarch64-linux-gnu-gcc' : 'gcc');
   const [command, ...own] = cc.split(/\s+/);
   return [command, [...own, ...args]];
+}
+
+/** The C++ compiler that goes with the C one: zig's `c++` for `zig cc`, `g++` for gcc, `CXX` when set. */
+function linuxCxx(arch) {
+  const cc = linuxCompiler(arch, []).flat().join(' ');
+  const [command, ...own] = (process.env.CXX?.trim() || cc.replace(/\bcc\b/, 'c++').replace(/gcc\b/, 'g++')).split(/\s+/);
+  return [command, own];
+}
+
+/** The Linux starter: starter_linux.cpp with the launcher's screen code, statically linked against the C++ runtime. */
+function buildStarter(rid, arch) {
+  const build = path.join(repo, 'devtools', '_build', 'cef-native', rid);
+  const binary = path.join(build, 'shenora_chromium_starter');
+  const launcher = path.join(project, '..', 'Shenora.Launcher');
+  const [cxx, own] = linuxCxx(arch);
+  const include = [`-I${path.join(launcher, 'include')}`, `-I${path.join(project, 'native')}`, ...(process.env.SHENORA_X11_INCLUDE ? [`-I${process.env.SHENORA_X11_INCLUDE}`] : [])];
+  const common = [...own, '-std=c++17', '-O2', '-DSHENORA_HAVE_X11=1', ...include];
+  const objects = [];
+  for (const [source, flags] of [[path.join(project, 'native', 'starter_linux.cpp'), ['-Wall', '-Wextra', '-Werror']],
+    [path.join(launcher, 'src', 'startup_screen_compose.cpp'), ['-Wall', '-Wextra', '-Werror']],
+    [path.join(launcher, 'src', 'startup_screen_x11.cpp'), ['-Wall', '-Wextra', '-Werror']],
+    // stb_image is third-party code: its warnings are not ours.
+    [path.join(launcher, 'src', 'png_stb.cpp'), ['-w']]]) {
+    const object = path.join(build, `${path.basename(source)}.o`);
+    const compile = run(cxx, [...common, ...flags, '-c', source, '-o', object]);
+    if (compile.status !== 0)
+      fail(`the starter's ${path.basename(source)} did not build (it needs the X11 headers: libx11-dev and libxrandr-dev, or SHENORA_X11_INCLUDE):
+${compile.stdout}${compile.stderr}`);
+    objects.push(object);
+  }
+  const link = run(cxx, [...own, '-o', binary, ...objects, '-ldl', '-lpthread']);
+  if (link.status !== 0) fail(`the starter did not link:
+${link.stdout}${link.stderr}`);
+  return binary;
 }
 
 function cmake() {
@@ -139,11 +175,17 @@ await main('cef-native', async () => {
   if (process.platform !== os) fail(`${rid} builds on ${{ darwin: 'a Mac', linux: 'Linux' }[os] ?? 'Windows'}; this is ${process.platform}.`);
   const binary = os === 'win32' ? await buildShim(rid, platform, arch) : buildHelper(rid, os, arch);
   if (!fs.existsSync(binary)) fail(`the build reported success but ${binary} is missing.`);
+  const starter = os === 'linux' ? buildStarter(rid, arch) : null;
   // A stale build directory configured for another architecture builds that one and succeeds.
   if (machineOf(binary) !== machine)
     fail(`${binary} is machine 0x${machineOf(binary).toString(16)}, not ${rid}'s 0x${machine.toString(16)}; delete its build folder and build again.`);
   const staged = path.join(project, 'artifacts', 'runtimes', rid, 'native');
   fs.mkdirSync(staged, { recursive: true });
   fs.copyFileSync(binary, path.join(staged, path.basename(binary)));
+  if (starter) {
+    if (machineOf(starter) !== machine) fail(`${starter} is machine 0x${machineOf(starter).toString(16)}, not ${rid}'s 0x${machine.toString(16)}; delete its build folder and build again.`);
+    fs.copyFileSync(starter, path.join(staged, path.basename(starter)));
+    console.log(`cef-native: ${path.relative(repo, path.join(staged, path.basename(starter)))} (${(fs.statSync(starter).size / 1024).toFixed(0)} KB, ${rid})`);
+  }
   console.log(`cef-native: ${path.relative(repo, path.join(staged, path.basename(binary)))} (${(fs.statSync(binary).size / 1024).toFixed(0)} KB, ${rid}, CEF API ${pin.apiVersion})`);
 });
