@@ -334,9 +334,16 @@ internal sealed class WebView2SessionBrowser : ISessionBrowser, ISessionBrowserH
         if (CanGoForward) Core.GoForward();
     }
 
-    public void Reload() => Core.Reload();
+    // Nothing once the control has gone, as the Chromium session browser's are once its browser has.
+    public void Reload()
+    {
+        if (!_web.IsDisposed) Core?.Reload();
+    }
 
-    public void Stop() => Core.Stop();
+    public void Stop()
+    {
+        if (!_web.IsDisposed) Core?.Stop();
+    }
 
     public void Focus() => _web.Focus();
 

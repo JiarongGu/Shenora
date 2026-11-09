@@ -20,13 +20,42 @@ public class SessionBrowserHistoryTests
     {
         using var profile = TempDir.Create();
         using var server = LocalPages.Start();
+        OnForm(anchor => StepThroughAsync(anchor, profile.Root, server.Origin));
+    }
+
+    [Fact]
+    public void A_closed_WebView2_browser_has_no_history_to_step_through_and_steps_nowhere()
+    {
+        using var profile = TempDir.Create();
+        OnForm(async anchor =>
+        {
+            var host = new WebView2SessionHost(anchor);
+            var browser = await host.CreateAsync(
+                new SessionBrowserDefinition { Options = new SessionBrowserOptions { ProfileDirectory = profile.Root }, Scope = () => "closed" },
+                CancellationToken.None);
+            var history = Assert.IsAssignableFrom<ISessionBrowserHistory>(browser);
+            browser.Close();
+
+            // As the Chromium session browser's are once its browser has gone: nothing to ask, nothing thrown.
+            Assert.False(history.CanGoBack);
+            Assert.False(history.CanGoForward);
+            history.GoBack();
+            history.GoForward();
+            history.Reload();
+            history.Stop();
+        });
+    }
+
+    // The body runs on a form's message loop, on an STA thread of its own; what it throws is thrown here.
+    private static void OnForm(Func<Form, Task> body)
+    {
         Exception? failure = null;
         Sta.Run(() =>
         {
             using var anchor = new Form { ShowInTaskbar = false };
             anchor.Shown += async (_, _) =>
             {
-                try { await StepThroughAsync(anchor, profile.Root, server.Origin); }
+                try { await body(anchor); }
                 catch (Exception ex) { failure = ex; }
                 finally { anchor.Close(); }
             };
