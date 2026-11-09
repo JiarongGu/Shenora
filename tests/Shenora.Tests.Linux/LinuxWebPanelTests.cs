@@ -201,7 +201,13 @@ public class LinuxWebPanelTests
 
         public PanelRun() : this(Environment.GetEnvironmentVariable("SHENORA_LINUX_SAMPLE")) { }
 
-        public PanelRun(string? launcher)
+        /// <param name="launcher">The built sample's launcher.</param>
+        /// <param name="probe">The environment of another probe of the sample than the panel's run 6, whose lines go to the run's
+        /// log (<c>{log}</c> in a value is its path); null runs the panel probe.</param>
+        /// <param name="appRoot">The app's root, where its data and Chromium's cache are kept (<c>--app-root</c>): a folder of the run's own
+        /// on the machine's own disk by default, since Chromium's cache cannot map its index file on a drive WSL mounts (measured: the next run
+        /// in a folder that already held one never showed its page). Two runs given the same one share a profile.</param>
+        public PanelRun(string? launcher, IReadOnlyDictionary<string, string>? probe = null, string? appRoot = null)
         {
             if (string.IsNullOrEmpty(launcher) || !File.Exists(launcher))
                 throw new InvalidOperationException("The run names no built Chromium sample (SHENORA_LINUX_SAMPLE, or SHENORA_LINUX_FOLDERS_SAMPLE: devtools/scripts/linux-tests.sh builds both).");
@@ -211,6 +217,7 @@ public class LinuxWebPanelTests
             string? folder = null;
             try
             {
+                Stragglers(Path.GetDirectoryName(launcher)!);   // a run that was killed leaves Chromium's own processes, which hold the data folder
                 screen = new XScreen();
                 wm = StartWindowManager(screen, _wmOutput);
                 folder = Path.Combine(AppContext.BaseDirectory, $"panel-run-{Guid.NewGuid():N}");
@@ -220,6 +227,7 @@ public class LinuxWebPanelTests
                 var info = new ProcessStartInfo(launcher)
                 {
                     WorkingDirectory = Path.GetDirectoryName(launcher)!,
+                    ArgumentList = { "--app-root", appRoot ?? (_ownRoot = Path.Combine(Path.GetTempPath(), $"shenora-run-{Guid.NewGuid():N}")) },
                     RedirectStandardInput = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -228,8 +236,12 @@ public class LinuxWebPanelTests
                 // The libraries Chromium needs that the machine lacks (nspr, nss), from the sysroot where there is one.
                 if (Environment.GetEnvironmentVariable("SHENORA_LINUX_SYSROOT") is { Length: > 0 } sysroot)
                     info.Environment["LD_LIBRARY_PATH"] = Path.Combine(sysroot, "usr/lib/x86_64-linux-gnu");
-                info.Environment["SHENORA_SAMPLE_PANEL_PROBE"] = "6";
-                info.Environment["SHENORA_SAMPLE_PANEL_LOG"] = _log;
+                if (probe is null)
+                {
+                    info.Environment["SHENORA_SAMPLE_PANEL_PROBE"] = "6";
+                    info.Environment["SHENORA_SAMPLE_PANEL_LOG"] = _log;
+                }
+                else foreach (var (name, value) in probe) info.Environment[name] = value.Replace("{log}", _log);
                 app = new Process { StartInfo = info };
                 app.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (_output) _output.AppendLine(e.Data); };
                 app.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (_output) _output.AppendLine(e.Data); };
@@ -239,13 +251,15 @@ public class LinuxWebPanelTests
             }
             catch
             {
-                End(app, wm, screen, folder);
+                End(app, wm, screen, folder, Path.GetDirectoryName(launcher)!);
                 throw;
             }
             Screen = screen;
             _wm = wm;
             _app = app;
             _folder = folder;
+            _home = Path.GetDirectoryName(launcher)!;
+            _root = _ownRoot;
         }
 
         // What the app wrote to its own output, and what the window manager wrote to its standard error, for a failure to say.
@@ -390,10 +404,41 @@ public class LinuxWebPanelTests
             catch (OperationCanceledException) { Assert.Fail("the app did not end within 20 s of its window's close"); }
         }
 
-        public void Dispose() => End(_app, _wm, Screen, _folder);
+        private readonly string _home;
+        private readonly string? _ownRoot, _root;
+
+        public void Dispose()
+        {
+            End(_app, _wm, Screen, _folder, _home);
+            if (_root is not null) try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
+        }
+
+        /// <summary>The app ended: a start that was handed to another instance, or that failed, ends at once.</summary>
+        public bool Exited => _app.HasExited;
+
+        /// <summary>What a failure says: the probe's log, the app's and the window manager's output, and the app's processes.</summary>
+        public string Describe() => Account();
+
+        // Chromium's own processes (its zygote, its GPU and network processes) that outlive an app killed from outside: they run from
+        // the sample's folder and hold its data folder, and the next run's app is then handed to them and never shows. Ended by where
+        // they run from.
+        private static void Stragglers(string home)
+        {
+            foreach (var dir in Directory.EnumerateDirectories("/proc"))
+            {
+                if (!int.TryParse(Path.GetFileName(dir), out var pid) || pid == Environment.ProcessId) continue;
+                try
+                {
+                    if (!File.ReadAllText(Path.Combine(dir, "cmdline")).Contains(home, StringComparison.Ordinal)) continue;
+                    using var process = Process.GetProcessById(pid);
+                    process.Kill();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or System.ComponentModel.Win32Exception) { }
+            }
+        }
 
         // What a run started, ended, whichever of it was started: the window manager is waited for, so it is gone when this returns.
-        private static void End(Process? app, Process? wm, XScreen? screen, string? folder)
+        private static void End(Process? app, Process? wm, XScreen? screen, string? folder, string home)
         {
             if (app is not null)
             {
@@ -401,6 +446,7 @@ public class LinuxWebPanelTests
                 catch (InvalidOperationException) { }   // never started, or ended meanwhile
                 app.Dispose();
             }
+            Stragglers(home);
             if (wm is not null)
             {
                 try

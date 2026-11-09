@@ -271,6 +271,14 @@ internal sealed unsafe class ChromiumBrowser
     // The page's HTTP challenges, heard through the browser's DevTools only when the app set OnAuthRequest.
     private ChromiumPageAuth? _auth;
 
+    // Chromium keeps a page's zoom per host in the profile, so a zoom an earlier run allowed (or a person made before the app
+    // stopped allowing it) comes back with the page: a page that may not be zoomed is brought back to the default as it loads.
+    private static void ResetZoom(_cef_browser_t* browser)
+    {
+        using var host = new CefRef<_cef_browser_host_t>(browser->get_host(browser));
+        if (!host.IsNull && host.Ptr->get_zoom_level(host.Ptr) != 0) host.Ptr->set_zoom_level(host.Ptr, 0);
+    }
+
     // The zoom guard's script is registered through the browser's DevTools, in process, only when the app has not allowed zoom
     // (ChromiumZoom): the channel is kept for the browser's life, as the registration ends with it.
     private DevToolsChannel? _zoomGuard;
@@ -283,6 +291,7 @@ internal sealed unsafe class ChromiumBrowser
         _ = channel.CallAsync("Page.addScriptToEvaluateOnNewDocument", ChromiumZoom.AddScriptParameters()).ContinueWith(
             t => AppCallback.Log(_log, () => $"[Shenora.Chromium] Window '{Name}': the zoom guard could not be set up, so the wheel and a pinch may zoom the page", LogLevel.Warning, t.Exception?.GetBaseException()),
             CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+        ChromiumZoom.GuardFrames(channel, ex => AppCallback.Log(_log, () => $"[Shenora.Chromium] Window '{Name}': a frame of another site could not be given the zoom guard, so its wheel may zoom the page", LogLevel.Warning, ex));
     }
 
     // Asked once: the page's first paint, from Chromium itself through the in-process DevTools protocol (no port), and
@@ -1203,6 +1212,7 @@ internal sealed unsafe class ChromiumBrowser
             using var b = new CefRef<_cef_browser_t>(browser);
             using var f = new CefRef<_cef_frame_t>(frame);
             if (frame == null || frame->is_main(frame) != 1) return;
+            if (!From<Load>(self)._owner.AllowZoom) ResetZoom(browser);
             AppCallback.Run(From<Load>(self)._owner.DocumentStarted);
         }
     }

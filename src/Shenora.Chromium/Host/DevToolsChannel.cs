@@ -30,16 +30,18 @@ internal sealed unsafe class DevToolsChannel : IDisposable
 
     /// <summary>
     /// Call a protocol method and complete with its result as JSON; fault with the protocol's own error when it refuses.
-    /// UI thread. <paramref name="parametersJson"/> must be a JSON object.
+    /// UI thread. <paramref name="parametersJson"/> must be a JSON object. <paramref name="sessionId"/> addresses a target
+    /// attached to with <c>flatten</c> (<c>Target.setAutoAttach</c>), such as a frame of another site; its answer and its
+    /// events arrive here as the page's own do, told apart by the id and the method.
     /// </summary>
-    public Task<string> CallAsync(string method, string parametersJson)
+    public Task<string> CallAsync(string method, string parametersJson, string? sessionId = null)
     {
         if (_host == null) return Task.FromException<string>(new ObjectDisposedException(nameof(DevToolsChannel)));
         var id = ++_nextId;
         var answer = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = answer;
         var message = Encoding.UTF8.GetBytes(
-            $"{{\"id\":{id},\"method\":{JsonSerializer.Serialize(method)},\"params\":{(string.IsNullOrWhiteSpace(parametersJson) ? "{}" : parametersJson)}}}");
+            $"{{\"id\":{id},{(sessionId is null ? "" : $"\"sessionId\":{JsonSerializer.Serialize(sessionId)},")}\"method\":{JsonSerializer.Serialize(method)},\"params\":{(string.IsNullOrWhiteSpace(parametersJson) ? "{}" : parametersJson)}}}");
         // Called from inside CEF's notification of this observer (an event handler answering the event: a screencast
         // frame's ack, a paused request's continue), the send is posted behind it: sent from in there, the reply notifies
         // the observers again while they are still being notified, which Chromium reports as a failed check (measured).

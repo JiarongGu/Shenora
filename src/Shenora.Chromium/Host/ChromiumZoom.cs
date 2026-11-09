@@ -48,4 +48,36 @@ internal static class ChromiumZoom
 
     /// <summary>The <c>Page.addScriptToEvaluateOnNewDocument</c> parameters: every document from now on, and the one open now.</summary>
     internal static string AddScriptParameters() => JsonSerializer.Serialize(new { source = GuardScript, runImmediately = true });
+
+    /// <summary><c>Target.setAutoAttach</c>'s parameters: flat sessions, which a message names by <c>sessionId</c>, and no wait for the
+    /// frame to be released, so a frame that never answers is never held back.</summary>
+    internal const string AutoAttachParameters = """{"autoAttach":true,"waitForDebuggerOnStart":false,"flatten":true}""";
+
+    /// <summary>
+    /// The script on every frame of another site too. <c>Page.addScriptToEvaluateOnNewDocument</c> reaches the page's own process,
+    /// and a frame that Chromium puts in a process of its own is a DevTools target of its own (measured on real CEF: a Ctrl+wheel over
+    /// one zoomed the page, its listener having none of the script). So each such frame is attached to as it appears, and given
+    /// the script, and the same attachment for the frames inside it. Every call is made at once, on CEF's UI thread, where the event
+    /// arrives; <paramref name="failed"/> hears of one the browser refuses, since the frame then stays zoomable.
+    /// </summary>
+    internal static void GuardFrames(DevToolsChannel channel, Action<Exception> failed)
+    {
+        void Observe(Task<string> call) =>
+            _ = call.ContinueWith(t => failed(t.Exception!.GetBaseException()), CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+        channel.Subscribe("Target.attachedToTarget", parameters =>
+        {
+            string? session;
+            try
+            {
+                using var document = JsonDocument.Parse(parameters);
+                if (document.RootElement.GetProperty("targetInfo").GetProperty("type").GetString() != "iframe") return;
+                session = document.RootElement.GetProperty("sessionId").GetString();
+            }
+            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { return; }
+            if (session is null) return;
+            Observe(channel.CallAsync("Target.setAutoAttach", AutoAttachParameters, session));
+            Observe(channel.CallAsync("Page.addScriptToEvaluateOnNewDocument", AddScriptParameters(), session));
+        });
+        Observe(channel.CallAsync("Target.setAutoAttach", AutoAttachParameters));
+    }
 }
