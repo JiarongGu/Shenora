@@ -93,6 +93,10 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
     /// <summary>How many large copies are being sent in parts right now.</summary>
     internal int PendingTransfers => Volatile.Read(ref _pending);
 
+    /// <summary>How many transfers in parts have begun, finished or not: what shows a large copy really went in parts.</summary>
+    internal int TransfersBegun => Volatile.Read(ref _begun);
+    private int _begun;
+
     public Task SetTextAsync(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -389,6 +393,7 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
         _transfers.RemoveAll(t => t.Requestor == requestor && t.Property == property);   // a new ask replaces its old one
         _transfers.Add(new Incr(requestor, property, type, data, Environment.TickCount64));
         Volatile.Write(ref _pending, _transfers.Count);
+        Interlocked.Increment(ref _begun);
     }
 
     // The requestor deleted the property: write the next part, or the empty one that ends the transfer.
@@ -406,9 +411,13 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
 
     private void EndIncr(Incr transfer)
     {
-        var none = 0u;
-        xcb_change_window_attributes(_c, transfer.Requestor, 0x800, &none);   // the window is the requestor's again
         _transfers.Remove(transfer);
+        // The window is the requestor's again, unless another of its transfers is still watching it.
+        if (!_transfers.Exists(t => t.Requestor == transfer.Requestor))
+        {
+            var none = 0u;
+            xcb_change_window_attributes(_c, transfer.Requestor, 0x800, &none);
+        }
         Volatile.Write(ref _pending, _transfers.Count);
     }
 

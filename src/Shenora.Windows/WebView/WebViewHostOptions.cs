@@ -149,7 +149,8 @@ public sealed class WebViewHostOptions
     /// <summary>
     /// Whether the user can zoom a page (Ctrl+wheel, Ctrl+plus, Ctrl+minus, Ctrl+0, a pinch). Off by default. The same name,
     /// default and meaning as the Chromium shell's <c>ChromiumHostOptions.AllowZoom</c>, so one app behaves the same on both
-    /// engines. <see cref="ConfigureSettings"/> still runs after it.
+    /// engines. <see cref="ConfigureSettings"/> still runs after it. It governs this host's page, not a session browser's
+    /// control, which keeps WebView2's own zoom.
     /// </summary>
     public bool AllowZoom { get; init; }
 

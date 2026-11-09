@@ -215,11 +215,14 @@ public class TrayIconTests
     public void A_callback_that_throws_is_logged_and_not_raised() => Sta.Run(() =>
     {
         using var form = new Form();
-        using var tray = Quiet(form, []);
+        var log = new RecordingLogger();
+        using var tray = new TrayIcon(new TrayIconOptions { Window = form }, new Typed<TrayIcon>(log));
+        tray.BalloonSink = (_, _, _, _) => { };
 
         tray.ShowBalloon(new TrayBalloon { Title = "T", Text = "x", Clicked = () => throw new InvalidOperationException("app bug") });
 
         ClickBalloon(tray);
+        Assert.Contains("Error A tray balloon's click callback threw", log.Lines);
     });
 
     private static void DoubleClick(TrayIcon tray) =>
@@ -261,11 +264,26 @@ public class TrayIconTests
     public void An_open_callback_that_throws_is_logged_and_not_raised() => Sta.Run(() =>
     {
         using var form = new Form();
-        using var tray = new TrayIcon(new TrayIconOptions { Window = form, OnOpen = () => throw new InvalidOperationException("app bug") });
+        var log = new RecordingLogger();
+        using var tray = new TrayIcon(new TrayIconOptions { Window = form, OnOpen = () => throw new InvalidOperationException("app bug") }, new Typed<TrayIcon>(log));
 
         DoubleClick(tray);
         ((ToolStripMenuItem)tray.Menu.Items[0]).PerformClick();
+
+        // Once for each: nothing raised, and each throw said so rather than vanished.
+        Assert.Equal(2, log.Lines.Count(l => l == "Error The tray's open callback threw"));
     });
+
+    // The recording logger, as the typed one the tray takes.
+    private sealed class Typed<T>(Microsoft.Extensions.Logging.ILogger inner) : Microsoft.Extensions.Logging.ILogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => inner.BeginScope(state);
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => inner.IsEnabled(logLevel);
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel level, Microsoft.Extensions.Logging.EventId id, TState state, Exception? error,
+            Func<TState, Exception?, string> formatter) => inner.Log(level, id, state, error, formatter);
+    }
 
     [Fact]
     public void Without_the_built_in_items_the_menu_holds_only_the_apps() => Sta.Run(() =>

@@ -72,7 +72,7 @@ public sealed class TrayIconOptions
     public bool BuiltInMenuItems { get; init; } = true;
 
     /// <summary>Add the app's items — they land between the built-in Open item and the trailing
-    /// separator + Exit. Refresh dynamic items from the menu's <c>Opening</c> event.</summary>
+    /// separator + Exit, or alone with <see cref="BuiltInMenuItems"/> off. Refresh dynamic items from the menu's <c>Opening</c> event.</summary>
     public Action<ContextMenuStrip>? ConfigureMenu { get; init; }
 
     /// <summary>App-colored menu; null = the stock renderer.</summary>
@@ -176,8 +176,8 @@ public sealed class TrayIcon : IDisposable
     /// <see cref="TrayIconOptions.BuiltInMenuItems"/> off).</summary>
     public ContextMenuStrip Menu { get; }
 
-    /// <summary>Restore + focus the window (double-click / the Open item), through
-    /// <see cref="WindowActivation"/>.</summary>
+    /// <summary>Restore + focus the window, through <see cref="WindowActivation"/>: what a double-click and the Open item
+    /// do unless <see cref="TrayIconOptions.OnOpen"/> answers them, which this does not call.</summary>
     public void ShowWindow() => WindowActivation.BringToFront(_options.Window);
 
     // What a double-click, the Open item and a balloon with no callback do: the app's, else the window forward.
