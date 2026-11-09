@@ -53,11 +53,15 @@ internal static partial class WebViewScripts
 
     /// <summary>
     /// Block browser chrome shortcuts in production (find, print, save, view-source, zoom,
-    /// devtools…); editing shortcuts and Ctrl+R stay available. JavaScript rather than
+    /// devtools…); editing shortcuts and Ctrl+R stay available. Zoom's (Ctrl+plus, minus, 0) are left
+    /// to the browser when <paramref name="allowZoom"/>. JavaScript rather than
     /// AcceleratorKeyPressed, which the WinForms WebView2 control does not expose. Capture phase, so
     /// the block runs before the app's own handlers.
     /// </summary>
-    public const string BlockBrowserShortcuts = """
+    public static string BlockBrowserShortcuts(bool allowZoom) =>
+        BlockBrowserShortcutsTemplate.Replace("{{ZOOM}}", allowZoom ? "" : "case '0': case '+': case '=': case '-': case '_':");
+
+    private const string BlockBrowserShortcutsTemplate = """
         (function() {
             document.addEventListener('keydown', function(e) {
                 var ctrl = e.ctrlKey || e.metaKey;
@@ -65,8 +69,7 @@ internal static partial class WebViewScripts
                 if (ctrl) {
                     switch (key.toLowerCase()) {
                         case 'f': case 'g': case 'h': case 'j': case 'p':
-                        case 's': case 'u': case '0': case '+': case '=':
-                        case '-': case '_':
+                        case 's': case 'u': {{ZOOM}}
                             e.preventDefault();
                             e.stopPropagation();
                             return false;

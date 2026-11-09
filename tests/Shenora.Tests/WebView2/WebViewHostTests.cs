@@ -142,6 +142,7 @@ public class WebViewHostTests
         Assert.True(options.AllowExternalDrop);
         Assert.True(options.PreventDefaultFileDrop);
         Assert.True(options.BlockBrowserShortcutsInProduction);
+        Assert.False(options.AllowZoom);
         Assert.True(options.OpenExternalLinksInSystemBrowser);
         Assert.True(options.ReloadOnRenderProcessFailure);
         Assert.Equal([CoreWebView2PermissionKind.ClipboardRead], options.PermittedPermissions);

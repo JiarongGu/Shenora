@@ -313,6 +313,7 @@ sealed class Shenora.Windows.WebViewHostOptions
   public System.TimeSpan AutoReloadCooldown { get; init; }
   public System.TimeSpan InitTimeout { get; init; }
   public bool AllowExternalDrop { get; init; }
+  public bool AllowZoom { get; init; }
   public bool BlockBrowserShortcutsInProduction { get; init; }
   public bool OpenExternalLinksInSystemBrowser { get; init; }
   public bool PreventDefaultFileDrop { get; init; }

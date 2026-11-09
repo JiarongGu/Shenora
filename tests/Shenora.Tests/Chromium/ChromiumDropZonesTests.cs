@@ -14,12 +14,12 @@ namespace Shenora.Tests.Chromium;
 public class ChromiumDropZonesTests
 {
     /// <summary>A page's browser with no CEF behind it, and no window hosting it.</summary>
-    internal static ChromiumBrowser Window(string name = "main")
+    internal static ChromiumBrowser Window(string name = "main", bool allowZoom = false)
     {
         var origins = ChromiumOrigins.For("app.local", null, isDevelopment: false);
         var ui = new CefUiDispatcher(_ => true, () => true);
         return new ChromiumBrowser(name, new ChromiumServing(null, origins, new ChromiumInterceptor()), origins,
-            b => new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher() }, ui, _ => { }, (_, _) => true), null);
+            b => new ChromiumIpcBridge(new ChromiumIpcBridgeOptions { Dispatcher = new MessageDispatcher() }, ui, _ => { }, (_, _) => true), null, allowZoom: allowZoom);
     }
 
     private static (ChromiumDropZones Module, ChromiumBrowser Window) Create()

@@ -39,6 +39,11 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`AllowZoom`: the same zoom setting on both engines** (`ChromiumHostOptions`, `ChromiumEngineOptions`,
+  `WebViewHostOptions`). Off by default, as the WebView2 host always had it: Ctrl+wheel, Ctrl+plus, Ctrl+minus, Ctrl+0
+  and a pinch do not zoom the page. The Chromium shell had no counterpart, so a page there zoomed the whole window and an
+  app that draws its own frame could not stop it. Set it to give the user zoom back; on WebView2 the shortcut script then
+  leaves Ctrl+plus, minus and 0 alone as well.
 - **`PageWindow.Current`: the window of the page that sent the request** (`Shenora.Windows`). The top-level form showing
   the page whose request a module is handling, still there after an `await`, and on a `SecondaryWindows` window that
   window, not the main one; null for a send from no page. Until now the kit knew the sending page internally and an app

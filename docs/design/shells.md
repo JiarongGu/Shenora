@@ -109,6 +109,19 @@ after a `Page.navigate` (same icon handles). Chromium's own windows set no icon 
 the app's own pipeline goes out marked (`ChromiumTransport.MarkHtml`), and in development the shell fetches the dev
 server's top-level document itself so that it is marked the same way; the dev server serves everything else.
 
+**A page cannot be zoomed unless the app sets `AllowZoom`**, on both engines, with the same name and default
+(`ChromiumHostOptions`, `ChromiumEngineOptions`, `WebViewHostOptions`). WebView2 has settings for it
+(`IsZoomControlEnabled`, `IsPinchZoomEnabled`) and a shortcut script for Ctrl+plus, minus and 0. CEF has no setting, so
+the Chromium shell answers each input its own way (`ChromiumZoom`): the client's keyboard handler takes Ctrl or Command
+with plus, minus or 0 (main row and numpad) before Chromium or the page hears it, and a script registered through the
+browser's in-process DevTools (`Page.addScriptToEvaluateOnNewDocument`, so for every document, a frame's included) cancels a
+Ctrl or Command wheel, which a precision touchpad's pinch also raises, and sets `touch-action: pan-x pan-y` on the document,
+which takes a touch screen's pinch away. ⚠ **Not measured on real CEF**: the unit tests run the handler and the script's
+text, and the script's behaviour was run in Chromium by a synthetic wheel event, so whether Alloy's own wheel handling
+zooms before the page's listener could cancel it, a touch screen's pinch, and a cross-origin out-of-process frame (which
+the script may not reach) are unseen. The listener is non-passive, which can make the first wheel event of a scroll
+wait for the page's main thread.
+
 **On macOS the data folder is named by the bundle identifier** (D89). The build writes `ShenoraChromiumBundleId` into
 `Info.plist`, `com.shenora.app.<App>` unless the app sets it; `ShenoraPaths` reads it from the plist, takes the
 bundle's own name when the plist names none, and does not use an identifier that is not a plain name (one that could

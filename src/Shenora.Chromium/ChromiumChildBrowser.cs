@@ -113,7 +113,7 @@ public sealed unsafe class ChromiumChildBrowser : IDisposable
         _engine = engine;
         _parent = parentWindow;
         var ui = options.UiDispatcher ?? pages.Ui;
-        _browser = new ChromiumBrowser(options.Name, pages.Serving, pages.Origins, browser => NewBridge(browser, pages, ui), pages.Log, pages.Urls, pages.Hooks)
+        _browser = new ChromiumBrowser(options.Name, pages.Serving, pages.Origins, browser => NewBridge(browser, pages, ui), pages.Log, pages.Urls, pages.Hooks, pages.AllowZoom)
         {
             Host = new BrowserHost(this, options.MoveFocusRequested is { } moveFocus ? forward => ui.Post(() => AppCallback.Run(() => moveFocus(forward))) : null,
                 options.DragAreaPressed is { } pressed

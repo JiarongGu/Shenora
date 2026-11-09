@@ -309,6 +309,7 @@ Shenora.Windows.WebViewHost
 Shenora.Windows.WebViewHostOptions
   method .ctor
   property AllowExternalDrop
+  property AllowZoom
   property AutoReloadCooldown
   property BackgroundColor
   property BlockBrowserShortcutsInProduction

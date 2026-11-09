@@ -46,6 +46,21 @@ public class WebViewScriptsTests
     public void Family_scripts_are_wrapped_iifes()
     {
         Assert.StartsWith("(function()", WebViewScripts.PreventDefaultFileDrop);
-        Assert.StartsWith("(function()", WebViewScripts.BlockBrowserShortcuts);
+        Assert.StartsWith("(function()", WebViewScripts.BlockBrowserShortcuts(allowZoom: false));
+        Assert.StartsWith("(function()", WebViewScripts.BlockBrowserShortcuts(allowZoom: true));
+    }
+
+    [Fact]
+    public void The_shortcut_block_covers_zoom_unless_the_app_allows_it()
+    {
+        var blocked = WebViewScripts.BlockBrowserShortcuts(allowZoom: false);
+        foreach (var key in new[] { "'0'", "'+'", "'='", "'-'", "'_'" }) Assert.Contains($"case {key}:", blocked);
+
+        var allowed = WebViewScripts.BlockBrowserShortcuts(allowZoom: true);
+        foreach (var key in new[] { "'0'", "'+'", "'='", "'-'", "'_'" }) Assert.DoesNotContain($"case {key}:", allowed);
+        // What else the block covers stays.
+        Assert.Contains("case 'f':", allowed);
+        Assert.Contains("F12", allowed);
+        Assert.DoesNotContain("{{ZOOM}}", allowed);
     }
 }
