@@ -64,7 +64,8 @@ public sealed class ChromiumHostOptions
     /// Whether the user can zoom a page (Ctrl+wheel, Ctrl+plus, Ctrl+minus, Ctrl+0, a pinch). Off by default, as in the
     /// WebView2 host: an app that draws its own frame is not meant to scale. It is the same name and default there
     /// (<c>WebViewHostOptions.AllowZoom</c>), so one app behaves the same on both engines. A page's own zoom, such as CSS
-    /// <c>zoom</c>, is not affected.
+    /// <c>zoom</c>, is not affected. It guards the app's own windows: a session browser or a web panel, which shows arbitrary
+    /// content in a profile, is given no guard and keeps the engine's zoom, as on WebView2.
     /// </summary>
     public bool AllowZoom { get; init; }
 

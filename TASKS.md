@@ -129,7 +129,11 @@ is left is mostly measurement that needs hardware or a person.
 - [ ] **Run the Chromium zoom guard on real CEF.** `AllowZoom` off is built (`ChromiumZoom`, `docs/design/shells.md`) and unit-tested, but
   never seen zoom or fail to: probe on the Chromium sample that a real Ctrl+wheel and Ctrl+plus/minus/0 leave the zoom level at 0, that a
   precision touchpad's pinch does too, that a cross-origin frame's wheel is covered (else register the script on its target), and what the
-  non-passive wheel listener costs a long scroll.
+  non-passive wheel listener costs a long scroll. Also what `BlocksKey` does with a character event
+  (`src/Shenora.Chromium/Host/ChromiumZoom.cs:42`, review finding, piece 1 of 6, `dd011c40`): its doc says all four events one press raises are
+  blocked, but it never reads `type`, and CEF fills a `KEYEVENT_CHAR`'s `windows_key_code` with the character (Ctrl+minus is 0x1F), not the
+  virtual key, so a char event may reach the page as a `keypress`; its test passes every event type the same key code and cannot tell. Log the
+  four events of a Ctrl+minus press on real CEF, then either read `type` or drop the parameter and say what the page hears.
 - [ ] 🅿️ **win-arm64 has never RUN.** Its shim cross-compiles (the PE header says ARM64), and `-r win-arm64` lays out
   an ARM64 launcher, shim and `libcef.dll`; running it needs ARM64 hardware or a `windows-11-arm` CI runner. ⚠ The
   release job builds the ARM64 shim (the 0.23.2 package's is PE machine `0xaa64`); it has never been loaded.
@@ -168,6 +172,11 @@ is left is mostly measurement that needs hardware or a person.
   (`SAVE_TARGETS`) is built and measured against a scripted manager only, not a real one (GNOME's, Plasma's, XFCE's), and does
   not offer `MULTIPLE`; a copy over one X request goes in parts (INCR), read back by the kit's own clipboard and by a
   requestor that stops reading, never by Chromium's or another toolkit's.
+- [ ] **`LinuxClipboard.Start` leaks the connection and the wake-up pipe when it throws part-way**
+  (`src/Shenora.Chromium/Host/LinuxClipboard.cs:194`, review finding, pieces 3 and 5 of 6, `80f60bf5`, `823a8993`): after `xcb_connect` and
+  `pipe2` succeed, `Atom` (now also for `INCR` and `SHENORA_STAMP`) throws `InvalidOperationException` when the server stops answering, and
+  nothing closes `_c` or the two descriptors; `_thread` stays null, so the next call connects and leaks again. Close both on that path. No
+  test fails first: a server that dies between the connect and the first atom is not made on Xvfb without a hook in the connection.
 
 ### 🌐 THE CHROMIUM WEB PANEL (D97) — runs on Windows and Linux; what is left
 
@@ -178,6 +187,11 @@ by `tests/Shenora.Tests.Linux`); how it works and what was seen: `docs/design/sh
   the same code, and has never run it (no Mac here). Run the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`-style
   steps on a Mac (the probe's pixel reads and posted input are Windows' and its run 6 is Linux's: macOS needs its own driver, e.g.
   the window server's list and `screencapture`, as the splash was measured), and say what a Views overlay does in an `NSWindow`.
+- [ ] **`PanelRun`'s constructor leaves the display connection and the window manager running when a later step throws**
+  (`tests/Shenora.Tests.Linux/LinuxWebPanelTests.cs:117`, review finding, piece 4 of 6, `fd27085a`): `XScreen`, then openbox, then the
+  sample are started in turn, and the test's `using` only disposes a `PanelRun` that was built, so a failed `Process.Start` of the sample (or
+  the sample's folder) leaves openbox and the X connection behind for the rest of the run, and openbox's redirected stderr is never read
+  while it runs. Test harness only, so nothing fails first.
 
 ### 🟡 THE PLAYBACK HEALTH FIGURES — the adopter has now BUILT them, so this is a harvest call
 
