@@ -82,13 +82,18 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
 
     /// <summary>A selection of this name, which no other app reads: how the connection is exercised without the user's
     /// clipboard.</summary>
-    internal LinuxClipboard(string selectionName, ILogger? log, TimeSpan? handover = null, TimeSpan? incrIdle = null)
+    internal LinuxClipboard(string selectionName, ILogger? log, TimeSpan? handover = null, TimeSpan? incrIdle = null, Action<string>? beforeAtom = null)
     {
         _selectionName = selectionName;
         _log = log;
         _handover = handover ?? HandoverLimit;
         _incrIdle = incrIdle ?? IncrIdleLimit;
+        _beforeAtom = beforeAtom;
     }
+
+    // Runs before an atom is asked of the server, and may throw as a server that stopped answering does: how a connection
+    // that fails part-way is made without a server that dies at the right moment.
+    private readonly Action<string>? _beforeAtom;
 
     /// <summary>How many large copies are being sent in parts right now.</summary>
     internal int PendingTransfers => Volatile.Read(ref _pending);
@@ -207,25 +212,39 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
             xcb_disconnect(c);
             throw new InvalidOperationException("The clipboard could not make its wake-up pipe.");
         }
-        var roots = xcb_setup_roots_iterator(xcb_get_setup(c));
-        for (var i = 0; i < screen && roots.rem > 1; i++) xcb_screen_next(&roots);
-        var root = *(uint*)roots.data;
+        try
+        {
+            var roots = xcb_setup_roots_iterator(xcb_get_setup(c));
+            for (var i = 0; i < screen && roots.rem > 1; i++) xcb_screen_next(&roots);
+            var root = *(uint*)roots.data;
 
-        // A window of the connection's own, never shown: the owner other apps ask, and where answers land.
-        _c = c;
-        _window = xcb_generate_id(c);
-        var events = 0x400000u;   // PropertyChange
-        xcb_create_window(c, 0, _window, root, 0, 0, 1, 1, 0, 2 /* InputOnly */, 0, 0x800 /* EventMask */, &events);
-        _selection = Atom(_selectionName);
-        _property = Atom("SHENORA_CLIPBOARD");
-        _targets = Atom("TARGETS");
-        _timestamp = Atom("TIMESTAMP");
-        _incr = Atom("INCR");
-        _stamp = Atom("SHENORA_STAMP");
-        // In 4-byte units, BIG-REQUESTS included; less the ChangeProperty request's own header.
-        _maxBytes = xcb_get_maximum_request_length(c) * 4 - 64;
-        _fd = xcb_get_file_descriptor(c);
-        xcb_flush(c);
+            // A window of the connection's own, never shown: the owner other apps ask, and where answers land.
+            _c = c;
+            _window = xcb_generate_id(c);
+            var events = 0x400000u;   // PropertyChange
+            xcb_create_window(c, 0, _window, root, 0, 0, 1, 1, 0, 2 /* InputOnly */, 0, 0x800 /* EventMask */, &events);
+            _selection = Atom(_selectionName);
+            _property = Atom("SHENORA_CLIPBOARD");
+            _targets = Atom("TARGETS");
+            _timestamp = Atom("TIMESTAMP");
+            _incr = Atom("INCR");
+            _stamp = Atom("SHENORA_STAMP");
+            // In 4-byte units, BIG-REQUESTS included; less the ChangeProperty request's own header.
+            _maxBytes = xcb_get_maximum_request_length(c) * 4 - 64;
+            _fd = xcb_get_file_descriptor(c);
+            xcb_flush(c);
+        }
+        catch
+        {
+            // A server that stopped answering: the next call connects afresh, so this connection and its pipe go now.
+            xcb_disconnect(c);
+            close(fds[0]);
+            close(fds[1]);
+            _c = 0;
+            _atoms.Clear();
+            _names.Clear();
+            throw;
+        }
         _wakeRead = fds[0];
         _wakeWrite = fds[1];
         _thread = new Thread(Loop) { IsBackground = true, Name = "Shenora clipboard (X11)" };
@@ -546,6 +565,7 @@ internal sealed unsafe class LinuxClipboard : IClipboardService, IDisposable
     private uint Atom(string name)
     {
         if (_atoms.TryGetValue(name, out var atom)) return atom;
+        _beforeAtom?.Invoke(name);
         var bytes = Encoding.UTF8.GetBytes(name);
         nint reply;
         fixed (byte* b = bytes) reply = xcb_intern_atom_reply(_c, xcb_intern_atom(_c, 0, (ushort)bytes.Length, b), null);

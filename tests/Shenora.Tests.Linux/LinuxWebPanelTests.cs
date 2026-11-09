@@ -98,6 +98,61 @@ public class LinuxWebPanelTests
         Assert.DoesNotContain(run.Log(), line => line.Contains("THREW"));
     }
 
+    [Fact]
+    public void A_run_whose_app_will_not_start_ends_the_window_manager_and_the_display_connection_it_had_started()
+    {
+        // A file with no execute bit: it exists, so the run gets as far as starting the app, and Process.Start refuses it.
+        var launcher = Path.Combine(AppContext.BaseDirectory, $"not-a-launcher-{Guid.NewGuid():N}");
+        File.WriteAllText(launcher, "");
+        try
+        {
+            // The first start in a process opens descriptors of the runtime's own (a pipe of its child-exit signal, assemblies), which stay.
+            Assert.ThrowsAny<Exception>(() => new PanelRun(launcher));
+            var descriptors = Descriptors();
+            var folders = Folders();
+            for (var i = 0; i < 2; i++)
+                Assert.ThrowsAny<Exception>(() => new PanelRun(launcher));
+
+            Assert.Empty(WindowManagers());
+            var left = Descriptors().Where(d => !descriptors.ContainsKey(d.Key)).Select(d => $"{d.Key} -> {d.Value}").ToList();
+            Assert.True(left.Count == 0, $"descriptors left open: {string.Join(", ", left)}");
+            Assert.Equal(folders, Folders());
+        }
+        finally { File.Delete(launcher); }
+    }
+
+    // The descriptors this process holds, by number: the display connection is one.
+    private static Dictionary<string, string> Descriptors()
+    {
+        var all = new Dictionary<string, string>();
+        foreach (var entry in Directory.GetFileSystemEntries("/proc/self/fd"))
+        {
+            try { all[Path.GetFileName(entry)] = File.ResolveLinkTarget(entry, returnFinalTarget: false)?.FullName ?? ""; }
+            catch (FileNotFoundException) { }   // the listing's own descriptor, closed by now
+        }
+        return all;
+    }
+
+    // The openbox processes this one started and that are still there (a process that is killed and not yet reaped is still listed).
+    private static List<int> WindowManagers()
+    {
+        var found = new List<int>();
+        foreach (var dir in Directory.EnumerateDirectories("/proc"))
+        {
+            if (!int.TryParse(Path.GetFileName(dir), out var pid)) continue;
+            try
+            {
+                var stat = File.ReadAllText(Path.Combine(dir, "stat"));
+                var rest = stat[(stat.LastIndexOf(')') + 2)..].Split(' ');
+                if (File.ReadAllText(Path.Combine(dir, "comm")).Trim() == "openbox" && int.Parse(rest[1]) == Environment.ProcessId) found.Add(pid);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+        return found;
+    }
+
+    private static string[] Folders() => Directory.GetDirectories(AppContext.BaseDirectory, "panel-run-*");
+
     private static Rectangle Overlap(Rectangle a, Rectangle b) => Rectangle.Intersect(a, b);
 
     private static Point Centre(Rectangle r) => new(r.X + r.Width / 2, r.Y + r.Height / 2);
@@ -114,45 +169,63 @@ public class LinuxWebPanelTests
         private readonly string _log;
         private int _line;
 
-        public PanelRun()
+        public PanelRun() : this(Environment.GetEnvironmentVariable("SHENORA_LINUX_SAMPLE")) { }
+
+        public PanelRun(string? launcher)
         {
-            var launcher = Environment.GetEnvironmentVariable("SHENORA_LINUX_SAMPLE");
             if (string.IsNullOrEmpty(launcher) || !File.Exists(launcher))
                 throw new InvalidOperationException("SHENORA_LINUX_SAMPLE names no built Chromium sample (devtools/scripts/linux-tests.sh builds it).");
-            Screen = new XScreen();
-            _wm = StartWindowManager(Screen);
-            _folder = Path.Combine(AppContext.BaseDirectory, $"panel-run-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(_folder);
-            _log = Path.Combine(_folder, "panel-probe.log");
-            File.WriteAllText(_log, "");
-            var info = new ProcessStartInfo(launcher)
+            // Started in turn, and the test's `using` only disposes a run that was built: a step that throws ends the ones before it.
+            XScreen? screen = null;
+            Process? wm = null, app = null;
+            string? folder = null;
+            try
             {
-                WorkingDirectory = Path.GetDirectoryName(launcher)!,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-            // The libraries Chromium needs that the machine lacks (nspr, nss), from the sysroot where there is one.
-            if (Environment.GetEnvironmentVariable("SHENORA_LINUX_SYSROOT") is { Length: > 0 } sysroot)
-                info.Environment["LD_LIBRARY_PATH"] = Path.Combine(sysroot, "usr/lib/x86_64-linux-gnu");
-            info.Environment["SHENORA_SAMPLE_PANEL_PROBE"] = "6";
-            info.Environment["SHENORA_SAMPLE_PANEL_LOG"] = _log;
-            _app = new Process { StartInfo = info };
-            _app.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (_output) _output.AppendLine(e.Data); };
-            _app.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (_output) _output.AppendLine(e.Data); };
-            _app.Start();
-            _app.BeginOutputReadLine();
-            _app.BeginErrorReadLine();
+                screen = new XScreen();
+                wm = StartWindowManager(screen, _wmOutput);
+                folder = Path.Combine(AppContext.BaseDirectory, $"panel-run-{Guid.NewGuid():N}");
+                Directory.CreateDirectory(folder);
+                _log = Path.Combine(folder, "panel-probe.log");
+                File.WriteAllText(_log, "");
+                var info = new ProcessStartInfo(launcher)
+                {
+                    WorkingDirectory = Path.GetDirectoryName(launcher)!,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                };
+                // The libraries Chromium needs that the machine lacks (nspr, nss), from the sysroot where there is one.
+                if (Environment.GetEnvironmentVariable("SHENORA_LINUX_SYSROOT") is { Length: > 0 } sysroot)
+                    info.Environment["LD_LIBRARY_PATH"] = Path.Combine(sysroot, "usr/lib/x86_64-linux-gnu");
+                info.Environment["SHENORA_SAMPLE_PANEL_PROBE"] = "6";
+                info.Environment["SHENORA_SAMPLE_PANEL_LOG"] = _log;
+                app = new Process { StartInfo = info };
+                app.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (_output) _output.AppendLine(e.Data); };
+                app.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (_output) _output.AppendLine(e.Data); };
+                app.Start();
+                app.BeginOutputReadLine();
+                app.BeginErrorReadLine();
+            }
+            catch
+            {
+                End(app, wm, screen, folder);
+                throw;
+            }
+            Screen = screen;
+            _wm = wm;
+            _app = app;
+            _folder = folder;
         }
 
-        // What the app wrote to its own output, for a failure to say.
-        private readonly System.Text.StringBuilder _output = new();
+        // What the app wrote to its own output, and what the window manager wrote to its standard error, for a failure to say.
+        private readonly System.Text.StringBuilder _output = new(), _wmOutput = new();
 
         private string Account()
         {
             lock (_output)
                 return $"{string.Join(Environment.NewLine, Log())}{Environment.NewLine}--- the app's output:{Environment.NewLine}{_output}"
+                    + $"--- openbox's standard error:{Environment.NewLine}{_wmOutput}"
                     + $"--- its processes (pid, state, command):{Environment.NewLine}{Processes()}";
         }
 
@@ -287,20 +360,37 @@ public class LinuxWebPanelTests
             catch (OperationCanceledException) { Assert.Fail("the app did not end within 20 s of its window's close"); }
         }
 
-        public void Dispose()
+        public void Dispose() => End(_app, _wm, Screen, _folder);
+
+        // What a run started, ended, whichever of it was started: the window manager is waited for, so it is gone when this returns.
+        private static void End(Process? app, Process? wm, XScreen? screen, string? folder)
         {
-            if (!_app.HasExited) _app.Kill(entireProcessTree: true);
-            _app.Dispose();
-            _wm.Kill(entireProcessTree: true);
-            _wm.Dispose();
-            Screen.Dispose();
-            try { Directory.Delete(_folder, recursive: true); } catch (IOException) { }
+            if (app is not null)
+            {
+                try { if (!app.HasExited) app.Kill(entireProcessTree: true); }
+                catch (InvalidOperationException) { }   // never started, or ended meanwhile
+                app.Dispose();
+            }
+            if (wm is not null)
+            {
+                try
+                {
+                    if (!wm.HasExited) wm.Kill(entireProcessTree: true);
+                    wm.WaitForExit(TimeSpan.FromSeconds(5));
+                }
+                catch (InvalidOperationException) { }
+                wm.Dispose();
+            }
+            screen?.Dispose();
+            if (folder is not null)
+                try { Directory.Delete(folder, recursive: true); } catch (IOException) { }
         }
 
         // openbox, started on this display and waited for until it has taken the root window: a window manager's frame
         // and its stacking are the display a person has. Its libraries come from the sysroot where there is no root to
         // install them (linux-tests.sh).
-        private static Process StartWindowManager(XScreen screen)
+        // Its standard error is read as it runs, into errors: a window manager that wrote enough would block on a full pipe.
+        private static Process StartWindowManager(XScreen screen, System.Text.StringBuilder errors)
         {
             var info = new ProcessStartInfo("openbox") { UseShellExecute = false, RedirectStandardError = true };
             if (Environment.GetEnvironmentVariable("SHENORA_LINUX_SYSROOT") is { Length: > 0 } sysroot)
@@ -313,14 +403,24 @@ public class LinuxWebPanelTests
             Process wm;
             try { wm = Process.Start(info)!; }
             catch (System.ComponentModel.Win32Exception ex) { throw new InvalidOperationException("openbox is not installed (see linux-tests.sh's header).", ex); }
+            wm.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (errors) errors.AppendLine(e.Data); };
+            wm.BeginErrorReadLine();
+            string Said() { lock (errors) return errors.ToString(); }
             for (var i = 0; i < 100; i++)
             {
                 if (screen.HasWindowManager) return wm;
-                if (wm.HasExited) throw new InvalidOperationException($"openbox exited at once: {wm.StandardError.ReadToEnd()}");
+                if (wm.HasExited)
+                {
+                    wm.WaitForExit();   // its standard error to the end
+                    wm.Dispose();
+                    throw new InvalidOperationException($"openbox exited at once: {Said()}");
+                }
                 Thread.Sleep(100);
             }
             wm.Kill();
-            throw new InvalidOperationException($"openbox did not take the display in 10 s: {wm.StandardError.ReadToEnd()}");
+            wm.WaitForExit();
+            wm.Dispose();
+            throw new InvalidOperationException($"openbox did not take the display in 10 s: {Said()}");
         }
     }
 }

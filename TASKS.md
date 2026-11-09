@@ -172,11 +172,6 @@ is left is mostly measurement that needs hardware or a person.
   (`SAVE_TARGETS`) is built and measured against a scripted manager only, not a real one (GNOME's, Plasma's, XFCE's), and does
   not offer `MULTIPLE`; a copy over one X request goes in parts (INCR), read back by the kit's own clipboard and by a
   requestor that stops reading, never by Chromium's or another toolkit's.
-- [ ] **`LinuxClipboard.Start` leaks the connection and the wake-up pipe when it throws part-way**
-  (`src/Shenora.Chromium/Host/LinuxClipboard.cs:194`, review finding, pieces 3 and 5 of 6, `80f60bf5`, `823a8993`): after `xcb_connect` and
-  `pipe2` succeed, `Atom` (now also for `INCR` and `SHENORA_STAMP`) throws `InvalidOperationException` when the server stops answering, and
-  nothing closes `_c` or the two descriptors; `_thread` stays null, so the next call connects and leaks again. Close both on that path. No
-  test fails first: a server that dies between the connect and the first atom is not made on Xvfb without a hook in the connection.
 
 ### 🌐 THE CHROMIUM WEB PANEL (D97) — runs on Windows and Linux; what is left
 
@@ -187,11 +182,6 @@ by `tests/Shenora.Tests.Linux`); how it works and what was seen: `docs/design/sh
   the same code, and has never run it (no Mac here). Run the Chromium sample with `SHENORA_SAMPLE_PANEL_PROBE=1`-style
   steps on a Mac (the probe's pixel reads and posted input are Windows' and its run 6 is Linux's: macOS needs its own driver, e.g.
   the window server's list and `screencapture`, as the splash was measured), and say what a Views overlay does in an `NSWindow`.
-- [ ] **`PanelRun`'s constructor leaves the display connection and the window manager running when a later step throws**
-  (`tests/Shenora.Tests.Linux/LinuxWebPanelTests.cs:117`, review finding, piece 4 of 6, `fd27085a`): `XScreen`, then openbox, then the
-  sample are started in turn, and the test's `using` only disposes a `PanelRun` that was built, so a failed `Process.Start` of the sample (or
-  the sample's folder) leaves openbox and the X connection behind for the rest of the run, and openbox's redirected stderr is never read
-  while it runs. Test harness only, so nothing fails first.
 
 ### 🟡 THE PLAYBACK HEALTH FIGURES — the adopter has now BUILT them, so this is a harvest call
 
